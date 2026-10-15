@@ -51,6 +51,14 @@ import {
   nombreManijaColumna,
   renglonesTexto,
   type AnchosColumnas,
+  ANCHO_LIBRE_MINIMO_PX,
+  GROSOR_BORDE_CELDA_PX,
+  MARGEN_ARRASTRE_MARCO_PX,
+  coordenadaDeReferencia,
+  estiloRecorteCss,
+  limitesArrastre,
+  mismasColumnasFijas,
+  topeAnchoColumnaPx,
 } from "../libro-excel";
 
 function hoja(p: Partial<LibroExcelHoja> = {}): LibroExcelHoja {
@@ -828,5 +836,202 @@ describe("ajustar el ancho de las columnas (14-oct-2026): arrastre, estado y tex
     expect(nombreManijaColumna("F")).toBe("Ajustar el ancho de la columna F");
     expect(nombreManijaColumna("AA")).toBe("Ajustar el ancho de la columna AA");
     expect(TITULO_MANIJA_COLUMNA).toBe("Doble clic: ajustar al contenido · Arrastra para cambiar el ancho");
+  });
+});
+
+describe("revisión 14-oct-2026: una fila inmovilizada con otra fija debajo NO crece (su texto con ajuste se recorta)", () => {
+  // Inmovilizar A5: filas 1–4 fijas. La 1 mide 30 pt = 40 px; las demás, 15 pt = 20 px.
+  const AJUSTE: LibroExcelEstilo = { wr: true, ha: "center", va: "center" };
+  const v = cuadriculaHoja(
+    hoja({
+      max_fila: 6,
+      max_col: 5,
+      inmovilizar: { filas: 4, columnas: 0 },
+      filas: [{ r: 1, alto: 30 }],
+      combinadas: [
+        { r1: 2, c1: 1, r2: 3, c2: 1 }, // A2:A3: debajo de su span queda la fila 4, fija
+        { r1: 3, c1: 2, r2: 4, c2: 2 }, // B3:B4: su span llega a la ÚLTIMA fija
+      ],
+      celdas: [
+        { r: 1, c: 1, v: "TOTAL A COBRAR\nMXN", t: "TOTAL A COBRAR\nMXN", s: 0 },
+        { r: 1, c: 2, v: "COBRADO", t: "COBRADO", s: 1 },
+        { r: 1, c: 3, v: "sin ajuste", t: "sin ajuste" },
+        { r: 1, c: 4, v: null, t: "", s: 1 },
+        { r: 2, c: 1, v: "combinada", t: "combinada", s: 1 },
+        { r: 3, c: 2, v: "hasta la última", t: "hasta la última", s: 1 },
+        { r: 4, c: 1, v: "última fija", t: "última fija", s: 1 },
+        { r: 5, c: 1, v: "se desplaza", t: "se desplaza", s: 1 },
+      ],
+    }),
+    libro([{ ...AJUSTE, bd: "lrtb" }, AJUSTE]),
+  );
+  const recorte = (r: number, c: number) => celdaEn(v, r, c)?.altoRecortePx;
+
+  it("el alto de su span menos sus bordes de arriba y de abajo; los altos nominales y los `top` de lo fijo no cambian", () => {
+    // A1: 40 px con borde arriba y abajo (bd lrtb) ⇒ 38; B1: solo el de abajo, que lleva TODA celda ⇒ 39.
+    expect(recorte(1, 1)).toBe(40 - 2 * GROSOR_BORDE_CELDA_PX);
+    expect(recorte(1, 2)).toBe(40 - GROSOR_BORDE_CELDA_PX);
+    // A2:A3 (vertical) suma sus dos filas.
+    expect(recorte(2, 1)).toBe(20 + 20 - GROSOR_BORDE_CELDA_PX);
+    expect(v.filas.slice(0, 5).map((f) => [f.altoPx, f.fija, f.topPx])).toEqual([
+      [40, true, ALTO_LETRAS_PX],
+      [20, true, ALTO_LETRAS_PX + 40],
+      [20, true, ALTO_LETRAS_PX + 60],
+      [20, true, ALTO_LETRAS_PX + 80],
+      [20, false, null],
+    ]);
+  });
+
+  it("sin recorte: sin ajuste, sin texto, vacía, la ÚLTIMA fija (nada fijo se le encima), un span que llega a ella y las filas que se desplazan", () => {
+    expect(recorte(1, 3)).toBeNull();
+    expect(recorte(1, 4)).toBeNull();
+    expect(recorte(1, 5)).toBeNull();
+    expect(recorte(4, 1)).toBeNull();
+    expect(recorte(3, 2)).toBeNull();
+    expect(recorte(5, 1)).toBeNull();
+    expect(v.filas.filter((f) => !f.fija).flatMap((f) => f.celdas).every((x) => x.altoRecortePx === null)).toBe(true);
+  });
+
+  it("un ancho nuevo no lo cambia: aplicarAnchos reusa las filas (y sus recortes)", () => {
+    const angosta = aplicarAnchos(v, { 1: 30 });
+    expect(angosta).not.toBe(v);
+    expect(angosta.filas).toBe(v.filas);
+    expect(angosta.filas[0].celdas[0].altoRecortePx).toBe(38);
+  });
+
+  it("el bloque enseña RENGLONES COMPLETOS con el interlineado real (`1lh`); si ni uno cabe, el alto disponible", () => {
+    expect(estiloRecorteCss(38)).toEqual({ maxHeight: "max(round(down, 38px, 1lh), min(38px, 1lh))" });
+    expect(estiloRecorteCss(-3)).toEqual({ maxHeight: "max(round(down, 0px, 1lh), min(0px, 1lh))" });
+    // El borde que se descuenta es el de la celda pintada.
+    expect(BORDE_CELDA.startsWith(`${GROSOR_BORDE_CELDA_PX}px `)).toBe(true);
+  });
+});
+
+describe("revisión 14-oct-2026: el cuerpo no se repinta al arrastrar y el clic llega por el data-ref", () => {
+  it("coordenadaDeReferencia es la inversa de referenciaCelda; lo que no es una referencia ⇒ null", () => {
+    for (const [r, c] of [
+      [1, 1],
+      [7, 2],
+      [40, 26],
+      [3, 27],
+      [116, 46],
+      [9, 52],
+      [12, 53],
+      [1, 702],
+      [5, 703],
+    ]) {
+      expect(coordenadaDeReferencia(referenciaCelda(r, c))).toEqual({ r, c });
+    }
+    for (const malo of ["", "7", "B", "b7", "B0", "B07", "7B", "B7 ", "B-7", "B7.5"]) {
+      expect(coordenadaDeReferencia(malo), malo).toBeNull();
+    }
+  });
+
+  it("mismasColumnasFijas: por VALOR (columna y `left`); arrastrar una que se desplaza o la última fija no cambia lo que leen las filas", () => {
+    const fijas = [
+      { c: 1, leftPx: 46 },
+      { c: 2, leftPx: 163 },
+    ];
+    expect(mismasColumnasFijas(fijas, fijas)).toBe(true);
+    expect(mismasColumnasFijas(fijas, fijas.map((x) => ({ ...x })))).toBe(true);
+    expect(mismasColumnasFijas(fijas, [{ c: 1, leftPx: 46 }, { c: 2, leftPx: 170 }])).toBe(false);
+    expect(mismasColumnasFijas(fijas, [{ c: 1, leftPx: 46 }])).toBe(false);
+    expect(mismasColumnasFijas(fijas, [{ c: 1, leftPx: 46 }, { c: 3, leftPx: 163 }])).toBe(false);
+    expect(mismasColumnasFijas([], [])).toBe(true);
+    const base = cuadriculaHoja(hoja({ max_col: 6, inmovilizar: { filas: 1, columnas: 2 } }), libro());
+    const fijasDe = (x: ReturnType<typeof cuadriculaHoja>) => x.columnas.filter((col) => col.fija);
+    expect(mismasColumnasFijas(fijasDe(base), fijasDe(aplicarAnchos(base, { 5: 300 })))).toBe(true);
+    expect(mismasColumnasFijas(fijasDe(base), fijasDe(aplicarAnchos(base, { 2: 300 })))).toBe(true);
+    expect(mismasColumnasFijas(fijasDe(base), fijasDe(aplicarAnchos(base, { 1: 300 })))).toBe(false);
+  });
+});
+
+describe("revisión 14-oct-2026: lo inmovilizado nunca llena el marco", () => {
+  // «reporte horas FLOTA» inmoviliza en D3: A (16 car. = 117 px), B (12 = 89) y C (34 = 243) fijas.
+  const flota = cuadriculaHoja(
+    hoja({
+      max_col: 46,
+      inmovilizar: { filas: 2, columnas: 3 },
+      columnas: [
+        { c: 1, ancho: 16 },
+        { c: 2, ancho: 12 },
+        { c: 3, ancho: 34 },
+      ],
+    }),
+    libro(),
+  );
+  const CW = 1045; // el marco en una laptop de 1366 px
+
+  it("una fija: el marco menos la numeración, las OTRAS fijas y la zona libre mínima; una que se desplaza o sin medidas, el tope de siempre", () => {
+    expect(flota.columnas.slice(0, 3).map((x) => x.anchoPx)).toEqual([117, 89, 243]);
+    expect(topeAnchoColumnaPx(flota, 2, CW)).toBe(CW - ANCHO_NUMERACION_PX - 117 - 243 - ANCHO_LIBRE_MINIMO_PX);
+    expect(topeAnchoColumnaPx(flota, 2, CW)).toBe(575);
+    expect(topeAnchoColumnaPx(flota, 1, CW)).toBe(CW - ANCHO_NUMERACION_PX - 89 - 243 - ANCHO_LIBRE_MINIMO_PX);
+    expect(topeAnchoColumnaPx(flota, 6, CW)).toBe(ANCHO_MAXIMO_COLUMNA_PX);
+    expect(topeAnchoColumnaPx(flota, 99, CW)).toBe(ANCHO_MAXIMO_COLUMNA_PX);
+    expect(topeAnchoColumnaPx(flota, 2, 0)).toBe(ANCHO_MAXIMO_COLUMNA_PX);
+    expect(topeAnchoColumnaPx(flota, 2, Number.NaN)).toBe(ANCHO_MAXIMO_COLUMNA_PX);
+    // Un marco enorme no pasa del tope de siempre; uno chico no baja del mínimo.
+    expect(topeAnchoColumnaPx(flota, 2, 5000)).toBe(ANCHO_MAXIMO_COLUMNA_PX);
+    expect(topeAnchoColumnaPx(flota, 2, 400)).toBe(ANCHO_MINIMO_COLUMNA_PX);
+    expect(ANCHO_LIBRE_MINIMO_PX).toBe(anchoColumnaPx(8.43));
+  });
+
+  it("propiedad: con el tope puesto, numeración + fijas deja SIEMPRE la zona libre mínima (cuando cabe) y el marco sigue a la selección", () => {
+    for (const cw of [700, 959, 1045, 1060, 1351, 1800]) {
+      for (const c of [1, 2, 3]) {
+        const v = aplicarAnchos(flota, { [c]: topeAnchoColumnaPx(flota, c, cw) });
+        const fijas = v.columnas.filter((x) => x.fija);
+        const fijo = ANCHO_NUMERACION_PX + fijas.reduce((acc, x) => acc + x.anchoPx, 0);
+        const otras = ANCHO_NUMERACION_PX + fijas.filter((x) => x.c !== c).reduce((acc, x) => acc + x.anchoPx, 0);
+        if (otras + ANCHO_MINIMO_COLUMNA_PX + ANCHO_LIBRE_MINIMO_PX > cw) continue;
+        expect(fijo, `${cw} px, columna ${c}`).toBeLessThanOrEqual(cw - ANCHO_LIBRE_MINIMO_PX);
+        // Antes, con lo fijo más ancho que el marco, ejeParaVer no movía nada y → no avanzaba.
+        const marco = { scrollLeft: 0, scrollTop: 0, clientWidth: cw, clientHeight: 300 };
+        expect(scrollParaVerCelda(v, { r: 3, c: 40 }, marco)?.scrollLeft ?? 0, `${cw} px, columna ${c}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("limitesArrastre: la x hasta el borde VISIBLE del marco menos la manija y el ancho hasta el tope; sin medidas, sin límite", () => {
+    expect(MARGEN_ARRASTRE_MARCO_PX).toBe(8);
+    expect(limitesArrastre(flota, 2, { izquierdaPx: 280, clientLeft: 0, clientWidth: CW })).toEqual({
+      xMaximo: 280 + CW - MARGEN_ARRASTRE_MARCO_PX,
+      topePx: 575,
+    });
+    expect(limitesArrastre(flota, 6, { izquierdaPx: 280, clientLeft: 1, clientWidth: CW })).toEqual({
+      xMaximo: 281 + CW - MARGEN_ARRASTRE_MARCO_PX,
+      topePx: ANCHO_MAXIMO_COLUMNA_PX,
+    });
+    expect(limitesArrastre(flota, 2, { izquierdaPx: 0, clientLeft: 0, clientWidth: 0 })).toEqual({
+      xMaximo: Number.POSITIVE_INFINITY,
+      topePx: ANCHO_MAXIMO_COLUMNA_PX,
+    });
+  });
+
+  it("anchoArrastrePx con límites: la x se detiene en el borde y el ancho en el tope; ninguno de los dos angosta por sí solo", () => {
+    const lim = { xMaximo: 1000, topePx: 300 };
+    expect(anchoArrastrePx(89, 500, 600, lim)).toBe(189);
+    // Soltar MUY fuera del marco: la x cuenta hasta 1000 (89 + 500 = 589) y el ancho se queda en el tope.
+    expect(anchoArrastrePx(89, 500, 5000, lim)).toBe(300);
+    expect(anchoArrastrePx(89, 500, 5000, { xMaximo: 1000 })).toBe(589);
+    // Agarrada pegada al borde (x inicial más allá del límite): no brinca; solo se puede angostar.
+    expect(anchoArrastrePx(120, 1010, 1010, lim)).toBe(120);
+    expect(anchoArrastrePx(120, 1010, 1100, lim)).toBe(120);
+    expect(anchoArrastrePx(120, 1010, 980, lim)).toBe(90);
+    // Ya más ancha que el tope (lo fijo ya llenaba el marco): no se encoge al primer movimiento.
+    expect(anchoArrastrePx(400, 500, 501, lim)).toBe(400);
+    expect(anchoArrastrePx(400, 500, 450, lim)).toBe(350);
+    expect(anchoArrastrePx(89, 500, 0, lim)).toBe(ANCHO_MINIMO_COLUMNA_PX);
+  });
+
+  it("anchoAutoajustePx con el tope: una fija no pasa de él; sin contenido sigue siendo null; un tope no finito no cuenta", () => {
+    const larga = [{ renglonesPx: [900], cajaPx: 7 }];
+    expect(anchoAutoajustePx(larga, 575)).toBe(575);
+    expect(anchoAutoajustePx(larga)).toBe(900 + 7 + HOLGURA_AUTOAJUSTE_PX);
+    expect(anchoAutoajustePx([{ renglonesPx: [50], cajaPx: 7 }], 575)).toBe(50 + 7 + HOLGURA_AUTOAJUSTE_PX);
+    expect(anchoAutoajustePx([], 575)).toBeNull();
+    expect(anchoAutoajustePx(larga, Number.NaN)).toBe(900 + 7 + HOLGURA_AUTOAJUSTE_PX);
+    expect(anchoAutoajustePx(larga, 3)).toBe(ANCHO_MINIMO_COLUMNA_PX);
   });
 });

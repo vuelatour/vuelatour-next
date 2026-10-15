@@ -340,6 +340,21 @@
   outline-offset: -2px;
 }
 
+/*
+ * El texto con ajuste de una fila INMOVILIZADA con otra fija debajo
+ * (revisión 14-oct-2026). Esa fila no puede crecer: el `top` sticky de las
+ * filas fijas de abajo sale de los altos NOMINALES y, si creciera, al
+ * desplazar se le pegarían encima. El texto va en este bloque con su
+ * `max-height` en línea (`estiloRecorteCss`: renglones completos con `1lh`)
+ * y se recorta como en Excel con una fila de alto fijo. Sin relleno ni borde
+ * propios: la celda conserva los suyos, su letra y su alineación (la
+ * vertical acomoda el bloque mientras el texto cabe).
+ */
+.xl-recorte {
+  display: block;
+  overflow: hidden;
+}
+
 /* El triángulo de la nota necesita un ancestro POSICIONADO. Una celda
    inmovilizada ya lo es (sticky): NO se le cambia a relative. Con relative,
    su `top`/`left` en línea (el desplazamiento del panel fijo) la RECORRE:

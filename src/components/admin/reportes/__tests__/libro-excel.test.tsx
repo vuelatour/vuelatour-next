@@ -13,6 +13,7 @@ import type { LibroExcel as LibroExcelJson } from "@/types/libro-excel";
 import {
   ETIQUETA_ACTUALIZAR_LIBRO,
   ETIQUETA_PANTALLA_COMPLETA,
+  GROSOR_BORDE_CELDA_PX,
   TITULO_ACTUALIZAR_LIBRO,
   TITULO_MANIJA_COLUMNA,
   letraColumna,
@@ -394,8 +395,17 @@ describe("el marco sigue a la selección (cableado, 13-oct-2026)", () => {
     );
     expect(src).toContain("conControl: e.ctrlKey || e.metaKey,");
     expect(src).not.toContain("esTeclaFlecha(");
-    // El clic en la celda también; nadie llama a setSeleccion directo desde el marcado.
-    expect(src).toContain("onClick={() => seleccionar({ r: cv.r, c: cv.c })}");
+    // El clic en la celda también, DELEGADO en el <tbody> (revisión 14-oct-2026:
+    // las filas son memo y no llevan manejadores): la celda sale del `data-ref`
+    // de su <td> y va por `seleccionar`; nadie llama a setSeleccion desde el marcado.
+    expect(src).toContain("<tbody onClick={alClicCuerpo}>");
+    const clic = src.match(/const alClicCuerpo = \(e: MouseEvent<HTMLTableSectionElement>\) => \{([\s\S]*?)\n  \};/)?.[1];
+    expect(clic).toBeDefined();
+    expect(clic).toContain('e.target.closest("td")');
+    expect(clic).toContain("e.currentTarget.contains(td)");
+    expect(clic).toContain('coordenadaDeReferencia(td.dataset.ref ?? "")');
+    expect(clic).toContain("if (sel) seleccionar(sel);");
+    expect(clic).not.toMatch(/setSeleccion|scroll/);
     expect(src).not.toContain("onClick={() => setSeleccion(");
     // Cambiar de hoja sigue limpiando la selección (sin mover el marco).
     expect(src).toMatch(
@@ -737,8 +747,11 @@ describe("ajustar el ancho de las columnas como en Excel (14-oct-2026)", () => {
     expect(auto).toContain("ctx.measureText(r).width");
     expect(auto).toContain("cajaPx: cajaHorizontalPx(estilo)");
     expect(auto).toContain("td.dataset.ref !== x.ref");
-    // Sin contenido, la regla da null y la columna vuelve al ancho del libro.
-    expect(auto).toContain("fijarAncho(c, anchoAutoajustePx(medidas));");
+    // Sin contenido, la regla da null y la columna vuelve al ancho del libro; una
+    // inmovilizada nunca llena el marco (revisión 14-oct-2026).
+    expect(auto).toContain(
+      "fijarAncho(c, anchoAutoajustePx(medidas, topeAnchoColumnaPx(vista, c, marco.current?.clientWidth ?? 0)));",
+    );
     // UN solo canvas: se crea al primer doble clic y se reutiliza.
     expect((src.match(/createElement\("canvas"\)/g) ?? []).length).toBe(1);
     expect(auto).toContain('lienzo.current ??= document.createElement("canvas").getContext("2d");');
@@ -763,10 +776,15 @@ describe("ajustar el ancho de las columnas como en Excel (14-oct-2026)", () => {
     const empezar = tramo(src, "const empezarArrastre", "\n  };");
     expect(empezar).toContain("if (e.button !== 0) return;");
     expect(empezar).toContain("e.currentTarget.setPointerCapture(e.pointerId);");
+    // Los límites se miden UNA vez, al empezar (revisión 14-oct-2026): la x
+    // hasta el borde visible del marco y una fija nunca lo llena.
+    expect(empezar).toMatch(
+      /limitesArrastre\(vista, col\.c, \{\s*izquierdaPx: el\.getBoundingClientRect\(\)\.left,\s*clientLeft: el\.clientLeft,\s*clientWidth: el\.clientWidth,\s*\}\)/,
+    );
     const mover = tramo(src, "const moverArrastre", "\n  };");
     expect(mover).toContain("a.cuadro ??= requestAnimationFrame(aplicarArrastre);");
     const aplicar = tramo(src, "const aplicarArrastre", "\n  };");
-    expect(aplicar).toContain("anchoArrastrePx(a.anchoInicialPx, a.xInicial, a.x)");
+    expect(aplicar).toContain("anchoArrastrePx(a.anchoInicialPx, a.xInicial, a.x, a.limites)");
     expect(aplicar).toContain("if (px === a.aplicadoPx) return;");
     const terminar = tramo(src, "const terminarArrastre", "\n  };");
     expect(terminar).toContain("cancelAnimationFrame(a.cuadro)");
@@ -831,5 +849,99 @@ describe("ajustar el ancho de las columnas como en Excel (14-oct-2026)", () => {
     expect(css).toMatch(
       /\.xl-libro--redimensionando,\s*\.xl-libro--redimensionando \*\s*\{[^}]*cursor:\s*col-resize;[^}]*user-select:\s*none;[^}]*\}\s*$/,
     );
+  });
+});
+
+describe("revisión 14-oct-2026 de la manija: filas fijas que no crecen, cuerpo memo y tope contra el marco", () => {
+  const src = leer("components/admin/reportes/libro-excel.tsx");
+  const sinComentarios = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+  // «cobranza» en chico: inmovilizar A4 (filas 1–3 fijas); la 2 mide 30 pt = 40 px
+  // y su encabezado con ajuste (estilo 1: bordes lrtb) tiene la fila 3 fija debajo.
+  const LIBRO_FIJAS: LibroExcelJson = {
+    ...LIBRO,
+    hojas: [
+      {
+        nombre: "cobranza",
+        pestana: null,
+        cuadricula: true,
+        inmovilizar: { filas: 3, columnas: 0 },
+        max_fila: 5,
+        max_col: 3,
+        columnas: [],
+        filas: [{ r: 2, alto: 30 }],
+        combinadas: [],
+        celdas: [
+          { r: 2, c: 1, v: "TOTAL A COBRAR\nMXN", t: "TOTAL A COBRAR\nMXN", s: 1 },
+          { r: 3, c: 1, v: "CLAVE", t: "CLAVE", s: 1 },
+          { r: 5, c: 1, v: "se desplaza", t: "se desplaza", s: 1 },
+        ],
+      },
+    ],
+  };
+
+  it("marcado: el encabezado con ajuste de una fila fija con otra fija debajo va en .xl-recorte (renglones completos, su alto menos sus bordes); la última fija y las que se desplazan, como siempre", () => {
+    const html = renderToStaticMarkup(<LibroExcel libro={LIBRO_FIJAS} />);
+    const td = (ref: string) => html.match(new RegExp(`<td[^>]*data-ref="${ref}"[^>]*>[\\s\\S]*?</td>`))?.[0] ?? "";
+    const alto = 40 - 2 * GROSOR_BORDE_CELDA_PX;
+    expect(td("A2")).toBe(
+      td("A2").replace(/>[\s\S]*$/, "") +
+        `><div class="xl-recorte" style="max-height:max(round(down, ${alto}px, 1lh), min(${alto}px, 1lh))">TOTAL A COBRAR\nMXN</div></td>`,
+    );
+    // La celda en sí no cambió: sus clases, su estilo y su `top` sticky.
+    expect(td("A2")).toMatch(/^<td class="xl-celda xl-fija-fila" style="text-align:center;white-space:pre-wrap;overflow:hidden;[^"]*;top:42px" data-ref="A2">/);
+    // La 3 (la ÚLTIMA fija, 22 + 20 + 40) pinta su texto tal cual.
+    expect(td("A3")).toMatch(/top:82px" data-ref="A3">CLAVE<\/td>$/);
+    expect(td("A5")).toMatch(/data-ref="A5">se desplaza<\/td>$/);
+    expect((html.match(/class="xl-recorte"/g) ?? []).length).toBe(1);
+    // El libro de las demás pruebas: su única fila con ajuste es la ÚLTIMA fija ⇒ ni un recorte.
+    expect(pintar()).not.toContain("xl-recorte");
+  });
+
+  it("cableado: las filas son memo en DOS tramos (fijas y las que se desplazan), sin manejadores; comparan la fila por identidad y el `left` de las fijas por valor", () => {
+    const tramoFila = sinComentarios(src.slice(src.indexOf("const TramoFila = memo("), src.indexOf("const FilaHoja = memo(")));
+    const filaHoja = sinComentarios(src.slice(src.indexOf("const FilaHoja = memo("), src.indexOf("export function LibroExcel")));
+    expect(tramoFila).toContain("const TramoFila = memo(");
+    expect(filaHoja).toContain("const FilaHoja = memo(");
+    expect(src).toMatch(
+      /const mismasPropsFila = \(antes: PropsFilaHoja, ahora: PropsFilaHoja\) =>\s*antes\.fila === ahora\.fila &&\s*antes\.cSeleccionada === ahora\.cSeleccionada &&\s*mismasColumnasFijas\(antes\.fijas, ahora\.fijas\);/,
+    );
+    expect(filaHoja).toContain("}, mismasPropsFila);");
+    expect(tramoFila).toContain(
+      "(antes, ahora) => antes.desde === ahora.desde && antes.hasta === ahora.hasta && mismasPropsFila(antes, ahora),",
+    );
+    // El tramo que se desplaza no lee ningún `left`: arrastrar una fija no lo repinta.
+    expect(filaHoja).toContain(
+      '<TramoFila key="fijas" fila={fila} desde={0} hasta={nFijas} fijas={fijas} cSeleccionada={cFija} />',
+    );
+    expect(filaHoja).toMatch(
+      /<TramoFila\s+key="libres"\s+fila=\{fila\}\s+desde=\{nFijas\}\s+hasta=\{fila\.celdas\.length\}\s+fijas=\{SIN_FIJAS\}/,
+    );
+    // Sin manejadores ni funciones: ninguna se queda con la `vista` de antes.
+    for (const bloque of [tramoFila, filaHoja]) {
+      expect(bloque).not.toMatch(/\bon[A-Z]\w*=/);
+      expect(bloque).not.toMatch(/seleccionar|setSeleccion|scroll/);
+    }
+    // El cuerpo: cada fila recibe SU columna seleccionada (las demás, null) y las fijas de la vista de hoy.
+    expect(src).toContain("const fijas = useMemo(() => vista?.columnas.filter((x) => x.fija) ?? [], [vista]);");
+    expect(src).toMatch(
+      /<FilaHoja\s+key=\{fila\.r\}\s+fila=\{fila\}\s+fijas=\{fijas\}\s+cSeleccionada=\{seleccion\?\.r === fila\.r \? seleccion\.c : null\}\s*\/>/,
+    );
+    // Ningún <td> se pinta fuera del tramo (un solo lugar arma las celdas).
+    expect((sinComentarios(src).match(/<td\b/g) ?? []).length).toBe(1);
+    expect(src).not.toContain("useCallback");
+  });
+
+  it("CSS: .xl-recorte recorta, y las cuentas del recorte valen: `.xl-celda` sin relleno vertical ni borde de arriba y con el de abajo de 1 px", () => {
+    const css = leer("styles/libro-excel.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(css).toMatch(/\.xl-recorte\s*\{[^}]*display:\s*block;[^}]*overflow:\s*hidden;/);
+    const celda = css.match(/^\.xl-celda\s*\{([^}]*)\}/m)?.[1] ?? "";
+    expect(celda).toMatch(/padding:\s*0 3px;/);
+    expect(celda).toMatch(new RegExp(`border-bottom:\\s*${GROSOR_BORDE_CELDA_PX}px solid`));
+    // Ninguna regla de celdas les pone relleno vertical, borde de arriba o un borde de otro grosor.
+    const reglas = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => [m[1].trim(), m[2]] as const);
+    for (const [sel, cuerpo] of reglas.filter(([s]) => /\.xl-celda/.test(s) && !/::?(after|before)\b/.test(s))) {
+      expect(cuerpo, sel).not.toMatch(/padding-(top|bottom)|border-top|border(-bottom)?:\s*(?!1px)\d/);
+    }
   });
 });

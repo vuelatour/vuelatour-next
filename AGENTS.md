@@ -6898,18 +6898,21 @@ las celdas NO cambian.
   sangría ya va ahí porque `estiloCeldaCss` la pinta como `padding-left`).
   La regla PURA `anchoAutoajustePx`: máx(renglón más largo + caja) +
   `HOLGURA_AUTOAJUSTE_PX` (5), hacia arriba, entre `ANCHO_MINIMO_COLUMNA_PX`
-  (12) y `ANCHO_MAXIMO_COLUMNA_PX` (1000); sin nada medible ⇒ `null` ⇒ la
+  (12) y `ANCHO_MAXIMO_COLUMNA_PX` (1000) —una INMOVILIZADA, hasta
+  `topeAnchoColumnaPx` (ver «Revisión»)—; sin nada medible ⇒ `null` ⇒ la
   columna vuelve al ancho original del libro. Como en Excel, un texto con
   ajuste (`wr`) cuenta por sus renglones explícitos y el autoajuste también
   puede ANGOSTAR.
 - **Arrastre** (pointer capture): `pointerdown` (botón principal) guarda
   columna, x y ancho en una REF; `pointermove` solo anota la x y pide UN
   `requestAnimationFrame`; el cuadro aplica `anchoArrastrePx` (puro: ancho +
-  desplazamiento, entero, entre mínimo y tope) si cambió; `pointerup`,
-  `pointercancel` y `lostpointercapture` cancelan el cuadro pendiente y
-  aplican el último. `onMouseDown` con `preventDefault`: no le roba el foco
-  al marco ni empieza a seleccionar texto. La manija vive en el `<thead>`:
-  ni el arrastre ni el doble clic tocan la selección ni el scroll.
+  desplazamiento, entero, entre mínimo y tope, con los límites que
+  `limitesArrastre` mide al empezar —ver «Revisión»—) si cambió;
+  `pointerup`, `pointercancel` y `lostpointercapture` cancelan el cuadro
+  pendiente y aplican el último. `onMouseDown` con `preventDefault`: no le
+  roba el foco al marco ni empieza a seleccionar texto. La manija vive en el
+  `<thead>`: ni el arrastre ni el doble clic tocan la selección ni el
+  scroll.
 - **El ancho NO recalcula celdas**: `cuadriculaHoja` se partió. La parte
   barata (anchos ⇒ `leftPx` de lo inmovilizado y `anchoTablaPx`) es
   `acomodarColumnas`, FUENTE ÚNICA de `cuadriculaHoja` y de
@@ -6918,11 +6921,9 @@ las celdas NO cambian.
   MISMA vista. En el componente `vistaBase = useMemo(cuadriculaHoja…, [hoja,
   libro])` y `vista = useMemo(aplicarAnchos(vistaBase, anchosHoja), …)`:
   `geometriaCelda`, `scrollParaVerCelda` y `filasPorPagina` leen los anchos
-  nuevos. Ojo: React sí vuelve a pintar la tabla en cada cuadro del arrastre
-  (uno por cuadro, no por evento); memoizar el `<tbody>` pediría un
-  `seleccionar` estable (ref al día o delegación de clics) y tocar el
-  contrato de «El marco sigue a la selección». Queda para si en QA el
-  arrastre se siente pesado en la hoja más grande.
+  nuevos. Y desde la revisión del mismo día las filas del cuerpo son `memo`
+  con el clic delegado: un cuadro del arrastre ya no repinta las celdas (ver
+  «Revisión»).
 - **Estado**: `anchosManuales` en `useState` (ningún efecto), llave
   `claveAnchosHoja(claveAnchos, hoja.nombre)` ⇒ `{ [c]: px }`. Prop ADITIVA
   `claveAnchos` (default `""`); la página pasa `claveAnchosVistaBalance(destino)`
@@ -6957,16 +6958,113 @@ las celdas NO cambian.
   página; CSS: la manija absoluta dentro del sticky, ningún `<th>` con otro
   `position`, la clase del arrastre al final). Las dos pruebas de letras que
   exigían `>A</th>` ahora exigen la letra seguida SOLO de su manija; las de
-  celdas no cambiaron.
-- **Pendiente**: sin QA en navegador (vitest sin DOM). En
+  celdas no cambiaron. La revisión sumó las suyas (ver abajo).
+- **Revisión (14-oct-2026, mismo día: tres hallazgos)**:
+  1. *Filas inmovilizadas que se enciman.* En una tabla CSS el alto del
+     `<tr>` es un MÍNIMO: una celda con ajuste (`wr`) que el navegador parte
+     en más renglones agranda su fila, pero el `top` sticky de las fijas de
+     abajo sale de los altos NOMINALES y al desplazar se le pegaban ENCIMA (el
+     «escalón» otra vez). Ya pasaba con los anchos del libro —en «cobranza»
+     la fila 4 medía 72 px de 40 en Chrome con Arial y la 5 le tapaba 32 px—
+     y la manija lo agravaba (A a 60 px: 108 px y 68 tapados). **INVARIANTE:
+     una fila inmovilizada con OTRA fija debajo nunca crece, haga lo que haga
+     el operador.** `cuadriculaHoja` da a cada celda `altoRecortePx`
+     (`altoRecorteCeldaPx`: ajuste + texto + fila fija con otra fija debajo
+     de su span ⇒ el alto del span menos sus bordes de arriba y de abajo,
+     `GROSOR_BORDE_CELDA_PX`; `.xl-celda` no tiene relleno vertical, y una
+     prueba del CSS lo vigila) y el texto va en `<div class="xl-recorte">`
+     con `estiloRecorteCss`: `max-height: max(round(down, Npx, 1lh),
+     min(Npx, 1lh))`, renglones COMPLETOS con el interlineado real (sin la
+     tajada del renglón que no cabe) y `.xl-recorte { display: block;
+     overflow: hidden }`. Como Excel con una fila de alto fijo, se recorta:
+     mientras cabe, el bloque mide su texto y la alineación vertical de la
+     celda lo acomoda como siempre; si no cabe, se ven los PRIMEROS renglones
+     (Excel, centrado, enseña los de en medio; aquí manda el arranque del
+     encabezado y la manija o el doble clic lo dejan leer completo). La
+     ÚLTIMA fija NO se recorta: nada fijo se le encima y recortarla quitaría
+     renglones que hoy se leen («HORAS\nVOLADAS» de «RESUMEN flota», alto
+     automático que Excel también agranda). Solo cambia el marcado de esas
+     celdas (hoy, los encabezados de la fila 4 de «cobranza», «combustible»,
+     «otros gastos», «repartidos a aviones» y «otros ingresos aviones»);
+     `desbordaTexto` no se toca (una celda `wr` nunca desborda). Verificado en
+     Chrome headless con el libro mensual REAL de pyservices: «cobranza» fila
+     4 = 40/40 px con los anchos del libro y con A a 60 px; «otros gastos»
+     fila 4 = 20/20 con B a 80 px; ninguna fija se les encima al desplazar.
+     Queda, preexistente y no lo causa el operador: la fila 1 del título (14
+     pt en una fila de 15 pt) mide 23.4 px y al desplazar la 2 le tapa 3.4 px
+     de los rasgos de abajo (salida: que pyservices le dé alto a esa fila); y
+     la ÚLTIMA fija y las que se desplazan pueden crecer («El marco sigue a la
+     selección → Pendientes»).
+  2. *El cuerpo se repintaba en cada cuadro del arrastre.* Ahora cada fila es
+     `FilaHoja` (memo) y pinta sus celdas en DOS tramos `TramoFila` (memo):
+     el de las columnas inmovilizadas (siempre las primeras) y el de las que
+     se desplazan, que recibe `SIN_FIJAS`. Comparan la `fila` por identidad
+     (`aplicarAnchos` la reusa), la columna seleccionada de ESA fila y el
+     `left` de las fijas por VALOR (`mismasColumnasFijas`, PURO; `fijas =
+     useMemo(vista.columnas.filter(fija), [vista])`). Sin manejadores en las
+     filas: el clic se DELEGA en el `<tbody>` (`alClicCuerpo`: el `<td>` más
+     cercano dentro del cuerpo, su `data-ref` ⇒ `coordenadaDeReferencia`,
+     PURO, la inversa de `referenciaCelda`) y va por `seleccionar` con la
+     `vista` de ESE render; un `onClick` memorizado por celda movería el
+     marco con los anchos viejos. Medido en Chrome headless con el libro
+     mensual real («reporte horas FLOTA»: 100 vuelos = 5,169 `<td>`, 200 =
+     9,769): un re-render de `LibroExcel` que no toca filas pasó de 5.4–10.5
+     ms a 0.3–0.7 ms; arrastrar F deja 0 mutaciones en el `<tbody>` (antes
+     cada `<td>` recibía estilo nuevo y `onclick`) y el cuadro queda en lo que
+     cuesta el layout de la tabla (la línea base del DOM solo); arrastrar A
+     (fija, con B y C a su derecha) repinta SOLO las celdas fijas (su
+     `left`). La otra opción del hallazgo —`left: var(--xl-left-*)` con las
+     variables en la `<table>`— se MIDIÓ y se descartó: cambiar una variable
+     heredada recalcula el estilo de toda la tabla, 19–31 ms de estilo +
+     layout por cuadro contra 9.7–10.7 ms de escribir el `left` de las 414
+     celdas fijas. Mover la selección repinta solo los tramos que la tocan
+     (antes, la tabla entera por tecla). El marcado no cambia.
+  3. *Tope contra el marco.* Con el puntero capturado, soltar fuera del marco
+     dejaba una columna INMOVILIZADA de hasta 1,000 px: su manija fuera de
+     alcance, toda la zona que se desplaza tapada y el marco sin seguir a →
+     (`ejeParaVer` no se mueve con lo fijo más ancho que el marco); solo se
+     salía con F5. `topeAnchoColumnaPx(vista, c, clientWidth)` (PURO): una
+     fija llega a lo sumo a `clientWidth` − numeración − las OTRAS fijas −
+     `ANCHO_LIBRE_MINIMO_PX` (64 = una columna de Excel por omisión), entre
+     mínimo y tope; una que se desplaza o un marco sin medidas, el tope de
+     siempre (su manija vuelve al desplazar). `limitesArrastre` (PURO, medido
+     UNA vez al empezar con `getBoundingClientRect().left`, `clientLeft` y
+     `clientWidth`): la x cuenta hasta el borde derecho VISIBLE del marco
+     menos `MARGEN_ARRASTRE_MARCO_PX` (8, la manija) y el ancho hasta el
+     tope; `anchoArrastrePx(…, limites)` nunca angosta por sí solo (agarrada
+     pegada al borde, o ya más ancha que el tope: solo se puede angostar). El
+     doble clic: `anchoAutoajustePx(medidas, topeAnchoColumnaPx(…))`.
+     Verificado en Chrome: marco de 1,045 px (laptop de 1366), B arrastrada
+     2,000 px ⇒ 575 px, lo fijo = 981 y quedan 64 libres con su manija a la
+     vista; doble clic en C con un texto larguísimo ⇒ no pasa del tope; F (se
+     desplaza) arrastrada 3,000 px ⇒ su manija se queda 4 px dentro del
+     borde. Queda: si el marco se ACHICA después (salir de pantalla completa
+     tras ensanchar una fija, achicar la ventana, zoom), lo fijo puede volver
+     a llenarlo; salida: pantalla completa otra vez (o alejar el zoom) y
+     angostarla, o recargar.
+  Pruebas: `lib/admin/__tests__/libro-excel.test.ts` (`altoRecortePx`: span,
+  bordes, combinada vertical, sin ajuste/texto, la última fija, un span que
+  llega a ella, las que se desplazan, que un ancho no lo cambia;
+  `estiloRecorteCss`; `coordenadaDeReferencia` ida y vuelta y entradas
+  malas; `mismasColumnasFijas`; `topeAnchoColumnaPx` con la PROPIEDAD de que
+  lo fijo deja siempre la zona libre y el marco sigue a la selección;
+  `limitesArrastre`; `anchoArrastrePx` y `anchoAutoajustePx` con límites) y
+  `components/admin/reportes/__tests__/libro-excel.test.tsx` (marcado del
+  recorte —y que el libro de las demás pruebas no lleva ninguno—, el clic
+  delegado, las filas memo en dos tramos sin manejadores y un solo `<td>` en
+  el fuente, el tope en el doble clic y el arrastre, el CSS del recorte y la
+  guardia de las cuentas de bordes).
+- **Pendiente**: QA a mano en el panel (lo de arriba se verificó en Chrome
+  headless con libros reales, no en `/admin`). En
   `/admin/reportes/balance?modo=general`, pestaña «otros movimientos»: doble
   clic en el borde derecho de la F ⇒ se lee el concepto completo; arrastrar
-  la manija de una columna inmovilizada ⇒ las fijas siguen pegadas y el
-  marco sigue a la selección; doble clic en una columna vacía ⇒ ancho del
-  libro; «Actualizar datos» y cambiar de hoja ⇒ los anchos se quedan; ir al
-  balance de un avión ⇒ los del libro; el arrastre fluido en la hoja más
-  grande. Angostar una columna con texto ajustado (`wr`) puede crecer filas
-  por encima del alto NOMINAL (ver abajo).
+  la manija de una columna inmovilizada ⇒ las fijas siguen pegadas, el marco
+  sigue a la selección y la fija no pasa del borde; doble clic en una
+  columna vacía ⇒ ancho del libro; «Actualizar datos» y cambiar de hoja ⇒
+  los anchos se quedan; ir al balance de un avión ⇒ los del libro; en
+  «cobranza», bajar con la rueda ⇒ la fila 5 no tapa los encabezados de la
+  4; el arrastre fluido en la hoja más grande, también en las PC de la
+  oficina.
 
 ### El marco sigue a la selección (13-oct-2026)
 
@@ -7004,8 +7102,11 @@ cambiaba `seleccion`; nada movía el marco. Solo panel.
   de `html` y no se hereda). La usan `onKeyDown` (flechas, con el
   `preventDefault` de siempre y el `seleccion` del render en vez del updater
   funcional: keydown es un evento discreto y React lo procesa síncrono) y el
-  `onClick` de cada `<td>` (un clic en una celda medio tapada también la
-  enseña completa, como Excel). **Va en el manejador y NO en un efecto a
+  clic en una celda (un clic en una celda medio tapada también la enseña
+  completa, como Excel), DELEGADO en el `<tbody>` desde la revisión del
+  14-oct-2026 (`alClicCuerpo` + `coordenadaDeReferencia`: las filas son memo
+  y no llevan manejadores; ver «Ajustar el ancho de las columnas…»). **Va en
+  el manejador y NO en un efecto a
   propósito**: el `router.refresh()` de `RefreshOnFocus` recrea
   `libro`/`vista` y un efecto con `[vista, seleccion]` volvería a saltar a
   la celda activa aunque el operador hubiera hecho scroll con la rueda
@@ -7049,10 +7150,15 @@ cambiaba `seleccion`; nada movía el marco. Solo panel.
   conteo de caracteres; Carlito/Arial son más anchas que Calibri) agranda la
   fila y corre las siguientes: `geometriaCelda` y los `topPx` de lo
   inmovilizado quedan cortos y, al bajar con ↓, la celda puede quedar
-  recortada por abajo. Envolver el contenido del `<td>` en un bloque de alto
-  fijo cambia el marcado estático y rompe `desbordaTexto`; la salida barata
-  es que pyservices escriba SIEMPRE el alto o lo mida mejor (decisión
-  aparte, no de este lote). Sin QA visual en navegador (vitest sin DOM): en
+  recortada por abajo. Desde el 14-oct-2026 una fila inmovilizada con OTRA
+  fija debajo ya no crece (su texto con ajuste va en `.xl-recorte`, ver
+  «Ajustar el ancho de las columnas…»): las fijas ya no se enciman; siguen
+  pudiendo crecer la ÚLTIMA fija y las que se desplazan. Envolver el
+  contenido de TODA celda en un bloque de alto fijo rompería `desbordaTexto`
+  (el recorte solo envuelve celdas con ajuste, que nunca desbordan); la
+  salida barata es que pyservices escriba SIEMPRE el alto o lo mida mejor
+  (decisión aparte, no de este lote). Sin QA visual en navegador (vitest sin
+  DOM): en
   `/admin/reportes/balance` mantener → y ↓ pulsadas y comprobar que el
   contorno nunca se mete bajo numeración/letras ni bajo lo inmovilizado (ni
   se «salta» celdas con la tecla mantenida); PageDown dos veces y ↓ sigue

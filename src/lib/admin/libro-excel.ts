@@ -54,6 +54,19 @@ export function referenciaCelda(r: number, c: number): string {
   return `${letraColumna(c)}${r}`;
 }
 
+/**
+ * «B7» ⇒ `{ r: 7, c: 2 }`: la inversa de `referenciaCelda`. El clic en una
+ * celda se DELEGA en el `<tbody>` y llega con el `data-ref` de su `<td>`
+ * (revisión 14-oct-2026). Lo que no es una referencia ⇒ null.
+ */
+export function coordenadaDeReferencia(ref: string): { r: number; c: number } | null {
+  const m = /^([A-Z]+)([1-9]\d*)$/.exec(ref);
+  if (!m) return null;
+  let c = 0;
+  for (const letra of m[1]) c = c * 26 + (letra.charCodeAt(0) - 64);
+  return { r: Number(m[2]), c };
+}
+
 export function anchoColumnaPx(ancho: number): number {
   return Math.max(0, Math.round(ancho * PX_POR_CARACTER + PX_MARGEN_COLUMNA));
 }
@@ -83,6 +96,12 @@ export interface CeldaVista {
   estilo: LibroExcelEstilo | null;
   /** Texto sin ajuste que, como en Excel, se deja asomar sobre la celda vacía de la derecha. */
   desborda: boolean;
+  /**
+   * Alto máximo (px) del TEXTO de una celda con ajuste (`wr`) en una fila
+   * INMOVILIZADA con otra fija debajo, que no puede crecer (revisión
+   * 14-oct-2026, `altoRecorteCeldaPx`); null = sin recorte, el texto tal cual.
+   */
+  altoRecortePx: number | null;
 }
 
 export interface FilaVista {
@@ -136,6 +155,49 @@ export function desbordaTexto(
 }
 
 /**
+ * Grosor de un borde de celda pintado (px): el de `BORDE_CELDA` y el de abajo
+ * que `.xl-celda` (styles/libro-excel.css) le pone a TODA celda (transparente
+ * o el de la cuadrícula). `.xl-celda` no tiene relleno vertical.
+ */
+export const GROSOR_BORDE_CELDA_PX = 1;
+
+/**
+ * Alto máximo del TEXTO de una celda con ajuste (`wr`) en una fila
+ * INMOVILIZADA que tiene OTRA fila inmovilizada debajo de su span (revisión
+ * 14-oct-2026): el alto de las filas de su span menos sus bordes de arriba y
+ * de abajo; `null` si no aplica (fila que se desplaza, la última fija, sin
+ * ajuste o sin texto).
+ *
+ * Por qué: en una tabla CSS el alto del `<tr>` es un MÍNIMO y una celda con
+ * ajuste que el navegador parte en más renglones de los que caben agranda su
+ * fila, pero el `top` sticky de las filas fijas de abajo sale de los altos
+ * NOMINALES (`topPx`): al desplazar se le pegaban ENCIMA y le tapaban la
+ * parte de abajo (en «cobranza», «TOTAL COTIZACIÓN / MXN (c/extras)» de la
+ * fila 4 ya pasaba con los anchos del libro, y angostar una columna con la
+ * manija lo empeoraba). INVARIANTE: una fila inmovilizada con otra fija
+ * debajo NUNCA crece, haga lo que haga el operador; como Excel con una fila
+ * de alto fijo, su texto se RECORTA (`estiloRecorteCss`). La ÚLTIMA fija no
+ * se recorta: nada fijo se le encima y recortarla quitaría renglones que hoy
+ * se leen (los encabezados «HORAS\nVOLADAS» de alto automático, que Excel
+ * también agranda); si crece, solo queda corto el `ocupadoArriba` de
+ * `scrollParaVerCelda`, como con cualquier fila que crece (pendiente de
+ * siempre, «El marco sigue a la selección»).
+ */
+function altoRecorteCeldaPx(
+  filas: ReadonlyArray<Pick<FilaVista, "altoPx" | "fija">>,
+  iFila: number,
+  rowSpan: number,
+  celda: LibroExcelCelda | null,
+  estilo: LibroExcelEstilo | null,
+): number | null {
+  const span = Math.max(1, rowSpan);
+  if (!filas[iFila]?.fija || !filas[iFila + span]?.fija || !estilo?.wr || !celda?.t) return null;
+  const alto = filas.slice(iFila, iFila + span).reduce((acc, f) => acc + f.altoPx, 0);
+  const bordes = GROSOR_BORDE_CELDA_PX * (estilo.bd?.includes("t") ? 2 : 1);
+  return Math.max(0, alto - bordes);
+}
+
+/**
  * La parte BARATA de la cuadrícula (14-oct-2026): el `leftPx` de las columnas
  * inmovilizadas (acumula los anchos desde la numeración) y el ancho de la
  * tabla. FUENTE ÚNICA para `cuadriculaHoja` (anchos del libro) y
@@ -159,8 +221,11 @@ function acomodarColumnas(
  * no se pintan, y una combinada que las cruza se encoge a lo visible), con
  * las combinadas resueltas en `colSpan`/`rowSpan` sobre su primera celda
  * visible y los desplazamientos de los paneles inmovilizados. Es la parte
- * CARA (celdas, combinadas, desbordes): los anchos que ajusta el operador NO
- * pasan por aquí, van por `aplicarAnchos`, que reusa las filas.
+ * CARA (celdas, combinadas, desbordes, recortes): los anchos que ajusta el
+ * operador NO pasan por aquí, van por `aplicarAnchos`, que reusa las filas.
+ * El recorte de una celda con ajuste en una fila inmovilizada (con otra fija
+ * debajo) solo depende de los altos (`altoRecorteCeldaPx`): un ancho nuevo no
+ * lo cambia.
  */
 export function cuadriculaHoja(hoja: LibroExcelHoja, libro: DimensionesLibro): HojaVista {
   const maxCol = Math.max(hoja.max_col, COLUMNAS_MINIMAS);
@@ -210,7 +275,7 @@ export function cuadriculaHoja(hoja: LibroExcelHoja, libro: DimensionesLibro): H
     anclas.set(ancla, { rowSpan: filas.length, colSpan: cols.length, origen: clave(m.r1, m.c1) });
   }
 
-  const filas: FilaVista[] = filasVisibles.map((fila) => {
+  const filas: FilaVista[] = filasVisibles.map((fila, iFila) => {
     const celdas: CeldaVista[] = [];
     for (let i = 0; i < columnas.length; i++) {
       const c = columnas[i].c;
@@ -225,14 +290,16 @@ export function cuadriculaHoja(hoja: LibroExcelHoja, libro: DimensionesLibro): H
         kSig !== null &&
         (cubiertas.has(kSig) || anclas.has(kSig) || tieneContenido(porCoord.get(kSig)));
       const colSpan = ancla?.colSpan ?? 1;
+      const rowSpan = ancla?.rowSpan ?? 1;
       celdas.push({
         r: fila.r,
         c,
         colSpan,
-        rowSpan: ancla?.rowSpan ?? 1,
+        rowSpan,
         celda,
         estilo,
         desborda: desbordaTexto(celda, estilo, colSpan, siguienteOcupada),
+        altoRecortePx: altoRecorteCeldaPx(filasVisibles, iFila, rowSpan, celda, estilo),
       });
     }
     return { ...fila, celdas };
@@ -304,6 +371,24 @@ export function estiloCeldaCss(
     if (estilo.bd.includes("b")) css.borderBottom = BORDE_CELDA;
   }
   return css;
+}
+
+/**
+ * El bloque que recorta el texto de una celda con ajuste en una fila
+ * inmovilizada con otra fija debajo (`altoRecortePx`, revisión 14-oct-2026;
+ * el `overflow: hidden` lo pone `.xl-recorte`). Se ven RENGLONES COMPLETOS:
+ * el alto se redondea hacia abajo a renglones enteros con el interlineado
+ * REAL de la celda (`1lh`), sin asomar la tajada de arriba del renglón que no
+ * cabe; si ni un renglón cabe, el alto disponible. Mientras el texto cabe, el
+ * bloque mide lo que su texto y la celda lo acomoda con su alineación
+ * vertical de siempre; si no cabe, se ven los PRIMEROS renglones (Excel, con
+ * la alineación al centro, enseña los de en medio: aquí manda leer el
+ * arranque del encabezado, y la manija o el doble clic dejan leerlo
+ * completo).
+ */
+export function estiloRecorteCss(altoPx: number): CSSProperties {
+  const alto = `${Math.max(0, altoPx)}px`;
+  return { maxHeight: `max(round(down, ${alto}, 1lh), min(${alto}, 1lh))` };
 }
 
 /** Lo que Excel enseña en la barra de fórmulas: la fórmula si la hay; si no, el valor crudo. */
@@ -639,8 +724,12 @@ export type AnchosColumnas = Readonly<Partial<Record<number, number>>>;
 export const HOLGURA_AUTOAJUSTE_PX = 5;
 /** Tope de una columna ajustada: un texto larguísimo no se lleva la hoja entera. */
 export const ANCHO_MAXIMO_COLUMNA_PX = 1000;
-/** Mínimo: la columna nunca desaparece y su manija siempre se puede volver a agarrar. */
+/** Mínimo: la columna nunca desaparece y su manija sigue a la vista (que lo inmovilizado no la saque del marco lo cuida `topeAnchoColumnaPx`). */
 export const ANCHO_MINIMO_COLUMNA_PX = 12;
+/** Lo que la zona que se desplaza conserva SIEMPRE a la vista junto a lo inmovilizado: una columna de Excel por omisión (8.43 caracteres = 64 px). */
+export const ANCHO_LIBRE_MINIMO_PX = 64;
+/** Al arrastrar, el puntero cuenta hasta este tanto antes del borde derecho visible del marco: el ancho de la manija (`.xl-manija`), así la manija entera sigue a la vista. */
+export const MARGEN_ARRASTRE_MARCO_PX = 8;
 
 /** Un ancho (finito) en px enteros, entre el mínimo y el tope. */
 export function limitarAnchoColumnaPx(px: number): number {
@@ -669,6 +758,76 @@ export function aplicarAnchos(vista: HojaVista, anchos: AnchosColumnas | null | 
     return { ...col, anchoPx };
   });
   return cambia ? { ...vista, ...acomodarColumnas(columnas) } : vista;
+}
+
+/**
+ * ¿Las mismas columnas inmovilizadas con el mismo `left`? (revisión
+ * 14-oct-2026). Las filas del cuerpo son `memo` y es lo único de las columnas
+ * que su marcado lee: arrastrar la manija de una columna que se desplaza (o
+ * de la ÚLTIMA fija) no lo cambia y ninguna celda se vuelve a pintar;
+ * arrastrar una fija con otras a su derecha sí, y entonces solo se repinta el
+ * tramo de las celdas fijas de cada fila (cambia su `left`).
+ */
+export function mismasColumnasFijas(
+  a: ReadonlyArray<Pick<ColumnaVista, "c" | "leftPx">>,
+  b: ReadonlyArray<Pick<ColumnaVista, "c" | "leftPx">>,
+): boolean {
+  return a === b || (a.length === b.length && a.every((x, i) => x.c === b[i].c && x.leftPx === b[i].leftPx));
+}
+
+/**
+ * El ancho máximo de la columna `c` en un marco de `clientWidth` px
+ * (revisión 14-oct-2026). Una columna INMOVILIZADA no puede llenar el marco:
+ * lo fijo (numeración + todas las inmovilizadas) deja libres al menos
+ * `ANCHO_LIBRE_MINIMO_PX`. Sin este tope, ensanchar una fija (soltando fuera
+ * del marco con el puntero capturado, o con el doble clic) la dejaba con su
+ * manija fuera de alcance, tapando toda la zona que se desplaza, y el marco
+ * ya no seguía a la selección: solo se salía con F5. Una columna que se
+ * desplaza conserva el tope de siempre (su manija vuelve a la vista al
+ * desplazar el marco) y un marco sin medidas (SSR, `clientWidth` 0) no limita
+ * nada. Nunca baja del mínimo.
+ */
+export function topeAnchoColumnaPx(
+  vista: Pick<HojaVista, "columnas">,
+  c: number,
+  clientWidth: number,
+): number {
+  const col = vista.columnas.find((x) => x.c === c);
+  if (!col?.fija || !(clientWidth > 0)) return ANCHO_MAXIMO_COLUMNA_PX;
+  const otrasFijas = vista.columnas
+    .filter((x) => x.fija && x.c !== c)
+    .reduce((acc, x) => acc + x.anchoPx, 0);
+  const libre = clientWidth - ANCHO_NUMERACION_PX - otrasFijas - ANCHO_LIBRE_MINIMO_PX;
+  return Math.min(ANCHO_MAXIMO_COLUMNA_PX, Math.max(ANCHO_MINIMO_COLUMNA_PX, Math.floor(libre)));
+}
+
+/** Hasta dónde cuenta un arrastre (`limitesArrastre`): la x del puntero y el ancho. */
+export interface LimitesArrastre {
+  xMaximo: number;
+  topePx: number;
+}
+
+/**
+ * Los límites de un arrastre, medidos UNA vez al empezar (revisión
+ * 14-oct-2026): la x del puntero cuenta hasta el borde derecho VISIBLE del
+ * marco menos `MARGEN_ARRASTRE_MARCO_PX` (con el puntero capturado se puede
+ * soltar fuera del marco y la columna ya no crece por allá) y el ancho, hasta
+ * `topeAnchoColumnaPx`. `izquierdaPx` es el `getBoundingClientRect().left`
+ * del marco; `clientLeft`/`clientWidth`, las del DOM (sin la barra de
+ * desplazamiento). Sin medidas (SSR) no limita.
+ */
+export function limitesArrastre(
+  vista: Pick<HojaVista, "columnas">,
+  c: number,
+  marco: { izquierdaPx: number; clientLeft: number; clientWidth: number },
+): LimitesArrastre {
+  if (!(marco.clientWidth > 0)) {
+    return { xMaximo: Number.POSITIVE_INFINITY, topePx: ANCHO_MAXIMO_COLUMNA_PX };
+  }
+  return {
+    xMaximo: marco.izquierdaPx + marco.clientLeft + marco.clientWidth - MARGEN_ARRASTRE_MARCO_PX,
+    topePx: topeAnchoColumnaPx(vista, c, marco.clientWidth),
+  };
 }
 
 /** Los anchos de una hoja con el de la columna `c` puesto, o quitado con `null` (vuelve al ancho del libro). Nunca muta. */
@@ -743,11 +902,16 @@ export interface MedidaCeldaAutoajuste {
 /**
  * La regla del autoajuste (doble clic en la manija), de medidas a px: el
  * renglón más largo de cada celda más su relleno y borde; el máximo de la
- * columna, más la holgura, hacia arriba y entre el mínimo y el tope. Sin
- * ninguna celda con texto medible ⇒ `null`: la columna vuelve al ancho
- * original del libro. Las medidas no finitas se ignoran.
+ * columna, más la holgura, hacia arriba y entre el mínimo y el tope
+ * (`topePx`: el de `topeAnchoColumnaPx`, así una inmovilizada nunca llena el
+ * marco; sin él, `ANCHO_MAXIMO_COLUMNA_PX`). Sin ninguna celda con texto
+ * medible ⇒ `null`: la columna vuelve al ancho original del libro. Las
+ * medidas no finitas se ignoran.
  */
-export function anchoAutoajustePx(medidas: readonly MedidaCeldaAutoajuste[]): number | null {
+export function anchoAutoajustePx(
+  medidas: readonly MedidaCeldaAutoajuste[],
+  topePx: number = ANCHO_MAXIMO_COLUMNA_PX,
+): number | null {
   let necesario = 0;
   for (const m of medidas) {
     const texto = m.renglonesPx.reduce((max, px) => (Number.isFinite(px) && px > max ? px : max), 0);
@@ -755,12 +919,28 @@ export function anchoAutoajustePx(medidas: readonly MedidaCeldaAutoajuste[]): nu
     const caja = Number.isFinite(m.cajaPx) && m.cajaPx > 0 ? m.cajaPx : 0;
     necesario = Math.max(necesario, texto + caja);
   }
-  return necesario > 0 ? limitarAnchoColumnaPx(Math.ceil(necesario + HOLGURA_AUTOAJUSTE_PX)) : null;
+  if (necesario <= 0) return null;
+  const tope = Number.isFinite(topePx) ? topePx : ANCHO_MAXIMO_COLUMNA_PX;
+  return limitarAnchoColumnaPx(Math.min(Math.ceil(necesario + HOLGURA_AUTOAJUSTE_PX), tope));
 }
 
-/** El ancho mientras se arrastra la manija: el de antes más lo que se movió el puntero, entero y entre el mínimo y el tope. */
-export function anchoArrastrePx(anchoInicialPx: number, xInicial: number, x: number): number {
-  return limitarAnchoColumnaPx(anchoInicialPx + (x - xInicial));
+/**
+ * El ancho mientras se arrastra la manija: el de antes más lo que se movió el
+ * puntero, entero y entre el mínimo y el tope. Con `limites`
+ * (`limitesArrastre`) la x no pasa de `xMaximo` ni el ancho de `topePx`, y
+ * ninguno de los dos ANGOSTA la columna por sí solo: si al empezar ya estaba
+ * más allá (la manija se agarró pegada al borde, o lo fijo ya llenaba el
+ * marco), solo se puede angostar.
+ */
+export function anchoArrastrePx(
+  anchoInicialPx: number,
+  xInicial: number,
+  x: number,
+  limites?: Partial<LimitesArrastre>,
+): number {
+  const xMaximo = Math.max(limites?.xMaximo ?? Number.POSITIVE_INFINITY, xInicial);
+  const tope = Math.max(limites?.topePx ?? ANCHO_MAXIMO_COLUMNA_PX, anchoInicialPx);
+  return limitarAnchoColumnaPx(Math.min(anchoInicialPx + (Math.min(x, xMaximo) - xInicial), tope));
 }
 
 /**

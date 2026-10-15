@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -9,6 +10,7 @@ import {
   useSyncExternalStore,
   useTransition,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -39,20 +41,27 @@ import {
   claveAnchosHoja,
   conAnchoColumna,
   contenidoBarraFormulas,
+  coordenadaDeReferencia,
   cuadriculaHoja,
   desplazarSeleccion,
   esTeclaNavegacionHoja,
   estiloCeldaCss,
+  estiloRecorteCss,
   filasPorPagina,
   fuenteCanvas,
+  limitesArrastre,
+  mismasColumnasFijas,
   nombreManijaColumna,
   referenciaCelda,
   resolverHojaIdx,
   scrollParaVerCelda,
   textoHojas,
   tituloCelda,
+  topeAnchoColumnaPx,
   type AnchosColumnas,
   type ColumnaVista,
+  type FilaVista,
+  type LimitesArrastre,
 } from "@/lib/admin/libro-excel";
 import {
   ETIQUETA_QUITAR_FRANJA_GASTO,
@@ -84,6 +93,8 @@ interface ArrastreColumna {
   pointerId: number;
   xInicial: number;
   anchoInicialPx: number;
+  /** Hasta dónde cuenta este arrastre (`limitesArrastre`, medidos al empezar). */
+  limites?: LimitesArrastre;
   /** La última x del puntero (la aplica el siguiente cuadro). */
   x: number;
   /** El ancho ya aplicado: si el cuadro da el mismo, no se re-pinta. */
@@ -156,6 +167,116 @@ const soportaFullscreen = () =>
  * existe (iPhone) React lo retira al hidratar con el snapshot del navegador.
  */
 const soportaFullscreenServidor = () => true;
+
+interface PropsFilaHoja {
+  fila: FilaVista;
+  /** Las columnas INMOVILIZADAS de la vista de hoy, con su `left`. */
+  fijas: readonly ColumnaVista[];
+  /** La columna de la celda seleccionada si está en ESTA fila; si no, null. */
+  cSeleccionada: number | null;
+}
+
+interface PropsTramoFila extends PropsFilaHoja {
+  /** El tramo de `fila.celdas` que pinta: [desde, hasta). */
+  desde: number;
+  hasta: number;
+}
+
+/** Las celdas que se desplazan no leen ningún `left`: su tramo recibe siempre ESTA lista. */
+const SIN_FIJAS: readonly ColumnaVista[] = [];
+
+const mismasPropsFila = (antes: PropsFilaHoja, ahora: PropsFilaHoja) =>
+  antes.fila === ahora.fila &&
+  antes.cSeleccionada === ahora.cSeleccionada &&
+  mismasColumnasFijas(antes.fijas, ahora.fijas);
+
+/**
+ * Un tramo de celdas de una fila (ver `FilaHoja`), en `memo`. Su marcado es
+ * el de siempre, salvo el bloque `.xl-recorte` del texto con ajuste en una
+ * fila inmovilizada con otra fija debajo (`altoRecortePx`).
+ */
+const TramoFila = memo(
+  function TramoFila({ fila, desde, hasta, fijas, cSeleccionada }: PropsTramoFila) {
+    return fila.celdas.slice(desde, hasta).map((cv) => {
+      const fija = fijas.find((x) => x.c === cv.c);
+      const texto = cv.celda?.t ?? "";
+      return (
+        <td
+          key={cv.c}
+          colSpan={cv.colSpan > 1 ? cv.colSpan : undefined}
+          rowSpan={cv.rowSpan > 1 ? cv.rowSpan : undefined}
+          className={cn(
+            "xl-celda",
+            fila.fija && "xl-fija-fila",
+            fija && "xl-fija-col",
+            cSeleccionada === cv.c && "xl-seleccionada",
+            cv.celda?.n && "xl-con-nota",
+          )}
+          style={{
+            ...estiloCeldaCss(cv.celda, cv.estilo, { desborda: cv.desborda }),
+            ...(fila.fija ? { top: fila.topPx ?? undefined } : null),
+            ...(fija ? { left: fija.leftPx ?? undefined } : null),
+          }}
+          title={tituloCelda(cv.celda)}
+          data-ref={referenciaCelda(cv.r, cv.c)}
+          data-formula={cv.celda?.f}
+        >
+          {cv.altoRecortePx === null ? (
+            texto
+          ) : (
+            // Ajuste en una fila inmovilizada con otra fija debajo: el texto
+            // se recorta en vez de agrandar la fila (las fijas de abajo se le
+            // encimarían al desplazar).
+            <div className="xl-recorte" style={estiloRecorteCss(cv.altoRecortePx)}>
+              {texto}
+            </div>
+          )}
+        </td>
+      );
+    });
+  },
+  (antes, ahora) => antes.desde === ahora.desde && antes.hasta === ahora.hasta && mismasPropsFila(antes, ahora),
+);
+
+/**
+ * Las filas del cuerpo, en `memo` (revisión 14-oct-2026): cada cuadro de un
+ * arrastre de manija vuelve a pintar los `<col>` y las letras, NO las celdas.
+ * `aplicarAnchos` reusa la MISMA `fila`, y de las columnas una fila solo lee
+ * el `left` de las inmovilizadas, que se compara por valor
+ * (`mismasColumnasFijas`). Cada fila pinta sus celdas en DOS tramos memo: el
+ * de las columnas inmovilizadas (siempre las primeras) y el de las que se
+ * desplazan, que recibe `SIN_FIJAS`; así arrastrar una fija repinta solo las
+ * dos o tres celdas fijas de cada fila (su `left` cambia), nunca las miles
+ * que se desplazan, y mover la selección repinta solo los tramos que la
+ * tocan. Sin manejadores: el clic se delega en el `<tbody>` (`alClicCuerpo`),
+ * así ninguna función memorizada se queda con la `vista` de antes (el marco
+ * se movería con los anchos viejos).
+ */
+const FilaHoja = memo(function FilaHoja({ fila, fijas, cSeleccionada }: PropsFilaHoja) {
+  const primeraLibre = fila.celdas.findIndex((cv) => !fijas.some((x) => x.c === cv.c));
+  const nFijas = primeraLibre < 0 ? fila.celdas.length : primeraLibre;
+  const cFija = cSeleccionada !== null && fijas.some((x) => x.c === cSeleccionada) ? cSeleccionada : null;
+  return (
+    <tr style={{ height: fila.altoPx }}>
+      <th
+        scope="row"
+        className={cn(fila.fija && "xl-fija-fila")}
+        style={fila.fija ? { top: fila.topPx ?? undefined } : undefined}
+      >
+        {fila.r}
+      </th>
+      <TramoFila key="fijas" fila={fila} desde={0} hasta={nFijas} fijas={fijas} cSeleccionada={cFija} />
+      <TramoFila
+        key="libres"
+        fila={fila}
+        desde={nFijas}
+        hasta={fila.celdas.length}
+        fijas={SIN_FIJAS}
+        cSeleccionada={cFija === null ? cSeleccionada : null}
+      />
+    </tr>
+  );
+}, mismasPropsFila);
 
 /**
  * Un libro de Excel EN PANTALLA (12-oct-2026): barra de fórmulas (cuadro de
@@ -234,6 +355,9 @@ export function LibroExcel({
     () => (vistaBase ? aplicarAnchos(vistaBase, anchosHoja) : null),
     [vistaBase, anchosHoja],
   );
+  // Lo único que las filas (memo) leen de las columnas: las inmovilizadas de
+  // la vista de HOY, con su `left`.
+  const fijas = useMemo(() => vista?.columnas.filter((x) => x.fija) ?? [], [vista]);
 
   const celdaSeleccionada = useMemo(() => {
     if (!hoja || !seleccion) return null;
@@ -301,6 +425,15 @@ export function LibroExcel({
   const seleccionar = (sel: Seleccion) => {
     setSeleccion(sel);
     desplazarMarcoA(sel);
+  };
+  // El clic en una celda se DELEGA en el <tbody> (revisión 14-oct-2026): las
+  // filas son `memo` y no llevan manejadores. La celda sale del `data-ref` de
+  // su <td> y va por `seleccionar` —el mismo camino del teclado— con la
+  // `vista` de ESTE render.
+  const alClicCuerpo = (e: MouseEvent<HTMLTableSectionElement>) => {
+    const td = e.target instanceof Element ? e.target.closest("td") : null;
+    const sel = td && e.currentTarget.contains(td) ? coordenadaDeReferencia(td.dataset.ref ?? "") : null;
+    if (sel) seleccionar(sel);
   };
 
   // Efecto de LLEGADA (13-oct-2026, punto 5; la ÚNICA excepción documentada a
@@ -372,7 +505,8 @@ export function LibroExcel({
       return [{ renglonesPx: x.renglones.map((r) => ctx.measureText(r).width), cajaPx: cajaHorizontalPx(estilo) }];
     });
     // Sin contenido ⇒ null ⇒ la columna vuelve al ancho original del libro.
-    fijarAncho(c, anchoAutoajustePx(medidas));
+    // Una inmovilizada nunca llena el marco (`topeAnchoColumnaPx`).
+    fijarAncho(c, anchoAutoajustePx(medidas, topeAnchoColumnaPx(vista, c, marco.current?.clientWidth ?? 0)));
   };
 
   // Arrastre: pointer capture (el puntero puede salir de la manija y del
@@ -385,7 +519,7 @@ export function LibroExcel({
     const a = arrastre.current;
     if (!a) return;
     a.cuadro = null;
-    const px = anchoArrastrePx(a.anchoInicialPx, a.xInicial, a.x);
+    const px = anchoArrastrePx(a.anchoInicialPx, a.xInicial, a.x, a.limites);
     if (px === a.aplicadoPx) return;
     a.aplicadoPx = px;
     setRedimensionando(true);
@@ -394,11 +528,23 @@ export function LibroExcel({
   const empezarArrastre = (e: PointerEvent<HTMLButtonElement>, col: ColumnaVista) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    // Los límites se miden UNA vez, al empezar (`limitesArrastre`, puro): la x
+    // cuenta hasta el borde derecho visible del marco y una inmovilizada nunca
+    // lo llena, así su manija no se queda fuera de alcance.
+    const el = marco.current;
     arrastre.current = {
       c: col.c,
       pointerId: e.pointerId,
       xInicial: e.clientX,
       anchoInicialPx: col.anchoPx,
+      limites:
+        el && vista
+          ? limitesArrastre(vista, col.c, {
+              izquierdaPx: el.getBoundingClientRect().left,
+              clientLeft: el.clientLeft,
+              clientWidth: el.clientWidth,
+            })
+          : undefined,
       x: e.clientX,
       aplicadoPx: col.anchoPx,
       cuadro: null,
@@ -573,47 +719,16 @@ export function LibroExcel({
                 ))}
               </tr>
             </thead>
-            <tbody>
+            {/* Las filas son `memo` (`FilaHoja`): un arrastre de manija no
+                vuelve a pintar las celdas. El clic se delega aquí. */}
+            <tbody onClick={alClicCuerpo}>
               {vista.filas.map((fila) => (
-                <tr key={fila.r} style={{ height: fila.altoPx }}>
-                  <th
-                    scope="row"
-                    className={cn(fila.fija && "xl-fija-fila")}
-                    style={fila.fija ? { top: fila.topPx ?? undefined } : undefined}
-                  >
-                    {fila.r}
-                  </th>
-                  {fila.celdas.map((cv) => {
-                    const col = vista.columnas.find((x) => x.c === cv.c);
-                    const sel = seleccion?.r === cv.r && seleccion?.c === cv.c;
-                    const fijaCol = col?.fija ?? false;
-                    return (
-                      <td
-                        key={cv.c}
-                        colSpan={cv.colSpan > 1 ? cv.colSpan : undefined}
-                        rowSpan={cv.rowSpan > 1 ? cv.rowSpan : undefined}
-                        className={cn(
-                          "xl-celda",
-                          fila.fija && "xl-fija-fila",
-                          fijaCol && "xl-fija-col",
-                          sel && "xl-seleccionada",
-                          cv.celda?.n && "xl-con-nota",
-                        )}
-                        style={{
-                          ...estiloCeldaCss(cv.celda, cv.estilo, { desborda: cv.desborda }),
-                          ...(fila.fija ? { top: fila.topPx ?? undefined } : null),
-                          ...(fijaCol ? { left: col?.leftPx ?? undefined } : null),
-                        }}
-                        title={tituloCelda(cv.celda)}
-                        data-ref={referenciaCelda(cv.r, cv.c)}
-                        data-formula={cv.celda?.f}
-                        onClick={() => seleccionar({ r: cv.r, c: cv.c })}
-                      >
-                        {cv.celda?.t ?? ""}
-                      </td>
-                    );
-                  })}
-                </tr>
+                <FilaHoja
+                  key={fila.r}
+                  fila={fila}
+                  fijas={fijas}
+                  cSeleccionada={seleccion?.r === fila.r ? seleccion.c : null}
+                />
               ))}
             </tbody>
           </table>
