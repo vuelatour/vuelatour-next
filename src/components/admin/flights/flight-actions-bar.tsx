@@ -24,9 +24,20 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   completeFlightAction,
+  iniciarYCompletarVueloAction,
   startFlightAction,
   updatePermisoAction,
 } from "@/app/admin/flights/actions";
+import { esErrorTecnico, MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
+import {
+  ACCION_COMPLETAR_VUELO,
+  ACCION_INICIAR_Y_COMPLETAR,
+  DESCRIPCION_INICIAR_Y_COMPLETAR,
+  TOAST_VUELO_COMPLETADO,
+  descripcionCompletarConOmision,
+  tituloCompletarConOmision,
+  tituloIniciarYCompletar,
+} from "@/lib/admin/taco-omitido";
 import { CombinarVuelosDialog } from "./combinar-vuelos-dialog";
 import { CubrirExternoDialog } from "./cubrir-externo-dialog";
 import { FlightAssignSheet } from "./flight-assign-sheet";
@@ -64,6 +75,13 @@ interface FlightActionsBarProps {
   /** URL FIRMADA de la foto del plan de vuelo (bucket privado); null = sin foto. */
   planVueloUrl?: string | null;  /** Solo ADMIN puede borrar definitivamente un vuelo cancelado. */
   esAdmin?: boolean;
+  /**
+   * Tacómetro OMITIDO (15-oct-2026, API 0.0.81): `completableConOmision`
+   * (@/lib/admin/taco-omitido). Vuelo PROPIO con tramos omitidos y ninguna
+   * llegada exigible pendiente: «Completar vuelo» (EN_VUELO) o «Iniciar y
+   * completar» (nunca iniciado en la app). El vuelo no se completa solo.
+   */
+  omision?: { completable: boolean; requiereIniciar: boolean; omitidos: number };
 }
 
 export function FlightActionsBar({
@@ -75,6 +93,7 @@ export function FlightActionsBar({
   metodoCobroEditable,
   planVueloUrl,
   esAdmin = false,
+  omision,
 }: FlightActionsBarProps) {
   const router = useRouter();
   const [assignOpen, setAssignOpen] = useState(false);
@@ -83,8 +102,10 @@ export function FlightActionsBar({
   const [completeOpen, setCompleteOpen] = useState(false);
   const [externoOpen, setExternoOpen] = useState(false);
   const [combinarOpen, setCombinarOpen] = useState(false);
+  const [iniciarCompletarOpen, setIniciarCompletarOpen] = useState(false);
   const [starting, startStart] = useTransition();
   const [completing, startComplete] = useTransition();
+  const [iniciandoCompletando, startIniciarCompletar] = useTransition();
   const [permiso, startPermiso] = useTransition();
 
   // También en vuelos EXTERNOS: la oficina tramita el permiso de pista aunque
@@ -120,7 +141,15 @@ export function FlightActionsBar({
     (flight.estado === "RESERVA" ||
       flight.estado === "COTIZADO" ||
       flight.estado === "CONFIRMADO");
-  const canComplete = flight.es_externo && flight.estado === "EN_VUELO";
+  // Vuelo PROPIO cuyas lecturas faltantes están OMITIDAS por la oficina: el
+  // estado ya no se deriva solo (no hay llegada que capturar) y la oficina lo
+  // completa aquí (15-oct-2026). `complete()` del API valida igual.
+  const completarPorOmision =
+    !flight.es_externo && flight.estado === "EN_VUELO" && omision?.completable === true;
+  const iniciarYCompletar =
+    !flight.es_externo && omision?.requiereIniciar === true;
+  const canComplete =
+    (flight.es_externo && flight.estado === "EN_VUELO") || completarPorOmision;
   const canEditMeta = flight.estado !== "CANCELADO";
   // Cubrir con externo (Alejandro): una cotización con avión propio se puede
   // pasar a un operador externo mientras el vuelo no haya cerrado. Sobre un
@@ -175,7 +204,34 @@ export function FlightActionsBar({
     });
   };
 
-  if (!canAssign && !canStart && !canComplete && !canEditMeta && !purgable)
+  const handleIniciarYCompletar = () => {
+    startIniciarCompletar(async () => {
+      let res: Awaited<ReturnType<typeof iniciarYCompletarVueloAction>>;
+      try {
+        res = await iniciarYCompletarVueloAction(flight.id);
+      } catch {
+        toast.error(MSG_SERVIDOR_NO_RESPONDIO);
+        return;
+      }
+      if (res.ok) {
+        toast.success(TOAST_VUELO_COMPLETADO(flight.folio));
+      } else {
+        toast.error(esErrorTecnico(res) ? MSG_SERVIDOR_NO_RESPONDIO : (res.error as string));
+      }
+      // También en el fallo: si el start pasó, el vuelo ya está EN VUELO.
+      setIniciarCompletarOpen(false);
+      router.refresh();
+    });
+  };
+
+  if (
+    !canAssign &&
+    !canStart &&
+    !canComplete &&
+    !canEditMeta &&
+    !purgable &&
+    !iniciarYCompletar
+  )
     return null;
 
   return (
@@ -237,7 +293,22 @@ export function FlightActionsBar({
           className="gap-2 bg-green-600 hover:bg-green-600/90"
         >
           <FlagIcon className="h-4 w-4" />
-          Cerrar vuelo
+          {completarPorOmision ? ACCION_COMPLETAR_VUELO : "Cerrar vuelo"}
+        </Button>
+      )}
+      {iniciarYCompletar && (
+        <Button
+          onClick={() => setIniciarCompletarOpen(true)}
+          disabled={missingAssignment}
+          className="gap-2 cursor-pointer bg-green-600 hover:bg-green-600/90"
+          title={
+            missingAssignment
+              ? "Asigna avión y piloto antes de iniciar"
+              : DESCRIPCION_INICIAR_Y_COMPLETAR
+          }
+        >
+          <FlagIcon className="h-4 w-4" />
+          {ACCION_INICIAR_Y_COMPLETAR}
         </Button>
       )}
       {canCombinar && (
@@ -343,13 +414,21 @@ export function FlightActionsBar({
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <CheckCircleIcon className="h-5 w-5 text-green-600" />
-              ¿Cerrar vuelo #{flight.folio}?
+              {completarPorOmision
+                ? tituloCompletarConOmision(flight.folio)
+                : `¿Cerrar vuelo #${flight.folio}?`}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Vuelo con operador <strong>externo</strong>: márcalo como{" "}
-              <strong>COMPLETADO</strong> para que entre al cierre. Después solo
-              se podrán registrar cobros y emitir factura.
-            </AlertDialogDescription>
+            {completarPorOmision ? (
+              <AlertDialogDescription>
+                {descripcionCompletarConOmision(omision?.omitidos ?? 0)}
+              </AlertDialogDescription>
+            ) : (
+              <AlertDialogDescription>
+                Vuelo con operador <strong>externo</strong>: márcalo como{" "}
+                <strong>COMPLETADO</strong> para que entre al cierre. Después solo
+                se podrán registrar cobros y emitir factura.
+              </AlertDialogDescription>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={completing}>Volver</AlertDialogCancel>
@@ -361,7 +440,46 @@ export function FlightActionsBar({
               disabled={completing}
               className="bg-green-600 text-white hover:bg-green-600/90"
             >
-              {completing ? "Cerrando…" : "Cerrar vuelo"}
+              {completing
+                ? "Cerrando…"
+                : completarPorOmision
+                  ? ACCION_COMPLETAR_VUELO
+                  : "Cerrar vuelo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={iniciarCompletarOpen}
+        onOpenChange={(v) => !iniciandoCompletando && setIniciarCompletarOpen(v)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <CheckCircleIcon className="h-5 w-5 text-green-600" />
+              {tituloIniciarYCompletar(flight.folio)}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {DESCRIPCION_INICIAR_Y_COMPLETAR}
+              {omision && omision.omitidos > 0
+                ? ` ${descripcionCompletarConOmision(omision.omitidos)}`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={iniciandoCompletando} className="cursor-pointer">
+              Volver
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleIniciarYCompletar();
+              }}
+              disabled={iniciandoCompletando}
+              className="cursor-pointer bg-green-600 text-white hover:bg-green-600/90"
+            >
+              {iniciandoCompletando ? "Completando…" : ACCION_INICIAR_Y_COMPLETAR}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

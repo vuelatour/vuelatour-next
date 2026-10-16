@@ -242,6 +242,17 @@ export interface FlightEscala {
   cancelada_at?: string | null;
   cancelada_motivo?: string | null;
   cancelada_por?: string | null;
+  /**
+   * Tacómetro OMITIDO por la oficina (15-oct-2026, API 0.0.81, ADITIVOS):
+   * el tramo no exige lectura de llegada, aporta 0 h y queda auditado quién,
+   * cuándo y por qué. Ausente = API previo (se trata como no omitido). Leer
+   * con `esTramoOmitido()` y pintar con `textoOmitidoPor()`
+   * (@/lib/admin/taco-omitido).
+   */
+  taco_omitido_at?: string | null;
+  taco_omitido_por?: string | null;
+  taco_omitido_motivo?: string | null;
+  taco_omitido_por_nombre?: string | null;
   valor_ia_propuesto: string | null;
   revision_requerida: boolean;
   revision_motivo: string | null;

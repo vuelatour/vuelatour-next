@@ -121,6 +121,8 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   const taco = await getTacoStatusPorLotes(tacoRelevantes.map((v) => v.id));
   const tacoSinVerificar = new Set(taco.idsSinVerificar);
   const faltaTaco = (id: string) => taco.status[id]?.falta === true;
+  // Tacómetro OMITIDO en algún tramo (API 0.0.81, aditivo): icono slate.
+  const tacoOmitido = (id: string) => taco.status[id]?.omitido === true;
 
   // Semáforo de cobro: el flag `cobrado` ya viene en la fila; el batch trae
   // el total para distinguir PARCIAL de SIN COBRO. Solo se consultan filas
@@ -166,6 +168,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     monto_total_usd: v.monto_total_usd,
     estado: v.estado,
     falta_taco: faltaTaco(v.id),
+    taco_omitido: tacoOmitido(v.id),
     en_cotizacion: esCotizacion(v),
     cobrado: v.cobrado,
     es_interno: clientsById.get(v.cliente_id)?.es_interno === true,

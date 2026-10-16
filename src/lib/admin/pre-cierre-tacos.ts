@@ -12,6 +12,7 @@
  */
 
 import { fmtDateTimeShort } from "@/lib/datetime";
+import { motivoTramoOmitidoPreCierre } from "@/lib/admin/taco-omitido";
 
 /** Una escala marcada para revisión (fila del item `tacos_en_revision`). */
 export interface PreCierreTacoTramo {
@@ -28,6 +29,11 @@ export interface PreCierreTacoTramo {
   /** Primera línea de `revision_motivo` (el API ya la recorta). */
   motivo?: string | null;
   piloto_nombre?: string | null;
+  /** Renglón `tacometros_omitidos` (15-oct-2026, API 0.0.81, ADITIVOS):
+   *  quién omitió el tacómetro y cuándo (timestamptz). En ese renglón
+   *  `motivo` es el MOTIVO de la omisión. */
+  omitido_por_nombre?: string | null;
+  omitido_at?: string | null;
 }
 
 export interface LineaTacoTramo {
@@ -134,4 +140,24 @@ export function lineasTramosTacos(
       ? total
       : ordenados.length;
   return { lineas, restantes: Math.max(0, totalReal - lineas.length) };
+}
+
+/**
+ * Renglón INFORMATIVO «Tacómetros omitidos» del pre-cierre (15-oct-2026, API
+ * 0.0.81): las MISMAS líneas que `lineasTramosTacos` (orden, dedupe, tope y
+ * «y N más…»), con el motivo reemplazado por «Omitido por Itzi (15 oct,
+ * 10:40 a.m.): Falló el tacómetro» (`motivoTramoOmitidoPreCierre`, fuente
+ * única en `lib/admin/taco-omitido.ts`). Nunca se pinta como «pendiente».
+ */
+export function lineasTramosOmitidos(
+  tramos: PreCierreTacoTramo[] | null | undefined,
+  max: number = MAX_TRAMOS_TACOS,
+  total?: number | null,
+): { lineas: LineaTacoTramo[]; restantes: number } {
+  if (!Array.isArray(tramos)) return { lineas: [], restantes: 0 };
+  return lineasTramosTacos(
+    tramos.map((t) => (t ? { ...t, motivo: motivoTramoOmitidoPreCierre(t) } : t)),
+    max,
+    total,
+  );
 }

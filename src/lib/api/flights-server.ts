@@ -205,10 +205,16 @@ export function getCobroStatus(ids: string[]) {
   });
 }
 
-/** Marca, por vuelo, si el tacómetro está incompleto (badge en la lista admin). */
+/**
+ * Marca, por vuelo, si el tacómetro está incompleto (badge en la lista
+ * admin). `omitido` (API 0.0.81, aditivo): algún tramo tiene el tacómetro
+ * OMITIDO por la oficina; un API previo no lo manda.
+ */
+export type TacoStatusVuelo = { falta: boolean; omitido?: boolean };
+
 export function getTacoStatus(ids: string[]) {
-  if (ids.length === 0) return Promise.resolve<Record<string, { falta: boolean }>>({});
-  return apiServer<Record<string, { falta: boolean }>>("/v1/flights/taco-status", {
+  if (ids.length === 0) return Promise.resolve<Record<string, TacoStatusVuelo>>({});
+  return apiServer<Record<string, TacoStatusVuelo>>("/v1/flights/taco-status", {
     method: "POST",
     body: { ids },
     cache: "no-store",

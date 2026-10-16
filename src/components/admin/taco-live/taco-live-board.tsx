@@ -25,6 +25,16 @@ import { confirmTacoAction, tacoObsAction } from "@/app/admin/flights/actions";
 import { TacoClearDialog } from "@/components/admin/flights/taco-clear-dialog";
 import { fmtDateTime } from "@/lib/datetime";
 import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
+import {
+  TacoOmitidoDeshacer,
+  TacoOmitirDialog,
+} from "@/components/admin/flights/taco-omitir-dialog";
+import {
+  BADGE_OMITIDO_CORTO,
+  NOTA_TRAMO_OMITIDO,
+  escalaLiveOmitida,
+  textoOmitidoPor,
+} from "@/lib/admin/taco-omitido";
 
 export interface TacoLiveEscala {
   escala_id: string;
@@ -76,6 +86,15 @@ export interface TacoLiveEscala {
    * dos aviones se leían revueltas. Opcional para tolerar API viejo.
    */
   aeronave_matricula?: string | null;
+  /**
+   * Tacómetro OMITIDO por la oficina (15-oct-2026, API 0.0.81, ADITIVOS):
+   * el API manda `estado: 'OK'` + `omitido: true` (nunca un estado nuevo),
+   * sin sugerencia. Ausentes = API previo.
+   */
+  omitido?: boolean;
+  taco_omitido_at?: string | null;
+  taco_omitido_motivo?: string | null;
+  taco_omitido_por_nombre?: string | null;
 }
 
 export interface TacoLiveVuelo {
@@ -106,7 +125,7 @@ function fmtTaco(n: number): string {
  * recomendación calculada al vuelo.
  */
 function sugerenciaLlegada(e: TacoLiveEscala): number | null {
-  if (e.taco_llegada != null) return null;
+  if (e.taco_llegada != null || escalaLiveOmitida(e)) return null;
   if (e.estado !== "EN_CURSO" && e.estado !== "VENCIDA") return null;
   return e.llegada_estimada ?? null;
 }
@@ -117,10 +136,13 @@ function sugerenciaLlegada(e: TacoLiveEscala): number | null {
 export function TacoLiveBoard({
   vuelos,
   fecha,
+  puedeOmitir = false,
 }: {
   vuelos: TacoLiveVuelo[];
   /** Día consultado (YYYY-MM-DD) — distingue tramos pasados de futuros. */
   fecha?: string;
+  /** Oficina (ADMIN/COORDINADOR/FACTURACION): «Omitir tacómetro» y «Deshacer». */
+  puedeOmitir?: boolean;
 }) {
   if (vuelos.length === 0) {
     return (
@@ -170,6 +192,20 @@ export function TacoLiveBoard({
                 fecha={fecha}
                 matriculaVuelo={v.matricula}
                 vueloMixto={vueloMixto}
+                omision={
+                  puedeOmitir
+                    ? {
+                        folio: v.folio,
+                        vueloEstado: v.estado,
+                        faltanOtras: v.escalas.some(
+                          (x) =>
+                            x.escala_id !== e.escala_id &&
+                            x.taco_llegada == null &&
+                            !escalaLiveOmitida(x),
+                        ),
+                      }
+                    : null
+                }
               />
             ))}
           </CardContent>
@@ -222,6 +258,7 @@ function EscalaRow({
   fecha,
   matriculaVuelo,
   vueloMixto,
+  omision = null,
 }: {
   vueloId: string;
   escala: TacoLiveEscala;
@@ -230,8 +267,21 @@ function EscalaRow({
   matriculaVuelo?: string | null;
   /** true = el vuelo mezcla aviones: cada fila pinta su chip de matrícula. */
   vueloMixto?: boolean;
+  /** Solo oficina: datos para «Omitir tacómetro»/«Deshacer» (null = no se ofrece). */
+  omision?: { folio: number; vueloEstado: string; faltanOtras: boolean } | null;
 }) {
-  const st = ESTADO_STYLE[escala.estado];
+  // Defensivo: un estado que este panel no conoce no revienta la fila.
+  const st = ESTADO_STYLE[escala.estado] ?? ESTADO_STYLE.ESPERANDO;
+  const omitido = escalaLiveOmitida(escala);
+  const ruta = `${escala.origen_iata} → ${escala.destino_iata}`;
+  // «Omitir tacómetro»: vencida o en curso, sin llegada, vuelo no cerrado.
+  const ofrecerOmitir =
+    !!omision &&
+    !omitido &&
+    (escala.estado === "VENCIDA" || escala.estado === "EN_CURSO") &&
+    escala.taco_llegada == null &&
+    omision.vueloEstado !== "COMPLETADO" &&
+    omision.vueloEstado !== "CANCELADO";
   const sugerencia = sugerenciaLlegada(escala);
   // Tramo de otro día del viaje: SOLO se atenúa el FUTURO (aún no vuela).
   // Un tramo de un día PASADO sin llegada es justo lo más urgente del
@@ -243,7 +293,9 @@ function EscalaRow({
   return (
     <div
       className={`rounded-lg border p-3 ${
-        escala.estado === "REVISAR"
+        omitido
+          ? "border-slate-400/50 bg-slate-500/[0.06]"
+          : escala.estado === "REVISAR"
           ? "border-amber-500/50 bg-amber-500/5"
           : escala.estado === "VENCIDA" && !esFuturo
             ? "border-red-500/50 bg-red-500/5"
@@ -300,10 +352,24 @@ function EscalaRow({
                 : "Día anterior"}
             </Badge>
           )}
-          <Badge variant="outline" className={`text-[10px] ${st.cls}`}>
-            {st.label}
-          </Badge>
-          {escala.esperado_fin && escala.taco_llegada == null && (
+          {omitido ? (
+            <Badge
+              variant="outline"
+              className="text-[10px] bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30"
+              title={textoOmitidoPor({
+                nombre: escala.taco_omitido_por_nombre,
+                at: escala.taco_omitido_at,
+                motivo: escala.taco_omitido_motivo,
+              })}
+            >
+              {BADGE_OMITIDO_CORTO}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className={`text-[10px] ${st.cls}`}>
+              {st.label}
+            </Badge>
+          )}
+          {!omitido && escala.esperado_fin && escala.taco_llegada == null && (
             <span className="text-[11px] text-muted-foreground">
               fin esperado {fmtDateTime(escala.esperado_fin)}
             </span>
@@ -313,17 +379,42 @@ function EscalaRow({
           <Lectura escala={escala} lado="salida" />
           <Lectura escala={escala} lado="llegada" />
           <RevisionActions vueloId={vueloId} escala={escala} />
+          {ofrecerOmitir && omision && (
+            <TacoOmitirDialog
+              flightId={vueloId}
+              escalaId={escala.escala_id}
+              ruta={ruta}
+              folio={omision.folio}
+              faltanOtras={omision.faltanOtras}
+              compacto
+            />
+          )}
           {/* Borrar (con confirmación): el piloto capturó en el vuelo
               equivocado y debe recapturar — corregir no basta. */}
           <TacoClearDialog
             flightId={vueloId}
             escalaId={escala.escala_id}
-            ruta={`${escala.origen_iata} → ${escala.destino_iata}`}
+            ruta={ruta}
             tieneSalida={escala.taco_salida != null}
             tieneLlegada={escala.taco_llegada != null}
           />
         </div>
       </div>
+      {omitido && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-[11px] text-slate-600 dark:text-slate-300">
+            {textoOmitidoPor({
+              nombre: escala.taco_omitido_por_nombre,
+              at: escala.taco_omitido_at,
+              motivo: escala.taco_omitido_motivo,
+            })}
+            . {NOTA_TRAMO_OMITIDO}
+          </p>
+          {omision && omision.vueloEstado !== "CANCELADO" && (
+            <TacoOmitidoDeshacer flightId={vueloId} escalaId={escala.escala_id} ruta={ruta} />
+          )}
+        </div>
+      )}
       {sugerencia != null && (
         <p
           className="mt-2 text-[11px] text-amber-600/90 dark:text-amber-400/90"
@@ -489,7 +580,7 @@ function RevisionActions({
     <div className="flex items-center gap-2">
       {/* Comprobar solo aplica a lecturas en amarillo; Ajustar SIEMPRE está
           disponible — la oficina puede corregir aunque la escala esté OK. */}
-      {escala.revision_requerida && (
+      {escala.revision_requerida && !escalaLiveOmitida(escala) && (
       <Button
         size="sm"
         variant="outline"

@@ -11,6 +11,8 @@ import type {
   FlightListItem,
 } from "@/types/flights";
 import type { MetodoPago } from "@/types/quote";
+import type { EstadoVuelo } from "@/types/quotes-persisted";
+import { errorIniciadoSinCompletar } from "@/lib/admin/taco-omitido";
 import type { CuentaCobro } from "@/lib/admin/cobros";
 import type { PatchCobro } from "@/lib/admin/cobro-edicion";
 import type {
@@ -857,6 +859,112 @@ export async function fillTacoGapsAction(
     return { ok: true, data };
   } catch (err) {
     return fail(err);
+  }
+}
+
+// --- Tacómetro OMITIDO por tramo (15-oct-2026, API 0.0.81) ---
+// Textos y decisiones de UI en `lib/admin/taco-omitido.ts` (fuente única).
+
+/** Respuesta de POST/DELETE `/v1/flights/legs/:legId/taco/omitir`. */
+export interface RespuestaOmisionTaco {
+  escala: FlightEscala;
+  vuelo: {
+    id: string;
+    folio: number;
+    estado: EstadoVuelo;
+    /** EN_VUELO y ya no falta ninguna llegada exigible: «Completar vuelo». */
+    completable: boolean;
+    /** Nunca iniciado en la app y ya no falta ninguna llegada: «Iniciar y completar». */
+    requiere_iniciar?: boolean;
+    /** Tramos vivos con tacómetro omitido tras la operación. */
+    omitidos?: number;
+  };
+}
+
+/** Fallo con el estatus HTTP copiado (404 «Cannot POST» = API previo). */
+function failConStatus<T>(err: unknown): ActionResult<T> {
+  const r = fail<T>(err);
+  if (isApiError(err)) r.status = err.status;
+  return r;
+}
+
+/**
+ * Omite el tacómetro de UN tramo (oficina; motivo 10–500, auditado). El
+ * vuelo NO se completa solo: la respuesta dice si ya es completable. Nunca
+ * lanza. Copia `status` (404 = API previo sin la ruta).
+ */
+export async function omitirTacoAction(
+  flightId: string,
+  escalaId: string,
+  motivo: string,
+): Promise<ActionResult<RespuestaOmisionTaco>> {
+  try {
+    const data = await apiServer<RespuestaOmisionTaco>(
+      `/v1/flights/legs/${escalaId}/taco/omitir`,
+      { method: "POST", body: { motivo: motivo.trim() } },
+    );
+    revalidateFlight(flightId);
+    revalidatePath("/admin/taco-live");
+    return { ok: true, data };
+  } catch (err) {
+    return failConStatus(err);
+  }
+}
+
+/**
+ * Deshace la omisión: el tramo vuelve a pedir su llegada (push al piloto);
+ * un vuelo COMPLETADO regresa a EN_VUELO. Nunca lanza; copia `status`.
+ */
+export async function deshacerOmisionTacoAction(
+  flightId: string,
+  escalaId: string,
+): Promise<ActionResult<RespuestaOmisionTaco>> {
+  try {
+    const data = await apiServer<RespuestaOmisionTaco>(
+      `/v1/flights/legs/${escalaId}/taco/omitir`,
+      { method: "DELETE" },
+    );
+    revalidateFlight(flightId);
+    revalidatePath("/admin/taco-live");
+    return { ok: true, data };
+  } catch (err) {
+    return failConStatus(err);
+  }
+}
+
+/**
+ * Vuelo PROPIO nunca iniciado en la app con todas sus lecturas omitidas o
+ * capturadas (#301/#279…): `POST :id/start` (un 409 VUELO_YA_INICIADO se
+ * tolera: alguien ya lo inició) y `POST :id/complete` — dos rutas
+ * existentes; `complete()` del API NO se relaja. Si el start pasó y el
+ * complete falla, el vuelo queda EN_VUELO, se revalida y se DICE
+ * (`errorIniciadoSinCompletar`): la barra ofrece «Completar vuelo». Nunca lanza.
+ */
+export async function iniciarYCompletarVueloAction(
+  flightId: string,
+): Promise<ActionResult<FlightListItem>> {
+  let iniciado = false;
+  try {
+    try {
+      await apiServer<FlightListItem>(`/v1/flights/${flightId}/start`, { method: "POST" });
+    } catch (err) {
+      if (!(isApiError(err) && err.code === "VUELO_YA_INICIADO")) throw err;
+    }
+    iniciado = true;
+    const data = await apiServer<FlightListItem>(`/v1/flights/${flightId}/complete`, {
+      method: "POST",
+    });
+    revalidateFlight(flightId);
+    revalidatePath("/admin/taco-live");
+    return { ok: true, data };
+  } catch (err) {
+    const r = failConStatus<FlightListItem>(err);
+    if (iniciado) {
+      revalidateFlight(flightId);
+      revalidatePath("/admin/taco-live");
+      r.error = errorIniciadoSinCompletar(r.error);
+    }
+    return r;
   }
 }
 

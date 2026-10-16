@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { ExclamationTriangleIcon, MinusCircleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
 import type { GrupoDeFila } from "@/components/admin/quotes/quotes-table";
@@ -14,6 +14,7 @@ import { ENCABEZADO_FOLIO_ID, PLACEHOLDER_BUSCAR_VUELOS } from "@/lib/admin/clav
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
+import { TITULO_BADGE_LISTA_OMITIDO } from "@/lib/admin/taco-omitido";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 
 /** Fila-viewmodel serializable: la página resuelve nombres/lookup y aplana. */
@@ -37,6 +38,9 @@ export interface FlightRow {
   monto_total_usd: string;
   estado: EstadoVuelo;
   falta_taco: boolean;
+  /** Algún tramo con tacómetro OMITIDO por la oficina (`taco-status.omitido`,
+      API 0.0.81; ausente = API previo). Se dice, nunca como «falta». */
+  taco_omitido?: boolean;
   /** SOLICITUD/COTIZADO: fila azul y el clic abre la cotización, no el vuelo. */
   en_cotizacion: boolean;
   // Semáforo de cobro (regla única en estadoCobroSemaforo).
@@ -192,6 +196,15 @@ const columns: Array<DataTableColumn<FlightRow>> = [
             className="inline-flex items-center text-amber-600 dark:text-amber-400"
           >
             <ExclamationTriangleIcon className="h-4 w-4" />
+          </span>
+        )}
+        {v.taco_omitido && (
+          <span
+            title={TITULO_BADGE_LISTA_OMITIDO}
+            aria-label={TITULO_BADGE_LISTA_OMITIDO}
+            className="inline-flex items-center text-slate-500 dark:text-slate-400"
+          >
+            <MinusCircleIcon className="h-4 w-4" />
           </span>
         )}
         <Badge variant="outline" className={ESTADO_STYLES[v.estado]}>

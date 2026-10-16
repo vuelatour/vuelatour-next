@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  lineasTramosOmitidos,
   lineasTramosTacos,
   MAX_TRAMOS_TACOS,
   rutaTramo,
@@ -134,5 +135,56 @@ describe("lineasTramosTacos (pre-cierre: cuáles son los tacos en revisión)", (
   it("API sin el aditivo (skew de deploy): ni lista ni ruido", () => {
     expect(lineasTramosTacos(undefined)).toEqual({ lineas: [], restantes: 0 });
     expect(lineasTramosTacos([])).toEqual({ lineas: [], restantes: 0 });
+  });
+});
+
+describe("lineasTramosOmitidos (pre-cierre: renglón informativo «Tacómetros omitidos»)", () => {
+  const T300 = tramo({
+    vuelo_id: "v300",
+    folio: 300,
+    orden: 1,
+    origen_iata: "CET",
+    destino_iata: "CUN",
+    // 20:00 UTC = 15:00 en Cancún.
+    fecha_salida_plan: "2026-09-12T20:00:00Z",
+    piloto_nombre: "Juan Pérez",
+    motivo: "Falló el tacómetro",
+    omitido_por_nombre: "Itzi",
+    omitido_at: "2026-10-15T15:40:00Z",
+  });
+
+  it("#300: la línea dice quién lo omitió, cuándo (Cancún) y por qué", () => {
+    const { lineas, restantes } = lineasTramosOmitidos([T300]);
+    expect(restantes).toBe(0);
+    expect(lineas).toHaveLength(1);
+    expect(lineas[0].folio).toBe("#300");
+    expect(lineas[0].href).toBe("/admin/flights/v300");
+    expect(`${lineas[0].folio} · ${lineas[0].texto}`).toBe(
+      "#300 · T1 CET → CUN · 12 sep, 03:00 p.m. · Juan Pérez · Omitido por Itzi (15 oct, 10:40 a.m.): Falló el tacómetro",
+    );
+  });
+
+  it("sin nombre ni fecha: «oficina» y sin paréntesis; sin motivo: «sin motivo» (nunca «pendiente»)", () => {
+    const { lineas } = lineasTramosOmitidos([
+      tramo({ motivo: null, omitido_por_nombre: null, omitido_at: null }),
+    ]);
+    expect(lineas[0].texto).toBe("T1 CUN → CZM · Omitido por oficina: sin motivo");
+    expect(lineas[0].texto).not.toMatch(/pendiente/i);
+  });
+
+  it("mismo orden, dedupe, tope y «y N más» que lineasTramosTacos (total del count)", () => {
+    const tramos = [
+      tramo({ vuelo_id: "b", folio: 320, omitido_por_nombre: "Itzi" }),
+      tramo({ vuelo_id: "a", folio: 301, omitido_por_nombre: "Itzi" }),
+      tramo({ vuelo_id: "a", folio: 301, omitido_por_nombre: "Itzi" }),
+    ];
+    const { lineas, restantes } = lineasTramosOmitidos(tramos, 1, 5);
+    expect(lineas.map((l) => l.folio)).toEqual(["#301"]);
+    expect(restantes).toBe(4);
+  });
+
+  it("sin tramos (API previo o renglón vacío) no pinta nada", () => {
+    expect(lineasTramosOmitidos(undefined)).toEqual({ lineas: [], restantes: 0 });
+    expect(lineasTramosOmitidos([])).toEqual({ lineas: [], restantes: 0 });
   });
 });

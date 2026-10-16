@@ -49,7 +49,21 @@ import {
   TramoOperativoConPaxBadge,
 } from "@/components/admin/flights/tramo-operativo-badges";
 import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
+import {
+  TacoOmitidoDeshacer,
+  TacoOmitirDialog,
+} from "@/components/admin/flights/taco-omitir-dialog";
+import {
+  BADGE_TACO_OMITIDO,
+  NOTA_TRAMO_OMITIDO,
+  esTramoOmitido,
+  faltaTacoSinOmitidos,
+  textoOmitidoPor,
+  tramoExigeLlegada,
+  tramoOmitible,
+} from "@/lib/admin/taco-omitido";
 import type { FlightEscala, TacoPhoto } from "@/types/flights";
+import type { EstadoVuelo } from "@/types/quotes-persisted";
 
 interface EscalasCardProps {
   flightId: string;
@@ -65,6 +79,15 @@ interface EscalasCardProps {
    * «no cotizado» (sin chip ámbar). Ausente = API previo.
    */
   itinerarioOperativo?: boolean | null;
+  /**
+   * Tacómetro OMITIDO (15-oct-2026, API 0.0.81): el usuario es de oficina
+   * (ADMIN/COORDINADOR/FACTURACION) y puede omitir/deshacer. Sin esto (o sin
+   * `vueloEstado`) la card es la de siempre más el badge del omitido.
+   */
+  puedeOmitir?: boolean;
+  vueloEstado?: EstadoVuelo;
+  vueloEsExterno?: boolean;
+  vueloFolio?: number;
 }
 
 /**
@@ -90,8 +113,16 @@ export function EscalasCard({
   pilotoExterno = false,
   vueloAnterior = null,
   itinerarioOperativo,
+  puedeOmitir = false,
+  vueloEstado,
+  vueloEsExterno = false,
+  vueloFolio,
 }: EscalasCardProps) {
   const photosByEscala = new Map(tacoPhotos.map((p) => [p.escala_id, p]));
+  // Deshacer: también en COMPLETADO (regresa a EN VUELO); nunca en un vuelo
+  // cancelado ni externo.
+  const puedeDeshacer =
+    puedeOmitir && !!vueloEstado && vueloEstado !== "CANCELADO" && !vueloEsExterno;
 
   return (
     <>
@@ -126,11 +157,9 @@ export function EscalasCard({
             )}
           </div>
           <div className="flex shrink-0 gap-2">
-            {escalas.length > 0 &&
-              escalas.some(
-                (e) =>
-                  !e.cancelada_at && (!e.taco_salida || !e.taco_llegada),
-              ) && <FillTacoGapsButton flightId={flightId} />}
+            {/* Un tramo con tacómetro OMITIDO no «falta» (15-oct-2026). */}
+            {escalas.some((e) => !e.cancelada_at) &&
+              faltaTacoSinOmitidos(escalas) && <FillTacoGapsButton flightId={flightId} />}
           </div>
         </CardHeader>
         <CardContent>
@@ -146,13 +175,29 @@ export function EscalasCard({
                 const fotoSalida = photos?.foto_salida_url ?? null;
                 const fotoLlegada = photos?.foto_llegada_url ?? null;
                 const cancelada = !!esc.cancelada_at;
+                // Tacómetro OMITIDO por la oficina (no pide lectura, 0 h).
+                const omitido = !cancelada && esTramoOmitido(esc);
+                const ruta = `${esc.origen_iata} → ${esc.destino_iata}`;
+                // Folio del vuelo cuando se ofrece «Omitir tacómetro» (null = no).
+                const folioOmitir =
+                  puedeOmitir &&
+                  vueloEstado &&
+                  vueloFolio != null &&
+                  tramoOmitible({
+                    escala: esc,
+                    vuelo: { estado: vueloEstado, es_externo: vueloEsExterno },
+                  })
+                    ? vueloFolio
+                    : null;
                 return (
                   <li
                     key={esc.id}
                     className={
                       cancelada
                         ? "rounded-lg border border-red-500/30 bg-red-500/[0.04] p-3 space-y-1.5 opacity-80"
-                        : esc.revision_requerida
+                        : omitido
+                          ? "rounded-lg border border-slate-400/50 bg-slate-500/[0.06] p-3 space-y-1.5"
+                          : esc.revision_requerida
                           ? "rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 space-y-1.5"
                           : "rounded-lg border border-border bg-muted/20 p-3 space-y-1.5"
                     }
@@ -190,6 +235,25 @@ export function EscalasCard({
                           >
                             Cancelado · no voló
                           </Badge>
+                        ) : omitido ? (
+                          <>
+                            {esc.taco_salida && (
+                              <span className="text-xs font-mono text-muted-foreground">
+                                {fmtDecimal(esc.taco_salida, 2)} → omitido
+                              </span>
+                            )}
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30"
+                              title={textoOmitidoPor({
+                                nombre: esc.taco_omitido_por_nombre,
+                                at: esc.taco_omitido_at,
+                                motivo: esc.taco_omitido_motivo,
+                              })}
+                            >
+                              {BADGE_TACO_OMITIDO}
+                            </Badge>
+                          </>
                         ) : esc.taco_salida || esc.taco_llegada ? (
                           // Lectura parcial visible ("1,572.00 → —"): decir
                           // "Sin tacómetros" con la salida ya propagada
@@ -225,13 +289,45 @@ export function EscalasCard({
                           <TacoClearDialog
                             flightId={flightId}
                             escalaId={esc.id}
-                            ruta={`${esc.origen_iata} → ${esc.destino_iata}`}
+                            ruta={ruta}
                             tieneSalida={esc.taco_salida != null}
                             tieneLlegada={esc.taco_llegada != null}
                           />
                         )}
+                        {/* «Omitir tacómetro» (15-oct-2026): solo oficina,
+                            vuelo propio no cerrado y tramo vivo sin llegada. */}
+                        {folioOmitir != null && (
+                          <TacoOmitirDialog
+                            flightId={flightId}
+                            escalaId={esc.id}
+                            ruta={ruta}
+                            folio={folioOmitir}
+                            faltanOtras={escalas.some(
+                              (e) => e.id !== esc.id && tramoExigeLlegada(e),
+                            )}
+                          />
+                        )}
                       </div>
                     </div>
+                    {omitido && (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                          {textoOmitidoPor({
+                            nombre: esc.taco_omitido_por_nombre,
+                            at: esc.taco_omitido_at,
+                            motivo: esc.taco_omitido_motivo,
+                          })}
+                          . {NOTA_TRAMO_OMITIDO}
+                        </p>
+                        {puedeDeshacer && (
+                          <TacoOmitidoDeshacer
+                            flightId={flightId}
+                            escalaId={esc.id}
+                            ruta={ruta}
+                          />
+                        )}
+                      </div>
+                    )}
                     {cancelada && (
                       <p className="text-[11px] text-red-600 dark:text-red-400">
                         {esc.cancelada_motivo

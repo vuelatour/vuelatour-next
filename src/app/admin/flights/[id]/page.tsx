@@ -69,6 +69,14 @@ import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
 import type { VueloConGrupo } from "@/types/grupos";
 import { esUuid } from "@/lib/admin/url-params";
 import {
+  BADGE_TACO_OMITIDO,
+  completableConOmision,
+  esRolOmitirTaco,
+  esTramoOmitido,
+  faltaTacoSinOmitidos,
+  tituloBadgeOmitido,
+} from "@/lib/admin/taco-omitido";
+import {
   ANCLA_SEGUIMIENTO,
   conteoSeguimientoVuelo,
   textoBadgeCabecera,
@@ -340,12 +348,18 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   ).catch(() => ({}) as Record<string, string>);
 
   // Tacómetro incompleto: vuelos propios en curso/cerrados sin todas las
-  // lecturas de sus tramos ACTIVOS (los cancelados no piden lectura).
+  // lecturas de sus tramos ACTIVOS (los cancelados no piden lectura). Un
+  // tramo con tacómetro OMITIDO por la oficina no falta (15-oct-2026).
   const faltaTaco =
     !snapshot.es_externo &&
     (snapshot.estado === "EN_VUELO" || snapshot.estado === "COMPLETADO") &&
-    (escalasOrden.length === 0 ||
-      escalasOrden.some((e) => e.taco_salida == null || e.taco_llegada == null));
+    faltaTacoSinOmitidos(escalasOrden);
+  // Tacómetro OMITIDO en algún tramo vivo: se DICE (badge slate con los
+  // motivos), nunca como «pendiente».
+  const tacoOmitido = escalasOrden.some(esTramoOmitido);
+  // «Completar vuelo» / «Iniciar y completar» de un vuelo PROPIO cuyas
+  // lecturas faltantes están omitidas (el vuelo no se completa solo).
+  const omision = completableConOmision(snapshot, snapshot.escalas);
 
   // Misma tolerancia de redondeo que el API (1 USD): un cobro en pesos que
   // cubre el total MXN no deja "pendiente $0.01".
@@ -505,6 +519,15 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                   ⚠ Tacómetro incompleto
                 </Badge>
               )}
+              {tacoOmitido && (
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/30"
+                  title={tituloBadgeOmitido(escalasOrden)}
+                >
+                  {BADGE_TACO_OMITIDO}
+                </Badge>
+              )}
               {esVueloServicio && (
                 <Badge
                   variant="outline"
@@ -592,6 +615,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               ))}
             <FlightActionsBar
               esAdmin={me?.rol === "ADMIN"}
+              omision={omision}
               // Ficha del avión ajeno resuelta vía cotización: así el diálogo
               // «Editar externo» prellena modelo/matrícula y no los pisa.
               flight={{
@@ -768,6 +792,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             tacoPhotos={tacoPhotos}
             pilotoExterno={piloto?.es_piloto_externo === true}
             vueloAnterior={vueloAnterior}
+            puedeOmitir={esRolOmitirTaco(me?.rol)}
+            vueloEstado={snapshot.estado}
+            vueloEsExterno={snapshot.es_externo}
+            vueloFolio={snapshot.folio}
           />
 
           {/* COBRO: una sola card (resumen + lista). Los totales salen del

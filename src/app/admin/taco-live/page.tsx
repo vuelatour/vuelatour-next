@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { todayCancun } from "@/lib/datetime";
 import { apiServer } from "@/lib/api/server";
+import { getMe } from "@/lib/api/me";
+import { escalaLiveOmitida, esRolOmitirTaco } from "@/lib/admin/taco-omitido";
 import { TacoLiveBoard, type TacoLiveVuelo } from "@/components/admin/taco-live/taco-live-board";
 import { TacoLiveDatePicker } from "@/components/admin/taco-live/taco-live-date-picker";
 
@@ -43,10 +45,15 @@ export async function generateMetadata({ searchParams }: TacoLivePageProps): Pro
  */
 export default async function TacoLivePage({ searchParams }: TacoLivePageProps) {
   const sp = await searchParams;
-  const data = await apiServer<TacoLiveResponse>("/v1/flights/taco-live", {
-    searchParams: { fecha: sp.fecha },
-    cache: "no-store",
-  });
+  const [data, me] = await Promise.all([
+    apiServer<TacoLiveResponse>("/v1/flights/taco-live", {
+      searchParams: { fecha: sp.fecha },
+      cache: "no-store",
+    }),
+    // Best-effort: sin /me el tablero se pinta igual, sin «Omitir tacómetro».
+    getMe().catch(() => null),
+  ]);
+  const puedeOmitir = esRolOmitirTaco(me?.rol);
 
   const fecha = data.fecha;
   // Los contadores describen EL DÍA: un viaje multi-día trae también sus
@@ -63,7 +70,11 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
   );
   const porRevisar = data.vuelos.reduce(
     (acc, v) =>
-      acc + v.escalas.filter((e) => delDia(e) && e.revision_requerida).length,
+      acc +
+      v.escalas.filter(
+        // Un tramo con tacómetro OMITIDO nunca es «por revisar».
+        (e) => delDia(e) && e.revision_requerida && !escalaLiveOmitida(e),
+      ).length,
     0,
   );
 
@@ -114,7 +125,7 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
         </div>
       </div>
 
-      <TacoLiveBoard vuelos={data.vuelos} fecha={fecha} />
+      <TacoLiveBoard vuelos={data.vuelos} fecha={fecha} puedeOmitir={puedeOmitir} />
     </div>
   );
 }

@@ -10424,3 +10424,111 @@ con el API (invariante 83, sin migración ni ruta nueva). Lógica PURA en
   `cursor-pointer`, prellenado y confirmación ANTES de la server action por
   regex, la acción con el fondo HIJO y la revalidación de la madre, filtro
   pintado y cableado, página).
+
+## Tacómetro omitido por tramo (15-oct-2026, API 0.0.81)
+
+Pedido del cliente con la captura del #300 (N4142R, CET → CUN, 12-sep):
+«necesito una opción para omitir la captura del tacómetro porque falló el
+tacómetro y no había forma de registrarlo, debemos poder completarlo para
+que no salga la alerta en reportes» … «Debe tener el porqué se omitió el
+tacómetro y saber quién lo registró así». El API (invariante 79 de su
+CLAUDE.md) guarda `escala.taco_omitido_at / _por / _motivo`; aquí solo se
+pinta y se decide la UI.
+
+- **Fuente única `lib/admin/taco-omitido.ts`** (PURA; textos CONGELADOS en
+  `lib/admin/__tests__/taco-omitido.test.ts`): roles (`ROLES_OMITIR_TACO` =
+  ADMIN, COORDINADOR, FACTURACION — el conjunto de `taco/confirm`), motivo
+  10–500 contado como el API (`largoMotivoOmision`: trim + espacios dobles →
+  uno), chips «Falló el tacómetro» / «Lectura ilegible y sin forma de
+  recuperarla» / «No se tomó la foto», badges, `textoOmitidoPor` («Omitido
+  por Itzi · 15 oct 2026, 10:40 a.m. · Falló el tacómetro», hora Cancún),
+  toasts y predicados: `esTramoOmitido`, `tramoExigeLlegada`,
+  `puedeOmitirTaco` = `esRolOmitirTaco` ∧ `tramoOmitible` (vuelo PROPIO no
+  COMPLETADO/CANCELADO, tramo vivo, sin llegada, no omitido; un vuelo nunca
+  iniciado —RESERVA…CONFIRMADO, #301/#279— SÍ se omite),
+  `faltaTacoSinOmitidos` (badge «Tacómetro incompleto» del detalle y botón
+  «Propagar lecturas»: un omitido sin salida no falta), `completableConOmision`,
+  `mensajeOmision`, `errorDeOmision`, `escalaLiveOmitida`. Nadie redacta
+  estos textos por su cuenta ni repite los predicados inline.
+- **Botón y diálogo** (`components/admin/flights/taco-omitir-dialog.tsx`):
+  `TacoOmitirDialog` (ghost, `MinusCircleIcon`, title = la ayuda) abre un
+  `AlertDialog` con las 4 consecuencias, los 3 chips (`cursor-pointer`,
+  rellenan y se editan), `Textarea` con `maxLength=500`, contador
+  `n/500 · mínimo 10` (rojo + aviso bajo 10) y «Omitir tacómetro»
+  deshabilitado mientras no alcance. El motivo se re-siembra al ABRIR (en el
+  onClick, nunca `useState(prop)` + efecto). El cuerpo es
+  `FormularioOmitirTaco` (exportado para probarlo sin DOM).
+  `TacoOmitidoDeshacer` confirma antes de deshacer (acción reversible pero
+  vuelve a pedir lectura y avisa al piloto). Errores: 404 SIN el código
+  `ESCALA_NO_EXISTE` = «Cannot POST/DELETE» ⇒ «Esta opción necesita el API
+  0.0.81…»; texto técnico ⇒ «El servidor no respondió…»; si no, el mensaje
+  es-MX del API.
+- **El vuelo NO se completa solo.** Tras omitir, `mensajeOmision` decide el
+  toast: `completable` ⇒ «Tacómetro omitido. El vuelo #300 ya se puede
+  completar.» con ACCIÓN «Completar vuelo» (`completeFlightAction`);
+  `requiere_iniciar` ⇒ «… nunca se inició en la app: inícialo y
+  complétalo.» con acción «Iniciar y completar»; si no, «Aún faltan
+  lecturas en otros tramos» o el texto simple. La barra del vuelo
+  (`FlightActionsBar`, prop `omision = completableConOmision(snapshot,
+  snapshot.escalas)`) ofrece lo mismo de forma permanente: «Completar vuelo»
+  (verde, mismo diálogo con `tituloCompletarConOmision` /
+  `descripcionCompletarConOmision`) en un propio EN_VUELO, o «Iniciar y
+  completar» (deshabilitado sin avión/piloto: el `start` del API los exige)
+  en uno nunca iniciado; entra al early-return de la barra.
+- **Server actions** (`app/admin/flights/actions.ts`, sección «Tacómetros:
+  revisión de oficina»): `omitirTacoAction` (POST `…/legs/:id/taco/omitir`
+  con `{ motivo }` recortado), `deshacerOmisionTacoAction` (DELETE) e
+  `iniciarYCompletarVueloAction` (POST `:id/start` tolerando el 409
+  `VUELO_YA_INICIADO` + POST `:id/complete`; `complete()` del API NO se
+  relaja). Las tres nunca lanzan, copian `status` y revalidan el vuelo, la
+  lista y `/admin/taco-live`. Si el start pasó y el complete falló, revalida
+  igual y lo DICE (`errorIniciadoSinCompletar`: «El vuelo ya quedó EN VUELO,
+  pero no se pudo completar: … Pulsa «Completar vuelo».»).
+- **Dónde se ve el omitido**: «Tacómetros por tramo» (`EscalasCard`, props
+  `puedeOmitir`, `vueloEstado`, `vueloEsExterno`, `vueloFolio`; sin ellos la
+  card es la de siempre): fila slate, badge «Tacómetro omitido» (title con el
+  motivo), «{salida} → omitido» si hay salida copiada, la línea «Omitido
+  por …. No pide lectura y aporta 0 h…» y «Deshacer» (oficina; también en
+  COMPLETADO, nunca en CANCELADO/externo). «Corregir» SE CONSERVA (es el
+  camino de la lectura real: el API retira la omisión solo) y el borrado de
+  la salida copiada también. Encabezado del vuelo: badge slate «Tacómetro
+  omitido» con `tituloBadgeOmitido` (una línea por tramo, numerado por
+  POSICIÓN como «Tramo N»), junto a «⚠ Tacómetro incompleto» si ambos
+  aplican. Lista de vuelos: `taco-status` trae `{ falta, omitido }`
+  (`TacoStatusVuelo`); `taco_omitido` pinta un `MinusCircleIcon` slate con
+  `TITULO_BADGE_LISTA_OMITIDO` (solo se consulta para EN_VUELO/COMPLETADO,
+  como el triángulo).
+- **Tacómetros en vivo**: la página lee `getMe()` best-effort y pasa
+  `puedeOmitir`; el contador «por revisar» no cuenta omitidos. El API manda
+  la fila omitida con `estado: 'OK'` + `omitido: true` (NUNCA un estado
+  nuevo: el panel previo hacía `ESTADO_STYLE[estado].cls` y reventaba), y
+  aun así **un estado desconocido no revienta**: `ESTADO_STYLE[estado] ??
+  ESTADO_STYLE.ESPERANDO`. Fila omitida: borde slate, badge «Omitido» en vez
+  del de estado, línea `textoOmitidoPor` + nota, sin «Sugerencia» ni «fin
+  esperado», «Ajustar» sigue (sin «Comprobar») y «Deshacer». Fila VENCIDA o
+  EN_CURSO sin llegada de un vuelo no COMPLETADO/CANCELADO ⇒ «Omitir
+  tacómetro» compacto; `faltanOtras` = otras filas del vuelo sin llegada y no
+  omitidas. `escalaLiveOmitida` vive en la lib (la usa el server component
+  de la página: una función de un módulo `"use client"` no se puede llamar
+  desde el servidor).
+- **Pre-cierre** (`lib/admin/pre-cierre-tacos.ts`): `PreCierreTacoTramo`
+  gana `omitido_por_nombre` y `omitido_at` (aditivos) y
+  `lineasTramosOmitidos(tramos, max, total)` = `lineasTramosTacos` con el
+  motivo cambiado por `motivoTramoOmitidoPreCierre` («#300 · T1 CET → CUN ·
+  12 sep, 03:00 p.m. · Juan Pérez · Omitido por Itzi (15 oct, 10:40 a.m.):
+  Falló el tacómetro»). El card la usa para el renglón INFORMATIVO
+  `tacometros_omitidos` (azul, sin «Resolver →», nunca «pendiente»); con un
+  API previo el renglón no existe.
+- **Skew**: panel nuevo + API previo ⇒ sin llaves `taco_omitido_*`
+  (`esTramoOmitido` false, UI de siempre), sin `omitido` en `taco-status`
+  (sin icono) y las actions dan 404 «Cannot POST» ⇒ toast del API previo.
+  API nuevo sin la migración ⇒ 503 `MIGRACION_PENDIENTE` con su mensaje es-MX
+  (se pinta tal cual). Panel previo + API nuevo ⇒ ignora los aditivos.
+- **Pruebas**: `lib/admin/__tests__/taco-omitido.test.ts`,
+  `lib/admin/__tests__/pre-cierre-tacos.test.ts` (`lineasTramosOmitidos`),
+  `components/admin/flights/__tests__/taco-omitido-ui.test.tsx` (card,
+  cuerpo del diálogo con 9 caracteres, barra y lista),
+  `components/admin/taco-live/__tests__/taco-live-omitido.test.tsx` y
+  `app/admin/flights/__tests__/actions-taco-omitido.test.ts` (rutas, body
+  objeto, `status`, revalidación de taco-live, VUELO_YA_INICIADO tolerado y
+  el fallo a medias).
