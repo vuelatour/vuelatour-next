@@ -23,6 +23,8 @@ export interface CalendarDay {
   iso: string;
   dayNum: number;
   inMonth: boolean;
+  /** Inicio oficial (16-oct-2026): día anterior al inicio ⇒ en gris y sin eventos. */
+  antesDelInicio?: boolean;
   isToday: boolean;
   events: CalendarEvent[];
 }
@@ -74,7 +76,7 @@ export function CalendarGrid({
               <div
                 key={day.key}
                 className={`min-h-24 rounded-lg border p-1.5 flex flex-col gap-1 transition-colors ${
-                  day.inMonth ? "border-border" : "border-transparent opacity-40"
+                  day.inMonth && !day.antesDelInicio ? "border-border" : "border-transparent opacity-40"
                 } ${day.isToday ? "ring-1 ring-brand-500" : ""} ${
                   selectedKey === day.key ? "bg-muted/50 border-brand-600/40" : ""
                 }`}

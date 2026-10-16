@@ -403,7 +403,10 @@ describe("página /admin/nomina (cableado por regex)", () => {
   });
 
   it("mes de la URL validado y la lista PRINCIPAL con la categoría y el mes", () => {
-    expect(page).toContain("const mes = mesNominaDeUrl(sp.mes, hoy);");
+    // Inicio oficial (16-oct-2026): un mes anterior al del inicio pasa al del inicio (con aviso).
+    expect(page).toContain(
+      "const { mes, ajustado: mesAjustado } = ajustarMesAlInicio(mesNominaDeUrl(sp.mes, hoy), inicio);",
+    );
     expect(page).toContain("const hoy = todayCancun();");
     expect(page).toContain("const { desde, hasta } = rangoMesNomina(mes);");
     expect(page).toContain("principal(listGastosAll({ categoria: CATEGORIA_NOMINA, desde, hasta }))");
@@ -440,7 +443,7 @@ describe("página /admin/nomina (cableado por regex)", () => {
 
   it("periodo: el selector de Gastos personales entre «‹ anterior» y «siguiente ›» (no hacia el futuro)", () => {
     expect(page).toMatch(
-      /<NominaNavMeses\s+mes=\{mes\}\s+anterior=\{esMesNomina\(anterior\) \? anterior : null\}\s+siguiente=\{esMesFuturoNomina\(siguiente, hoy\) \? null : siguiente\}\s*\/>/,
+      /<NominaNavMeses\s+mes=\{mes\}\s+anterior=\{esMesNomina\(anterior\) \? anterior : null\}\s+siguiente=\{esMesFuturoNomina\(siguiente, hoy\) \? null : siguiente\}\s+anteriorDeshabilitado=\{anteriorDeshabilitado\}\s*\/>/,
     );
     // Los enlaces del mes viven en el componente de cliente (leen la query
     // VIVA): la página ya no arma ningún `hrefMesNomina`.

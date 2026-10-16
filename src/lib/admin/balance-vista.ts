@@ -18,6 +18,7 @@ import {
   type ModoBalanceVuelaTour,
 } from "./reportes-balance";
 import { rangoFiltro, uuidFiltro, valorDeCatalogo } from "./url-params";
+import { ajustarRangoAlInicio, type InicioOficial } from "./inicio-oficial";
 
 export const RUTA_VISTA_BALANCE = "/admin/reportes/balance";
 export const MODO_VISTA_BALANCE_DEFAULT: ModoBalanceVuelaTour = "mensual";
@@ -69,6 +70,9 @@ export interface ParametrosVistaBalance {
    *  ese gasto (llegada desde Conciliación). La llave solo existe con un uuid
    *  válido y NO viaja al API: el libro es el mismo con o sin ella. */
   gasto?: string;
+  /** Inicio oficial (16-oct-2026): el periodo de la URL caía antes y se
+   *  movió (la página pinta el aviso). Solo existe cuando es `true`. */
+  ajustado?: true;
 }
 
 /**
@@ -81,11 +85,17 @@ export interface ParametrosVistaBalance {
 export function parametrosVistaBalance(
   sp: { modo?: string; avion?: string; desde?: string; hasta?: string; gasto?: string },
   periodoDefault: { desde: string; hasta: string },
+  inicio: InicioOficial = null,
 ): ParametrosVistaBalance {
   const rango = rangoFiltro(sp.desde, sp.hasta);
   let desde = rango.desde ?? periodoDefault.desde;
   let hasta = rango.hasta ?? periodoDefault.hasta;
   if (desde > hasta) [desde, hasta] = [hasta, desde];
+  // Inicio oficial (16-oct-2026, API 0.0.84): agosto en la URL ⇒ desde el
+  // inicio (el «hoy» es el corte del periodo por defecto). Sin él, intacto.
+  const ajuste = ajustarRangoAlInicio({ desde, hasta }, inicio, periodoDefault.hasta);
+  desde = ajuste.desde ?? desde;
+  hasta = ajuste.hasta ?? hasta;
   const avionId = uuidFiltro(sp.avion);
   const destino: DestinoVistaBalance = avionId
     ? { tipo: "avion", avionId }
@@ -94,7 +104,13 @@ export function parametrosVistaBalance(
         modo: valorDeCatalogo(sp.modo, MODOS_BALANCE_VUELATOUR) ?? MODO_VISTA_BALANCE_DEFAULT,
       };
   const gasto = uuidFiltro(sp.gasto);
-  return { destino, desde, hasta, ...(gasto ? { gasto } : {}) };
+  return {
+    destino,
+    desde,
+    hasta,
+    ...(gasto ? { gasto } : {}),
+    ...(ajuste.ajustado ? { ajustado: true as const } : {}),
+  };
 }
 
 /**

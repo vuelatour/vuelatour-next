@@ -18,6 +18,12 @@ import { fmtInt } from "@/lib/format";
 import { diaMas } from "./conciliacion-auto";
 import { fmtMontoConciliacion, numeroDe } from "./conciliacion-parcial";
 import { esDiaValido, uuidFiltro } from "./url-params";
+import {
+  ajustarRangoAlInicio,
+  recortarAtajos,
+  ventanaConPiso,
+  type InicioOficial,
+} from "./inicio-oficial";
 
 /**
  * Pestañas de la vista. «omitidos» (14-oct-2026, API 0.0.77, invariante 75)
@@ -66,6 +72,9 @@ export function filtroReporteDeVista(
 export interface RangoVista {
   desde?: string;
   hasta?: string;
+  /** Inicio oficial (16-oct-2026): el rango de la URL caía antes del inicio
+   *  y se movió (la página pinta el aviso). Solo existe si es `true`. */
+  ajustado?: true;
 }
 
 /** Ventana por default de las pestañas «sin banco» (la misma del API). */
@@ -84,15 +93,20 @@ export function rangoVistaConciliacion(
   desde: string | null | undefined,
   hasta: string | null | undefined,
   hoy: string,
+  inicio: InicioOficial = null,
 ): RangoVista {
   let d = esDiaValido(desde) ? (desde as string) : undefined;
   let h = esDiaValido(hasta) ? (hasta as string) : undefined;
   if (d && h && d > h) [d, h] = [h, d];
   if (h && h > hoy) h = hoy;
   if (d && d > hoy) d = undefined;
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde`/`?hasta` anterior
+  // se sube (con aviso). Sin rango NO se inventa uno: el API ya recorta.
+  const aj = ajustarRangoAlInicio({ desde: d, hasta: h }, inicio, hoy);
   const out: RangoVista = {};
-  if (d) out.desde = d;
-  if (h) out.hasta = h;
+  if (aj.desde) out.desde = aj.desde;
+  if (aj.hasta) out.hasta = aj.hasta;
+  if (aj.ajustado) out.ajustado = true;
   return out;
 }
 
@@ -107,10 +121,14 @@ export function hayRango(r: RangoVista): boolean {
  * quedaría DESPUÉS y la pestaña caería en «No se pudo consultar». Por eso con
  * solo «hasta» se manda la misma ventana de 90 días pero anclada a esa fecha.
  */
-export function rangoParaSinBanco(r: RangoVista): RangoVista {
+export function rangoParaSinBanco(r: RangoVista, inicio: InicioOficial = null): RangoVista {
   if (r.desde && r.hasta) return { desde: r.desde, hasta: r.hasta };
   if (r.desde) return { desde: r.desde };
-  if (r.hasta) return { desde: diaMas(r.hasta, -DIAS_SIN_BANCO_DEFAULT), hasta: r.hasta };
+  if (r.hasta) {
+    // Inicio oficial (16-oct-2026): la ventana anclada no baja del inicio.
+    const desde = ventanaConPiso(diaMas(r.hasta, -DIAS_SIN_BANCO_DEFAULT), inicio);
+    return { desde, hasta: r.hasta };
+  }
   return {};
 }
 
@@ -123,10 +141,23 @@ export function textoRangoVista(r: RangoVista): string | null {
 }
 
 /** Ventana que describen las pestañas «sin banco» (espejo de `rangoParaSinBanco`). */
-export function textoVentanaSinBanco(r: RangoVista): string {
+export function textoVentanaSinBanco(
+  r: RangoVista,
+  inicio: InicioOficial = null,
+  hoy?: string,
+): string {
   if (r.desde && r.hasta) return `del ${fmtDateOnly(r.desde)} al ${fmtDateOnly(r.hasta)}`;
   if (r.desde) return `desde el ${fmtDateOnly(r.desde)}`;
-  if (r.hasta) return `${DIAS_SIN_BANCO_DEFAULT} días hasta el ${fmtDateOnly(r.hasta)}`;
+  // Inicio oficial (16-oct-2026): la ventana del API es max(hoy − 90, inicio).
+  if (r.hasta) {
+    if (inicio && diaMas(r.hasta, -DIAS_SIN_BANCO_DEFAULT) < inicio) {
+      return `del ${fmtDateOnly(inicio)} al ${fmtDateOnly(r.hasta)}`;
+    }
+    return `${DIAS_SIN_BANCO_DEFAULT} días hasta el ${fmtDateOnly(r.hasta)}`;
+  }
+  if (inicio && hoy && diaMas(hoy, -DIAS_SIN_BANCO_DEFAULT) < inicio) {
+    return `desde el ${fmtDateOnly(inicio)}`;
+  }
   return `últimos ${DIAS_SIN_BANCO_DEFAULT} días`;
 }
 
@@ -365,11 +396,14 @@ export function textoMovimientoEnfocado(
 /** Periodos rápidos del filtro (mismos cortes que Ingresos): días Cancún. */
 export function periodosRapidosConciliacion(
   hoy: string,
+  inicio: InicioOficial = null,
 ): Array<{ clave: string; etiqueta: string; desde: string; hasta: string }> {
   const inicioMes = `${hoy.slice(0, 7)}-01`;
   const finMesAnterior = diaMas(inicioMes, -1);
   const inicioMesAnterior = `${finMesAnterior.slice(0, 7)}-01`;
-  return [
+  // Inicio oficial (16-oct-2026): sin «Mes anterior» entero antes del
+  // inicio; «Últimos 90 días» que lo cruza ⇒ «Desde el 1-sep-2026».
+  return recortarAtajos([
     { clave: "mes", etiqueta: "Este mes", desde: inicioMes, hasta: hoy },
     { clave: "anterior", etiqueta: "Mes anterior", desde: inicioMesAnterior, hasta: finMesAnterior },
     {
@@ -378,5 +412,5 @@ export function periodosRapidosConciliacion(
       desde: diaMas(hoy, -DIAS_SIN_BANCO_DEFAULT),
       hasta: hoy,
     },
-  ];
+  ], inicio, (p) => p.clave === "90");
 }

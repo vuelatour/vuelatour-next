@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ESTADO_GRUPO_LABEL, ESTADOS_GRUPO } from "@/lib/admin/grupos-ui";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 interface GruposFilterBarProps {
   clients: { id: string; nombre: string }[];
@@ -27,6 +29,8 @@ interface GruposFilterBarProps {
  */
 export function GruposFilterBar({ clients, initial }: GruposFilterBarProps) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): las fechas no bajan del inicio. Sin él, libres.
+  const inicio = useInicioOficial();
   const pathname = usePathname();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -97,6 +101,7 @@ export function GruposFilterBar({ clients, initial }: GruposFilterBarProps) {
           <Label className="text-xs font-medium">Desde</Label>
           <Input
             type="date"
+            min={minFechaFiltro(inicio)}
             defaultValue={initial.desde}
             onChange={(e) => pushQuery({ desde: e.target.value })}
           />
@@ -119,6 +124,7 @@ export function GruposFilterBar({ clients, initial }: GruposFilterBarProps) {
           </div>
           <Input
             type="date"
+            min={minFechaFiltro(inicio)}
             defaultValue={initial.hasta}
             onChange={(e) => pushQuery({ hasta: e.target.value })}
           />

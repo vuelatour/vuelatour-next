@@ -3,6 +3,8 @@
 import { useCallback, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { mesInicio } from "@/lib/admin/inicio-oficial";
 
 /**
  * Filtro de MES de Otros gastos (eje fecha_gasto, hora Cancún). Va por
@@ -11,6 +13,8 @@ import { Input } from "@/components/ui/input";
  */
 export function OtrosGastosFilterBar({ mes }: { mes: string }) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): el mes no baja del inicio. Sin él, libre.
+  const inicio = useInicioOficial();
   const pathname = usePathname();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -37,6 +41,7 @@ export function OtrosGastosFilterBar({ mes }: { mes: string }) {
         <Input
           key={mes}
           type="month"
+          min={mesInicio(inicio)}
           defaultValue={mes}
           onChange={(e) => setMes(e.target.value)}
         />

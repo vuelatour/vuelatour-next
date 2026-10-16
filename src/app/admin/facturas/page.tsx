@@ -17,6 +17,10 @@ import { listClients } from "@/lib/api/clients-server";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { rangoFiltro, uuidFiltro } from "@/lib/admin/url-params";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { ajustarRangoAlInicio } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
+import { todayCancun } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +40,10 @@ export default async function FacturasPage({ searchParams }: PageProps) {
 
   // Parámetros validados (21-sep-2026) y catálogos degradables: un
   // `?desde=` imposible o un `?cliente_id=` basura tumbaban la pantalla.
-  const rango = rangoFiltro(sp.desde, sp.hasta);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde`/`?hasta` anterior
+  // se sube con aviso; sin rango no se inventa uno (el API ya recorta).
+  const inicio = await getInicioOficial();
+  const rango = ajustarRangoAlInicio(rangoFiltro(sp.desde, sp.hasta), inicio, todayCancun());
   const clienteFiltro = uuidFiltro(sp.cliente_id);
   const emisoraFiltro = uuidFiltro(sp.emisora_id);
   const degradado = new Degradaciones();
@@ -94,6 +101,7 @@ export default async function FacturasPage({ searchParams }: PageProps) {
           emisora_id: emisoraFiltro ?? "",
         }}
       />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={rango.ajustado} />
 
       {/* Pendientes de facturar */}
       <Card>

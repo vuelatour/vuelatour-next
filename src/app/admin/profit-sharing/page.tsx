@@ -18,6 +18,9 @@ import {
 } from "@/lib/api/profit-sharing-server";
 import { Degradaciones } from "@/lib/api/degradar";
 import { getMe } from "@/lib/api/me";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { ajustarRangoAlInicio, type InicioOficial } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { rangoFiltro } from "@/lib/admin/url-params";
 import { puedeRegistrarEntregas, puedeVerCuentasSocios } from "@/lib/admin/reparto-pagos";
@@ -51,7 +54,10 @@ interface PageProps {
  * boundary. Una fecha imposible se ignora y se usa el mes corriente; el rango
  * invertido (dedazo del selector) se endereza — igual que antes.
  */
-function periodoDeLaUrl(sp: { desde?: string; hasta?: string }): { desde: string; hasta: string } {
+function periodoDeLaUrl(
+  sp: { desde?: string; hasta?: string },
+  inicio: InicioOficial,
+): { desde: string; hasta: string; ajustado: boolean } {
   const fallback = currentMonth();
   const rango = rangoFiltro(sp.desde, sp.hasta);
   let desde = rango.desde ?? fallback.desde;
@@ -59,7 +65,10 @@ function periodoDeLaUrl(sp: { desde?: string; hasta?: string }): { desde: string
   // Un solo extremo válido puede dejar el rango al revés contra el default
   // (p. ej. `?hasta=` de un mes pasado): se endereza aquí también.
   if (desde > hasta) [desde, hasta] = [hasta, desde];
-  return { desde, hasta };
+  // Inicio oficial (16-oct-2026, API 0.0.84): agosto en la URL ⇒ desde el
+  // inicio, con aviso en la página. Sin él, intacto.
+  const ajuste = ajustarRangoAlInicio({ desde, hasta }, inicio, fallback.hasta);
+  return { desde: ajuste.desde ?? desde, hasta: ajuste.hasta ?? hasta, ajustado: ajuste.ajustado };
 }
 
 /**
@@ -68,13 +77,15 @@ function periodoDeLaUrl(sp: { desde?: string; hasta?: string }): { desde: string
  */
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const sp = await searchParams;
-  const { desde, hasta } = periodoDeLaUrl(sp);
+  // SIN inicio oficial: el head no lee el API (regla 5 de titulos-pestana).
+  const { desde, hasta } = periodoDeLaUrl(sp, null);
   return { title: tituloReparto(desde, hasta) };
 }
 
 export default async function ProfitSharingPage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const { desde, hasta } = periodoDeLaUrl(sp);
+  const inicio = await getInicioOficial();
+  const { desde, hasta, ajustado } = periodoDeLaUrl(sp, inicio);
 
   // CUENTA CORRIENTE DE LOS SOCIOS (1-oct-2026, API 0.0.50): «Socios · por
   // entregar» con CUALQUIER periodo. La lectura nunca lanza (API previo / sin
@@ -119,6 +130,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
       </div>
 
       <PeriodSelector initial={{ desde, hasta }} atajoMesPasado hoy={hoy} />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={ajustado} />
 
       <AvisoDegradado faltantes={degradado.faltantes} />
 

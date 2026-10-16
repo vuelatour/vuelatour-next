@@ -177,7 +177,7 @@ describe("QuotesFilterBar · cableado", () => {
   });
 
   it("el rango se LEE de la URL viva (useSearchParams), nunca de useState(initial…)", () => {
-    expect(src).toContain('rangoListaCotizaciones(params.get("desde"), params.get("hasta"))');
+    expect(src).toContain('rangoListaCotizaciones(params.get("desde"), params.get("hasta"), inicio)');
     expect(src).not.toMatch(/useState\(\s*initial/);
     expect(src).not.toMatch(/useState\(\s*rango/);
     expect(src).not.toContain("defaultValue={visible");
@@ -197,7 +197,7 @@ describe("QuotesFilterBar · cableado", () => {
     expect(push).toContain("if (pendiente.current?.base === viva && pendiente.current.consulta === qs) return;");
     const aplicar = src.match(/const aplicar = \(campo: CampoRangoLista, valor: string\) => \{([\s\S]*?)\n  \};/)?.[1] ?? "";
     expect(aplicar).toContain("const sp = paramsParaNavegar();");
-    expect(aplicar).toContain('rangoListaCotizaciones(sp.get("desde"), sp.get("hasta"))');
+    expect(aplicar).toContain('rangoListaCotizaciones(sp.get("desde"), sp.get("hasta"), inicio)');
     expect(aplicar).not.toContain("rangoAlCambiarCampo(rango,");
     // Ningún estado para la consulta pendiente: lo leen los handlers (y el temporizador).
     expect(src).not.toMatch(/useState<ConsultaPendiente/);
@@ -216,11 +216,12 @@ describe("QuotesFilterBar · cableado", () => {
     expect(src).toMatch(/onClick=\{limpiarTodo\}[\s\S]{0,200}cursor-pointer/);
   });
 
-  it("sin <select> nativo, sin hex sueltos y sin max/min en las fechas", () => {
+  it("sin <select> nativo, sin hex sueltos, sin max y el único min es el del inicio oficial", () => {
     expect(src).not.toMatch(/<select\b/);
     expect(src).not.toMatch(/#[0-9a-fA-F]{6}\b/);
     expect(src).not.toMatch(/\bmax=/);
-    expect(src).not.toMatch(/\bmin=/);
+    // Inicio oficial (16-oct-2026): `min` = el inicio (sin Provider ⇒ undefined ⇒ sin atributo).
+    expect(src.match(/\bmin=\{[^}]*\}/g)).toEqual(["min={minFechaFiltro(inicio)}"]);
   });
 
   it("la página pasa `hoy` del servidor y `rangoIgnorado`; el bloque solo se monta con `hoy`", () => {

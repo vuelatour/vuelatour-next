@@ -235,7 +235,7 @@ describe("cableado", () => {
     // Conciliación: `?gasto=` validado, la `key` que remonta al cambiar de
     // periodo, avión o chip (y que un refresh conserva) y los chips que
     // conservan el gasto. Sin gasto no hay key y el libro es el de siempre.
-    expect(src).toContain("const { destino, desde, hasta, gasto } = parametrosVistaBalance(");
+    expect(src).toContain("const { destino, desde, hasta, gasto, ajustado } = parametrosVistaBalance(");
     const libroJsx = src.match(/<LibroExcel\b[\s\S]*?\/>/)?.[0] ?? "";
     expect(libroJsx).toContain("key={claveSalto(gasto, libro) ?? undefined}");
     expect(libroJsx).toContain("libro={libro}");

@@ -145,7 +145,7 @@ describe("QuoteNavegacion · cableado", () => {
 
   it("la LISTA arma la liga de cada fila con sus filtros (server) y la tabla la usa", () => {
     const pagina = leer("app", "admin", "quotes", "page.tsx");
-    expect(pagina).toContain("filtrosListaDeParams(sp)");
+    expect(pagina).toContain("filtrosListaDeParams(sp, inicio)");
     expect(pagina).toContain("href: hrefCotizacion(q.id, qsFiltros)");
     // La lista le pide al API con los MISMOS filtros validados.
     expect(pagina).toContain("q: filtros.q,");
@@ -164,7 +164,7 @@ describe("QuoteNavegacion · cableado", () => {
     expect(pagina).toContain("{MSG_RANGO_API_VIEJO}");
     expect(pagina).toContain("hoy={hoy}");
     expect(pagina).toContain("rangoIgnorado={rangoIgnorado}");
-    expect(pagina).toContain("textoEncabezadoCotizaciones(count, rangoAplicado)");
+    expect(pagina).toContain("textoEncabezadoCotizaciones(count, rangoAplicado, rangoIgnorado ? null : inicio)");
     expect(pagina).toContain("textoVacioCotizaciones(rangoAplicado)");
     expect(pagina).not.toContain("en el rango.");
     expect(pagina).not.toContain('title="Sin cotizaciones"');
@@ -181,7 +181,7 @@ describe("QuoteNavegacion · cableado", () => {
 
   it("el DETALLE lee los filtros con la MISMA función, pide los vecinos degradando y remonta por cotización", () => {
     const detalle = leer("app", "admin", "quotes", "[id]", "page.tsx");
-    expect(detalle).toContain("filtrosListaDeParams(sp)");
+    expect(detalle).toContain("filtrosListaDeParams(sp, inicio)");
     expect(detalle).toMatch(/degradado\.opcional\(\s*"la navegación entre cotizaciones"/);
     expect(detalle).toContain("getQuoteVecinos(id, filtrosLista)");
     expect(detalle).toContain("navegacion={{ vecinos, qs: qsLista }}");

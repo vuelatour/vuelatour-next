@@ -95,6 +95,8 @@ import {
   textoVacioOmitidos,
 } from "@/lib/admin/conciliacion-omision";
 import { vistaSeleccionDeFiltro } from "@/lib/admin/conciliacion-seleccion";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 // Importar un PDF con cientos de movimientos tarda minutos (extracción IA):
@@ -161,7 +163,10 @@ export default async function ConciliacionPage({
   // (día inexistente se ignora, invertido se corrige, futuro se recorta): un
   // enlace viejo nunca tumba la pantalla. Sin él, cada diálogo pone su default.
   const hoy = todayCancun();
-  const rango = rangoVistaConciliacion(sp.desde, sp.hasta, hoy);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde` anterior se sube
+  // (con aviso); sin rango no se inventa uno (el API ya recorta).
+  const inicio = await getInicioOficial();
+  const rango = rangoVistaConciliacion(sp.desde, sp.hasta, hoy, inicio);
   const desdeVista = rango.desde;
   const hastaVista = rango.hasta;
   // Periodo de la auditoría Paywise: mes corriente en hora Cancún por default.
@@ -187,7 +192,7 @@ export default async function ConciliacionPage({
   if (hastaVista) query.hasta = hastaVista;
   // Las pestañas «sin banco» tienen su propia ventana (default: últimos 90
   // días): `rangoParaSinBanco` explica por qué con solo «hasta» se ancla ahí.
-  const sinBancoRango = rangoParaSinBanco(rango);
+  const sinBancoRango = rangoParaSinBanco(rango, inicio);
 
   const degradado = new Degradaciones();
   // La lista de «Omitidos» degrada SIN tumbar la pantalla (14-oct-2026): un API
@@ -401,7 +406,7 @@ export default async function ConciliacionPage({
   const hrefVista = (f: Filtro, cuentaId: string) =>
     hrefConciliacion({ f, cuenta: cuentaId, desde: desdeVista, hasta: hastaVista });
   const hrefConCuenta = (cuentaId: string) => hrefVista(filtro, cuentaId);
-  const ventanaSinBanco = textoVentanaSinBanco(rango);
+  const ventanaSinBanco = textoVentanaSinBanco(rango, inicio, hoy);
   // «Cobros sin banco» (revisión del 15-oct-2026): con el API 0.0.78 la lista
   // trae los PARCIALES y la cifra es lo que FALTA en el banco (del API).
   const encabezadoCobros = encabezadoCobrosSinBanco(cobrosSinBanco, ventanaSinBanco);
@@ -606,6 +611,7 @@ export default async function ConciliacionPage({
           fecha». La auditoría Paywise tiene sus propios Desde/Hasta (los
           MISMOS parámetros de la URL), por eso en esa pestaña no se repite. */}
       {filtro !== "paywise" && <RangoFechasConciliacion hoy={hoy} />}
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={!!rango.ajustado} />
 
       {/* Chips de CUENTA: la bandeja mezclaba todas y el operador no sabía a
           cuál pertenecía cada línea. Conservan el filtro y el rango. */}

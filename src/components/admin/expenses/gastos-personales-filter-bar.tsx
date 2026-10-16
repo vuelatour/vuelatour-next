@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { queryCambioDeMes } from "@/lib/admin/url-params";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { mesInicio } from "@/lib/admin/inicio-oficial";
 
 /**
  * Filtro de MES (eje fecha_gasto, hora Cancún). Va por querystring: el server
@@ -28,6 +30,8 @@ import { queryCambioDeMes } from "@/lib/admin/url-params";
  */
 export function GastosPersonalesFilterBar({ mes }: { mes: string }) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): el mes no baja del inicio. Sin él, libre.
+  const inicio = useInicioOficial();
   const pathname = usePathname();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -55,6 +59,7 @@ export function GastosPersonalesFilterBar({ mes }: { mes: string }) {
           key={mes}
           id={idMes}
           type="month"
+          min={mesInicio(inicio)}
           defaultValue={mes}
           onChange={(e) => setMes(e.target.value)}
           className="cursor-pointer"

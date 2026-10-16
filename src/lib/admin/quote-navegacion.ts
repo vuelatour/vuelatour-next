@@ -34,6 +34,12 @@ import { fechaCompleta } from "./periodo-selector";
 import { esDiaValido, estadoFiltro, uuidFiltro } from "./url-params";
 import type { QuoteVecino } from "@/types/quote-vecinos";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+import {
+  ajustarRangoAlInicio,
+  recortarAtajos,
+  textoDesdeInicio,
+  type InicioOficial,
+} from "./inicio-oficial";
 
 /**
  * Filtros de la BARRA de la lista de cotizaciones que respetan las flechas.
@@ -69,7 +75,10 @@ const primero = (v: string | string[] | undefined): string | undefined =>
  * `q` se recorta y se topa a `Q_MAX`; el rango pasa por
  * `rangoListaCotizaciones`. Lo que queda vacío no viaja.
  */
-export function filtrosListaDeParams(sp: ParamsDeUrl): FiltrosListaCotizaciones {
+export function filtrosListaDeParams(
+  sp: ParamsDeUrl,
+  inicio: InicioOficial = null,
+): FiltrosListaCotizaciones {
   const f: FiltrosListaCotizaciones = {};
   const estado = estadoFiltro(primero(sp.estado));
   if (estado) f.estado = estado;
@@ -79,7 +88,7 @@ export function filtrosListaDeParams(sp: ParamsDeUrl): FiltrosListaCotizaciones 
   if (grupo) f.grupo_id = grupo;
   const q = (primero(sp.q) ?? "").trim().slice(0, Q_MAX).trim();
   if (q) f.q = q;
-  const r = rangoListaCotizaciones(primero(sp.desde), primero(sp.hasta));
+  const r = rangoListaCotizaciones(primero(sp.desde), primero(sp.hasta), inicio);
   if (r.desde) f.desde = r.desde;
   if (r.hasta) f.hasta = r.hasta;
   return f;
@@ -116,6 +125,9 @@ export function hrefListaCotizaciones(qs: string): string {
 export interface RangoListaCotizaciones {
   desde?: string;
   hasta?: string;
+  /** Inicio oficial (16-oct-2026): el rango de la URL caía antes del inicio
+   *  y se movió (la página pinta el aviso). Solo existe si es `true`. */
+  ajustado?: true;
 }
 
 /**
@@ -129,13 +141,19 @@ export interface RangoListaCotizaciones {
 export function rangoListaCotizaciones(
   desde: string | null | undefined,
   hasta: string | null | undefined,
+  inicio: InicioOficial = null,
 ): RangoListaCotizaciones {
   let d = esDiaValido(desde) ? (desde as string) : undefined;
   let h = esDiaValido(hasta) ? (hasta as string) : undefined;
   if (d && h && d > h) [d, h] = [h, d];
+  // Inicio oficial (16-oct-2026, API 0.0.84): un extremo anterior se sube
+  // (agosto entero ⇒ el mes del inicio completo: la fecha es la del vuelo y
+  // hay vuelos por venir). Sin rango no se inventa uno: el API ya recorta.
+  const aj = ajustarRangoAlInicio({ desde: d, hasta: h }, inicio, "");
   const out: RangoListaCotizaciones = {};
-  if (d) out.desde = d;
-  if (h) out.hasta = h;
+  if (aj.desde) out.desde = aj.desde;
+  if (aj.hasta) out.hasta = aj.hasta;
+  if (aj.ajustado) out.ajustado = true;
   return out;
 }
 
@@ -195,7 +213,10 @@ export interface PeriodoRapidoCotizaciones {
  * día del mes (con los días por venir: la fecha es la del vuelo); «Mes
  * pasado» = el mes anterior completo; «Próximos 30 días» = hoy → hoy + 30.
  */
-export function periodosRapidosCotizaciones(hoy: string): PeriodoRapidoCotizaciones[] {
+export function periodosRapidosCotizaciones(
+  hoy: string,
+  inicio: InicioOficial = null,
+): PeriodoRapidoCotizaciones[] {
   const inicioMes = `${hoy.slice(0, 7)}-01`;
   // 32 días después del día 1 cae SIEMPRE en el mes siguiente; el día 1 de
   // ese mes menos uno es el último día de este (febrero bisiesto incluido).
@@ -203,11 +224,15 @@ export function periodosRapidosCotizaciones(hoy: string): PeriodoRapidoCotizacio
   const finMes = diaMas(inicioMesSiguiente, -1);
   const finMesAnterior = diaMas(inicioMes, -1);
   const inicioMesAnterior = `${finMesAnterior.slice(0, 7)}-01`;
-  return [
-    { clave: "mes", etiqueta: "Este mes", desde: inicioMes, hasta: finMes },
-    { clave: "anterior", etiqueta: "Mes pasado", desde: inicioMesAnterior, hasta: finMesAnterior },
-    { clave: "30", etiqueta: "Próximos 30 días", desde: hoy, hasta: diaMas(hoy, 30) },
-  ];
+  // Inicio oficial (16-oct-2026): sin «Mes pasado» entero antes del inicio.
+  return recortarAtajos<PeriodoRapidoCotizaciones>(
+    [
+      { clave: "mes", etiqueta: "Este mes", desde: inicioMes, hasta: finMes },
+      { clave: "anterior", etiqueta: "Mes pasado", desde: inicioMesAnterior, hasta: finMesAnterior },
+      { clave: "30", etiqueta: "Próximos 30 días", desde: hoy, hasta: diaMas(hoy, 30) },
+    ],
+    inicio,
+  );
 }
 
 /** «con fecha de vuelo del 01 oct 2026 al 31 oct 2026» · «… desde el …» · «… hasta el …» · null. */
@@ -222,17 +247,23 @@ export function textoRangoCotizaciones(r: RangoListaCotizaciones): string | null
 const plural = (count: number) => (count === 1 ? "cotización" : "cotizaciones");
 
 /** Encabezado de la lista: «12 cotizaciones con fecha de vuelo del … al ….» / «312 cotizaciones (todas las fechas).». */
-export function textoEncabezadoCotizaciones(count: number, r: RangoListaCotizaciones): string {
+export function textoEncabezadoCotizaciones(
+  count: number,
+  r: RangoListaCotizaciones,
+  inicio: InicioOficial = null,
+): string {
   const rango = textoRangoCotizaciones(r);
-  return rango
-    ? `${count} ${plural(count)} ${rango}.`
+  if (rango) return `${count} ${plural(count)} ${rango}.`;
+  // Inicio oficial (16-oct-2026): ya no son «todas las fechas».
+  return inicio
+    ? `${count} ${plural(count)} (${textoDesdeInicio(inicio)}).`
     : `${count} ${plural(count)} (todas las fechas).`;
 }
 
 /** Nota bajo la barra: qué periodo se ve y que las SIN fecha no entran al periodo. */
 export function notaRangoCotizaciones(
   r: RangoListaCotizaciones,
-  opts: { ignorado?: boolean } = {},
+  opts: { ignorado?: boolean; inicio?: InicioOficial } = {},
 ): string {
   const rango = opts.ignorado ? null : textoRangoCotizaciones(r);
   if (rango) {
@@ -240,6 +271,12 @@ export function notaRangoCotizaciones(
       `Mostrando cotizaciones ${rango}. Las que no tienen fecha de vuelo no entran al ` +
       "periodo: quítalo con «Limpiar» para verlas. Las flechas del detalle recorren " +
       "este mismo periodo."
+    );
+  }
+  if (opts.inicio) {
+    return (
+      `Sin periodo: se muestran las cotizaciones ${textoDesdeInicio(opts.inicio)}; ` +
+      "las que no tienen fecha de vuelo van al inicio de la tabla."
     );
   }
   return (

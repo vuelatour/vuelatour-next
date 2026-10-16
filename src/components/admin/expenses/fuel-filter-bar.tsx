@@ -4,6 +4,8 @@ import { useCallback, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { mesInicio } from "@/lib/admin/inicio-oficial";
 
 /**
  * Filtros de Combustibles: MES (eje fecha_gasto, igual que el reparto) +
@@ -21,6 +23,8 @@ export function FuelFilterBar({
   aircraft: { id: string; matricula: string; modelo: string }[];
 }) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): el mes no baja del inicio. Sin él, libre.
+  const inicio = useInicioOficial();
   const pathname = usePathname();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -49,6 +53,7 @@ export function FuelFilterBar({
         <Input
           key={mes}
           type="month"
+          min={mesInicio(inicio)}
           defaultValue={mes}
           onChange={(e) => set({ mes: e.target.value })}
         />

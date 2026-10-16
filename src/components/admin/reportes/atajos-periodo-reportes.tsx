@@ -3,6 +3,7 @@ import { CalendarDaysIcon } from "@heroicons/react/24/outline";
 import { buttonVariants } from "@/components/ui/button";
 import { ARIA_ATAJOS_PERIODO, atajosPeriodoReportes } from "@/lib/admin/reportes-ui";
 import { cn } from "@/lib/utils";
+import type { InicioOficial } from "@/lib/admin/inicio-oficial";
 
 /**
  * Atajos «Este mes · Octubre 2026» / «Mes pasado · Septiembre 2026» bajo la
@@ -20,12 +21,15 @@ export function AtajosPeriodoReportes({
   hoy,
   desde,
   hasta,
+  inicio = null,
 }: {
   hoy: string;
   desde: string;
   hasta: string;
+  /** Inicio oficial (16-oct-2026): sin él, los atajos de siempre. */
+  inicio?: InicioOficial;
 }) {
-  const atajos = atajosPeriodoReportes(hoy, desde, hasta);
+  const atajos = atajosPeriodoReportes(hoy, desde, hasta, inicio);
   if (atajos.length === 0) return null;
   return (
     <div role="group" aria-label={ARIA_ATAJOS_PERIODO} className="flex flex-wrap gap-2">

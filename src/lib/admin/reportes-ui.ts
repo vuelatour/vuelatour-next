@@ -19,6 +19,7 @@ import { textoDegradado } from "@/lib/api/degradar";
 import type { Aircraft } from "@/types/aircraft";
 import { hrefReportesDesdeVista, periodoDefaultVista, textoPeriodoVista } from "./balance-vista";
 import { etiquetaMes, mesActual, mesAnterior, rangoMesPasado } from "./reparto-pagos";
+import { atajoAntesDelInicio, type InicioOficial } from "./inicio-oficial";
 
 // =============================================================================
 // Cabecera y rótulos de sección
@@ -203,7 +204,12 @@ export interface AtajoPeriodo {
  * (el mismo corte del periodo por defecto) y «Mes pasado» = el mes calendario
  * anterior completo. `hoy` inválido ⇒ ninguno.
  */
-export function atajosPeriodoReportes(hoy: string, desde: string, hasta: string): AtajoPeriodo[] {
+export function atajosPeriodoReportes(
+  hoy: string,
+  desde: string,
+  hasta: string,
+  inicio: InicioOficial = null,
+): AtajoPeriodo[] {
   const mesHoy = mesActual(hoy);
   const mesPasado = mesAnterior(hoy);
   const rangoPasado = rangoMesPasado(hoy);
@@ -223,6 +229,10 @@ export function atajosPeriodoReportes(hoy: string, desde: string, hasta: string)
   });
   return [
     atajo("este-mes", ETIQUETA_ATAJO_ESTE_MES, mesHoy, esteMes),
-    atajo("mes-pasado", ETIQUETA_ATAJO_MES_PASADO, mesPasado, rangoPasado),
+    // Inicio oficial (16-oct-2026): un «Mes pasado» ENTERO antes del inicio
+    // (agosto, visto en septiembre) no se ofrece.
+    ...(atajoAntesDelInicio(rangoPasado, inicio)
+      ? []
+      : [atajo("mes-pasado", ETIQUETA_ATAJO_MES_PASADO, mesPasado, rangoPasado)]),
   ];
 }

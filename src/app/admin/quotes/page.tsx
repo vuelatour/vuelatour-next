@@ -18,6 +18,7 @@ import { textoSinVerificar } from "@/lib/admin/lotes";
 import {
   MSG_RANGO_API_VIEJO,
   filtrosListaDeParams,
+  rangoListaCotizaciones,
   hrefCotizacion,
   qsFiltrosLista,
   rangoDeFiltros,
@@ -43,6 +44,8 @@ import { grupoDeVuelo } from "@/lib/admin/grupos-ui";
 import { idAeronaveCotizada } from "@/lib/admin/avion-cotizado";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import type { VueloConGrupo } from "@/types/grupos";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -96,7 +99,11 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   // para que «‹ Anterior» / «Siguiente ›» recorran exactamente esta lista.
   // RANGO de fechas (13-oct-2026): `desde`/`hasta` también salen de ahí, así
   // que viajan a `/vecinos` y a los hrefs sin tocar el detalle.
-  const filtros = filtrosListaDeParams(sp);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde` anterior se sube
+  // con aviso (la MISMA regla en el detalle, para que las flechas coincidan).
+  const inicio = await getInicioOficial();
+  const filtros = filtrosListaDeParams(sp, inicio);
+  const rangoAjustado = !!rangoListaCotizaciones(sp.desde, sp.hasta, inicio).ajustado;
   const grupoFiltro = filtros.grupo_id;
   const estadoFilter = filtros.estado;
   const clienteFiltro = filtros.cliente_id;
@@ -267,7 +274,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           <p className="text-sm text-muted-foreground">Operación</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Cotizaciones</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {textoEncabezadoCotizaciones(count, rangoAplicado)}
+            {textoEncabezadoCotizaciones(count, rangoAplicado, rangoIgnorado ? null : inicio)}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -413,6 +420,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         hoy={hoy}
         rangoIgnorado={rangoIgnorado}
       />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={rangoAjustado} />
 
       {focoPc && (
         <FranjaPreCierre

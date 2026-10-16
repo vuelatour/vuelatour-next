@@ -29,6 +29,8 @@ import { esUuid } from "@/lib/admin/url-params";
 import { facturaRegistradaFuera } from "@/lib/admin/factura-obligatoria";
 import { filtrosListaDeParams, qsFiltrosLista } from "@/lib/admin/quote-navegacion";
 import { CANCUN_TZ } from "@/lib/datetime";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { FranjaAntesDelInicio } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +75,9 @@ export default async function QuoteDetailPage({
   // igual, sin flechas, y lo AVISA (`degradado`); un API sin la ruta (404)
   // o un rol sin acceso (403) no pintan flechas y no avisan.
   const degradado = new Degradaciones();
-  const filtrosLista = filtrosListaDeParams(sp);
+  // Inicio oficial (16-oct-2026): la misma regla que la lista (flechas).
+  const inicio = await getInicioOficial();
+  const filtrosLista = filtrosListaDeParams(sp, inicio);
   const qsLista = qsFiltrosLista(filtrosLista);
   const vecinosPromesa = degradado.opcional(
     "la navegación entre cotizaciones",
@@ -167,6 +171,8 @@ export default async function QuoteDetailPage({
     <>
       <TituloPestana titulo={tituloCotizacion(quote.folio, client?.nombre)} />
       <AvisoDegradado faltantes={degradado.faltantes} />
+      {/* Inicio oficial (16-oct-2026): una cotización de antes se abre por id con su franja. */}
+      <FranjaAntesDelInicio fecha={quote.fecha_vuelo} inicio={inicio} />
     <QuoteWorkspace
       // Una instancia POR cotización: al brincar con las flechas (misma ruta,
       // otro id) el cotizador NUNCA conserva el formulario de la anterior.

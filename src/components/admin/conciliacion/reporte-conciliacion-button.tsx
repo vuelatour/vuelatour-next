@@ -15,6 +15,8 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { env } from "@/lib/env";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 const inputCls =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -59,6 +61,8 @@ export function ReporteConciliacionButton({
   hasta?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Inicio oficial (16-oct-2026): `min` en las fechas del reporte.
+  const inicio = useInicioOficial();
   const [cuentaId, setCuentaId] = useState("");
   const [estado, setEstado] = useState<EstadoReporteConciliacion>(filtroActivo);
   const [desde, setDesde] = useState(() => desdeVista ?? `${hoyCancun().slice(0, 7)}-01`);
@@ -195,6 +199,7 @@ export function ReporteConciliacionButton({
                 <input
                   id="rep-conc-desde"
                   type="date"
+                  min={minFechaFiltro(inicio)}
                   className={inputCls}
                   value={desde}
                   required
@@ -208,6 +213,7 @@ export function ReporteConciliacionButton({
                 <input
                   id="rep-conc-hasta"
                   type="date"
+                  min={minFechaFiltro(inicio)}
                   className={inputCls}
                   value={hasta}
                   required

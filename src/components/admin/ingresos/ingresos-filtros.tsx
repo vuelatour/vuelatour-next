@@ -20,6 +20,8 @@ import {
 } from "@/lib/admin/ingresos-ui";
 import { descargarArchivoDelPanel } from "@/lib/descargar-archivo";
 import { cn } from "@/lib/utils";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 /**
  * Barra de filtros de Ingresos (24-sep-2026): todo vive en la URL (la página
@@ -36,6 +38,8 @@ export function IngresosFiltros({
   hoy: string;
 }) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): `min` en las fechas y atajos recortados.
+  const inicio = useInicioOficial();
   const [q, setQ] = useState(filtros.q ?? "");
   const tab = filtros.tab;
   const ir = (cambios: Partial<Record<ClaveUrlIngresos, string | null>>) =>
@@ -69,6 +73,7 @@ export function IngresosFiltros({
           <Input
             type="date"
             value={filtros.desde}
+            min={minFechaFiltro(inicio)}
             max={hoy}
             onChange={(e) => e.target.value && ir({ desde: e.target.value, hasta: filtros.hasta })}
             className="h-9 w-36 cursor-pointer"
@@ -80,13 +85,14 @@ export function IngresosFiltros({
           <Input
             type="date"
             value={filtros.hasta}
+            min={minFechaFiltro(inicio)}
             onChange={(e) => e.target.value && ir({ desde: filtros.desde, hasta: e.target.value })}
             className="h-9 w-36 cursor-pointer"
             title="Fecha en que entró el dinero (día de Cancún)"
           />
         </div>
         <div className="flex flex-wrap gap-1 pb-0.5">
-          {periodosRapidos(hoy).map((p) => {
+          {periodosRapidos(hoy, inicio).map((p) => {
             const activo = p.desde === filtros.desde && p.hasta === filtros.hasta;
             return (
               <button

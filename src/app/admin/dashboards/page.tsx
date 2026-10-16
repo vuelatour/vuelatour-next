@@ -43,6 +43,9 @@ import {
 } from "@/lib/admin/otros-ingresos-avion";
 import type { Rol } from "@/types/me";
 import { rangoFiltro } from "@/lib/admin/url-params";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { ajustarRangoAlInicio } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +92,12 @@ export default async function DashboardsPage({ searchParams }: PageProps) {
   let desde = rango.desde ?? fallback.desde;
   let hasta = rango.hasta ?? fallback.hasta;
   if (desde > hasta) [desde, hasta] = [hasta, desde];
+  // Inicio oficial (16-oct-2026, API 0.0.84): agosto en la URL ⇒ desde el
+  // inicio, con aviso. Sin él, intacto.
+  const inicio = await getInicioOficial();
+  const ajuste = ajustarRangoAlInicio({ desde, hasta }, inicio, fallback.hasta);
+  desde = ajuste.desde ?? desde;
+  hasta = ajuste.hasta ?? hasta;
 
   const me = await getMe();
   const tabs = TABS.filter((t) => t.roles.includes(me.rol));
@@ -130,6 +139,7 @@ export default async function DashboardsPage({ searchParams }: PageProps) {
       )}
 
       <PeriodSelector initial={{ desde, hasta }} />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={ajuste.ajustado} />
 
       {active === "ejecutivo" && <Ejecutivo desde={desde} hasta={hasta} />}
       {active === "operativo" && <Operativo desde={desde} hasta={hasta} />}

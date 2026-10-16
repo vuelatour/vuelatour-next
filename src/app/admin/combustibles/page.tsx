@@ -33,6 +33,9 @@ import {
   claveOrdenCarga,
 } from "@/lib/admin/combustibles";
 import { getMe } from "@/lib/api/me";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { ajustarMesAlInicio } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -89,9 +92,13 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   // Mes elegido (default: mes corriente en hora Cancún — mismo eje que el
   // reparto a socios: fecha_gasto).
-  const mes = /^\d{4}-\d{2}$/.test(sp.mes ?? "")
-    ? (sp.mes as string)
-    : todayCancun().slice(0, 7);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un mes anterior al del
+  // inicio (URL vieja) pasa al mes del inicio, con aviso. Sin él, intacto.
+  const inicio = await getInicioOficial();
+  const { mes, ajustado: mesAjustado } = ajustarMesAlInicio(
+    /^\d{4}-\d{2}$/.test(sp.mes ?? "") ? (sp.mes as string) : todayCancun().slice(0, 7),
+    inicio,
+  );
   // uuid o nada: un `?aeronave_id=` basura daba 400 y tumbaba la pantalla.
   const aeronaveId = uuidFiltro(sp.aeronave_id) ?? "";
   const { desde, hasta } = rangoDeMes(mes);
@@ -262,6 +269,7 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
       <AvisoDegradado faltantes={degradado.faltantes} />
 
       <FuelFilterBar mes={mes} aeronaveId={aeronaveId} aircraft={aircraftOpts} />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={mesAjustado} />
 
       {/* «Resolver →» del pre-cierre (15-oct-2026): las cargas en ámbar, SIN
           reordenar (la agrupación por avión manda). */}

@@ -20,6 +20,7 @@ import { hayComprobante } from "@/lib/admin/comprobante-badge";
 import { distintivoOrigen, origenCapturaLabel } from "@/lib/admin/gastos-captura";
 import { estadoAvionGasto, etiquetaAvionGasto } from "@/lib/admin/gasto-avion";
 import { PESTANAS_GASTOS } from "@/lib/admin/titulos-pestana";
+import { ajustarRangoAlInicio, type InicioOficial } from "./inicio-oficial";
 
 /**
  * Vista de GASTOS en UNA sola tabla (14-oct-2026). Pedido del cliente: «unir
@@ -49,6 +50,10 @@ export type ModoCaptura = "todas" | "semana" | "rango";
 
 export interface FiltrosGastos {
   vista: VistaGastos;
+  /** Inicio oficial (16-oct-2026): la fecha del gasto de la URL caía antes
+   *  del inicio y se movió (la página pinta el aviso). Solo existe si es
+   *  `true`; no viaja al API. */
+  ajustado?: true;
   aeronave_id?: string;
   categoria?: string;
   medio?: string;
@@ -81,7 +86,10 @@ export interface FiltrosGastos {
  *    Cancún); si no, «todas».
  *  - `orden`: "captura" o nada (fecha del gasto, el default del API).
  */
-export function leerFiltrosGastos(get: (clave: string) => string | null | undefined): FiltrosGastos {
+export function leerFiltrosGastos(
+  get: (clave: string) => string | null | undefined,
+  inicio: InicioOficial = null,
+): FiltrosGastos {
   const f = get("f");
   const vista: VistaGastos = f === "pendientes" || f === "duplicados" ? f : "todos";
   const capDesdeCrudo = get("cap_desde");
@@ -90,7 +98,9 @@ export function leerFiltrosGastos(get: (clave: string) => string | null | undefi
   const capHasta = esDiaValido(capHastaCrudo) ? (capHastaCrudo as string) : undefined;
   const captura: ModoCaptura =
     capDesde || capHasta ? "rango" : get("cap") === "7d" ? "semana" : "todas";
-  const rango = rangoFiltro(get("desde"), get("hasta"));
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde`/`?hasta` anterior
+  // se sube (con aviso); sin rango no se inventa uno (el API ya recorta).
+  const rango = ajustarRangoAlInicio(rangoFiltro(get("desde"), get("hasta")), inicio, "");
   const banco = get("banco");
   const out: FiltrosGastos = { vista, captura };
   const aeronave = uuidFiltro(get("aeronave_id"));
@@ -109,6 +119,7 @@ export function leerFiltrosGastos(get: (clave: string) => string | null | undefi
   if (capDesde) out.cap_desde = capDesde;
   if (capHasta) out.cap_hasta = capHasta;
   if (get("orden") === "captura") out.orden = "captura";
+  if (rango.ajustado) out.ajustado = true;
   return out;
 }
 

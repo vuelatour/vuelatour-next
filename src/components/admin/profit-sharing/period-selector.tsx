@@ -17,6 +17,8 @@ import {
   type Periodo,
 } from "@/lib/admin/periodo-selector";
 import { MesReporteSelect } from "./mes-reporte-select";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { atajoAntesDelInicio, minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 interface Props {
   initial: { desde: string; hasta: string };
@@ -139,7 +141,12 @@ export function PeriodSelector({
 
   // «Hoy» se fija UNA vez: el del servidor o, sin él, el del navegador.
   const [hoy] = useState(() => hoyServidor ?? todayCancun());
-  const mesPasado = atajoMesPasado ? rangoMesPasado(hoy) : null;
+  // Inicio oficial (16-oct-2026): `min` en los dos campos y sin «Mes pasado»
+  // si ese mes queda entero antes del inicio. Sin él, como siempre.
+  const inicio = useInicioOficial();
+  const minFecha = minFechaFiltro(inicio);
+  const rangoPasado = atajoMesPasado ? rangoMesPasado(hoy) : null;
+  const mesPasado = atajoAntesDelInicio(rangoPasado, inicio) ? null : rangoPasado;
   const mesPasadoNombre = atajoMesPasado ? mesAnterior(hoy) : null;
   const enMesPasado =
     mesPasado !== null && initial.desde === mesPasado.desde && initial.hasta === mesPasado.hasta;
@@ -157,6 +164,7 @@ export function PeriodSelector({
           id="periodo-desde"
           type="date"
           className={compacto ? CLASE_INPUT_COMPACTO : undefined}
+          min={minFecha}
           value={visible.desde}
           onChange={(e) => onCambio("desde", e.target.value)}
           onBlur={() => onSalir("desde")}
@@ -178,6 +186,7 @@ export function PeriodSelector({
           id="periodo-hasta"
           type="date"
           className={compacto ? CLASE_INPUT_COMPACTO : undefined}
+          min={minFecha}
           value={visible.hasta}
           onChange={(e) => onCambio("hasta", e.target.value)}
           onBlur={() => onSalir("hasta")}

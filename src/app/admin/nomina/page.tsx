@@ -56,6 +56,13 @@ import {
   tituloVacioNomina,
   tituloVerEnGastos,
 } from "@/lib/admin/nomina";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import {
+  ajustarMesAlInicio,
+  esMesDelInicioOAnterior,
+  textoArrancaEnMes,
+} from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +94,13 @@ export default async function NominaPage({
   const sp = await searchParams;
   const hoy = todayCancun();
   // `?mes=` inválido se IGNORA (mes de hoy en Cancún): nunca un 400 ni un throw.
-  const mes = mesNominaDeUrl(sp.mes, hoy);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un mes anterior al del inicio
+  // (URL vieja) pasa al mes del inicio, con aviso; «‹ anterior» se apaga en
+  // el mes del inicio. Sin él, intacto.
+  const inicio = await getInicioOficial();
+  const { mes, ajustado: mesAjustado } = ajustarMesAlInicio(mesNominaDeUrl(sp.mes, hoy), inicio);
+  const anteriorDeshabilitado =
+    inicio && esMesDelInicioOAnterior(mes, inicio) ? textoArrancaEnMes(inicio) : null;
   const { desde, hasta } = rangoMesNomina(mes);
   const { anterior, siguiente } = mesesVecinos(mes);
 
@@ -169,7 +182,9 @@ export default async function NominaPage({
         mes={mes}
         anterior={esMesNomina(anterior) ? anterior : null}
         siguiente={esMesFuturoNomina(siguiente, hoy) ? null : siguiente}
+        anteriorDeshabilitado={anteriorDeshabilitado}
       />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={mesAjustado} />
 
       {/* Catálogos o fotos que no cargaron: se dice en vez de pintar vacío. */}
       <AvisoDegradado faltantes={degradado.faltantes} />

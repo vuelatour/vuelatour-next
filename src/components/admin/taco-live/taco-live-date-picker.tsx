@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 /**
  * Selector de día de "Tacómetros en vivo": se teclea o se elige del
@@ -14,10 +16,13 @@ import { Input } from "@/components/ui/input";
  */
 export function TacoLiveDatePicker({ fecha }: { fecha: string }) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): las fechas no bajan del inicio. Sin él, libres.
+  const inicio = useInicioOficial();
 
   return (
     <Input
       type="date"
+      min={minFechaFiltro(inicio)}
       value={fecha}
       onChange={(e) => {
         const v = e.target.value;

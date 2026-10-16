@@ -46,6 +46,12 @@ import { metodoPagoLabel } from "./metodos-pago";
 import { esDiaValido, uuidFiltro, valorDeCatalogo } from "./url-params";
 import { fmtMonto, fmtUsd } from "@/lib/format";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
+import {
+  ajustarRangoAlInicio,
+  recortarAtajos,
+  ventanaConPiso,
+  type InicioOficial,
+} from "./inicio-oficial";
 
 /** Misma regla de confianza que la conciliación de gastos (fuente única). */
 export { textoConfianza };
@@ -126,6 +132,9 @@ export interface FiltrosIngresos {
   hasta: string;
   /** true = el periodo viene en la URL (se conserva en los enlaces). */
   periodoExplicito: boolean;
+  /** Inicio oficial (16-oct-2026): el periodo de la URL caía antes del
+   *  inicio y se movió (la página pinta el aviso). Solo existe si es `true`. */
+  ajustado?: true;
   moneda?: MonedaIngreso;
   categoria?: CategoriaIngreso;
   cuenta?: string;
@@ -158,6 +167,7 @@ export function filtrosIngresosDeUrl(
   sp: Sp,
   rol: string | null | undefined,
   hoy: string,
+  inicio: InicioOficial = null,
 ): FiltrosIngresos {
   const tab = tabDeUrl(primero(sp.tab), rol);
   let d = primero(sp.desde);
@@ -175,8 +185,21 @@ export function filtrosIngresosDeUrl(
   // que ya no había nada que conciliar.
   const inicioDefault =
     tab === "por-conciliar" && !h ? diaMas(hoy, -(DIAS_POR_CONCILIAR_DEFAULT - 1)) : inicioMes;
-  const desde = d ?? (h && h < inicioMes ? `${h.slice(0, 7)}-01` : inicioDefault);
-  const hasta = h ?? (desde > hoy ? desde : hoy);
+  let desde = d ?? (h && h < inicioMes ? `${h.slice(0, 7)}-01` : inicioDefault);
+  let hasta = h ?? (desde > hoy ? desde : hoy);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un periodo de la URL anterior
+  // se mueve CON aviso; la ventana por defecto de «Por conciliar» (90 días)
+  // solo arranca en el inicio (sin aviso: nadie pidió agosto). Sin él, intacto.
+  let ajustado = false;
+  if (inicio && (d || h)) {
+    const aj = ajustarRangoAlInicio({ desde, hasta }, inicio, hoy);
+    desde = aj.desde ?? desde;
+    hasta = aj.hasta ?? hasta;
+    ajustado = aj.ajustado;
+  } else if (inicio) {
+    desde = ventanaConPiso(desde, inicio);
+    if (hasta < desde) hasta = desde;
+  }
   const conc = valorDeCatalogo(primero(sp.conciliacion), FILTROS_CONCILIACION);
   const q = (primero(sp.q) ?? "").trim().slice(0, 80);
   const bajas = valorDeCatalogo(primero(sp.bajas), ["incluir", "solo"] as const);
@@ -201,6 +224,7 @@ export function filtrosIngresosDeUrl(
     ingreso: uuidFiltro(primero(sp.ingreso)),
     bajas: tab === "otros" ? bajas : undefined,
     saldo: tab === "anticipos" && primero(sp.saldo) === "todos" ? "todos" : undefined,
+    ...(ajustado ? { ajustado: true as const } : {}),
   };
 }
 
@@ -1842,15 +1866,24 @@ export function textoPeriodo(desde: string, hasta: string): string {
 }
 
 /** Rápidos de periodo: este mes, mes anterior, últimos 90 días. */
-export function periodosRapidos(hoy: string): Array<{ clave: string; etiqueta: string; desde: string; hasta: string }> {
+export function periodosRapidos(
+  hoy: string,
+  inicio: InicioOficial = null,
+): Array<{ clave: string; etiqueta: string; desde: string; hasta: string }> {
   const inicioMes = `${hoy.slice(0, 7)}-01`;
   const finMesAnterior = diaMas(inicioMes, -1);
   const inicioMesAnterior = `${finMesAnterior.slice(0, 7)}-01`;
-  return [
-    { clave: "mes", etiqueta: "Este mes", desde: inicioMes, hasta: hoy },
-    { clave: "anterior", etiqueta: "Mes anterior", desde: inicioMesAnterior, hasta: finMesAnterior },
-    { clave: "90", etiqueta: "Últimos 90 días", desde: diaMas(hoy, -90), hasta: hoy },
-  ];
+  // Inicio oficial (16-oct-2026): sin «Mes anterior» si queda entero antes;
+  // «Últimos 90 días» que cruza el inicio ⇒ «Desde el 1-sep-2026».
+  return recortarAtajos(
+    [
+      { clave: "mes", etiqueta: "Este mes", desde: inicioMes, hasta: hoy },
+      { clave: "anterior", etiqueta: "Mes anterior", desde: inicioMesAnterior, hasta: finMesAnterior },
+      { clave: "90", etiqueta: "Últimos 90 días", desde: diaMas(hoy, -90), hasta: hoy },
+    ],
+    inicio,
+    (p) => p.clave === "90",
+  );
 }
 
 /** ¿Suma a resultados? (re-export para las tablas sin importar dos módulos). */

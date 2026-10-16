@@ -25,6 +25,9 @@ import {
   leerFocoPreCierre,
 } from "@/lib/admin/pre-cierre-resolver";
 import { todayCancun } from "@/lib/datetime";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { ajustarRangoAlInicio } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -57,14 +60,18 @@ export default async function GruposPage({ searchParams }: GruposPageProps) {
   const estado = (ESTADOS_GRUPO as readonly string[]).includes(sp.estado ?? "")
     ? (sp.estado as EstadoGrupo)
     : undefined;
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde`/`?hasta` anterior
+  // se sube con aviso; sin rango no se inventa uno (el API ya recorta).
+  const inicio = await getInicioOficial();
+  const rango = ajustarRangoAlInicio({ desde: sp.desde, hasta: sp.hasta }, inicio, todayCancun());
 
   const [me, gruposRes, clientsRes] = await Promise.all([
     getMe().catch(() => null),
     listGruposTodos({
       estado,
       cliente_id: sp.cliente_id || undefined,
-      desde: sp.desde || undefined,
-      hasta: sp.hasta || undefined,
+      desde: rango.desde,
+      hasta: rango.hasta,
       q: sp.q || undefined,
     }),
     // Best-effort: /v1/clients está restringido por rol (PII fiscal).
@@ -170,11 +177,12 @@ export default async function GruposPage({ searchParams }: GruposPageProps) {
         initial={{
           estado: estado ?? "",
           cliente_id: sp.cliente_id ?? "",
-          desde: sp.desde ?? "",
-          hasta: sp.hasta ?? "",
+          desde: rango.desde ?? "",
+          hasta: rango.hasta ?? "",
           q: sp.q ?? "",
         }}
       />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={rango.ajustado} />
 
       {focoPc && (
         <FranjaPreCierre

@@ -42,6 +42,7 @@ import type {
   OrdenFacturas,
   SolicitudFactura,
 } from "@/types/facturas-emitidas";
+import { ajustarRangoAlInicio, type InicioOficial } from "./inicio-oficial";
 
 // =============================================================================
 // Roles (espejo de los @Roles del API; el gate real es el API)
@@ -96,6 +97,10 @@ export const SIN_EMISORA = "SIN_EMISORA";
 export const EMISORA_OTRA = "__OTRA__";
 
 export interface FiltrosFacturas {
+  /** Inicio oficial (16-oct-2026): el rango de la URL caía antes del inicio
+   *  y se movió (la página pinta el aviso). Solo existe si es `true`; no
+   *  viaja al API. */
+  ajustado?: true;
   q?: string;
   desde?: string;
   hasta?: string;
@@ -122,13 +127,23 @@ function uno(v: string | string[] | undefined): string | undefined {
  * Filtros de `/admin/facturas-emitidas` leídos de la URL. Lo inválido se
  * IGNORA (regla de `url-params.ts`): un enlace viejo nunca tumba la pantalla.
  */
-export function filtrosFacturasDeUrl(sp: ParamsUrl): FiltrosFacturas {
+export function filtrosFacturasDeUrl(
+  sp: ParamsUrl,
+  inicio: InicioOficial = null,
+  hoy = "",
+): FiltrosFacturas {
   const q = (uno(sp.q) ?? "").trim().slice(0, 100);
   const d = uno(sp.desde);
   const h = uno(sp.hasta);
   // Solo días de pared (la columna `fecha_emision` es date); un rango al revés
   // se corrige en vez de mandarle al API un 400 RANGO_INVALIDO.
-  const rango = rangoFiltro(esDiaValido(d) ? d : undefined, esDiaValido(h) ? h : undefined);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un extremo anterior se sube
+  // (con aviso); sin rango no se inventa uno (el API ya recorta).
+  const rango = ajustarRangoAlInicio(
+    rangoFiltro(esDiaValido(d) ? d : undefined, esDiaValido(h) ? h : undefined),
+    inicio,
+    hoy,
+  );
   const emisora = uno(sp.emisora_id);
   const serieCruda = (uno(sp.serie) ?? "").trim().toUpperCase();
   const serie =
@@ -149,6 +164,7 @@ export function filtrosFacturasDeUrl(sp: ParamsUrl): FiltrosFacturas {
     orden: valorDeCatalogo(uno(sp.orden), ORDENES_FACTURAS) ?? ORDEN_DEFAULT,
     vuelo_id: uuidFiltro(uno(sp.vuelo_id)),
     resaltar: uuidFiltro(uno(sp.resaltar)),
+    ...(rango.ajustado ? { ajustado: true as const } : {}),
   };
 }
 

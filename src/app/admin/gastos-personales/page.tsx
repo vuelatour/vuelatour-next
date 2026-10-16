@@ -31,6 +31,9 @@ import { getMe } from "@/lib/api/me";
 import { notFound } from "next/navigation";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { ajustarMesAlInicio } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -74,9 +77,13 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
 
   const sp = await searchParams;
   // Mes elegido (default: mes corriente en hora Cancún, eje fecha_gasto).
-  const mes = /^\d{4}-\d{2}$/.test(sp.mes ?? "")
-    ? (sp.mes as string)
-    : todayCancun().slice(0, 7);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un mes anterior al del
+  // inicio (URL vieja) pasa al mes del inicio, con aviso. Sin él, intacto.
+  const inicio = await getInicioOficial();
+  const { mes, ajustado: mesAjustado } = ajustarMesAlInicio(
+    /^\d{4}-\d{2}$/.test(sp.mes ?? "") ? (sp.mes as string) : todayCancun().slice(0, 7),
+    inicio,
+  );
   const { desde, hasta } = rangoDeMes(mes);
   const mesLabel = labelDeMes(mes);
 
@@ -189,6 +196,7 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
       <AvisoDegradado faltantes={degradado.faltantes} />
 
       <GastosPersonalesFilterBar mes={mes} />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={mesAjustado} />
 
       {rows.length === 0 ? (
         <EmptyState

@@ -38,6 +38,9 @@ import {
 } from "@/lib/admin/pre-cierre-resolver";
 import { todayCancun } from "@/lib/datetime";
 import { faltaTacoEnLista, pideTacoStatusEnLista } from "@/lib/admin/taco-omitido";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { ajustarRangoAlInicio } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +77,10 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
   // Filtro default: vuelos activos (no solicitud/cotizado/cancelado).
   // Si el user no pasa estado, mostramos todos los operativos (CONFIRMADO+).
   const estadoFilter = estadoFiltro(sp.estado);
-  const rango = rangoFiltro(sp.desde, sp.hasta);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde`/`?hasta` anterior
+  // se sube con aviso; sin rango no se inventa uno (el API ya recorta).
+  const inicio = await getInicioOficial();
+  const rango = ajustarRangoAlInicio(rangoFiltro(sp.desde, sp.hasta), inicio, todayCancun());
   const cobro = cobroFiltro(sp.cobro);
   const pilotoFiltro = uuidFiltro(sp.piloto_id);
   const aeronaveFiltro = uuidFiltro(sp.aeronave_id);
@@ -350,6 +356,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
           hasta: rango.hasta ?? "",
         }}
       />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={rango.ajustado} />
 
       {foco && (
         <FranjaPreCierre

@@ -29,6 +29,8 @@ import {
 } from "@/lib/admin/quote-navegacion";
 import { cn } from "@/lib/utils";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 const ESTADOS: { value: EstadoVuelo | ""; label: string }[] = [
   { value: "", label: "Todos los estados" },
@@ -77,6 +79,9 @@ export function QuotesFilterBar({
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  // Inicio oficial (16-oct-2026): `min`, mismo ajuste que el servidor y
+  // atajos recortados. Sin él, como siempre.
+  const inicio = useInicioOficial();
   const [, startTransition] = useTransition();
 
   // La última consulta PEDIDA (revisión 13-oct-2026): mientras la navegación
@@ -117,7 +122,7 @@ export function QuotesFilterBar({
   );
 
   // El rango de la URL VIVA, validado igual que en el servidor.
-  const rango = rangoListaCotizaciones(params.get("desde"), params.get("hasta"));
+  const rango = rangoListaCotizaciones(params.get("desde"), params.get("hasta"), inicio);
   const deUrl: Record<CampoRangoLista, string> = {
     desde: rango.desde ?? "",
     hasta: rango.hasta ?? "",
@@ -160,7 +165,7 @@ export function QuotesFilterBar({
     // 20» + Enter y enseguida «Hasta = 31» terminan en 20–31, no en 01–31.
     const sp = paramsParaNavegar();
     const nuevo = rangoAlCambiarCampo(
-      rangoListaCotizaciones(sp.get("desde"), sp.get("hasta")),
+      rangoListaCotizaciones(sp.get("desde"), sp.get("hasta"), inicio),
       campo,
       valor,
     );
@@ -221,6 +226,7 @@ export function QuotesFilterBar({
       <Input
         id={`cot-${campo}`}
         type="date"
+        min={minFechaFiltro(inicio)}
         value={visible[campo]}
         title={TITULO_FECHA_VUELO}
         className="h-9 w-36 cursor-pointer"
@@ -292,7 +298,7 @@ export function QuotesFilterBar({
               {campoFecha("desde", "Desde")}
               {campoFecha("hasta", "Hasta")}
               <div className="flex flex-wrap gap-1 pb-0.5">
-                {periodosRapidosCotizaciones(hoy).map((p) => {
+                {periodosRapidosCotizaciones(hoy, inicio).map((p) => {
                   const activo = p.desde === rango.desde && p.hasta === rango.hasta;
                   return (
                     <button
@@ -315,7 +321,7 @@ export function QuotesFilterBar({
               </div>
             </div>
             <p data-nota-rango className="text-[11px] text-muted-foreground md:col-span-full">
-              {notaRangoCotizaciones(rango, { ignorado: rangoIgnorado })}
+              {notaRangoCotizaciones(rango, { ignorado: rangoIgnorado, inicio })}
             </p>
           </>
         )}

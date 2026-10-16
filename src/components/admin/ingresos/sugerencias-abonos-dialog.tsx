@@ -68,6 +68,8 @@ import { fmtDateOnly } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { AbonoPendiente, PropuestaAbono, SugerirAbonosRespuesta } from "@/types/ingresos";
 import type { CandidatoCobroVuelo, MovimientoBancario } from "@/types/conciliacion";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 export const AVISO_IA_INGRESOS =
   "La IA propone y tú confirmas: nada se liga solo. Cada consulta consume créditos (Configuración → Consumo de IA).";
@@ -197,6 +199,7 @@ function PanelSugerencias({
   onCerrar: () => void;
 }) {
   const router = useRouter();
+  const inicio = useInicioOficial();
   const dirigida = (movimientoIds?.length ?? 0) > 0;
   const [cuenta, setCuenta] = useState(cuentaId ?? "");
   const [ini, setIni] = useState(desde ?? "");
@@ -388,6 +391,7 @@ function PanelSugerencias({
               <Input
                 id="sug-abonos-desde"
                 type="date"
+                min={minFechaFiltro(inicio)}
                 value={ini}
                 onChange={(e) => setIni(e.target.value)}
                 disabled={ocupado}
@@ -401,6 +405,7 @@ function PanelSugerencias({
               <Input
                 id="sug-abonos-hasta"
                 type="date"
+                min={minFechaFiltro(inicio)}
                 value={fin}
                 onChange={(e) => setFin(e.target.value)}
                 disabled={ocupado}

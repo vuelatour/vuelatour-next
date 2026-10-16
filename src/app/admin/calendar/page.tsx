@@ -25,6 +25,15 @@ import {
 import type { CalendarEvent } from "@/types/calendar";
 import type { Aircraft } from "@/types/aircraft";
 import type { User } from "@/types/users";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import {
+  ajustarMesAlInicio,
+  esMesDelInicioOAnterior,
+  textoArrancaEnMes,
+  vaciarDiasAntesDelInicio,
+  type InicioOficial,
+} from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -59,15 +68,27 @@ interface CalendarPageProps {
 function mesDeLaUrl(
   params: { y?: string; m?: string },
   hoyCancun: string,
-): { year: number; month: number } {
-  return {
-    year: params.y ? Number(params.y) : Number(hoyCancun.slice(0, 4)),
-    // m: 1-12. Default mes actual.
-    month: params.m ? Number(params.m) - 1 : Number(hoyCancun.slice(5, 7)) - 1,
-  };
+  inicio: InicioOficial = null,
+): { year: number; month: number; ajustado: boolean } {
+  const year = params.y ? Number(params.y) : Number(hoyCancun.slice(0, 4));
+  // m: 1-12. Default mes actual.
+  const month = params.m ? Number(params.m) - 1 : Number(hoyCancun.slice(5, 7)) - 1;
+  // Inicio oficial (16-oct-2026, API 0.0.84): un mes anterior al del inicio
+  // (URL vieja) pasa al mes del inicio. Sin él (o con y/m basura), intacto.
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 0 || month > 11) {
+    return { year, month, ajustado: false };
+  }
+  const { mes, ajustado } = ajustarMesAlInicio(
+    `${year}-${String(month + 1).padStart(2, "0")}`,
+    inicio,
+  );
+  return ajustado
+    ? { year: Number(mes.slice(0, 4)), month: Number(mes.slice(5, 7)) - 1, ajustado }
+    : { year, month, ajustado };
 }
 
 export async function generateMetadata({ searchParams }: CalendarPageProps): Promise<Metadata> {
+  // SIN inicio oficial: el head no lee el API (regla 5 de titulos-pestana).
   const { year, month } = mesDeLaUrl(await searchParams, cancunKey(new Date()));
   return { title: tituloCalendario(year, month + 1) };
 }
@@ -79,7 +100,13 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
   // las 19:00 Cancún del último día del mes en adelante ya corre el mes
   // siguiente y el calendario abría en un mes "vacío".
   const hoyCancun = cancunKey(now); // YYYY-MM-DD
-  const { year, month } = mesDeLaUrl(params, hoyCancun);
+  const inicio = await getInicioOficial();
+  const { year, month, ajustado } = mesDeLaUrl(params, hoyCancun, inicio);
+  // En el mes del inicio «Mes anterior» se apaga (no se retrocede a agosto).
+  const anteriorDeshabilitado =
+    inicio && esMesDelInicioOAnterior(`${year}-${String(month + 1).padStart(2, "0")}`, inicio)
+      ? textoArrancaEnMes(inicio)
+      : null;
 
   // Rango del fetch ANCLADO a Cancún (UTC−5): con new Date(year, month, …) en
   // la TZ del servidor, los vuelos de 19:00–23:59 Cancún del último día del
@@ -194,7 +221,9 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
   const next = month === 11 ? { y: year + 1, m: 1 } : { y: year, m: month + 2 };
   const todayKey = cancunKey(now);
 
-  const days: CalendarDay[] = cells.map((date) => {
+  // Inicio oficial: los días anteriores (la semana que cruza el 31-ago) van
+  // en gris y sin eventos.
+  const days: CalendarDay[] = vaciarDiasAntesDelInicio(cells.map((date) => {
     const key = localKey(date);
     return {
       key,
@@ -204,7 +233,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
       isToday: key === todayKey,
       events: byDay.get(key) ?? [],
     };
-  });
+  }), inicio);
 
   return (
     <div className="space-y-6">
@@ -220,13 +249,26 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
           <MarkRestButton pilots={pilots} />
           <GoogleSyncChip estado={syncEstado} />
           <ResyncGoogleButton automatica={syncEsAutomatica(syncEstado)} />
-          <Link
-            href={`/admin/calendar?y=${prev.y}&m=${prev.m}`}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"
-            aria-label="Mes anterior"
-          >
-            <ChevronLeftIcon className="h-4 w-4" />
-          </Link>
+          {anteriorDeshabilitado ? (
+            <span
+              role="link"
+              aria-disabled="true"
+              aria-label="Mes anterior"
+              title={anteriorDeshabilitado}
+              data-mes-anterior-deshabilitado
+              className="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-lg border border-border opacity-40"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </span>
+          ) : (
+            <Link
+              href={`/admin/calendar?y=${prev.y}&m=${prev.m}`}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"
+              aria-label="Mes anterior"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </Link>
+          )}
           <Link
             href="/admin/calendar"
             className="inline-flex h-9 items-center rounded-lg border border-border px-3 text-sm font-medium hover:bg-muted transition-colors"
@@ -242,6 +284,8 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
           </Link>
         </div>
       </div>
+
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={ajustado} />
 
       <Legend />
 

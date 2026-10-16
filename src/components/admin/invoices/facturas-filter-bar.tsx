@@ -7,6 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 interface FacturasFilterBarProps {
   clients: { id: string; nombre: string }[];
@@ -16,6 +18,8 @@ interface FacturasFilterBarProps {
 
 export function FacturasFilterBar({ clients, emisoras, initial }: FacturasFilterBarProps) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): las fechas no bajan del inicio. Sin él, libres.
+  const inicio = useInicioOficial();
   const pathname = usePathname();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -58,7 +62,7 @@ export function FacturasFilterBar({ clients, emisoras, initial }: FacturasFilter
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs font-medium">Desde</Label>
-          <Input type="date" defaultValue={initial.desde} onChange={(e) => pushQuery({ desde: e.target.value })} />
+          <Input type="date" min={minFechaFiltro(inicio)} defaultValue={initial.desde} onChange={(e) => pushQuery({ desde: e.target.value })} />
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
@@ -74,7 +78,7 @@ export function FacturasFilterBar({ clients, emisoras, initial }: FacturasFilter
               </button>
             )}
           </div>
-          <Input type="date" defaultValue={initial.hasta} onChange={(e) => pushQuery({ hasta: e.target.value })} />
+          <Input type="date" min={minFechaFiltro(inicio)} defaultValue={initial.hasta} onChange={(e) => pushQuery({ hasta: e.target.value })} />
         </div>
       </CardContent>
     </Card>

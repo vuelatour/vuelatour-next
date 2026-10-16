@@ -65,6 +65,8 @@ import {
 import { todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { IngresoDetalle } from "@/types/ingresos";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 // «Sugerir con IA» (hasta ~130 s) y «Subir estado de cuenta» (la lectura IA
@@ -187,7 +189,9 @@ export default async function IngresosPage({ searchParams }: PageProps) {
   }
 
   const hoy = todayCancun();
-  const f = filtrosIngresosDeUrl(sp, me.rol, hoy);
+  // Inicio oficial (16-oct-2026, API 0.0.84): agosto en la URL ⇒ desde el inicio, con aviso.
+  const inicio = await getInicioOficial();
+  const f = filtrosIngresosDeUrl(sp, me.rol, hoy, inicio);
   const conciliador = puedeConciliarIngresos(me.rol);
   const degradado = new Degradaciones();
 
@@ -325,6 +329,7 @@ export default async function IngresosPage({ searchParams }: PageProps) {
       </nav>
 
       <IngresosFiltros key={`${f.tab}:${f.q ?? ""}`} filtros={f} cuentas={cuentasSelect} hoy={hoy} />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={!!f.ajustado} />
 
       {(f.tab === "todos" || f.tab === "cobros") &&
         entradas &&

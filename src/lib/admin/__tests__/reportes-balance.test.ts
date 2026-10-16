@@ -404,7 +404,8 @@ describe("los balances al frente (12-oct-2026)", () => {
     const src = readFileSync(RUTA_PAGINA, "utf8");
     expect(src).toContain("<TextoPlegable titulo={TITULO_DETALLE_LIBROS}>");
     expect(src).toContain("degradado.opcional(");
-    expect(src).toContain("<AtajosPeriodoReportes hoy={hoy} desde={desde} hasta={hasta} />");
+    // Inicio oficial (16-oct-2026): los atajos reciben la fecha (sin «Mes pasado» antes del inicio).
+    expect(src).toContain("<AtajosPeriodoReportes hoy={hoy} desde={desde} hasta={hasta} inicio={inicio} />");
     expect(src).toContain("periodoDefaultVista(hoy)");
     expect(src).toContain("<PeriodSelector initial={{ desde, hasta }} />");
     expect(src).toContain("<AvisoDegradado faltantes={degradado.faltantes} />");

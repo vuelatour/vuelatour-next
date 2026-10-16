@@ -43,6 +43,8 @@ import { isApiError } from "@/lib/api/errors";
 import { todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { LibroExcel as LibroExcelJson } from "@/types/libro-excel";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 // El libro lo arma pyservices (el general de la flota tarda decenas de
@@ -64,6 +66,7 @@ interface PageProps {
  */
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const sp = await searchParams;
+  // SIN inicio oficial: el head no lee el API (regla 5 de titulos-pestana).
   const { destino, desde, hasta } = parametrosVistaBalance(sp, periodoDefaultVista(todayCancun()));
   return { title: tituloBalance(destino, desde, hasta) };
 }
@@ -94,7 +97,13 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
  */
 export default async function BalanceVistaPage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const { destino, desde, hasta, gasto } = parametrosVistaBalance(sp, periodoDefaultVista(todayCancun()));
+  // Inicio oficial (16-oct-2026, API 0.0.84): agosto en la URL ⇒ desde el inicio, con aviso.
+  const inicio = await getInicioOficial();
+  const { destino, desde, hasta, gasto, ajustado } = parametrosVistaBalance(
+    sp,
+    periodoDefaultVista(todayCancun()),
+    inicio,
+  );
 
   let libro: LibroExcelJson | null = null;
   let matricula: string | null = null;
@@ -169,6 +178,7 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
         ) : null}
         <PeriodSelector initial={{ desde, hasta }} compacto etiquetaGrupo="Periodo del libro" />
       </div>
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={!!ajustado} />
 
       {libro ? (
         <LibroExcel

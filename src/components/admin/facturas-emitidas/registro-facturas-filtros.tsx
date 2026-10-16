@@ -10,6 +10,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SIN_EMISORA, type FiltrosFacturas } from "@/lib/admin/facturas-emitidas";
 import { ETIQUETA_FACTURAS_NO_CUADRAN } from "@/lib/admin/cobro-factura";
 import { PARAMS_FOCO_PRE_CIERRE } from "@/lib/admin/pre-cierre-resolver";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 const ESTATUS = [
   { value: "", label: "Todas" },
@@ -44,6 +46,8 @@ export function RegistroFacturasFiltros({
   emisoras: { id: string; razon_social: string }[];
 }) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): las fechas no bajan del inicio. Sin él, libres.
+  const inicio = useInicioOficial();
   const pathname = usePathname();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -141,6 +145,7 @@ export function RegistroFacturasFiltros({
             // `key`: «Limpiar filtros» vacía la URL y el input se reinicia.
             key={`desde-${filtros.desde ?? ""}`}
             type="date"
+            min={minFechaFiltro(inicio)}
             defaultValue={filtros.desde ?? ""}
             className="cursor-pointer"
             aria-label="Emitidas desde"
@@ -152,6 +157,7 @@ export function RegistroFacturasFiltros({
           <Input
             key={`hasta-${filtros.hasta ?? ""}`}
             type="date"
+            min={minFechaFiltro(inicio)}
             defaultValue={filtros.hasta ?? ""}
             className="cursor-pointer"
             aria-label="Emitidas hasta"

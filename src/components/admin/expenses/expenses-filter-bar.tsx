@@ -45,6 +45,8 @@ import {
   type ModoCaptura,
   type RangoCapturaAbierto,
 } from "@/lib/admin/gastos-vista";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 // Etiquetas desde la FUENTE ÚNICA (@/lib/admin/medios-pago); aquí solo vive
 // el ORDEN del filtro. BODEGA queda fuera a propósito (cargo contable de
@@ -108,8 +110,10 @@ export function ExpensesFilterBar({
   aviones: { id: string; matricula: string; activa?: boolean }[];
 }) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): las fechas no bajan del inicio. Sin él, libres.
+  const inicio = useInicioOficial();
   const sp = useSearchParams();
-  const f = leerFiltrosGastos((k) => sp.get(k));
+  const f = leerFiltrosGastos((k) => sp.get(k), inicio);
   const [actualizando, startTransition] = useTransition();
   // La última consulta PEDIDA (UNA para toda la barra): mientras la
   // navegación está en vuelo `sp` sigue siendo la URL ANTERIOR. Caduca en
@@ -166,7 +170,7 @@ export function ExpensesFilterBar({
     navegar,
     rangoParaNavegar: () => {
       const p = paramsParaNavegar();
-      const base = leerFiltrosGastos((k) => p.get(k));
+      const base = leerFiltrosGastos((k) => p.get(k), inicio);
       return { desde: diaDe(base.desde), hasta: diaDe(base.hasta) };
     },
   });
@@ -177,7 +181,7 @@ export function ExpensesFilterBar({
     navegar,
     rangoParaNavegar: () => {
       const p = paramsParaNavegar();
-      const base = leerFiltrosGastos((k) => p.get(k));
+      const base = leerFiltrosGastos((k) => p.get(k), inicio);
       return { desde: base.cap_desde ?? "", hasta: base.cap_hasta ?? "" };
     },
     // Un rango de captura apaga «Esta semana» (mismo eje).
@@ -266,6 +270,7 @@ export function ExpensesFilterBar({
     <Input
       id={id}
       type="date"
+      min={minFechaFiltro(inicio)}
       value={rango.visible[campo]}
       aria-label={ariaCampoFecha(etiqueta, campo)}
       title={titulo}

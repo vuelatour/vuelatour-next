@@ -29,6 +29,8 @@ import {
 } from "@/lib/admin/conciliacion-auto";
 import { todayCancun } from "@/lib/datetime";
 import type { AutoMatchResultado } from "@/types/conciliacion";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro, ventanaConPiso } from "@/lib/admin/inicio-oficial";
 
 /** Días hacia atrás por default cuando la vista no trae rango. */
 const DIAS_DEFAULT = 30;
@@ -69,9 +71,11 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta, tipo }: AutoM
   const soloAbonos = tipo === "ABONO";
   const router = useRouter();
   const hoy = todayCancun();
+  // Inicio oficial (16-oct-2026): la ventana de 30 días no baja del inicio.
+  const inicio = useInicioOficial();
   const [open, setOpen] = useState(false);
   const [cuenta, setCuenta] = useState(cuentaId ?? "");
-  const [ini, setIni] = useState(desde ?? diaMas(hoy, -DIAS_DEFAULT));
+  const [ini, setIni] = useState(desde ?? ventanaConPiso(diaMas(hoy, -DIAS_DEFAULT), inicio));
   const [fin, setFin] = useState(hasta ?? hoy);
   const [corriendo, setCorriendo] = useState(false);
   const [paso, setPaso] = useState<string | null>(null);
@@ -90,7 +94,7 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta, tipo }: AutoM
     setResumen(null);
     setPaso(null);
     setCuenta(cuentaId ?? "");
-    setIni(desde ?? diaMas(hoy, -DIAS_DEFAULT));
+    setIni(desde ?? ventanaConPiso(diaMas(hoy, -DIAS_DEFAULT), inicio));
     setFin(hasta ?? hoy);
     setOpen(true);
   };
@@ -239,6 +243,7 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta, tipo }: AutoM
                 <Input
                   id="auto-match-desde"
                   type="date"
+                  min={minFechaFiltro(inicio)}
                   value={ini}
                   onChange={(e) => setIni(e.target.value)}
                   disabled={corriendo}
@@ -251,6 +256,7 @@ export function AutoMatchButton({ cuentas, cuentaId, desde, hasta, tipo }: AutoM
                 <Input
                   id="auto-match-hasta"
                   type="date"
+                  min={minFechaFiltro(inicio)}
                   value={fin}
                   onChange={(e) => setFin(e.target.value)}
                   disabled={corriendo}

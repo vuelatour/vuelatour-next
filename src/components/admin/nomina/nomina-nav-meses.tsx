@@ -32,16 +32,33 @@ export function NominaNavMeses({
   mes,
   anterior,
   siguiente,
+  anteriorDeshabilitado = null,
 }: {
   /** «YYYY-MM» ya validado (`mesNominaDeUrl`). */
   mes: string;
   anterior: string | null;
   siguiente: string | null;
+  /** Inicio oficial (16-oct-2026): en el mes del inicio «‹ anterior» se
+   *  pinta DESHABILITADO con este `title` («El sistema arranca en
+   *  septiembre de 2026»). `null` = como siempre. */
+  anteriorDeshabilitado?: string | null;
 }) {
   const actuales = useSearchParams().toString();
   return (
     <nav aria-label={ETIQUETA_NAV_MESES_NOMINA} className="flex flex-wrap items-end gap-2">
-      {anterior && (
+      {anteriorDeshabilitado && (
+        <span
+          role="link"
+          aria-disabled="true"
+          title={anteriorDeshabilitado}
+          aria-label={anteriorDeshabilitado}
+          data-mes-anterior-deshabilitado
+          className={cn(CLASE_ENLACE_MES, "pointer-events-none cursor-not-allowed opacity-50")}
+        >
+          <span aria-hidden="true">‹</span> Mes anterior
+        </span>
+      )}
+      {!anteriorDeshabilitado && anterior && (
         <Link
           href={hrefMesNomina(anterior, actuales)}
           prefetch={false}

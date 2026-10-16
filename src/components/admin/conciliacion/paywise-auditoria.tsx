@@ -57,6 +57,8 @@ import type {
   PaywiseCruce,
   PaywiseMovimiento,
 } from "@/types/conciliacion";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 const inputCls =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -147,6 +149,8 @@ export function PaywiseAuditoriaPanel({
   paywiseComisionPct,
 }: PaywiseAuditoriaPanelProps) {
   const router = useRouter();
+  // Inicio oficial (16-oct-2026): `min` en el periodo de la auditoría.
+  const inicio = useInicioOficial();
   const [pending, startTransition] = useTransition();
   const [descargando, setDescargando] = useState(false);
   const [confirmarConciliar, setConfirmarConciliar] = useState(false);
@@ -459,13 +463,13 @@ export function PaywiseAuditoriaPanel({
               <label htmlFor="pw-desde" className="text-sm font-medium">
                 Desde
               </label>
-              <input id="pw-desde" name="desde" type="date" className={inputCls} defaultValue={desde} required />
+              <input id="pw-desde" name="desde" type="date" min={minFechaFiltro(inicio)} className={inputCls} defaultValue={desde} required />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="pw-hasta" className="text-sm font-medium">
                 Hasta
               </label>
-              <input id="pw-hasta" name="hasta" type="date" className={inputCls} defaultValue={hasta} required />
+              <input id="pw-hasta" name="hasta" type="date" min={minFechaFiltro(inicio)} className={inputCls} defaultValue={hasta} required />
             </div>
             {cuentasPasarela.length > 1 && (
               <div className="space-y-1.5 min-w-[200px]">

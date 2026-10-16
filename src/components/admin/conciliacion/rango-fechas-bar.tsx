@@ -10,10 +10,27 @@ import {
   periodosRapidosConciliacion,
   rangoVistaConciliacion,
   textoRangoVista,
+  textoVentanaSinBanco,
 } from "@/lib/admin/conciliacion-vista";
 import { cn } from "@/lib/utils";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro, textoDesdeInicio } from "@/lib/admin/inicio-oficial";
 
 const TITULO_FECHA = "Fecha del movimiento en el estado de cuenta (día de Cancún)";
+
+/**
+ * Nota bajo la barra sin periodo. Con inicio oficial (16-oct-2026) ya no son
+ * «todas las fechas»: es «desde el 1-sep-2026», y la ventana «sin banco» es
+ * la que diga `textoVentanaSinBanco`.
+ */
+function textoSinPeriodoConciliacion(inicio: string | null, hoy: string): string {
+  if (!inicio) {
+    return "Sin periodo: se muestran los movimientos más recientes de todas las fechas (en «sin banco», los últimos 90 días).";
+  }
+  return `Sin periodo: se muestran los movimientos más recientes ${textoDesdeInicio(
+    inicio,
+  )} (en «sin banco», ${textoVentanaSinBanco({}, inicio, hoy)}).`;
+}
 
 /**
  * Filtro de FECHAS de la vista de Conciliación (12-oct-2026): «Desde» /
@@ -28,7 +45,10 @@ const TITULO_FECHA = "Fecha del movimiento en el estado de cuenta (día de Canc�
 export function RangoFechasConciliacion({ hoy }: { hoy: string }) {
   const router = useRouter();
   const sp = useSearchParams();
-  const rango = rangoVistaConciliacion(sp.get("desde"), sp.get("hasta"), hoy);
+  // Inicio oficial (16-oct-2026): el mismo ajuste que la página, `min` en
+  // las fechas y atajos recortados. Sin él, como siempre.
+  const inicio = useInicioOficial();
+  const rango = rangoVistaConciliacion(sp.get("desde"), sp.get("hasta"), hoy, inicio);
   const ir = (desde: string | null | undefined, hasta: string | null | undefined) =>
     router.push(hrefConciliacion({ f: sp.get("f"), cuenta: sp.get("cuenta"), desde, hasta }));
   const texto = textoRangoVista(rango);
@@ -44,6 +64,7 @@ export function RangoFechasConciliacion({ hoy }: { hoy: string }) {
             id="conc-desde"
             type="date"
             value={rango.desde ?? ""}
+            min={minFechaFiltro(inicio)}
             max={hoy}
             onChange={(e) => ir(e.target.value || null, rango.hasta)}
             className="h-9 w-36 cursor-pointer"
@@ -58,6 +79,7 @@ export function RangoFechasConciliacion({ hoy }: { hoy: string }) {
             id="conc-hasta"
             type="date"
             value={rango.hasta ?? ""}
+            min={minFechaFiltro(inicio)}
             max={hoy}
             onChange={(e) => ir(rango.desde, e.target.value || null)}
             className="h-9 w-36 cursor-pointer"
@@ -65,7 +87,7 @@ export function RangoFechasConciliacion({ hoy }: { hoy: string }) {
           />
         </div>
         <div className="flex flex-wrap gap-1 pb-0.5">
-          {periodosRapidosConciliacion(hoy).map((p) => {
+          {periodosRapidosConciliacion(hoy, inicio).map((p) => {
             const activo = p.desde === rango.desde && p.hasta === rango.hasta;
             return (
               <button
@@ -99,7 +121,7 @@ export function RangoFechasConciliacion({ hoy }: { hoy: string }) {
       <p className="text-[11px] text-muted-foreground">
         {texto
           ? `Mostrando movimientos ${texto}: tarjetas, lista y pestañas «sin banco». «Cruzar pendientes», la IA y el reporte usan el mismo periodo.`
-          : "Sin periodo: se muestran los movimientos más recientes de todas las fechas (en «sin banco», los últimos 90 días)."}
+          : textoSinPeriodoConciliacion(inicio, hoy)}
       </p>
     </div>
   );

@@ -53,6 +53,8 @@ import {
   hrefVolverPreCierre,
   leerFocoPreCierre,
 } from "@/lib/admin/pre-cierre-resolver";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -121,7 +123,9 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
     );
   }
 
-  const filtros = filtrosFacturasDeUrl(sp);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde` anterior se sube con aviso.
+  const inicio = await getInicioOficial();
+  const filtros = filtrosFacturasDeUrl(sp, inicio, todayCancun());
   const degradado = new Degradaciones();
   const [lista, porFacturar, clientesRes, emisorasRes] = await Promise.all([
     cargar(listFacturasEmitidasAll(filtros)),
@@ -305,6 +309,7 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
           <RegistroFacturasResumen lista={lista.datos} filtros={filtros} />
 
           <RegistroFacturasFiltros filtros={filtros} clientes={clientes} emisoras={emisoras} />
+          <AvisoPeriodoAjustado inicio={inicio} ajustado={!!filtros.ajustado} />
 
           {filtrado && lista.datos.filtrado.count > 0 && (
             <p className="text-xs text-muted-foreground">

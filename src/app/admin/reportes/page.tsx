@@ -26,6 +26,9 @@ import { VerEnPantallaLink } from "@/components/admin/reportes/ver-en-pantalla-l
 import { listFlights } from "@/lib/api/flights-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { ajustarRangoAlInicio } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 import { Degradaciones } from "@/lib/api/degradar";
 import { fmtDate, todayCancun } from "@/lib/datetime";
 import { rangoFiltro } from "@/lib/admin/url-params";
@@ -88,6 +91,12 @@ export default async function ReportesPage({ searchParams }: PageProps) {
   let desde = rango.desde ?? fb.desde;
   let hasta = rango.hasta ?? fb.hasta;
   if (desde > hasta) [desde, hasta] = [hasta, desde];
+  // Inicio oficial (16-oct-2026, API 0.0.84): una URL vieja con agosto pasa
+  // al periodo desde el inicio, con aviso (sin redirigir). Sin él, intacto.
+  const inicio = await getInicioOficial();
+  const ajuste = ajustarRangoAlInicio({ desde, hasta }, inicio, hoy);
+  desde = ajuste.desde ?? desde;
+  hasta = ajuste.hasta ?? hasta;
 
   // Catálogos ACCESORIOS: degradan POR TARJETA y se AVISA (regla «degradar sin
   // mentir»). `null` = NO cargó (se dice) ≠ `[]` = no hay.
@@ -138,7 +147,8 @@ export default async function ReportesPage({ searchParams }: PageProps) {
 
       <div className="space-y-2">
         <PeriodSelector initial={{ desde, hasta }} />
-        <AtajosPeriodoReportes hoy={hoy} desde={desde} hasta={hasta} />
+        <AtajosPeriodoReportes hoy={hoy} desde={desde} hasta={hasta} inicio={inicio} />
+        <AvisoPeriodoAjustado inicio={inicio} ajustado={ajuste.ajustado} />
       </div>
       <AvisoDegradado faltantes={degradado.faltantes} />
 

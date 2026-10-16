@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { todayCancun } from "@/lib/datetime";
 import { ReportDownloads } from "./report-downloads";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { mesesDesdeInicio, type InicioOficial } from "@/lib/admin/inicio-oficial";
 
 const MESES = [
   "enero",
@@ -30,6 +32,27 @@ function finDeMes(anio: number, mes: number): number {
 interface Periodo {
   desde: string;
   hasta: string;
+}
+
+/**
+ * Meses del selector del cierre, del más reciente al más viejo: desde el
+ * mes del INICIO OFICIAL (16-oct-2026, API 0.0.84) hasta el de `hoy`. Con
+ * `inicio = null` (API previo o piso apagado), desde enero 2026 como siempre.
+ */
+export function opcionesMesReporte(
+  hoy: string,
+  inicio: InicioOficial,
+): { value: string; label: string }[] {
+  const mesHoy = hoy.slice(0, 7);
+  return mesesDesdeInicio(inicio, hoy).map((value) => {
+    const m = Number(value.slice(5, 7));
+    return {
+      value,
+      label: `${MESES[m - 1][0].toUpperCase()}${MESES[m - 1].slice(1)} ${value.slice(0, 4)}${
+        value === mesHoy ? " (en curso)" : ""
+      }`,
+    };
+  });
 }
 
 /**
@@ -106,29 +129,10 @@ export function MesReporteSelect({
   // antes de hidratar en el cliente.
   const [hoy] = useState(() => todayCancun()); // YYYY-MM-DD
 
-  // Meses ofrecidos: desde enero 2026 (inicio de la operación en el sistema)
-  // hasta el mes corriente en hora Cancún.
-  const opciones = useMemo(() => {
-    const [anioHoy, mesHoy] = [
-      Number(hoy.slice(0, 4)),
-      Number(hoy.slice(5, 7)),
-    ];
-    const out: { value: string; label: string }[] = [];
-    for (let a = anioHoy; a >= 2026; a--) {
-      const mMax = a === anioHoy ? mesHoy : 12;
-      for (let m = mMax; m >= 1; m--) {
-        const value = `${a}-${String(m).padStart(2, "0")}`;
-        const enCurso = a === anioHoy && m === mesHoy;
-        out.push({
-          value,
-          label: `${MESES[m - 1][0].toUpperCase()}${MESES[m - 1].slice(1)} ${a}${
-            enCurso ? " (en curso)" : ""
-          }`,
-        });
-      }
-    }
-    return out;
-  }, [hoy]);
+  // Meses ofrecidos: desde el inicio oficial (o enero 2026 sin él) hasta el
+  // mes corriente en hora Cancún.
+  const inicio = useInicioOficial();
+  const opciones = useMemo(() => opcionesMesReporte(hoy, inicio), [hoy, inicio]);
 
   // El select refleja el mes SOLO si el periodo actual es exactamente ese
   // mes (completo; el corriente también cuenta cortado en hoy) Y el mes está

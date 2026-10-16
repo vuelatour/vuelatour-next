@@ -64,6 +64,9 @@ import {
   type FiltrosGastos,
   type VistaGastos,
 } from "@/lib/admin/gastos-vista";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import type { InicioOficial } from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -72,8 +75,11 @@ export const dynamic = "force-dynamic";
  * validación que la barra de filtros (`leerFiltrosGastos`): la pantalla y su
  * título de pestaña no pueden divergir.
  */
-function filtroGastosDeUrl(sp: Record<string, string | undefined>): FiltrosGastos {
-  return leerFiltrosGastos((k) => sp[k]);
+function filtroGastosDeUrl(
+  sp: Record<string, string | undefined>,
+  inicio: InicioOficial = null,
+): FiltrosGastos {
+  return leerFiltrosGastos((k) => sp[k], inicio);
 }
 
 /** «Gastos» (Todos) · «Gastos · Pendientes» · «Gastos · Duplicados». */
@@ -136,7 +142,9 @@ export default async function ExpensesPage({
   // Lectura y validación de la URL: la MISMA función que usa la barra de
   // filtros en el navegador (un filtro inválido se IGNORA: jamás viaja al API
   // ni provoca un 400 que tumbe la pantalla, 21-sep-2026).
-  const filtros = filtroGastosDeUrl(sp as Record<string, string | undefined>);
+  // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde` anterior se sube con aviso.
+  const inicio = await getInicioOficial();
+  const filtros = filtroGastosDeUrl(sp as Record<string, string | undefined>, inicio);
   const filtro = filtros.vista;
   const conFiltros = hayFiltrosGastos(filtros);
   // Filtro por avión (link desde el expediente del avión); lo respetan las
@@ -388,6 +396,7 @@ export default async function ExpensesPage({
             personas={personas}
             aviones={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula, activa: a.activa }))}
           />
+          <AvisoPeriodoAjustado inicio={inicio} ajustado={!!filtros.ajustado} />
 
           {/* Catálogos/contadores/fotos que no cargaron: se dice en vez de pintar 0. */}
           <AvisoDegradado faltantes={degradado.faltantes} />
