@@ -10955,7 +10955,19 @@ pinta el chip/franja de lo anterior.
 - **No se toca**: inventario/tienda, horas (tacómetros, motores, hélices),
   ficha del piloto, cuenta de socios (ya arranca en `2026-09` por su cuenta) y
   el Inicio del panel (su bug de mes en UTC es aparte).
+- **Ligas a un movimiento de antes** (revisión adversaria, 16-oct-2026):
+  «Ver en Conciliación» de un cargo/abono anterior al inicio llega con
+  `?mov=&desde=&hasta=` de ese día, y el listado ya no lo trae NUNCA. Con
+  `periodoPedidoAntesDelInicio` la página dice «… es de antes del inicio
+  oficial (1-sep-2026): se conserva, pero ya no aparece en Conciliación…» y
+  NO ofrece «Ver todos los movimientos» (antes mandaba a «quitar filtros»
+  para buscar algo que no iba a aparecer). La hoja «Conciliación con el
+  banco» del gasto pinta el chip en ese cargo y en las líneas del lote.
+- **Tacómetros en vivo**: un `?fecha=` anterior sube al inicio con el aviso
+  (el API devolvía vacío) y «Día anterior» se apaga en el día del inicio.
+  «Aterrizajes sin gasto» (`pistas-dialog`): `min` del inicio en sus fechas.
 - Tests: `lib/admin/__tests__/inicio-oficial.test.ts`,
   `lib/admin/__tests__/inicio-oficial-modulos.test.ts`,
   `lib/api/__tests__/inicio-oficial-server.test.ts`,
-  `components/admin/__tests__/inicio-oficial-ui.test.tsx`.
+  `components/admin/__tests__/inicio-oficial-ui.test.tsx`,
+  `components/admin/__tests__/inicio-oficial-revision.test.tsx`.

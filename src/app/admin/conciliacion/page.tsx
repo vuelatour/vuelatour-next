@@ -79,6 +79,7 @@ import {
   textoListaRecortada,
   textoMovimientoEnfocado,
   textoMovimientoNoEncontrado,
+  periodoPedidoAntesDelInicio,
   textoRangoVista,
   textoVentanaSinBanco,
   type FiltroConciliacion,
@@ -169,6 +170,12 @@ export default async function ConciliacionPage({
   const rango = rangoVistaConciliacion(sp.desde, sp.hasta, hoy, inicio);
   const desdeVista = rango.desde;
   const hastaVista = rango.hasta;
+  // Liga «Ver en Conciliación» de un cargo/abono de antes del inicio (revisión
+  // 16-oct-2026): el día pedido cae antes ⇒ el aviso lo dice en vez de mandar
+  // a «quitar filtros».
+  const movAntesDelInicio = enfoque.mov
+    ? periodoPedidoAntesDelInicio(sp.desde, sp.hasta, inicio)
+    : null;
   // Periodo de la auditoría Paywise: mes corriente en hora Cancún por default.
   const pwDesde = desdeVista ?? `${hoy.slice(0, 7)}-01`;
   const pwHasta = hastaVista ?? hoy;
@@ -652,10 +659,17 @@ export default async function ConciliacionPage({
           role="status"
           className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-700 dark:text-amber-300"
         >
-          {textoMovimientoNoEncontrado(enfoque)}{" "}
-          <Link href="/admin/conciliacion" className="cursor-pointer font-medium underline underline-offset-2">
-            {ETIQUETA_VER_TODOS_MOVIMIENTOS}
-          </Link>
+          {textoMovimientoNoEncontrado(enfoque, movAntesDelInicio)}
+          {/* Un movimiento de antes del inicio no sale en NINGUNA vista:
+              «Ver todos» no lo encontraría. */}
+          {!movAntesDelInicio && (
+            <>
+              {" "}
+              <Link href="/admin/conciliacion" className="cursor-pointer font-medium underline underline-offset-2">
+                {ETIQUETA_VER_TODOS_MOVIMIENTOS}
+              </Link>
+            </>
+          )}
         </p>
       )}
 

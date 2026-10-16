@@ -27,6 +27,7 @@ import {
   type TonoEstadoBanco,
 } from "@/lib/admin/gasto-banco";
 import { cn } from "@/lib/utils";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 import type { ConciliacionDeGasto } from "@/types/conciliacion";
 
 /** Lo que devuelve la server action (misma forma que `ActionResult`). */
@@ -134,6 +135,9 @@ export function GastoBancoDetalle({
               <span className="font-medium">{f.titulo}</span>
               <span className="font-mono tabular-nums">{f.monto}</span>
             </div>
+            {/* Inicio oficial (revisión 16-oct-2026): un cargo de antes ya no
+                sale en Conciliación; el chip lo dice ANTES de abrir la liga. */}
+            <ChipInicioOficial fecha={c.fecha} />
             {f.cuenta && <p className="text-xs text-muted-foreground">{f.cuenta}</p>}
             <p className="text-xs">{f.leyenda}</p>
             {f.aporte && <p className="text-xs">{f.aporte}</p>}
@@ -153,6 +157,7 @@ export function GastoBancoDetalle({
                           <EnlaceNuevaPestana href={l.href} className="block">
                             {l.principal}
                             <span className="block text-[11px] text-muted-foreground">{l.secundaria}</span>
+                            <ChipInicioOficial fecha={l.fecha} />
                           </EnlaceNuevaPestana>
                         )}
                       </li>

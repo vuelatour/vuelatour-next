@@ -33,6 +33,8 @@ import {
   saveTarifaAction,
 } from "@/app/admin/expenses/actions";
 import type { PistaPendiente, TarifaAerodromo } from "@/types/expenses";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 /** Mes corriente en hora Cancún (UTC−5 fija): [primer día, hoy]. */
 function periodoDefault(): { desde: string; hasta: string } {
@@ -51,6 +53,9 @@ interface Seleccion {
  * Los gastos quedan SIN_COMPROBANTE hasta amarrar la factura de VIP SAESA.
  */
 export function PistasDialog() {
+  // Inicio oficial (revisión 16-oct-2026): el periodo no baja del inicio (el
+  // API devuelve vacío un periodo anterior). Sin él, libre.
+  const inicio = useInicioOficial();
   const [open, setOpen] = useState(false);
   const [periodo, setPeriodo] = useState(periodoDefault());
   const [pendientes, setPendientes] = useState<PistaPendiente[]>([]);
@@ -147,6 +152,7 @@ export function PistasDialog() {
               <p className="text-xs text-muted-foreground">Desde</p>
               <Input
                 type="date"
+                min={minFechaFiltro(inicio)}
                 value={periodo.desde}
                 onChange={(e) => setPeriodo((p) => ({ ...p, desde: e.target.value }))}
                 className="w-40"
@@ -156,6 +162,7 @@ export function PistasDialog() {
               <p className="text-xs text-muted-foreground">Hasta</p>
               <Input
                 type="date"
+                min={minFechaFiltro(inicio)}
                 value={periodo.hasta}
                 onChange={(e) => setPeriodo((p) => ({ ...p, hasta: e.target.value }))}
                 className="w-40"

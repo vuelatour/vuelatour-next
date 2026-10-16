@@ -20,6 +20,7 @@ import { fmtMontoConciliacion, numeroDe } from "./conciliacion-parcial";
 import { esDiaValido, uuidFiltro } from "./url-params";
 import {
   ajustarRangoAlInicio,
+  fechaInicioCorta,
   recortarAtajos,
   ventanaConPiso,
   type InicioOficial,
@@ -295,9 +296,44 @@ export const TEXTO_MOVIMIENTO_NO_ENCONTRADO =
 export const TEXTO_MOVIMIENTO_NO_ENCONTRADO_GENERICO =
   "No encontramos en esta vista el movimiento que abriste: puede estar en otra cuenta u otras fechas, o ya lo desvincularon. Quita los filtros para buscarlo.";
 
-/** El aviso de «no está en esta vista»: con `?gasto=` el de Gastos (de siempre); si no, el genérico. */
-export function textoMovimientoNoEncontrado(enfoque: { gasto?: string | null }): string {
+/**
+ * El aviso de «no está en esta vista»: con `?gasto=` el de Gastos (de
+ * siempre); si no, el genérico.
+ *
+ * Inicio oficial (revisión 16-oct-2026): las ligas «Ver en Conciliación» de
+ * un cargo o abono anterior al inicio llegan con `?desde=?hasta=` de ese día;
+ * el listado ya no lo trae NUNCA (el API recorta), así que «Quita los filtros
+ * para buscarlo» mandaba a buscar algo que no va a aparecer. Con
+ * `antesDelInicio` (el inicio, cuando el día pedido cae antes) se dice la
+ * verdad. `null` ⇒ los textos de siempre.
+ */
+export function textoMovimientoNoEncontrado(
+  enfoque: { gasto?: string | null },
+  antesDelInicio: InicioOficial = null,
+): string {
+  if (antesDelInicio) {
+    return `${enfoque.gasto ? "El cargo que abriste desde Gastos" : "El movimiento que abriste"} es de antes del inicio oficial (${fechaInicioCorta(
+      antesDelInicio,
+    )}): se conserva, pero ya no aparece en Conciliación. Sus datos siguen en la hoja desde donde lo abriste.`;
+  }
   return enfoque.gasto ? TEXTO_MOVIMIENTO_NO_ENCONTRADO : TEXTO_MOVIMIENTO_NO_ENCONTRADO_GENERICO;
+}
+
+/**
+ * ¿El periodo que PEDÍA la URL (antes del ajuste) cae entero antes del
+ * inicio? Es el caso de las ligas a un movimiento de agosto (`desde = hasta
+ * = día del movimiento`). Devuelve el inicio (para el texto) o `null`.
+ */
+export function periodoPedidoAntesDelInicio(
+  desde: string | null | undefined,
+  hasta: string | null | undefined,
+  inicio: InicioOficial,
+): InicioOficial {
+  if (!inicio) return null;
+  const dias = [desde, hasta].filter((d): d is string => esDiaValido(d));
+  if (dias.length === 0) return null;
+  const mayor = dias.reduce((a, b) => (a > b ? a : b));
+  return mayor < inicio ? inicio : null;
 }
 export const ETIQUETA_QUITAR_RESALTADO = "Quitar resaltado";
 export const ETIQUETA_VER_TODOS_MOVIMIENTOS = "Ver todos los movimientos";

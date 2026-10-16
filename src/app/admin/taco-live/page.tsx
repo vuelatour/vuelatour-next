@@ -20,6 +20,10 @@ import {
   hrefVolverPreCierre,
   leerFocoPreCierre,
 } from "@/lib/admin/pre-cierre-resolver";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { esAntesDelInicio, pisoDesde, textoArrancaEnMes } from "@/lib/admin/inicio-oficial";
+import { esDiaValido } from "@/lib/admin/url-params";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -67,9 +71,15 @@ export async function generateMetadata({ searchParams }: TacoLivePageProps): Pro
  */
 export default async function TacoLivePage({ searchParams }: TacoLivePageProps) {
   const sp = await searchParams;
+  // Inicio oficial (revisión 16-oct-2026): el API devuelve vacío un día
+  // anterior al inicio; una URL vieja (`?fecha=` de agosto) se lleva al día
+  // del inicio con el aviso de siempre, y «Día anterior» se apaga ahí.
+  const inicio = await getInicioOficial();
+  const fechaPedida = esDiaValido(sp.fecha) ? pisoDesde(sp.fecha, inicio) : sp.fecha;
+  const fechaAjustada = fechaPedida !== sp.fecha;
   const [data, me] = await Promise.all([
     apiServer<TacoLiveResponse>("/v1/flights/taco-live", {
-      searchParams: { fecha: sp.fecha },
+      searchParams: { fecha: fechaPedida },
       cache: "no-store",
     }),
     // Best-effort: sin /me el tablero se pinta igual, sin «Omitir tacómetro».
@@ -80,6 +90,9 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
   const puedeCompletar = esRolCompletarVuelo(me?.rol);
 
   const fecha = data.fecha;
+  const diaAnteriorApagado = esAntesDelInicio(shiftDay(fecha, -1), inicio)
+    ? textoArrancaEnMes(inicio as string)
+    : null;
   const focoPc = leerFocoPreCierre(sp);
   const idsPc = conjuntoResaltado(focoPc);
   // Los contadores describen EL DÍA: un viaje multi-día trae también sus
@@ -127,13 +140,26 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/admin/taco-live?fecha=${shiftDay(fecha, -1)}`}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"
-            aria-label="Día anterior"
-          >
-            <ChevronLeftIcon className="h-4 w-4" />
-          </Link>
+          {diaAnteriorApagado ? (
+            <span
+              role="link"
+              aria-disabled="true"
+              aria-label="Día anterior"
+              title={diaAnteriorApagado}
+              data-dia-anterior-deshabilitado
+              className="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-lg border border-border opacity-40"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </span>
+          ) : (
+            <Link
+              href={`/admin/taco-live?fecha=${shiftDay(fecha, -1)}`}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"
+              aria-label="Día anterior"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </Link>
+          )}
           <TacoLiveDatePicker fecha={fecha} />
           <Link
             href={`/admin/taco-live?fecha=${shiftDay(fecha, 1)}`}
@@ -150,6 +176,8 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
           </Link>
         </div>
       </div>
+
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={fechaAjustada} />
 
       {/* «Resolver →» del pre-cierre (15-oct-2026): los vuelos de ESTE día en
           ámbar y primero; los de otros días cuentan como «ya no están en
