@@ -1,10 +1,15 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ANCLA_PRE_CIERRE } from "@/lib/admin/pre-cierre-resolver";
 
-/** Esqueleto del pre-cierre mientras el API lo arma (Suspense, 12-oct-2026). */
+/**
+ * Esqueleto del pre-cierre mientras el API lo arma (Suspense, 12-oct-2026).
+ * Lleva el ancla `#pre-cierre` (15-oct-2026): «Volver al pre-cierre →» de la
+ * franja aterriza aquí aunque la card siga cargando.
+ */
 export function PreCierreCardCargando() {
   return (
-    <Card aria-busy="true" data-pre-cierre="cargando">
+    <Card id={ANCLA_PRE_CIERRE} aria-busy="true" data-pre-cierre="cargando" className="scroll-mt-24">
       <CardHeader>
         <CardTitle className="text-base">Pre-cierre del periodo</CardTitle>
         <CardDescription>Revisando pendientes del periodo…</CardDescription>

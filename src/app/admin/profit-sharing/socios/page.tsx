@@ -12,6 +12,14 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { SociosCuentaTable } from "@/components/admin/profit-sharing/socios-cuenta-table";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  conjuntoResaltado,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
+import { todayCancun } from "@/lib/datetime";
 import {
   KpisCuentasSocios,
   TarjetaCuentasNoDisponibles,
@@ -66,7 +74,13 @@ function Encabezado({ conReparto }: { conReparto: boolean }) {
  * estado / última entrega, «Registrar entrega», «Ver cuenta» y «Configurar
  * cuenta». Los números son del API; la página solo pinta.
  */
-export default async function PagosSociosPage() {
+export default async function PagosSociosPage({
+  searchParams,
+}: {
+  /** Solo el foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel. */
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
   const me = await getMe();
   const conReparto = VEN_REPARTO.includes(me.rol);
 
@@ -130,6 +144,10 @@ export default async function PagosSociosPage() {
   // El aviso «configura…» solo a quien puede hacerlo (como en el estado de
   // cuenta); quien consulta ve la etiqueta informativa del renglón.
   const sinConfigurar = puedeRegistrar ? textoSociosSinConfigurar(sociosSinConfigurar(socios)) : null;
+  // «Resolver →» del pre-cierre (15-oct-2026): la fila del socio en ámbar,
+  // sin reordenar (el orden del API manda).
+  const focoPc = leerFocoPreCierre(sp);
+  const idsPc = conjuntoResaltado(focoPc);
 
   return (
     <div className="space-y-6">
@@ -146,6 +164,15 @@ export default async function PagosSociosPage() {
           <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <p>{sinConfigurar}</p>
         </div>
+      )}
+
+      {focoPc && (
+        <FranjaPreCierre
+          foco={focoPc}
+          encontrados={socios.filter((s) => idsPc.has(String(s.socio.id).toLowerCase())).length}
+          hrefQuitar={hrefQuitarResaltado("/admin/profit-sharing/socios", sp)}
+          hrefVolver={hrefVolverPreCierre(focoPc, todayCancun())}
+        />
       )}
 
       {socios.length === 0 ? (
@@ -167,6 +194,7 @@ export default async function PagosSociosPage() {
               hastaMes={hastaMes}
               puedeRegistrar={puedeRegistrar}
               registro={registro}
+              resaltados={focoPc?.ids}
             />
           </CardContent>
         </Card>

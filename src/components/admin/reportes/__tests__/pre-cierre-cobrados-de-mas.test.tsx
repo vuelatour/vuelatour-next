@@ -68,7 +68,7 @@ describe("pre-cierre: vuelos cobrados de más", () => {
     expect(html).toContain(">#217 ($495.99) · IVA</a>");
     expect(html).toContain('href="/admin/flights/v-217"');
     expect(html).toContain('title="Posible causa: IVA que la cotización no lleva. Revisa la card de cobros del vuelo."');
-    expect(html).toMatch(/href="\/admin\/flights\?desde=2026-08-01&amp;hasta=2026-08-31"[^>]*>Resolver →</);
+    expect(html).toMatch(/href="\/admin\/flights\?desde=2026-08-01&amp;hasta=2026-08-31&amp;pc=vuelos_cobrados_de_mas&amp;[^"]*"[^>]*>Resolver →</);
   });
 
   it("los explicados van en una línea gris y no son chips", async () => {

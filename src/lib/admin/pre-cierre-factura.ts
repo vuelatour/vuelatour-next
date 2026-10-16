@@ -14,9 +14,13 @@
 
 export const CLAVE_PRECIERRE_VUELOS_SIN_FACTURA = "vuelos_cobrados_sin_factura";
 
-/** «Resolver →» del renglón: Facturas emitidas («Registrar factura» y «Por facturar»). */
+/**
+ * «Resolver →» del renglón: Facturas emitidas, en la sección «Por facturar»
+ * (ancla `#por-facturar`, 15-oct-2026: ahí se resaltan en ámbar los vuelos del
+ * renglón; el foco del pre-cierre se anexa ANTES del `#`).
+ */
 export function hrefPrecierreVuelosSinFactura(): string {
-  return "/admin/facturas-emitidas";
+  return "/admin/facturas-emitidas#por-facturar";
 }
 
 /** Chip del vuelo tal como lo manda el API (todo opcional por tolerancia). */

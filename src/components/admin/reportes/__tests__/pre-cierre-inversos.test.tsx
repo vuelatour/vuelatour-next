@@ -76,7 +76,10 @@ const itemTransporte = (over: Record<string, unknown> = {}) => ({
 });
 
 const pintar = async () => renderToStaticMarkup(await PreCierreCard(PERIODO));
-const RESOLVER = /href="\/admin\/quotes\?desde=2026-08-01&amp;hasta=2026-08-31"[^>]*>Resolver →</g;
+// «Resolver →» = la lista del periodo + el FOCO del pre-cierre (PEDIDO 2,
+// 15-oct-2026: `pc=<clave>`, conteo, periodo, textos e ids de `vuelos[]`).
+const RESOLVER =
+  /href="\/admin\/quotes\?desde=2026-08-01&amp;hasta=2026-08-31&amp;pc=(?:tua_pagada_sin_cobrar|transporte_pagado_sin_cotizar)&amp;[^"]*"[^>]*>Resolver →</g;
 
 beforeEach(() => preCierre.mockReset());
 

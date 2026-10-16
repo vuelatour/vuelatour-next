@@ -22,6 +22,7 @@ import {
   SYNC_ID_MOVIMIENTOS,
 } from "@/lib/admin/conciliacion-vista";
 import { cn } from "@/lib/utils";
+import { conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 import { fmtDate as fmtDateCancun, fmtDateOnly } from "@/lib/datetime";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import {
@@ -257,6 +258,10 @@ interface MovimientosTableProps {
    * de un cargo en dólares. Sin ella, la de `seleccion`.
    */
   monedaPorCuenta?: Record<string, string> | null;
+  /** «Resolver →» del pre-cierre (15-oct-2026, ADITIVO): los movimientos que
+   *  manda resolver llevan el MISMO anillo ámbar (la página ya los puso
+   *  primero, después del `?mov=`). Sin ella, el marcado de siempre. */
+  resaltados?: string[];
 }
 
 export function MovimientosTable({
@@ -272,7 +277,9 @@ export function MovimientosTable({
   abreBalances = true,
   seleccion = null,
   monedaPorCuenta: monedaPorCuentaProp = null,
+  resaltados,
 }: MovimientosTableProps) {
+  const resaltadosSet = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   // La fila que se abrió desde Gastos se trae a la vista (mismo patrón que
   // «Por facturar»). El id ya llega validado (uuid).
   useEffect(() => {
@@ -926,9 +933,10 @@ export function MovimientosTable({
       columns={columnas}
       rows={movimientos}
       rowKey={(m) => m.id}
-      // La fila que se abrió desde Gastos (13-oct-2026): el MISMO anillo de
-      // «Por facturar». DataTable no se toca: la página ya la puso primero.
-      rowClassName={(m) => (resaltar && m.id === resaltar ? CLASE_FILA_ENFOCADA : undefined)}
+      // La fila que se abrió desde Gastos (13-oct-2026) y las que manda
+      // resolver el pre-cierre (15-oct-2026): el MISMO anillo de «Por
+      // facturar». DataTable no se toca: la página ya las puso primero.
+      rowClassName={(m) => ((resaltar && m.id === resaltar) || resaltadosSet.has(m.id.toLowerCase()) ? CLASE_FILA_ENFOCADA : undefined)}
       huboCorte={huboCorte}
       searchText={(m) =>
         `${m.descripcion ?? ""} ${m.monto} ${m.referencia ?? ""} ${

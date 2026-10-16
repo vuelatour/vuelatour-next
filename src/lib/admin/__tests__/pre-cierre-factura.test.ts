@@ -15,9 +15,9 @@ import {
 const V = "eb474572-8bda-469f-adca-db556f811d86";
 
 describe("chips de «Vuelos cobrados en cuentas que exigen factura…»", () => {
-  it("clave y «Resolver →» (Facturas emitidas)", () => {
+  it("clave y «Resolver →» (Facturas emitidas, sección «Por facturar»)", () => {
     expect(CLAVE_PRECIERRE_VUELOS_SIN_FACTURA).toBe("vuelos_cobrados_sin_factura");
-    expect(hrefPrecierreVuelosSinFactura()).toBe("/admin/facturas-emitidas");
+    expect(hrefPrecierreVuelosSinFactura()).toBe("/admin/facturas-emitidas#por-facturar");
   });
 
   it("sin pedir: folio + cuenta; lleva a la card de cobros del vuelo y dice qué hacer", () => {

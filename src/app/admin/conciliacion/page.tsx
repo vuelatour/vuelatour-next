@@ -59,6 +59,13 @@ import type { PaywiseAuditoria } from "@/types/conciliacion";
 import { Degradaciones, esErrorDeNext } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { RangoFechasConciliacion } from "@/components/admin/conciliacion/rango-fechas-bar";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  filasResaltadasPrimero,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
 import {
   ETIQUETA_QUITAR_RESALTADO,
   ETIQUETA_VER_TODOS_MOVIMIENTOS,
@@ -133,6 +140,14 @@ export default async function ConciliacionPage({
     /** Desde la hoja de una ENTRADA (15-oct-2026): el cobro cuya línea del
         lote del abono se resalta. */
     cobro?: string;
+    /** Foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel,
+        nunca viajan al API (`lib/admin/pre-cierre-resolver.ts`). */
+    pc?: string;
+    ids?: string;
+    pcn?: string;
+    pct?: string;
+    pcd?: string;
+    pcp?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -398,7 +413,29 @@ export default async function ConciliacionPage({
   // lista; las pestañas, los chips y la barra de fechas arman su href SIN
   // `mov`/`gasto`, así que el enfoque se aplica una sola vez.
   const pestanaDeLista = filtro === "todos" || filtro === "pendientes" || filtro === "conciliados";
-  const foco = pestanaDeLista ? filasConFoco(movs, enfoque.mov) : { filas: movs, encontrado: false };
+  // «Resolver →» del pre-cierre (15-oct-2026): los movimientos / gastos /
+  // cobros que manda resolver van PRIMERO y en ámbar; el cargo de `?mov=`
+  // se aplica DESPUÉS y sigue siendo el primero si viene.
+  const focoPc = leerFocoPreCierre(sp);
+  const idsPc = focoPc?.ids ?? [];
+  const movsPc = pestanaDeLista
+    ? filasResaltadasPrimero(movs, idsPc, (m) => m.id)
+    : { filas: movs, encontrados: 0 };
+  const foco = pestanaDeLista ? filasConFoco(movsPc.filas, enfoque.mov) : { filas: movs, encontrado: false };
+  const sinBancoPc = filasResaltadasPrimero(sinBancoRows, idsPc, (r) => r.id);
+  const cobrosSinBancoPc = filasResaltadasPrimero(cobrosSinBanco?.data ?? [], idsPc, (c) => c.id);
+  // «M en esta vista»: solo donde hay una lista que se pintó; null = no se sabe.
+  const encontradosPc = pestanaDeLista
+    ? movsPc.encontrados
+    : filtro === "sin_banco"
+      ? sinBanco
+        ? sinBancoPc.encontrados
+        : null
+      : filtro === "cobros_sin_banco"
+        ? cobrosSinBanco
+          ? cobrosSinBancoPc.encontrados
+          : null
+        : null;
   const aliasPorCuenta = Object.fromEntries(cuentasRes.data.map((c) => [c.id, c.alias]));
   const queHay =
     filtro === "pendientes"
@@ -595,6 +632,15 @@ export default async function ConciliacionPage({
       {/* El movimiento que se abrió (el cargo desde Gastos o el abono desde la
           hoja de una entrada) no está en esta vista: se dice (también con la
           lista vacía), jamás se inventa la fila. */}
+      {focoPc && filtro !== "paywise" && (
+        <FranjaPreCierre
+          foco={focoPc}
+          encontrados={encontradosPc}
+          hrefQuitar={hrefQuitarResaltado("/admin/conciliacion", sp)}
+          hrefVolver={hrefVolverPreCierre(focoPc, hoy)}
+        />
+      )}
+
       {pestanaDeLista && enfoque.mov && !foco.encontrado && (
         <p
           role="status"
@@ -630,7 +676,7 @@ export default async function ConciliacionPage({
           <CardContent className="p-0">
             {/* null = la lectura FALLÓ (no «sin cobros»): el aviso, nunca la tabla vacía. */}
             {cobrosSinBanco ? (
-              <CobrosSinBancoTable rows={cobrosSinBanco.data} />
+              <CobrosSinBancoTable rows={cobrosSinBancoPc.filas} resaltados={idsPc} />
             ) : (
               <AvisoListaSinBancoNoCargo />
             )}
@@ -664,7 +710,7 @@ export default async function ConciliacionPage({
             {/* null = la lectura FALLÓ (no «sin gastos»): hasta el 14-oct-2026
                 aquí se montaba la tabla con cero filas. */}
             {sinBanco ? (
-              <GastosSinBancoTable rows={sinBancoRows} />
+              <GastosSinBancoTable rows={sinBancoPc.filas} resaltados={idsPc} />
             ) : (
               <AvisoListaSinBancoNoCargo />
             )}
@@ -737,6 +783,7 @@ export default async function ConciliacionPage({
               abreBalances={puedeAbrirBalances(me?.rol)}
               seleccion={vistaSeleccion ? { vista: vistaSeleccion, monedaPorCuenta } : null}
               monedaPorCuenta={monedaPorCuenta}
+              resaltados={idsPc}
             />
           </CardContent>
         </Card>

@@ -45,6 +45,14 @@ import {
   queryDeFiltros,
 } from "@/lib/admin/facturas-emitidas";
 import { fmtMonto } from "@/lib/format";
+import { todayCancun } from "@/lib/datetime";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  conjuntoResaltado,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
 
 export const dynamic = "force-dynamic";
 
@@ -162,6 +170,18 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
   // facturar» y llegan aparte; no se retiran solas. Sin la llave (API
   // previo) no hay tercera tarjeta.
   const yaNoAplican = porFacturar.ok ? (porFacturar.datos.ya_no_aplican ?? []) : [];
+  // «Resolver →» del pre-cierre (15-oct-2026): `filtrosFacturasDeUrl` no lo
+  // conoce (se lee aparte). Los vuelos se resaltan en las TRES tarjetas; «M en
+  // esta vista» = cuántos están en alguna. Lista caída ⇒ no se sabe (null).
+  const focoPc = leerFocoPreCierre(sp);
+  const idsPc = conjuntoResaltado(focoPc);
+  const encontradosPc = porFacturar.ok
+    ? new Set(
+        [...porFacturar.datos.data, ...marcados, ...yaNoAplican]
+          .map((it) => it.vuelo.id.toLowerCase())
+          .filter((id) => idsPc.has(id)),
+      ).size
+    : null;
 
   return (
     <div className="space-y-6">
@@ -183,6 +203,16 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
 
       {/* ------------------------ POR FACTURAR ------------------------ */}
       <section id="por-facturar" className="scroll-mt-24">
+        {focoPc && (
+          <div className="mb-4">
+            <FranjaPreCierre
+              foco={focoPc}
+              encontrados={encontradosPc}
+              hrefQuitar={hrefQuitarResaltado("/admin/facturas-emitidas", sp)}
+              hrefVolver={hrefVolverPreCierre(focoPc, todayCancun())}
+            />
+          </div>
+        )}
         {porFacturar.ok ? (
           <Card
             className={porFacturar.datos.count > 0 ? "border-amber-500/40" : undefined}
@@ -203,6 +233,7 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
                   items={porFacturar.datos.data}
                   rol={me.rol}
                   resaltar={filtros.resaltar}
+                  resaltados={focoPc?.ids}
                   clientes={clientes}
                   emisoras={emisoras}
                 />
@@ -232,6 +263,7 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
                 items={marcados}
                 rol={me.rol}
                 resaltar={filtros.resaltar}
+                resaltados={focoPc?.ids}
                 clientes={clientes}
                 emisoras={emisoras}
                 syncId="pfm"
@@ -256,6 +288,7 @@ export default async function FacturasEmitidasPage({ searchParams }: PageProps) 
                 items={yaNoAplican}
                 rol={me.rol}
                 resaltar={filtros.resaltar}
+                resaltados={focoPc?.ids}
                 clientes={clientes}
                 emisoras={emisoras}
                 syncId="pfy"

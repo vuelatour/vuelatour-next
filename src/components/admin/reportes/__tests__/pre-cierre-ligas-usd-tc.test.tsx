@@ -65,7 +65,7 @@ describe("pre-cierre: gastos en dólares con un T.C. fuera de lugar", () => {
     preCierre.mockResolvedValueOnce({ periodo: { desde: "2026-09-01", hasta: "2026-09-30" }, listo: true, items: [item()] });
     const html = await pintar();
     expect(html).toContain(TITULO);
-    expect(html).toMatch(/href="\/admin\/conciliacion\?f=conciliados&amp;desde=2026-09-01&amp;hasta=2026-09-30"[^>]*>Resolver →</);
+    expect(html).toMatch(/href="\/admin\/conciliacion\?f=conciliados&amp;desde=2026-09-01&amp;hasta=2026-09-30&amp;pc=gastos_usd_tc_fuera_de_lugar&amp;[^"]*"[^>]*>Resolver →</);
   });
 
   it("un renglón por liga con el texto del API y sus DOS enlaces (cargo y vuelo/gasto), con cursor-pointer", async () => {

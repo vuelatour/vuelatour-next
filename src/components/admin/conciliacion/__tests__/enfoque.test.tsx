@@ -168,7 +168,7 @@ describe("cableado (regex sobre los fuentes)", () => {
     const src = leer("../movimientos-table.tsx");
     expect(src).toContain("syncId={SYNC_ID_MOVIMIENTOS}");
     expect(src).toContain("huboCorte={huboCorte}");
-    expect(src).toContain("rowClassName={(m) => (resaltar && m.id === resaltar ? CLASE_FILA_ENFOCADA : undefined)}");
+    expect(src).toContain("rowClassName={(m) => ((resaltar && m.id === resaltar) || resaltadosSet.has(m.id.toLowerCase()) ? CLASE_FILA_ENFOCADA : undefined)}");
     expect(src).toContain("resumenLoteFila(m, { destacar: gastoResaltado })");
     expect(src).toMatch(/scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
   });
@@ -177,7 +177,8 @@ describe("cableado (regex sobre los fuentes)", () => {
     const page = leer("../../../../app/admin/conciliacion/page.tsx");
     expect(page).toContain("const enfoque = enfoqueConciliacionDeUrl(sp);");
     expect(page).toContain('const pestanaDeLista = filtro === "todos" || filtro === "pendientes" || filtro === "conciliados";');
-    expect(page).toContain("filasConFoco(movs, enfoque.mov)");
+    // 15-oct-2026: primero los del pre-cierre y DESPUÉS el `?mov=` (queda primero).
+    expect(page).toContain("filasConFoco(movsPc.filas, enfoque.mov)");
     // 15-oct-2026: con `?gasto=` el texto de Gastos de siempre; sin él (un abono), el genérico.
     expect(page).toContain("{textoMovimientoNoEncontrado(enfoque)}");
     expect(page).toContain("resaltar={foco.encontrado ? enfoque.mov : null}");

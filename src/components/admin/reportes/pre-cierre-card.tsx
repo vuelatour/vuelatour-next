@@ -82,6 +82,8 @@ import {
   chipVueloTransporte,
   hrefPrecierreTransporte,
 } from "@/lib/admin/pre-cierre-transporte";
+import { hrefConciliacion } from "@/lib/admin/conciliacion-vista";
+import { ANCLA_PRE_CIERRE, hrefResolverItem } from "@/lib/admin/pre-cierre-resolver";
 
 /** Gasto que parece transporte de pasajeros (transporte_pagado_sin_cotizar). Del API. */
 interface PreCierreGastoTransporte {
@@ -218,6 +220,13 @@ interface PreCierreItem {
       0.0.78, cuántos son PARCIALES. */
   cobros?: PreCierreCobroBanco[];
   parciales?: number;
+  /** ADITIVOS («Resolver →» que marca en ámbar, 15-oct-2026, API 0.0.81):
+      los registros CONTADOS (gasto o movimiento) de los 11 renglones que no
+      traen su propio arreglo con id; tope 500 y `ids_truncado` al cortar.
+      El panel los anexa al «Resolver →» (`hrefResolverItem`); ausentes con
+      un API previo ⇒ la franja dice «N por resolver» sin resaltar. */
+  ids?: string[];
+  ids_truncado?: true;
 }
 
 interface PreCierre {
@@ -244,29 +253,55 @@ const LINK_POR_CLAVE: Record<
   tacos_en_revision: () => "/admin/taco-live",
   cobros_pendientes: (p) =>
     `/admin/flights?cobro=POR_COBRAR&desde=${p.desde}&hasta=${p.hasta}`,
-  gastos_sin_avion: () => "/admin/expenses",
+  // Gastos sin avión (15-oct-2026): la pestaña «Pendientes» DEL PERIODO es
+  // el universo exacto (antes «Todos» sin fechas: había que buscarlos).
+  gastos_sin_avion: (p) =>
+    `/admin/expenses?f=pendientes&desde=${p.desde}&hasta=${p.hasta}`,
   // Permisos sin avión (14-oct-2026, API 0.0.77, BLOQUEA: «el AFAC lo cargan
   // al Avión»): Gastos con los permisos del periodo, donde se asigna el avión.
   [CLAVE_PRECIERRE_PERMISOS_SIN_AVION]: hrefPrecierrePermisosSinAvion,
-  gastos_sin_tc: () => "/admin/expenses",
+  gastos_sin_tc: (p) => `/admin/expenses?desde=${p.desde}&hasta=${p.hasta}`,
   // Cobros MXN sin TC que ni el TC oficial convierte: se captura el TC en
   // el vuelo (los folios del item llevan directo a cada uno).
   cobros_sin_tc: (p) => `/admin/flights?desde=${p.desde}&hasta=${p.hasta}`,
   // El comprobante trae otra matrícula: se corrige el avión en Gastos.
-  matricula_recibo_distinta: () => "/admin/expenses",
+  matricula_recibo_distinta: (p) =>
+    `/admin/expenses?desde=${p.desde}&hasta=${p.hasta}`,
   // Directo a Gastos filtrado a "sin facturar" (pendiente + solicitada) DEL
   // PERIODO: ahí está el semáforo para irlos resolviendo uno por uno.
   gastos_sin_comprobante: (p) =>
     `/admin/expenses?facturacion=NO_FACTURADA&desde=${p.desde}&hasta=${p.hasta}`,
-  // El honorario del piloto externo se captura como gasto del vuelo (los
-  // folios del item llevan directo a cada vuelo).
-  externos_sin_honorario: () => "/admin/expenses",
-  sin_conciliar: () => "/admin/conciliacion",
+  // El honorario del piloto externo se captura desde el VUELO (card «Gastos
+  // del vuelo»): la lista de vuelos del periodo, donde se resaltan (15-oct-
+  // 2026; antes Gastos, donde el gasto aún no existe y no hay fila que marcar).
+  externos_sin_honorario: (p) => `/admin/flights?desde=${p.desde}&hasta=${p.hasta}`,
+  // Movimientos sin conciliar: la pestaña «Pendientes» del periodo.
+  sin_conciliar: (p) => hrefConciliacion({ f: "pendientes", desde: p.desde, hasta: p.hasta }),
   // Gastos / cobros bancarios que no aparecen en ningún estado de cuenta:
-  // las pestañas espejo de Conciliación (Paywise incluido).
-  gastos_bancarios_sin_conciliar: () => "/admin/conciliacion?f=sin_banco",
-  cobros_bancarios_sin_conciliar: () => "/admin/conciliacion?f=cobros_sin_banco",
-  repartos_incoherentes: () => "/admin/otros-gastos",
+  // las pestañas espejo de Conciliación (Paywise incluido), DEL PERIODO
+  // (antes «últimos 90 días»: el conteo no cuadraba con el «· N»).
+  gastos_bancarios_sin_conciliar: (p) =>
+    hrefConciliacion({ f: "sin_banco", desde: p.desde, hasta: p.hasta }),
+  cobros_bancarios_sin_conciliar: (p) =>
+    hrefConciliacion({ f: "cobros_sin_banco", desde: p.desde, hasta: p.hasta }),
+  // Otros gastos es de un MES: el del periodo (o el mes de su «desde»).
+  repartos_incoherentes: (p) =>
+    `/admin/otros-gastos?mes=${mesDePeriodo(p.desde, p.hasta) ?? p.desde.slice(0, 7)}`,
+  // ENLACES NUEVOS (15-oct-2026): renglones cuyo `detalle` ya nombraba la
+  // pantalla pero no tenían «Resolver →».
+  // Combustible sin avión (BLOQUEA): Combustibles del mes, donde se asigna.
+  combustible_sin_avion: (p) =>
+    `/admin/combustibles?mes=${mesDePeriodo(p.desde, p.hasta) ?? p.desde.slice(0, 7)}`,
+  duplicados_sin_resolver: (p) =>
+    `/admin/expenses?f=duplicados&desde=${p.desde}&hasta=${p.hasta}`,
+  fijos_con_avion: (p) =>
+    `/admin/expenses?categoria=FIJO&desde=${p.desde}&hasta=${p.hasta}`,
+  // Sin precio / extras sin desglose: se cotiza o se revisa la cotización.
+  vuelos_sin_precio: (p) => `/admin/quotes?desde=${p.desde}&hasta=${p.hasta}`,
+  extras_sin_desglose: (p) => `/admin/quotes?desde=${p.desde}&hasta=${p.hasta}`,
+  fechas_tramos_incoherentes: (p) => `/admin/flights?desde=${p.desde}&hasta=${p.hasta}`,
+  vuelos_sin_gasto_operaciones: (p) => `/admin/flights?desde=${p.desde}&hasta=${p.hasta}`,
+  [CLAVE_PRECIERRE_SEGUIMIENTO]: (p) => `/admin/flights?desde=${p.desde}&hasta=${p.hasta}`,
   // Cotizaciones de GRUPO: la lista de grupos del periodo (cada grupo del
   // item lleva además su link directo). El saldo se cobra desde "Cobros del
   // grupo" (sobre) o por avión.
@@ -362,7 +397,7 @@ export async function PreCierreCard({
   // el operador generaría el cierre creyendo que no había pendientes.
   if (!data) {
     return (
-      <Card className="border-destructive/40">
+      <Card id={ANCLA_PRE_CIERRE} className="scroll-mt-24 border-destructive/40">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <ExclamationTriangleIcon className="h-5 w-5 text-destructive" />
@@ -385,10 +420,11 @@ export async function PreCierreCard({
 
   return (
     <Card
+      id={ANCLA_PRE_CIERRE}
       className={
         data.listo
-          ? "border-emerald-500/40"
-          : "border-amber-500/40"
+          ? "scroll-mt-24 border-emerald-500/40"
+          : "scroll-mt-24 border-amber-500/40"
       }
     >
       <CardHeader>
@@ -410,7 +446,14 @@ export async function PreCierreCard({
         <CardContent className="space-y-3">
           {pendientes.map((item) => {
             const monto = textoMontoItem(item);
-            const href = LINK_POR_CLAVE[item.clave]?.({ desde, hasta });
+            // «Resolver →» con FOCO (15-oct-2026): la pantalla de siempre +
+            // `pc`/`ids`/… para que pinte en ámbar lo que hay que resolver.
+            // Los informativos llevan su enlace tal cual.
+            const href = hrefResolverItem(
+              item,
+              { desde, hasta },
+              LINK_POR_CLAVE[item.clave]?.({ desde, hasta }),
+            );
             const info = item.informativo === true;
             // Chips con helper propio (factura obligatoria y los renglones
             // inversos); sin entrada ⇒ renderer genérico de abajo.
@@ -739,7 +782,7 @@ export async function PreCierreCard({
                 {href && (
                   <Link
                     href={href}
-                    className="text-xs font-medium underline underline-offset-2 shrink-0"
+                    className="cursor-pointer text-xs font-medium underline underline-offset-2 shrink-0"
                   >
                     {ETIQUETA_LINK_POR_CLAVE[item.clave] ?? "Resolver →"}
                   </Link>

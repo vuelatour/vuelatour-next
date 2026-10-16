@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
+import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 import { fmtDateOnly } from "@/lib/datetime";
 
 /** Fila serializable que arma la página (server). */
@@ -48,12 +50,22 @@ const COLUMNS: DataTableColumn<GastoSinBancoRow>[] = [
   },
 ];
 
-export function GastosSinBancoTable({ rows }: { rows: GastoSinBancoRow[] }) {
+export function GastosSinBancoTable({
+  rows,
+  resaltados,
+}: {
+  rows: GastoSinBancoRow[];
+  /** ADITIVO (15-oct-2026): gastos que el pre-cierre manda resolver, en
+      ámbar (la página ya los puso primero). */
+  resaltados?: string[];
+}) {
+  const set = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   return (
     <DataTable
       rows={rows}
       columns={COLUMNS}
       rowKey={(r) => r.id}
+      rowClassName={(r) => claseFilaResaltada(set, r.id)}
       searchText={(r) =>
         `${r.descripcion} ${r.medio} ${r.capturo} ${r.vuelo} ${r.monto} ${r.parcial ?? ""}`
       }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
@@ -14,6 +15,7 @@ import {
   netoEsperadoParcial,
 } from "@/lib/admin/cobro-banco";
 import type { CobroSinBanco } from "@/types/conciliacion";
+import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 
 const fmtMoney = (n: number) =>
   n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -168,7 +170,16 @@ function columnasDe(conBanco: boolean): DataTableColumn<CobroSinBanco>[] {
  * de «Gastos sin banco». Un cobro que nunca llegó al banco es dinero que se
  * cree cobrado.
  */
-export function CobrosSinBancoTable({ rows }: { rows: CobroSinBanco[] }) {
+export function CobrosSinBancoTable({
+  rows,
+  resaltados,
+}: {
+  rows: CobroSinBanco[];
+  /** ADITIVO (15-oct-2026): cobros (o sobres) que el pre-cierre manda
+      resolver, en ámbar por `c.id` (la página ya los puso primero). */
+  resaltados?: string[];
+}) {
+  const set = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   const conBanco = conColumnaBancoCobrosSinBanco(rows);
   // «2 con pago parcial: …» (cuenta filas; los montos son los del API).
   const lineaParciales = conBanco ? lineaParcialesCobrosSinBanco(rows) : null;
@@ -177,6 +188,7 @@ export function CobrosSinBancoTable({ rows }: { rows: CobroSinBanco[] }) {
       rows={rows}
       columns={columnasDe(conBanco)}
       rowKey={(c) => `${c.tipo}:${c.id}`}
+      rowClassName={(c) => claseFilaResaltada(set, c.id)}
       searchText={(c) =>
         `${c.folio ?? ""} ${c.grupo_folio ?? ""} ${c.cliente ?? ""} ${c.metodo_label ?? ""} ${c.referencia ?? ""} ${c.monto} ${c.anticipo?.etiqueta ?? ""}${
           c.parcial === true ? ` parcial ${c.faltante ?? ""}` : ""

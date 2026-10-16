@@ -18,6 +18,7 @@ import type { CapturaLinea } from "@/lib/admin/gastos-captura";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { cn } from "@/lib/utils";
+import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 
 /** Fila serializable armada por el server component de /admin/otros-gastos. */
 export interface OtroGastoRow {
@@ -75,7 +76,16 @@ type CategoriaFiltro = (typeof CATEGORIAS_FILTRO)[number];
  * Tabla de Otros gastos con filtro de categoría (client-side: el mes ya
  * viene acotado del server) y el diálogo de reparto compartido por fila.
  */
-export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
+export function OtrosGastosTable({
+  gastos,
+  resaltados,
+}: {
+  gastos: OtroGastoRow[];
+  /** ADITIVO (15-oct-2026): gastos que el pre-cierre manda resolver
+      («Resolver →»), en ámbar (la página ya los puso primero). */
+  resaltados?: string[];
+}) {
+  const resaltadosSet = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   const [categoria, setCategoria] = useState<CategoriaFiltro>("TODAS");
   const [repartoGasto, setRepartoGasto] = useState<RepartoGasto | null>(null);
   const [openReparto, setOpenReparto] = useState(false);
@@ -361,6 +371,7 @@ export function OtrosGastosTable({ gastos }: { gastos: OtroGastoRow[] }) {
         columns={columns}
         rows={visibles}
         rowKey={(g) => g.id}
+        rowClassName={(g) => claseFilaResaltada(resaltadosSet, g.id)}
         searchText={(g) =>
           [
             g.categoria,

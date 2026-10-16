@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { DocumentArrowDownIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { CobroEstadoBadge } from "@/components/admin/cobro-estado-badge";
@@ -9,6 +10,7 @@ import { estadoGrupoBadge } from "@/lib/admin/grupos-ui";
 import { fmtDate } from "@/lib/datetime";
 import { fmtUsd } from "@/lib/format";
 import type { EstadoGrupo } from "@/types/grupos";
+import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 
 /** Fila-viewmodel serializable que arma la página (lookups resueltos). */
 export interface GrupoListRow {
@@ -182,11 +184,16 @@ const columns: Array<DataTableColumn<GrupoListRow>> = [
 export function GruposTable({
   rows,
   huboCorte = false,
+  resaltados,
 }: {
   rows: GrupoListRow[];
   /** true = la página no logró cargar TODAS las filas (corte defensivo). */
   huboCorte?: boolean;
+  /** ADITIVO (15-oct-2026): grupos que el pre-cierre manda resolver (saldo
+      por cobrar, sobre descuadrado), en ámbar (la página ya los puso primero). */
+  resaltados?: string[];
 }) {
+  const set = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   return (
     <DataTable
       columns={columns}
@@ -194,6 +201,7 @@ export function GruposTable({
       huboCorte={huboCorte}
       rowKey={(g) => g.id}
       rowHref={(g) => `/admin/quotes/grupo/${g.id}`}
+      rowClassName={(g) => claseFilaResaltada(set, g.id)}
       searchText={(g) =>
         `${g.folioTexto} ${g.clienteNombre ?? ""} ${g.nombre} ${g.ruta}`
       }
