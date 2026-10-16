@@ -142,6 +142,9 @@ export function lineasTramosTacos(
   return { lineas, restantes: Math.max(0, totalReal - lineas.length) };
 }
 
+/** Clave del renglón INFORMATIVO «Tacómetros omitidos» (API 0.0.81). */
+export const CLAVE_PRECIERRE_TACOS_OMITIDOS = "tacometros_omitidos";
+
 /**
  * Renglón INFORMATIVO «Tacómetros omitidos» del pre-cierre (15-oct-2026, API
  * 0.0.81): las MISMAS líneas que `lineasTramosTacos` (orden, dedupe, tope y

@@ -16,6 +16,8 @@ import { fmtDate } from "@/lib/datetime";
 import { fmtMonto, fmtUsd } from "@/lib/format";
 import { folioTexto } from "@/lib/admin/grupos-ui";
 import {
+  CLAVE_PRECIERRE_TACOS_OMITIDOS,
+  lineasTramosOmitidos,
   lineasTramosTacos,
   MAX_TRAMOS_TACOS,
   type PreCierreTacoTramo,
@@ -462,11 +464,14 @@ export async function PreCierreCard({
             // helper PURO (no se recalcula ningún conteo del API). El «y N
             // más…» sale del `count` del item, no del largo del arreglo: el
             // API topa `tramos` en 200 y `count` siempre es el total real.
-            const tacos = lineasTramosTacos(
-              item.tramos,
-              MAX_TRAMOS_TACOS,
-              item.count,
-            );
+            // «Tacómetros omitidos» (INFORMATIVO, 15-oct-2026, API 0.0.81):
+            // las mismas líneas, con «Omitido por {quién} ({cuándo}): {motivo}»
+            // en lugar del motivo de revisión. Sin «Resolver →» (no tiene
+            // entrada en LINK_POR_CLAVE): cada chip/línea lleva a su vuelo.
+            const tacos =
+              item.clave === CLAVE_PRECIERRE_TACOS_OMITIDOS
+                ? lineasTramosOmitidos(item.tramos, MAX_TRAMOS_TACOS, item.count)
+                : lineasTramosTacos(item.tramos, MAX_TRAMOS_TACOS, item.count);
             // Socios por entregar / adelantados: líneas del helper PURO
             // (saldos del API; el «y N más» sale del `count`).
             // Cada línea dice «por entregar hasta Septiembre 2026: $X USD»
@@ -643,14 +648,15 @@ export async function PreCierreCard({
                   {/* Tacómetros en revisión: QUÉ tramo y por qué, agrupado
                       por vuelo. El chip de arriba lleva al vuelo; "Resolver"
                       sigue yendo a /admin/taco-live, que es donde se anota o
-                      se confirma la lectura. */}
+                      se confirma la lectura. «Tacómetros omitidos»: quién,
+                      cuándo y por qué se omitió cada tramo (informativo). */}
                   {tacos.lineas.length > 0 && (
-                    <ul className="text-xs mt-1 space-y-0.5">
+                    <ul className="text-xs mt-1 space-y-0.5" data-precierre-tramos={item.clave}>
                       {tacos.lineas.map((l) => (
                         <li key={l.key} className="text-muted-foreground">
                           <Link
                             href={l.href}
-                            className="underline underline-offset-2 hover:text-foreground"
+                            className="cursor-pointer underline underline-offset-2 hover:text-foreground"
                           >
                             {l.folio}
                           </Link>{" "}

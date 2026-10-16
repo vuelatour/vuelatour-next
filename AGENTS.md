@@ -10530,8 +10530,10 @@ pinta y se decide la UI.
   motivo cambiado por `motivoTramoOmitidoPreCierre` («#300 · T1 CET → CUN ·
   12 sep, 03:00 p.m. · Juan Pérez · Omitido por Itzi (15 oct, 10:40 a.m.):
   Falló el tacómetro»). El card la usa para el renglón INFORMATIVO
-  `tacometros_omitidos` (azul, sin «Resolver →», nunca «pendiente»); con un
-  API previo el renglón no existe.
+  `tacometros_omitidos` (`CLAVE_PRECIERRE_TACOS_OMITIDOS`; azul, sin
+  «Resolver →» —no tiene entrada en `LINK_POR_CLAVE`—, nunca «pendiente»;
+  la `<ul>` lleva `data-precierre-tramos={clave}`); con un API previo el
+  renglón no existe.
 - **Skew**: panel nuevo + API previo ⇒ sin llaves `taco_omitido_*`
   (`esTramoOmitido` false, UI de siempre), sin `omitido` en `taco-status`
   (sin icono) y las actions dan 404 «Cannot POST» ⇒ toast del API previo.
@@ -10539,6 +10541,9 @@ pinta y se decide la UI.
   (se pinta tal cual). Panel previo + API nuevo ⇒ ignora los aditivos.
 - **Pruebas**: `lib/admin/__tests__/taco-omitido.test.ts`,
   `lib/admin/__tests__/pre-cierre-tacos.test.ts` (`lineasTramosOmitidos`),
+  `components/admin/reportes/__tests__/pre-cierre-tacos-omitidos.test.tsx`
+  (renglón azul con «Omitido por …», sin «Resolver →», «oficina» sin
+  nombre, «y N más…» del `count`, lectura fallida y cableado),
   `components/admin/flights/__tests__/taco-omitido-ui.test.tsx` (card,
   cuerpo del diálogo con 9 caracteres, barra y lista),
   `components/admin/taco-live/__tests__/taco-live-omitido.test.tsx` y
