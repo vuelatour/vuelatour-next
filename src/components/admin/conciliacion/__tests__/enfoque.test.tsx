@@ -180,7 +180,7 @@ describe("cableado (regex sobre los fuentes)", () => {
     // 15-oct-2026: primero los del pre-cierre y DESPUÉS el `?mov=` (queda primero).
     expect(page).toContain("filasConFoco(movsPc.filas, enfoque.mov)");
     // 15-oct-2026: con `?gasto=` el texto de Gastos de siempre; sin él (un abono), el genérico.
-    expect(page).toContain("{textoMovimientoNoEncontrado(enfoque)}");
+    expect(page).toContain("{textoMovimientoNoEncontrado(enfoque, movAntesDelInicio)}");
     expect(page).toContain("resaltar={foco.encontrado ? enfoque.mov : null}");
     expect(page).toContain("gastoResaltado={enfoque.gasto}");
     expect(page).toContain("huboCorte={notaRecorte != null}");

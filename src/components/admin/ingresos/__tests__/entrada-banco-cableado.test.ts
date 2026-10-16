@@ -130,7 +130,7 @@ describe("Conciliación con la línea del cobro enfocada", () => {
   it("la página pasa `cobroResaltado` y la tabla destaca su línea del lote", () => {
     const page = leer("../../../../app/admin/conciliacion/page.tsx");
     expect(page).toContain("cobroResaltado={enfoque.cobro}");
-    expect(page).toContain("textoMovimientoNoEncontrado(enfoque)");
+    expect(page).toContain("textoMovimientoNoEncontrado(enfoque, movAntesDelInicio)");
     const tabla = leer("../../conciliacion/movimientos-table.tsx");
     expect(tabla).toContain("resumenLoteCobrosFila(m, { destacar: cobroResaltado })");
     expect(tabla).toContain("monedaPorCuenta, cobroResaltado, gastoResaltado, abreBalances]");
