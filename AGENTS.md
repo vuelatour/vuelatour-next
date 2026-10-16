@@ -10355,3 +10355,72 @@ celda en los balances» y «que diga en qué hoja del excel del balance está».
   congelada, `textoHojaBalanceDeGasto`, title con la hoja, paridad con
   pyservices). `excel-caja.test.tsx` mockea `@/app/admin/expenses/actions`
   (la fila monta `FacturacionBadge`).
+
+## Caja chica MADRE: a quién se repuso, reponer desde la madre y Desde/Hasta (15-oct-2026)
+
+Pedidos del cliente sobre la caja de Mary Cruz (fondea a Gregorio Jurado,
+Jimmy Chi, Nelson Hau, Luis Cáceres, Itzi, Alexander E. Saab…): «que diga a
+quien le repuso en el movimiento», «que pueda seleccionar a quien le va a
+reponer el fondo» y «le agregas un filtro de fecha de desde hasta». Contrato
+con el API (invariante 83, sin migración ni ruta nueva). Lógica PURA en
+`lib/admin/caja-chica-madre.ts`; el panel NO suma ni resta un peso.
+
+- **El espejo dice a quién** (`repuestoADeEntrada`, fila
+  `MovimientoFondoRow.repuestoA`): en la madre, el renglón del REINTEGRO
+  espejo dice «Reposición a la caja de <nombre>» con enlace a
+  `/admin/caja-chica/<fondo_id>`; «Reintegro a dirección» queda como badge
+  (tipo secundario) y «Espejo automático…» como nota tenue. Orden: el nombre
+  VIVO de `historial[].repuesto_a.nombre` → la referencia «Fondeo a X» que
+  escribe `insertarEspejo` (API previo o `repuesto_a: null`, sin enlace) →
+  nada (el renglón de siempre, idéntico). Solo los espejos (`espejo_de_id` o
+  la llave): una referencia «Fondeo a…» tecleada a mano no cuenta. Un
+  `fondo_id` que no es uuid no enlaza. La búsqueda rápida encuentra por el
+  nombre (`textoRepuestoA`). Si la descripción ES la referencia «Fondeo a X»
+  no se repite.
+- **Reponer desde la caja madre** (`MovimientoDialog`, MISMO formulario):
+  `cajasParaReponer(fondo)` → las `cajas_fondeadas` del API, o `null` si el
+  diálogo debe quedar IDÉNTICO (API previo = llave ausente, `null` = lectura
+  caída, `[]` = no fondea, madre inactiva —el API rechaza el espejo—, o
+  CORRECCIÓN). Con cajas: dos botones «Movimiento de esta caja» / «Reponer a
+  una caja que fondea (N)» (`aria-pressed`, `cursor-pointer`); el segundo
+  muestra «¿A quién le repones?» con «Gregorio Jurado · por reponer
+  $5,000.00» y su última reposición (`opcionCajaFondeada`: la cifra es
+  `cajas_fondeadas[i].por_reponer` TAL CUAL, la misma de la tarjeta «Por
+  reponer» y del Excel de esa caja). Al elegir: `valoresReponerA` prellena
+  tipo REPOSICIÓN, monto = lo pendiente (editable; 0 ⇒ vacío), la moneda de
+  la HIJA y la fecha de hoy Cancún (`todayCancun`). «Revisar y registrar»
+  (monto > 0) pasa a la confirmación DENTRO del diálogo («Se registrará una
+  reposición de $X en la caja de Gregorio Jurado y su reintegro en la caja
+  de Mary Cruz.» + «Volver» / «Sí, registrar la reposición»); solo ese botón
+  llama `createCajaMovimientoAction(hija.fondo_id, {…, tipo: REPOSICION,
+  moneda: hija.moneda}, { fondoMadreId })` — la ruta de SIEMPRE en la caja
+  HIJA (el espejo en la madre lo escribe el API; NO se duplica esa regla) —,
+  que además revalida la página de la madre (uuid validado). Al terminar,
+  `avisarReposicionYDescargar` con el movimiento creado y el nombre de la
+  hija (el Excel de lo repuesto, «Descargar de nuevo»). Al cerrar, el
+  diálogo vuelve a «esta caja».
+- **Filtro Desde/Hasta del historial** (`HistorialPeriodoFiltro` en la
+  cabecera del historial, solo con historial): `?desde=&hasta=` días
+  `AAAA-MM-DD` (`rangoHistorialCaja`: inválido se ignora, invertido se
+  corrige, un ISO completo no vale), con el BORRADOR de fechas de
+  Cotizaciones/Gastos, ahora COMPARTIDO en `hooks/use-rango-borrador.ts`
+  (salió tal cual de `expenses-filter-bar.tsx`, que lo importa; su prueba lee
+  los dos fuentes), navegación encadenada (`consultaBaseParaNavegar` +
+  `pendienteVigente`), `tp` fuera, `router.replace` sin brincar y
+  «Limpiar». La página filtra FILAS del libro completo
+  (`filtrarHistorialPorRango`, por texto del día): el saldo de cada fila, las
+  tarjetas (`porReponerDeFondo(fondo)`) y el Excel de lo pendiente NO
+  cambian. Línea «Viendo del 01 oct 2026 al 15 oct 2026 · 12 de 80
+  movimientos. El saldo de cada fila es el del libro completo…»; vacío con
+  filtro ⇒ «Sin movimientos en el periodo» + «Limpiar».
+- **Skew**: API previo ⇒ sin `repuesto_a` (referencia o lo de hoy) y sin
+  `cajas_fondeadas` (diálogo de siempre); panel previo + API nuevo ⇒ ignora
+  las llaves. El filtro no depende del API.
+- **Pruebas**: `lib/admin/__tests__/caja-chica-madre.test.ts` (espejo con y
+  sin `repuesto_a`, cuándo se ofrece, opción, prellenado, confirmación,
+  rango y filtro puros) y
+  `components/admin/caja-chica/__tests__/caja-madre.test.tsx` (render del
+  espejo, diálogo idéntico sin cajas y en corrección, botones con
+  `cursor-pointer`, prellenado y confirmación ANTES de la server action por
+  regex, la acción con el fondo HIJO y la revalidación de la madre, filtro
+  pintado y cableado, página).

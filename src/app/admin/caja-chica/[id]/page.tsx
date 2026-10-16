@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { tituloCajaChica, TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
 import { TituloPestana } from "@/components/admin/titulo-pestana";
 import { fmtDateOnly } from "@/lib/datetime";
@@ -28,6 +29,20 @@ import { porReponerDeFondo, puedeDescargarExcelCaja } from "@/lib/admin/caja-chi
 import { DescargarPorReponerButton } from "@/components/admin/caja-chica/excel-caja-buttons";
 import { puedeAbrirBalances } from "@/lib/admin/balance-vista";
 import { detalleGastoFondo } from "@/lib/admin/caja-chica-gasto";
+import {
+  NOTA_SALDO_LIBRO_COMPLETO,
+  TEXTO_LIMPIAR_PERIODO,
+  TEXTO_SIN_MOVIMIENTOS_PERIODO,
+  TITULO_LIMPIAR_PERIODO,
+  cajasParaReponer,
+  filtrarHistorialPorRango,
+  hayRangoHistorial,
+  hrefCajaChica,
+  rangoHistorialCaja,
+  repuestoADeEntrada,
+  textoPeriodoHistorial,
+} from "@/lib/admin/caja-chica-madre";
+import { HistorialPeriodoFiltro } from "@/components/admin/caja-chica/historial-periodo-filtro";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +59,17 @@ const fmtDate = fmtDateOnly;
 // <TituloPestana> con lo que la página ya leyó (el head NO lee el API).
 export const metadata: Metadata = { title: TITULOS_SECCION.cajaChica };
 
-export default async function CajaFondoPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CajaFondoPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
+  // Filtro Desde/Hasta del historial (15-oct-2026): días válidos o nada.
+  const sp = await searchParams;
+  const rango = rangoHistorialCaja(sp.desde, sp.hasta);
   // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
   // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
   if (!esUuid(id)) notFound();
@@ -105,7 +129,15 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
   // Movimientos de caja por id: la fila 'caja' del historial lleva el
   // movimiento completo para poder corregirlo/eliminarlo (caso Mari 18-ago).
   const movsById = new Map(fondo.movimientos.map((m) => [m.id, m]));
-  const historial: MovimientoFondoRow[] = fondo.historial.map((e) => {
+  // Desde/Hasta: se filtran FILAS del libro COMPLETO; el saldo y el por
+  // reponer de cada fila siguen siendo los que manda el API (y las tarjetas
+  // de arriba leen `fondo`, no esto).
+  const entradas = filtrarHistorialPorRango(fondo.historial, rango);
+  const conRango = hayRangoHistorial(rango);
+  const periodoVisto = textoPeriodoHistorial(rango, entradas.length, fondo.historial.length);
+  // Caja MADRE: a quién puede reponer desde «Registrar movimiento».
+  const cajasFondeadas = cajasParaReponer(fondo);
+  const historial: MovimientoFondoRow[] = entradas.map((e) => {
     const gasto = e.origen === "gasto" ? (gastosById.get(e.id) ?? null) : null;
     const movimiento =
       e.origen === "caja" ? (movsById.get(e.id) ?? null) : null;
@@ -126,6 +158,8 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
       // Libro, mes y hoja salen SOLO del `balance` del API (invariante 72);
       // `detalleGastoFondo` arma los enlaces con `enlacesBalanceDeGasto`.
       detalleGasto: detalleGastoFondo(e, gasto, { abreBalances }),
+      // Espejo de una reposición a otra caja: «Reposición a la caja de X».
+      repuestoA: repuestoADeEntrada(e, movimiento),
     };
   });
 
@@ -166,6 +200,7 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
             persona={fondo.usuario?.nombre ?? "Fondo"}
             moneda={fondo.moneda}
             usuarios={usuarios}
+            cajasFondeadas={cajasFondeadas}
           />
         </div>
       </div>
@@ -278,14 +313,35 @@ export default async function CajaFondoPage({ params }: { params: Promise<{ id: 
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Historial</CardTitle>
+        <CardHeader className="gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="text-base">Historial</CardTitle>
+            {/* Pedido del cliente (15-oct-2026): «filtro de fecha de desde hasta». */}
+            {fondo.historial.length > 0 && <HistorialPeriodoFiltro />}
+          </div>
+          {periodoVisto && (
+            <p className="text-xs text-muted-foreground">
+              {periodoVisto}. {NOTA_SALDO_LIBRO_COMPLETO}
+            </p>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {fondo.historial.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-muted-foreground">
               Sin movimientos. Registra una reposición para fondear la caja.
             </p>
+          ) : conRango && historial.length === 0 ? (
+            <div className="px-6 py-8 text-center text-sm text-muted-foreground">
+              <p>{TEXTO_SIN_MOVIMIENTOS_PERIODO}</p>
+              <Link
+                href={hrefCajaChica(fondo.id)}
+                scroll={false}
+                title={TITULO_LIMPIAR_PERIODO}
+                className="mt-2 inline-flex cursor-pointer items-center rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {TEXTO_LIMPIAR_PERIODO}
+              </Link>
+            </div>
           ) : (
             <FondoHistorialTable
               movimientos={historial}

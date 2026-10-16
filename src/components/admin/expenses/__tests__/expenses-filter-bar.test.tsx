@@ -196,7 +196,11 @@ describe("con filtros", () => {
 });
 
 describe("cableado (regex sobre el fuente)", () => {
-  const src = readFileSync(path.resolve(__dirname, "../expenses-filter-bar.tsx"), "utf8");
+  // El borrador de las fechas vive en el hook COMPARTIDO con el historial de
+  // Caja chica (15-oct-2026): la barra y el hook se leen juntos.
+  const src =
+    readFileSync(path.resolve(__dirname, "../expenses-filter-bar.tsx"), "utf8") +
+    readFileSync(path.resolve(__dirname, "../../../../hooks/use-rango-borrador.ts"), "utf8");
 
   it("borrador de las fechas y navegación encadenada", () => {
     for (const s of [

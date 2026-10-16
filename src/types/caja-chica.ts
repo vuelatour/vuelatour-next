@@ -72,6 +72,40 @@ export interface HistorialEntry {
    * vínculo (sin enlaces).
    */
   balance?: UbicacionBalanceGasto | null;
+  /**
+   * ¿A QUIÉN se repuso? (15-oct-2026, ADITIVO; invariante 83 del API). Solo
+   * en las entradas `origen: "caja"` cuyo movimiento es un ESPEJO de una
+   * reposición en una caja hija: la caja de esa reposición y su dueño, con
+   * el nombre VIVO (`usuario.nombre`). `null` = la reposición o su caja no
+   * volvieron en la lectura. Sin la llave (API previo, lectura caída o
+   * entrada que no es espejo) ⇒ el renglón dice lo de siempre (o la
+   * referencia «Fondeo a X»; ver `repuestoADeEntrada`).
+   */
+  repuesto_a?: RepuestoA | null;
+}
+
+/** La caja hija (y su dueño) de la reposición que originó un espejo. */
+export interface RepuestoA {
+  fondo_id: string;
+  usuario_id: string;
+  nombre: string | null;
+}
+
+/**
+ * Una caja que ESTA caja fondea (15-oct-2026, invariante 83 del API): las
+ * hijas ACTIVAS con `fondo_origen_id` = este fondo, ordenadas por nombre.
+ * `por_reponer` (≥ 0) es la última fila del libro de esa caja: la MISMA cifra
+ * que su tarjeta «Por reponer» y que su Excel de lo pendiente. El panel no la
+ * recalcula.
+ */
+export interface CajaFondeada {
+  fondo_id: string;
+  usuario_id: string;
+  nombre: string | null;
+  moneda: MonedaCaja;
+  activo: boolean;
+  por_reponer: number;
+  ultima_reposicion: { fecha: string; monto: number } | null;
 }
 
 export interface CajaFondoListResponse {
@@ -84,4 +118,11 @@ export interface CajaFondoListResponse {
 export interface CajaFondoDetail extends CajaFondo {
   movimientos: CajaMovimiento[];
   historial: HistorialEntry[];
+  /**
+   * Cajas que ESTA caja fondea (15-oct-2026, ADITIVO; última llave del
+   * detalle). `[]` = no fondea a nadie; `null` = falló una lectura; ausente =
+   * API previo. Con `null`/ausente el panel NO ofrece el selector ni dice
+   * «no fondea» (ver `cajasParaReponer`).
+   */
+  cajas_fondeadas?: CajaFondeada[] | null;
 }

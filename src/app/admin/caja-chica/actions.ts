@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
+import { esUuid } from "@/lib/admin/url-params";
 import { FondoFormSchema, FondoUpdateSchema, MovimientoFormSchema } from "./schema";
 import type { CajaFondo, CajaMovimiento } from "@/types/caja-chica";
 
@@ -58,9 +59,17 @@ export async function updateFondoAction(id: string, raw: unknown): Promise<Actio
   }
 }
 
+/**
+ * Registra un movimiento en `fondoId`. Desde una caja MADRE (15-oct-2026)
+ * se llama con el id de la caja HIJA y `opciones.fondoMadreId`: el API
+ * escribe solo el reintegro espejo en la madre (`insertarEspejo`), y aquí se
+ * recarga también la pantalla de la madre para que se vea el espejo nuevo y
+ * el por reponer actualizado de esa hija.
+ */
 export async function createCajaMovimientoAction(
   fondoId: string,
   raw: unknown,
+  opciones?: { fondoMadreId?: string },
 ): Promise<ActionResult<CajaMovimiento>> {
   const parsed = MovimientoFormSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
@@ -71,6 +80,8 @@ export async function createCajaMovimientoAction(
     );
     revalidatePath("/admin/caja-chica");
     revalidatePath(`/admin/caja-chica/${fondoId}`);
+    const madre = opciones?.fondoMadreId;
+    if (madre && madre !== fondoId && esUuid(madre)) revalidatePath(`/admin/caja-chica/${madre}`);
     return { ok: true, data: created };
   } catch (err) {
     return fail(err);

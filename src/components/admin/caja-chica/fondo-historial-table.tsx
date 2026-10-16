@@ -9,6 +9,14 @@ import { DescargarReposicionIcon } from "./excel-caja-buttons";
 import { GastoFondoDetalle } from "./gasto-fondo-detalle";
 import { busquedaDetalleGastoFondo, type DetalleGastoFondo } from "@/lib/admin/caja-chica-gasto";
 import { esReposicionDescargable } from "@/lib/admin/caja-chica-excel";
+import {
+  PREFIJO_REPUESTO_A,
+  hrefCajaChica,
+  nombreDeReferenciaFondeo,
+  textoRepuestoA,
+  tituloEnlaceCaja,
+  type RepuestoAFila,
+} from "@/lib/admin/caja-chica-madre";
 import type { Gasto } from "@/types/expenses";
 import type { CajaMovimiento, MonedaCaja } from "@/types/caja-chica";
 import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
@@ -41,6 +49,14 @@ export interface MovimientoFondoRow {
    * de caja: esos quedan como siempre.
    */
   detalleGasto?: DetalleGastoFondo | null;
+  /**
+   * ¿A quién se repuso? (15-oct-2026): solo en el ESPEJO de una reposición a
+   * una caja hija (`repuestoADeEntrada`: `repuesto_a` del API o la
+   * referencia «Fondeo a X»). El renglón dice «Reposición a la caja de X» con
+   * enlace a esa caja; «Reintegro a dirección» queda como tipo secundario.
+   * null/ausente ⇒ el renglón de siempre.
+   */
+  repuestoA?: RepuestoAFila | null;
 }
 
 export function FondoHistorialTable({
@@ -110,25 +126,53 @@ export function FondoHistorialTable({
       cellClassName: "align-top max-w-xl",
       cell: (m) => (
         <div className="flex flex-col gap-0.5">
-          <span className="inline-flex items-center gap-1.5 flex-wrap">
-            {m.tipoLabel}
-            {m.esGasto && (
+          {m.repuestoA ? (
+            // Espejo de una reposición a otra caja (15-oct-2026, pedido del
+            // cliente: «que diga a quien le repuso en el movimiento»).
+            <span className="inline-flex items-center gap-1.5 flex-wrap">
+              <span>
+                {PREFIJO_REPUESTO_A}{" "}
+                {m.repuestoA.fondoId ? (
+                  <Link
+                    href={hrefCajaChica(m.repuestoA.fondoId)}
+                    className="cursor-pointer font-medium text-brand-600 hover:underline dark:text-brand-400"
+                    title={tituloEnlaceCaja(m.repuestoA.nombre)}
+                  >
+                    {m.repuestoA.nombre}
+                  </Link>
+                ) : (
+                  <span className="font-medium">{m.repuestoA.nombre}</span>
+                )}
+              </span>
               <Badge variant="outline" className="text-muted-foreground">
-                gasto
+                {m.tipoLabel}
               </Badge>
-            )}
-            {m.vueloId && m.vueloFolio != null && (
-              <Link
-                href={`/admin/flights/${m.vueloId}`}
-                className="cursor-pointer font-mono text-xs text-brand-600 hover:underline"
-                title="Abrir el detalle del vuelo de este gasto"
-              >
-                #{m.vueloFolio}
-              </Link>
-            )}
-          </span>
-          {m.descripcion && (
-            <span className="text-xs text-muted-foreground whitespace-pre-line break-words">
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 flex-wrap">
+              {m.tipoLabel}
+              {m.esGasto && (
+                <Badge variant="outline" className="text-muted-foreground">
+                  gasto
+                </Badge>
+              )}
+              {m.vueloId && m.vueloFolio != null && (
+                <Link
+                  href={`/admin/flights/${m.vueloId}`}
+                  className="cursor-pointer font-mono text-xs text-brand-600 hover:underline"
+                  title="Abrir el detalle del vuelo de este gasto"
+                >
+                  #{m.vueloFolio}
+                </Link>
+              )}
+            </span>
+          )}
+          {m.descripcion && !(m.repuestoA && nombreDeReferenciaFondeo(m.descripcion)) && (
+            <span
+              className={`text-xs text-muted-foreground whitespace-pre-line break-words${
+                m.repuestoA ? " opacity-80" : ""
+              }`}
+            >
               {m.descripcion}
             </span>
           )}
@@ -194,7 +238,9 @@ export function FondoHistorialTable({
       searchText={(m) =>
         `${m.fechaFmt} ${m.tipoLabel} ${m.descripcion ?? ""} ${
           m.vueloFolio != null ? `#${m.vueloFolio}` : ""
-        } ${busquedaDetalleGastoFondo(m.detalleGasto)}`
+        } ${busquedaDetalleGastoFondo(m.detalleGasto)} ${
+          m.repuestoA ? textoRepuestoA(m.repuestoA.nombre) : ""
+        }`
       }
       searchPlaceholder="Buscar movimiento (concepto, categoría, matrícula, proveedor, vuelo, fecha)…"
     />
