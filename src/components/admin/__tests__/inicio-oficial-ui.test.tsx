@@ -178,7 +178,7 @@ describe("Cableado de páginas", () => {
     }
   });
 
-  it("la ficha del piloto queda LIBRE (son horas)", () => {
-    expect(leer("../pilots/mes-stats-selector.tsx")).not.toContain("useInicioOficial");
+  it("la ficha del piloto ya NO es excepción (auditoría 16-oct-2026, API 0.0.85): lee el inicio", () => {
+    expect(leer("../pilots/mes-stats-selector.tsx")).toContain("useInicioOficial");
   });
 });

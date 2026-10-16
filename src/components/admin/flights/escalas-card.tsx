@@ -43,6 +43,7 @@ import { uploadTacoFoto } from "@/lib/storage/taco-fotos";
 import { fmtDecimal } from "@/lib/format";
 import { fmtDate } from "@/lib/datetime";
 import type { VueloAnterior } from "@/lib/api/flights-server";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 import { TacoClearDialog } from "@/components/admin/flights/taco-clear-dialog";
 import {
   TramoOperativoBadge,
@@ -161,6 +162,16 @@ export function EscalasCard({
                   ? ` · ${fmtDate(vueloAnterior.fecha_vuelo)}`
                   : ""}
               </a>
+            )}
+            {/* API 0.0.85: la liga se conserva (cadena de tacómetros) aunque
+                el vuelo previo sea de antes del inicio; el chip lo dice. Sin
+                la bandera (API previo) no hay chip. */}
+            {vueloAnterior?.antes_del_inicio === true && (
+              <ChipInicioOficial
+                fecha={vueloAnterior.fecha_vuelo}
+                antes
+                className="ml-1"
+              />
             )}
           </div>
           <div className="flex shrink-0 gap-2">

@@ -52,6 +52,11 @@ export interface PilotHonorarios {
     vuelo_id: string | null;
     folio: number | null;
   }[];
+  /**
+   * ADITIVO (16-oct-2026, API 0.0.85): desde cuándo suma `total_usd` (el
+   * inicio oficial); null = de por vida. Ausente = API previo.
+   */
+  desde?: string | null;
 }
 
 export interface PilotExpense {

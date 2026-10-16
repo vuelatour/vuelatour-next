@@ -13,7 +13,7 @@ import {
   estadoOrdenServicio,
   type EstadoServicioUi,
 } from "@/lib/admin/proximo-servicio";
-import { rotuloAcumuladoFinanzas } from "@/lib/admin/inicio-oficial";
+import { rotuloAcumuladoFinanzas, rotuloHorasMesAnio } from "@/lib/admin/inicio-oficial";
 
 /**
  * Strip de KPIs del expediente del avión (patrón de profit-sharing/kpi-strip):
@@ -68,7 +68,9 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
       />
       <Kpi
         icon={CalendarDaysIcon}
-        label="Horas mes / año"
+        // API 0.0.85: con `anio_desde` el «año» cuenta desde el inicio
+        // oficial («Horas mes / desde el 1-sep-2026»); sin la llave, «año».
+        label={rotuloHorasMesAnio(metrics.anio_desde)}
         value={
           u
             ? `${fmtDecimal(u.horas_mes, 1)} / ${fmtDecimal(u.horas_anio, 1)} h`

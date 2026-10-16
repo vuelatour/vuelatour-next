@@ -56,6 +56,12 @@ import type {
   PilotHonorarios,
 } from "@/types/pilots";
 import { esUuid } from "@/lib/admin/url-params";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import {
+  ajustarMesAlInicio,
+  rotuloTotalHonorarios,
+} from "@/lib/admin/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -110,10 +116,20 @@ export default async function PilotDetailPage({
   searchParams: Promise<{ mes?: string }>;
 }) {
   const { id } = await params;
-  const { mes } = await searchParams;
+  const { mes: mesUrl } = await searchParams;
   // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
   // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
   if (!esUuid(id)) notFound();
+
+  // Inicio oficial (auditoría 16-oct-2026): un `?mes=` anterior al mes del
+  // inicio se pide como el mes del inicio y se avisa (mismo patrón de
+  // Nómina). Mes inválido o sin inicio ⇒ la URL tal cual (el API decide).
+  const inicio = await getInicioOficial();
+  const ajusteMes =
+    mesUrl && /^\d{4}-(0[1-9]|1[0-2])$/.test(mesUrl)
+      ? ajustarMesAlInicio(mesUrl, inicio)
+      : { mes: mesUrl, ajustado: false };
+  const mes = ajusteMes.mes;
 
   let pilot: PilotDetail;
   try {
@@ -233,6 +249,7 @@ export default async function PilotDetailPage({
           }
         />
       </div>
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={ajusteMes.ajustado} />
 
       {/* Tres grupos con peso distinto: OPERACIÓN (lo que vuela), CAPTURA
           (disciplina en la app) y DINERO. Las horas llevan barra contra el
@@ -707,7 +724,8 @@ function HonorariosCard({ honorarios }: { honorarios: PilotHonorarios }) {
           </div>
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              Histórico
+              {/* API 0.0.85: con `desde` suma desde el inicio oficial. */}
+              {rotuloTotalHonorarios(honorarios.desde)}
             </p>
             <p className="font-semibold font-mono">
               ${honorarios.total_usd.toLocaleString("en-US")} USD

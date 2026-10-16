@@ -59,17 +59,24 @@ export function FranjaAntesDelInicio({
   );
 }
 
-/** Chip junto a una liga o fila de antes del inicio. */
+/**
+ * Chip junto a una liga o fila de antes del inicio. Con `antes` (bandera que
+ * ya calculó el API, p. ej. `anterior.antes_del_inicio` de 0.0.85) decide la
+ * bandera y no la fecha; ausente, la fecha como siempre.
+ */
 export function ChipAntesDelInicio({
   fecha,
   inicio,
+  antes,
   className,
 }: {
   fecha: string | null | undefined;
   inicio: InicioOficial;
+  antes?: boolean;
   className?: string;
 }) {
-  if (!inicio || !esAntesDelInicio(fecha, inicio)) return null;
+  const esAntes = antes !== undefined ? antes === true : esAntesDelInicio(fecha, inicio);
+  if (!inicio || !esAntes) return null;
   return (
     <span
       data-chip-inicio-oficial

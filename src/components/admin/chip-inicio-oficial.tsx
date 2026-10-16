@@ -11,14 +11,17 @@ import { ChipAntesDelInicio, FranjaAntesDelInicio } from "./aviso-inicio-oficial
  */
 export function ChipInicioOficial({
   fecha,
+  antes,
   className,
 }: {
   /** Fecha del registro: `fecha_vuelo`, `fecha_gasto`, `fecha_cobro` o `fecha`. */
   fecha: string | null | undefined;
+  /** Bandera del API (ADITIVA): si viene, decide ella y no la fecha. */
+  antes?: boolean;
   className?: string;
 }) {
   const inicio = useInicioOficial();
-  return <ChipAntesDelInicio fecha={fecha} inicio={inicio} className={className} />;
+  return <ChipAntesDelInicio fecha={fecha} inicio={inicio} antes={antes} className={className} />;
 }
 
 /** Franja «Este registro es de antes del inicio oficial…» para detalles CLIENTE (hojas laterales). */

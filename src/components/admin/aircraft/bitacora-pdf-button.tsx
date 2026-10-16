@@ -14,6 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { env } from "@/lib/env";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
+import {
+  minFechaFiltro,
+  pisoDesde,
+  textoArrancaEnMes,
+  textoDesdeInicio,
+} from "@/lib/admin/inicio-oficial";
 
 const inputCls =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -61,7 +68,13 @@ export function BitacoraPdfButton({
   matricula: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [desde, setDesde] = useState(() => `${hoyCancun().slice(0, 7)}-01`);
+  // Inicio oficial (auditoría 16-oct-2026): las fechas no bajan del inicio
+  // (`min`); el API 0.0.85 hace lo mismo y sin inicio todo queda como hoy.
+  const inicio = useInicioOficial();
+  const minFecha = minFechaFiltro(inicio);
+  const [desde, setDesde] = useState(() =>
+    pisoDesde(`${hoyCancun().slice(0, 7)}-01`, inicio),
+  );
   const [hasta, setHasta] = useState(hoyCancun);
   // Todas marcadas por default: el mecánico imprime las tres de un jalón.
   const [marcadas, setMarcadas] = useState<Record<Tira, boolean>>({
@@ -81,6 +94,13 @@ export function BitacoraPdfButton({
       toast.error("Marca al menos una bitácora");
       return;
     }
+    // Un periodo que termina antes del inicio no tiene renglones.
+    if (inicio && hasta && hasta < inicio) {
+      toast.error(`${textoArrancaEnMes(inicio)}: elige fechas desde ese mes.`);
+      return;
+    }
+    // Un «desde» tecleado antes del inicio sube al inicio (como el API).
+    const desdeEfectivo = pisoDesde(desde, inicio);
     if (conHelice && heliceBase.trim() !== "" && !Number.isFinite(Number(heliceBase))) {
       toast.error("El tiempo de hélice inicial no es un número válido");
       return;
@@ -92,7 +112,7 @@ export function BitacoraPdfButton({
         data: { session },
       } = await supabase.auth.getSession();
       const params = new URLSearchParams();
-      if (desde) params.set("desde", desde);
+      if (desdeEfectivo) params.set("desde", desdeEfectivo);
       if (hasta) params.set("hasta", hasta);
       params.set("tiras", seleccionadas.join(","));
       if (conHelice && heliceBase.trim() !== "") {
@@ -113,7 +133,7 @@ export function BitacoraPdfButton({
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
       a.href = url;
-      a.download = `bitacoras-${matricula}${desde ? `-${desde}` : ""}${hasta ? `-a-${hasta}` : ""}.pdf`;
+      a.download = `bitacoras-${matricula}${desdeEfectivo ? `-${desdeEfectivo}` : ""}${hasta ? `-a-${hasta}` : ""}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -148,7 +168,8 @@ export function BitacoraPdfButton({
               vuelo, lista para recortar y pegar en cada libro. Los tiempos de
               cada componente salen de su base capturada: planeador → Tiempo
               total del planeador; motor/hélice → ficha del componente. Deja
-              las fechas vacías para todo el histórico.
+              las fechas vacías para todo el histórico
+              {inicio ? ` (${textoDesdeInicio(inicio)})` : ""}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -160,6 +181,7 @@ export function BitacoraPdfButton({
                 <input
                   id="bitacora-desde"
                   type="date"
+                  min={minFecha}
                   className={inputCls}
                   value={desde}
                   onChange={(e) => setDesde(e.target.value)}
@@ -172,6 +194,7 @@ export function BitacoraPdfButton({
                 <input
                   id="bitacora-hasta"
                   type="date"
+                  min={minFecha}
                   className={inputCls}
                   value={hasta}
                   onChange={(e) => setHasta(e.target.value)}

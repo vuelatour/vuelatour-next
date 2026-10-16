@@ -79,6 +79,12 @@ export interface VueloAnterior {
   ruta: string;
   fecha_vuelo: string | null;
   estado: string;
+  /**
+   * ADITIVO (16-oct-2026, API 0.0.85): el vuelo es de antes del inicio
+   * oficial. La liga se CONSERVA (cadena de tacómetros) y el panel pinta el
+   * chip «De antes del inicio oficial». Ausente = API previo (sin chip).
+   */
+  antes_del_inicio?: boolean;
 }
 
 /** Vuelo anterior del mismo avión (auditar la cadena de tacómetros). */
