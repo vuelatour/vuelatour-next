@@ -26,6 +26,11 @@
 import { fmtDateTime, fmtDateOnly } from "@/lib/datetime";
 import { fmtMonto, fmtTc, fmtUsd } from "@/lib/format";
 import { esDiaValido, esUuid } from "@/lib/admin/url-params";
+import {
+  mesInicio,
+  textoCuentaAntesDelInicio,
+  type InicioOficial,
+} from "@/lib/admin/inicio-oficial";
 import type { AvionReparto } from "@/types/profit-sharing";
 import type {
   AvionDeSocio,
@@ -177,16 +182,30 @@ export const MESES_ARRANQUE_CUENTA = 36;
 /**
  * Opciones del «Mes de arranque» (del más reciente al más viejo). Incluye
  * el mes que ya tiene la cuenta aunque sea más viejo que la ventana.
+ * Inicio oficial (auditoría 16-oct-2026, API 0.0.85 responde 400
+ * `CUENTA_ANTES_DEL_INICIO`): arrancan en el mes del inicio y un arranque
+ * actual anterior NO se ofrece (habría que moverlo). `null` ⇒ como siempre.
  */
 export function opcionesMesArranque(
   hoy: string,
   actual?: string | null,
+  inicioOficial: InicioOficial = null,
 ): { value: string; label: string }[] {
   const fin = mesActual(hoy);
   if (!fin) return [];
-  const inicio = sumarMeses(fin, -(MESES_ARRANQUE_CUENTA - 1)) ?? fin;
+  const mesDelInicio = mesInicio(inicioOficial);
+  // Un inicio FUTURO (dato raro) no vacía el selector.
+  const piso = mesDelInicio && mesDelInicio <= fin ? mesDelInicio : undefined;
+  let inicio = sumarMeses(fin, -(MESES_ARRANQUE_CUENTA - 1)) ?? fin;
+  if (piso && inicio < piso) inicio = piso;
   const meses = mesesDeRango(inicio, fin);
-  if (actual && esMesValido(actual) && !meses.includes(actual) && actual < fin) {
+  if (
+    actual &&
+    esMesValido(actual) &&
+    !meses.includes(actual) &&
+    actual < fin &&
+    (!piso || actual >= piso)
+  ) {
     meses.unshift(actual);
   }
   return meses.reverse().map((m) => ({ value: m, label: etiquetaMes(m) }));
@@ -206,13 +225,18 @@ export const MESES_ESTADO_CUENTA_MAX = 120;
  *    anterior a él es un rango invertido. El selector manda siempre los dos;
  *  - el rango invertido se endereza (como `rangoFiltro` de las listas);
  *  - con `mesHoy` (mes en curso, Cancún): un mes FUTURO se recorta a hoy y
- *    un `desde` más viejo que el tope del API se sube al tope.
+ *    un `desde` más viejo que el tope del API se sube al tope;
+ *  - inicio oficial (auditoría 16-oct-2026, espejo del API 0.0.85): un
+ *    `desde`/`hasta` anterior al mes del inicio sube a ese mes y se marca
+ *    `ajustado` (la página pinta el aviso de siempre). La llave existe
+ *    SOLO cuando es `true` y no viaja al API.
  */
 export function filtroMesesCuenta(
   desde: string | null | undefined,
   hasta: string | null | undefined,
   mesHoy?: string | null,
-): { desde?: string; hasta?: string } {
+  inicioOficial: InicioOficial = null,
+): { desde?: string; hasta?: string; ajustado?: true } {
   let d = esMesValido(desde) ? desde : undefined;
   let h = esMesValido(hasta) ? hasta : undefined;
   if (h && !d) h = undefined;
@@ -223,7 +247,19 @@ export function filtroMesesCuenta(
     const tope = sumarMeses(h ?? mesHoy, -(MESES_ESTADO_CUENTA_MAX - 1));
     if (d && tope && d < tope) d = tope;
   }
-  return { desde: d, hasta: h };
+  const piso = mesInicio(inicioOficial);
+  let ajustado = false;
+  if (piso && (!esMesValido(mesHoy) || piso <= mesHoy)) {
+    if (d && d < piso) {
+      d = piso;
+      ajustado = true;
+    }
+    if (h && h < piso) {
+      h = piso;
+      ajustado = true;
+    }
+  }
+  return ajustado ? { desde: d, hasta: h, ajustado: true } : { desde: d, hasta: h };
 }
 
 /**
@@ -239,12 +275,16 @@ export function opcionesFiltroMeses(p: {
   desde?: string | null;
   mesActual: string;
   mesMinimo?: string | null;
+  /** Inicio oficial (16-oct-2026): las opciones no bajan de su mes. */
+  inicioOficial?: InicioOficial;
 }): { value: string; label: string }[] {
   if (!esMesValido(p.mesActual)) return [];
   const candidatos = [p.cuentaDesdeMes, p.desde, p.mesMinimo, p.mesActual].filter(esMesValido);
   let inicio = candidatos.reduce((min, m) => (m < min ? m : min), p.mesActual);
   const tope = sumarMeses(p.mesActual, -(MESES_ESTADO_CUENTA_MAX - 1));
   if (tope && inicio < tope) inicio = tope;
+  const piso = mesInicio(p.inicioOficial ?? null);
+  if (piso && inicio < piso && piso <= p.mesActual) inicio = piso;
   return mesesDeRango(inicio, p.mesActual)
     .reverse()
     .map((m) => ({ value: m, label: etiquetaMes(m) }));
@@ -807,6 +847,10 @@ const MENSAJES_RESPALDO: Record<string, string> = {
   [CODIGO_SOCIO_AJENO]:
     "Esa persona no es socia del avión elegido en «Corresponde a». Elige otro avión o déjalo en «Sin avión».",
   TC_FUERA_DE_RANGO: "Revisa el tipo de cambio: está fuera del rango razonable.",
+  // API 0.0.85: el mensaje del API trae el mes («…antes de septiembre de
+  // 2026 (inicio oficial).»); este respaldo solo si llega vacío o técnico.
+  CUENTA_ANTES_DEL_INICIO:
+    "La cuenta no puede arrancar antes del inicio oficial del sistema. Elige un mes posterior.",
 };
 
 const TECNICO =
@@ -1289,6 +1333,13 @@ export function mesParaVerEntregasPrevias(p: {
   mesMasAntiguo: string | null;
   cuentaDesdeMes: string;
   mesActual: string;
+  /**
+   * Inicio oficial (auditoría 16-oct-2026): el estado de cuenta ya no
+   * arranca antes de su mes (API 0.0.85). Si entre el inicio y el arranque
+   * no cabe ningún mes, NO hay a dónde llevar (null: el aviso no se ofrece
+   * en vez de mandar a julio/agosto); si cabe, el mes no baja del inicio.
+   */
+  inicioOficial?: InicioOficial;
 }): string | null {
   if (!esMesValido(p.mesActual) || !esMesValido(p.cuentaDesdeMes)) return null;
   let mes =
@@ -1300,6 +1351,11 @@ export function mesParaVerEntregasPrevias(p: {
   if (tope && mes < tope) mes = tope;
   const previo = sumarMeses(p.cuentaDesdeMes, -1);
   if (previo && mes > previo) mes = previo;
+  const piso = mesInicio(p.inicioOficial ?? null);
+  if (piso) {
+    if (!previo || previo < piso) return null;
+    if (mes < piso) mes = piso;
+  }
   return mes;
 }
 
@@ -1834,13 +1890,21 @@ export function formDeCuenta(cuenta: CuentaSocio): FormCuentaSocio {
   };
 }
 
-export function validarFormCuenta(form: FormCuentaSocio, hoy: string): ErroresFormCuenta {
+export function validarFormCuenta(
+  form: FormCuentaSocio,
+  hoy: string,
+  inicioOficial: InicioOficial = null,
+): ErroresFormCuenta {
   const e: ErroresFormCuenta = {};
   const fin = mesActual(hoy);
+  const piso = mesInicio(inicioOficial);
   if (!esMesValido(form.cuenta_desde)) {
     e.cuenta_desde = "Elige el mes en que arranca la cuenta.";
   } else if (fin && form.cuenta_desde > fin) {
     e.cuenta_desde = "El mes de arranque no puede ser futuro.";
+  } else if (inicioOficial && piso && form.cuenta_desde < piso) {
+    // Mismo texto que el 400 CUENTA_ANTES_DEL_INICIO del API 0.0.85.
+    e.cuenta_desde = textoCuentaAntesDelInicio(inicioOficial);
   }
   const saldo = leerNumero(form.saldo_inicial.replace(/^\s*−/, "-"));
   if (form.saldo_inicial.trim() === "") {

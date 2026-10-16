@@ -6,6 +6,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { destinoFiltroMeses, opcionesFiltroMeses } from "@/lib/admin/reparto-pagos";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
 
 /**
  * Filtro «Desde / Hasta» (meses) del estado de cuenta. Empuja `?desde=` y
@@ -39,9 +40,11 @@ export function FiltroMesesCuenta({
   const [pendiente, empezar] = useTransition();
   const idDesde = useId();
   const idHasta = useId();
+  // Inicio oficial (16-oct-2026): no se ofrecen meses anteriores a su mes.
+  const inicioOficial = useInicioOficial();
   const opciones = useMemo(
-    () => opcionesFiltroMeses({ cuentaDesdeMes, desde, mesActual, mesMinimo }),
-    [cuentaDesdeMes, desde, mesActual, mesMinimo],
+    () => opcionesFiltroMeses({ cuentaDesdeMes, desde, mesActual, mesMinimo, inicioOficial }),
+    [cuentaDesdeMes, desde, mesActual, mesMinimo, inicioOficial],
   );
 
   const ir = (filtro: { desde: string; hasta: string } | null) => {

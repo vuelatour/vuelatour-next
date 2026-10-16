@@ -13,6 +13,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 import {
   Dialog,
   DialogContent,
@@ -892,6 +893,7 @@ export function FormularioIngreso({
                             >
                               <span className="font-medium">{etiquetaVueloCandidato(v)}</span>
                               <span className="block text-muted-foreground">{descripcionVueloCandidato(v)}</span>
+                              <ChipInicioOficial fecha={v.fecha_vuelo} className="mt-1" />
                             </button>
                           ))
                         )}
@@ -986,6 +988,7 @@ export function FormularioIngreso({
               >
                 <div className="min-w-0 text-sm">
                   <p className="font-medium">{c.etiqueta}</p>
+                  <ChipInicioOficial fecha={c.fecha_vuelo} />
                   <p className="text-xs text-muted-foreground">
                     {[
                       c.cliente,

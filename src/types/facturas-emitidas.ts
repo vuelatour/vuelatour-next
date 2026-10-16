@@ -209,6 +209,12 @@ export interface ResumenFacturas {
   por_facturar: number;
   totales_vigentes: { moneda: MonedaFactura; total: number }[];
   huecos: HuecoSerie[];
+  /**
+   * ADITIVO (16-oct-2026, API 0.0.85): conteos y totales cuentan desde esta
+   * fecha (inicio oficial); null = todo el registro. Los `huecos` siguen
+   * sobre toda la serie. Ausente = API previo.
+   */
+  desde?: string | null;
 }
 
 export interface ListaFacturasEmitidas {

@@ -611,7 +611,7 @@ describe("cableado en el código", () => {
     expect(cuenta).toContain('if (carga.estado === "no-existe") notFound();');
     // El `?desde=`/`?hasta=` de la URL se recorta con el mes de HOY antes de
     // pedirlo (un mes futuro daba 400 RANGO_INVALIDO para siempre).
-    expect(cuenta).toContain("filtroMesesCuenta(sp.desde, sp.hasta, mesHoy)");
+    expect(cuenta).toContain("filtroMesesCuenta(sp.desde, sp.hasta, mesHoy, inicio)");
     expect(cuenta).toContain("<FiltroMesesCuenta");
     expect(cuenta).toContain("mesMinimo={entregasPrevias?.mes ?? null}");
     expect(cuenta).toContain("<MovimientosCuenta");
@@ -635,7 +635,7 @@ describe("cableado en el código", () => {
     expect(cuenta).toContain("<AvisoEntregasPrevias texto={entregasPrevias.texto} href={entregasPrevias.href} />");
     expect(filtro).toContain('ir(destinoFiltroMeses("desde", v, desde, hasta))');
     expect(filtro).toContain('ir(destinoFiltroMeses("hasta", v, desde, hasta))');
-    expect(filtro).toContain("opcionesFiltroMeses({ cuentaDesdeMes, desde, mesActual, mesMinimo })");
+    expect(filtro).toContain("opcionesFiltroMeses({ cuentaDesdeMes, desde, mesActual, mesMinimo, inicioOficial })");
   });
 
   it("el DELETE sale UNA vez y solo desde «Eliminar entrega» del diálogo de motivo", () => {

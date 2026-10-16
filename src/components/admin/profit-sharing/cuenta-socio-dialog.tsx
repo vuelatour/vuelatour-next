@@ -37,6 +37,7 @@ import {
   type FormCuentaSocio,
 } from "@/lib/admin/reparto-pagos";
 import { configurarCuentaSocioAction } from "@/app/admin/profit-sharing/actions";
+import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
 import type { CuentaSocio } from "@/types/reparto-pagos";
 
 /**
@@ -118,9 +119,12 @@ export function FormularioCuenta({
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [guardando, setGuardandoLocal] = useState(false);
+  // Inicio oficial (auditoría 16-oct-2026): el mes de arranque no baja del
+  // mes del inicio (el API 0.0.85 respondería 400 CUENTA_ANTES_DEL_INICIO).
+  const inicio = useInicioOficial();
   const opcionesMes = useMemo(
-    () => opcionesMesArranque(hoyLocal, mesDeFecha(cuenta.cuenta_desde)),
-    [hoyLocal, cuenta.cuenta_desde],
+    () => opcionesMesArranque(hoyLocal, mesDeFecha(cuenta.cuenta_desde), inicio),
+    [hoyLocal, cuenta.cuenta_desde, inicio],
   );
 
   const setGuardando = (g: boolean) => {
@@ -141,7 +145,7 @@ export function FormularioCuenta({
   };
 
   const guardar = async (confirmado: boolean) => {
-    const e = validarFormCuenta(form, hoyLocal);
+    const e = validarFormCuenta(form, hoyLocal, inicio);
     setErrores(e);
     if (hayErrores(e)) return;
     if (!cuentaCambia(cuenta, form)) {

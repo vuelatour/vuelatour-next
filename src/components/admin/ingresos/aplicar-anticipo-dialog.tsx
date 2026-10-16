@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircleIcon, ExclamationTriangleIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 import {
   Dialog,
   DialogContent,
@@ -404,6 +405,7 @@ function FormularioAplicar({
                       >
                         {descripcionVueloCandidato(v)}
                       </span>
+                      <ChipInicioOficial fecha={v.fecha_vuelo} className="mt-1" />
                     </button>
                   );
                 })}

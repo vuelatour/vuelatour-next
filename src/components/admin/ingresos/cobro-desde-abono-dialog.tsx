@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ExclamationTriangleIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 import {
   Dialog,
   DialogContent,
@@ -240,6 +241,7 @@ function FormularioCobro({ abono, onCerrar }: { abono: AbonoPendiente; onCerrar:
                 >
                   <span className="font-medium">{etiquetaVueloCandidato(v)}</span>
                   <span className="block text-xs text-muted-foreground">{descripcionVueloCandidato(v)}</span>
+                  <ChipInicioOficial fecha={v.fecha_vuelo} className="mt-1" />
                 </button>
               ))}
             </div>

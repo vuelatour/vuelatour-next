@@ -10,6 +10,7 @@ import {
   type FiltrosFacturas,
 } from "@/lib/admin/facturas-emitidas";
 import { ETIQUETA_VUELOS_FACTURAS_NO_CUADRAN } from "@/lib/admin/cobro-factura";
+import { rotuloRegistradas } from "@/lib/admin/inicio-oficial";
 import type {
   EstatusFacturaEmitida,
   ListaFacturasEmitidas,
@@ -30,7 +31,8 @@ interface ChipResumen {
  * el filtro en la URL (los de valor 0 van en gris y no se pulsan), los
  * totales vigentes por moneda (jamás sumando USD con MXN) y los HUECOS de la
  * numeración por razón social + serie. El resumen es GLOBAL (todo el
- * registro); lo del filtro se dice aparte.
+ * registro, o desde el inicio oficial con el API 0.0.85); lo del filtro se
+ * dice aparte.
  */
 export function RegistroFacturasResumen({
   lista,
@@ -41,7 +43,10 @@ export function RegistroFacturasResumen({
 }) {
   const r = lista.resumen;
   const chips: ChipResumen[] = [
-    { label: "Registradas", valor: r.registradas },
+    // API 0.0.85: con `resumen.desde` los conteos y totales cuentan desde el
+    // inicio oficial («Registradas desde el 1-sep-2026»); los huecos de
+    // folio siguen sobre toda la serie. Sin la llave, «Registradas».
+    { label: rotuloRegistradas(r.desde), valor: r.registradas },
     { label: "Vigentes", valor: r.vigentes, estatus: "VIGENTE" },
     { label: "Canceladas", valor: r.canceladas, estatus: "CANCELADA" },
     { label: "Sin PDF", valor: r.sin_pdf, alerta: "sin_pdf", alertaTono: true },

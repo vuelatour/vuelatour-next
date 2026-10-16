@@ -61,6 +61,8 @@ import {
   textoAvionDeSocio,
   textoEntregasAntesDelArranque,
 } from "@/lib/admin/reparto-pagos";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -113,7 +115,10 @@ export default async function EstadoCuentaSocioPage({ params, searchParams }: Pa
   // Hoy Cancún del servidor: recorta un `?desde=`/`?hasta=` futuro ANTES
   // de pedirlo (el API respondería 400 y «Reintentar» nunca lo arreglaría).
   const mesHoy = mesActual(todayCancun());
-  const filtro = filtroMesesCuenta(sp.desde, sp.hasta, mesHoy);
+  // Inicio oficial (auditoría 16-oct-2026): un `?desde=2026-07` sube al mes
+  // del inicio con el aviso de siempre (el API 0.0.85 hace lo mismo).
+  const inicio = await getInicioOficial();
+  const filtro = filtroMesesCuenta(sp.desde, sp.hasta, mesHoy, inicio);
   const puedeRegistrar = puedeRegistrarEntregas(me.rol);
   const degradado = new Degradaciones();
   const [carga, registro] = await Promise.all([
@@ -170,6 +175,7 @@ export default async function EstadoCuentaSocioPage({ params, searchParams }: Pa
       mesMasAntiguo: previas?.mesMasAntiguo ?? null,
       cuentaDesdeMes,
       mesActual: hoyMes,
+      inicioOficial: inicio,
     });
     if (mes) {
       entregasPrevias = {
@@ -216,6 +222,7 @@ export default async function EstadoCuentaSocioPage({ params, searchParams }: Pa
       </div>
 
       <AvisoDegradado faltantes={degradado.faltantes} />
+      <AvisoPeriodoAjustado inicio={inicio} ajustado={filtro.ajustado === true} />
 
       {carga.filtroIgnorado && (
         <div
