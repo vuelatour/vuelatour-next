@@ -10488,6 +10488,25 @@ pinta y se decide la UI.
   `descripcionCompletarConOmision`) en un propio EN_VUELO, o «Iniciar y
   completar» (deshabilitado sin avión/piloto: el `start` del API los exige)
   en uno nunca iniciado; entra al early-return de la barra.
+- **Omitir ≠ completar (revisión 15-oct-2026).** FACTURACION omite y deshace
+  (`ROLES_OMITIR_TACO`), pero `POST :id/start` y `POST :id/complete` del API
+  son `@Roles(ADMIN, COORDINADOR, PILOTO)` y le responden 403 «Required role:
+  … Current: FACTURACION» (inglés). `ROLES_COMPLETAR_VUELO` /
+  `esRolCompletarVuelo` es el espejo exacto: las páginas pasan
+  `puedeCompletar={esRolCompletarVuelo(me?.rol)}` a `FlightActionsBar`,
+  `EscalasCard` y `TacoLiveBoard` (que lo baja a `TacoOmitirDialog`). Sin él
+  (ausente = sin permiso) la barra NO pinta «Completar vuelo» ni «Iniciar y
+  completar» por omisión, y `mensajeOmision(r, faltanOtras, puedeCompletar)`
+  da el toast SIN acción: «Tacómetro omitido. El vuelo #300 ya se puede
+  completar: avisa a coordinación para completarlo.» / «… nunca se inició en
+  la app: avisa a coordinación para iniciarlo y completarlo.». El
+  «Iniciar/Cerrar vuelo» de los EXTERNOS no cambió (anterior a este lote).
+- **`handleComplete` de la barra** (lo usan «Cerrar vuelo» de un externo y
+  «Completar vuelo» por omisión) envuelve la server action en try/catch y
+  cambia un texto técnico por `MSG_SERVIDOR_NO_RESPONDIO`, igual que
+  `handleIniciarYCompletar`: nunca un `await` desnudo en la transición.
+  Probado en `components/admin/flights/__tests__/omision-permisos.test.tsx`
+  (`useTransition` simulado; un rechazo de la promesa = el boundary).
 - **Server actions** (`app/admin/flights/actions.ts`, sección «Tacómetros:
   revisión de oficina»): `omitirTacoAction` (POST `…/legs/:id/taco/omitir`
   con `{ motivo }` recortado), `deshacerOmisionTacoAction` (DELETE) e
@@ -10509,8 +10528,13 @@ pinta y se decide la UI.
   POSICIÓN como «Tramo N»), junto a «⚠ Tacómetro incompleto» si ambos
   aplican. Lista de vuelos: `taco-status` trae `{ falta, omitido }`
   (`TacoStatusVuelo`); `taco_omitido` pinta un `MinusCircleIcon` slate con
-  `TITULO_BADGE_LISTA_OMITIDO` (solo se consulta para EN_VUELO/COMPLETADO,
-  como el triángulo).
+  `TITULO_BADGE_LISTA_OMITIDO`. `taco-status` se pide para TODO vuelo propio
+  no cancelado de la tabla (`pideTacoStatusEnLista`, también los nunca
+  iniciados y los azules en cotización: el #301 omitido y pendiente de
+  «Iniciar y completar» sin icono parecía un vuelo futuro normal), y el
+  triángulo «incompleto» solo se pinta en EN_VUELO/COMPLETADO
+  (`faltaTacoEnLista`: el API dice `falta: true` de un vuelo futuro sin
+  lecturas, y eso no es una falta).
 - **Tacómetros en vivo**: la página lee `getMe()` best-effort y pasa
   `puedeOmitir`; el contador «por revisar» no cuenta omitidos. El API manda
   la fila omitida con `estado: 'OK'` + `omitido: true` (NUNCA un estado
@@ -10540,6 +10564,10 @@ pinta y se decide la UI.
   API nuevo sin la migración ⇒ 503 `MIGRACION_PENDIENTE` con su mensaje es-MX
   (se pinta tal cual). Panel previo + API nuevo ⇒ ignora los aditivos.
 - **Pruebas**: `lib/admin/__tests__/taco-omitido.test.ts`,
+  `lib/admin/__tests__/taco-omitido-permisos.test.ts` (roles de completar,
+  toast sin acción, `pideTacoStatusEnLista`, `faltaTacoEnLista`),
+  `components/admin/flights/__tests__/omision-permisos.test.tsx` (barra de
+  FACTURACION, `handleComplete` sin `await` desnudo y cableado),
   `lib/admin/__tests__/pre-cierre-tacos.test.ts` (`lineasTramosOmitidos`),
   `components/admin/reportes/__tests__/pre-cierre-tacos-omitidos.test.tsx`
   (renglón azul con «Omitido por …», sin «Resolver →», «oficina» sin

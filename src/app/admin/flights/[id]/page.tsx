@@ -71,6 +71,7 @@ import { esUuid } from "@/lib/admin/url-params";
 import {
   BADGE_TACO_OMITIDO,
   completableConOmision,
+  esRolCompletarVuelo,
   esRolOmitirTaco,
   esTramoOmitido,
   faltaTacoSinOmitidos,
@@ -616,6 +617,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             <FlightActionsBar
               esAdmin={me?.rol === "ADMIN"}
               omision={omision}
+              // FACTURACION omite pero no completa (start/complete: 403).
+              puedeCompletar={esRolCompletarVuelo(me?.rol)}
               // Ficha del avión ajeno resuelta vía cotización: así el diálogo
               // «Editar externo» prellena modelo/matrícula y no los pisa.
               flight={{
@@ -793,6 +796,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             pilotoExterno={piloto?.es_piloto_externo === true}
             vueloAnterior={vueloAnterior}
             puedeOmitir={esRolOmitirTaco(me?.rol)}
+            puedeCompletar={esRolCompletarVuelo(me?.rol)}
             vueloEstado={snapshot.estado}
             vueloEsExterno={snapshot.es_externo}
             vueloFolio={snapshot.folio}

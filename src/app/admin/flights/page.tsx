@@ -37,6 +37,7 @@ import {
   leerFocoPreCierre,
 } from "@/lib/admin/pre-cierre-resolver";
 import { todayCancun } from "@/lib/datetime";
+import { faltaTacoEnLista, pideTacoStatusEnLista } from "@/lib/admin/taco-omitido";
 
 export const dynamic = "force-dynamic";
 
@@ -126,17 +127,20 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     ? []
     : flightsRes.data.filter(esCotizacion);
 
-  // Tacómetro incompleto: solo importa en vuelos propios ya en curso/cerrados.
-  const tacoRelevantes = operativos.filter(
-    (v) => !v.es_externo && (v.estado === "EN_VUELO" || v.estado === "COMPLETADO"),
-  );
+  // Tacómetro: TODO vuelo propio no cancelado de la tabla (también los azules
+  // en cotización). El triángulo «incompleto» solo aplica a EN_VUELO/COMPLETADO
+  // (`faltaTacoEnLista`), pero el icono de «tacómetro omitido» también va en un
+  // vuelo nunca iniciado (#301/#279: le falta «Iniciar y completar»); antes no
+  // se consultaba y la fila salía como un vuelo futuro normal (15-oct-2026).
+  const tacoRelevantes = flightsRes.data.filter(pideTacoStatusEnLista);
   // En LOTES de ≤200 ids (tope `@ArrayMaxSize(200)` del DTO del API): hoy la
   // lista manda 218 y el API respondía 400, que el `.catch` de antes tragaba
   // en silencio — NINGÚN vuelo mostraba el badge de tacómetro faltante y nadie
   // se enteraba (21-sep-2026). Si un lote falla se DICE, no se finge.
   const taco = await getTacoStatusPorLotes(tacoRelevantes.map((v) => v.id));
   const tacoSinVerificar = new Set(taco.idsSinVerificar);
-  const faltaTaco = (id: string) => taco.status[id]?.falta === true;
+  const faltaTaco = (v: { id: string; estado: string }) =>
+    faltaTacoEnLista(v.estado, taco.status[v.id]?.falta);
   // Tacómetro OMITIDO en algún tramo (API 0.0.81, aditivo): icono slate.
   const tacoOmitido = (id: string) => taco.status[id]?.omitido === true;
 
@@ -183,7 +187,7 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     fecha_solicitud: v.fecha_solicitud ?? v.created_at ?? null,
     monto_total_usd: v.monto_total_usd,
     estado: v.estado,
-    falta_taco: faltaTaco(v.id),
+    falta_taco: faltaTaco(v),
     taco_omitido: tacoOmitido(v.id),
     en_cotizacion: esCotizacion(v),
     cobrado: v.cobrado,

@@ -85,6 +85,12 @@ interface EscalasCardProps {
    * `vueloEstado`) la card es la de siempre más el badge del omitido.
    */
   puedeOmitir?: boolean;
+  /**
+   * `esRolCompletarVuelo(rol)` (ADMIN/COORDINADOR): el toast de la omisión
+   * ofrece «Completar vuelo» / «Iniciar y completar». FACTURACION omite pero
+   * no completa (403 del API): su toast pide avisar a coordinación.
+   */
+  puedeCompletar?: boolean;
   vueloEstado?: EstadoVuelo;
   vueloEsExterno?: boolean;
   vueloFolio?: number;
@@ -114,6 +120,7 @@ export function EscalasCard({
   vueloAnterior = null,
   itinerarioOperativo,
   puedeOmitir = false,
+  puedeCompletar = false,
   vueloEstado,
   vueloEsExterno = false,
   vueloFolio,
@@ -305,6 +312,7 @@ export function EscalasCard({
                             faltanOtras={escalas.some(
                               (e) => e.id !== esc.id && tramoExigeLlegada(e),
                             )}
+                            puedeCompletar={puedeCompletar}
                           />
                         )}
                       </div>

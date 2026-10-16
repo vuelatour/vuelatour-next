@@ -307,8 +307,12 @@ const vuelo = (p: Partial<FlightListItem> = {}): FlightListItem =>
     ...p,
   }) as FlightListItem;
 
+// Rol con permiso de completar (ADMIN/COORDINADOR): FACTURACION se prueba
+// en `omision-permisos.test.tsx`.
 const barra = (f: FlightListItem, omision?: { completable: boolean; requiereIniciar: boolean; omitidos: number }) =>
-  renderToStaticMarkup(<FlightActionsBar flight={f} aircraft={[]} pilots={[]} omision={omision} />);
+  renderToStaticMarkup(
+    <FlightActionsBar flight={f} aircraft={[]} pilots={[]} omision={omision} puedeCompletar />,
+  );
 
 describe("FlightActionsBar con omisiones", () => {
   it("EN_VUELO completable por omisión: botón verde «Completar vuelo»", () => {

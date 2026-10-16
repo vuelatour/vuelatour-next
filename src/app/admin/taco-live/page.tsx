@@ -5,7 +5,11 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { todayCancun } from "@/lib/datetime";
 import { apiServer } from "@/lib/api/server";
 import { getMe } from "@/lib/api/me";
-import { escalaLiveOmitida, esRolOmitirTaco } from "@/lib/admin/taco-omitido";
+import {
+  escalaLiveOmitida,
+  esRolCompletarVuelo,
+  esRolOmitirTaco,
+} from "@/lib/admin/taco-omitido";
 import { TacoLiveBoard, type TacoLiveVuelo } from "@/components/admin/taco-live/taco-live-board";
 import { TacoLiveDatePicker } from "@/components/admin/taco-live/taco-live-date-picker";
 import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
@@ -72,6 +76,8 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
     getMe().catch(() => null),
   ]);
   const puedeOmitir = esRolOmitirTaco(me?.rol);
+  // FACTURACION omite pero no completa (start/complete: 403 en el API).
+  const puedeCompletar = esRolCompletarVuelo(me?.rol);
 
   const fecha = data.fecha;
   const focoPc = leerFocoPreCierre(sp);
@@ -162,6 +168,7 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
         vuelos={data.vuelos}
         fecha={fecha}
         puedeOmitir={puedeOmitir}
+        puedeCompletar={puedeCompletar}
         resaltados={focoPc?.ids}
       />
     </div>

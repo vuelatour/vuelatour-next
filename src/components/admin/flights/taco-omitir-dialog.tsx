@@ -60,7 +60,9 @@ import { cn } from "@/lib/utils";
  * llegada. Solo oficina (ADMIN/COORDINADOR/FACTURACION — el que llama decide
  * con `puedeOmitirTaco`). Motivo obligatorio (10–500) con chips rápidos;
  * queda quién y cuándo. El vuelo NO se completa solo: el toast ofrece
- * «Completar vuelo» o «Iniciar y completar» cuando ya se puede.
+ * «Completar vuelo» o «Iniciar y completar» cuando ya se puede — solo con
+ * `puedeCompletar` (`esRolCompletarVuelo`): FACTURACION omite pero el API le
+ * niega start/complete (403), así que su toast pide avisar a coordinación.
  */
 export function TacoOmitirDialog({
   flightId,
@@ -70,6 +72,7 @@ export function TacoOmitirDialog({
   faltanOtras,
   onOmitido,
   compacto = false,
+  puedeCompletar = false,
 }: {
   flightId: string;
   escalaId: string;
@@ -81,6 +84,8 @@ export function TacoOmitirDialog({
   onOmitido?: (r: RespuestaOmisionTaco) => void;
   /** Fila de Tacómetros en vivo: botón de la altura de «Ajustar». */
   compacto?: boolean;
+  /** `esRolCompletarVuelo(rol)`: sin él, el toast no trae acción. */
+  puedeCompletar?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -119,7 +124,7 @@ export function TacoOmitirDialog({
         return;
       }
       const data = res.data;
-      const { texto, accion } = mensajeOmision(data, faltanOtras);
+      const { texto, accion } = mensajeOmision(data, faltanOtras, puedeCompletar);
       if (accion) {
         toast.success(texto, {
           // Tiempo para leerlo y pulsar la acción (la barra del vuelo la

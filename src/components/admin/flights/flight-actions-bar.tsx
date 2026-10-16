@@ -82,6 +82,13 @@ interface FlightActionsBarProps {
    * completar» (nunca iniciado en la app). El vuelo no se completa solo.
    */
   omision?: { completable: boolean; requiereIniciar: boolean; omitidos: number };
+  /**
+   * `esRolCompletarVuelo(rol)` (espejo de `@Roles` de start/complete en el
+   * API: ADMIN/COORDINADOR/PILOTO). Sin él NO se pintan «Completar vuelo» ni
+   * «Iniciar y completar» por omisión: a FACTURACION el API le responde 403
+   * «Required role: …» (inglés). Ausente = sin permiso.
+   */
+  puedeCompletar?: boolean;
 }
 
 export function FlightActionsBar({
@@ -94,6 +101,7 @@ export function FlightActionsBar({
   planVueloUrl,
   esAdmin = false,
   omision,
+  puedeCompletar = false,
 }: FlightActionsBarProps) {
   const router = useRouter();
   const [assignOpen, setAssignOpen] = useState(false);
@@ -144,10 +152,15 @@ export function FlightActionsBar({
   // Vuelo PROPIO cuyas lecturas faltantes están OMITIDAS por la oficina: el
   // estado ya no se deriva solo (no hay llegada que capturar) y la oficina lo
   // completa aquí (15-oct-2026). `complete()` del API valida igual.
+  // Solo con permiso de completar: FACTURACION omite, pero start/complete le
+  // dan 403 en el API (el botón nunca le funcionaría).
   const completarPorOmision =
-    !flight.es_externo && flight.estado === "EN_VUELO" && omision?.completable === true;
+    puedeCompletar &&
+    !flight.es_externo &&
+    flight.estado === "EN_VUELO" &&
+    omision?.completable === true;
   const iniciarYCompletar =
-    !flight.es_externo && omision?.requiereIniciar === true;
+    puedeCompletar && !flight.es_externo && omision?.requiereIniciar === true;
   const canComplete =
     (flight.es_externo && flight.estado === "EN_VUELO") || completarPorOmision;
   const canEditMeta = flight.estado !== "CANCELADO";
@@ -193,13 +206,23 @@ export function FlightActionsBar({
 
   const handleComplete = () => {
     startComplete(async () => {
-      const res = await completeFlightAction(flight.id);
+      // Nunca un `await` desnudo en una transición: un «Failed to find Server
+      // Action» tras un deploy (o la red caída) mandaba el detalle al boundary.
+      let res: Awaited<ReturnType<typeof completeFlightAction>>;
+      try {
+        res = await completeFlightAction(flight.id);
+      } catch {
+        toast.error(MSG_SERVIDOR_NO_RESPONDIO);
+        return;
+      }
       if (res.ok) {
         toast.success(`Vuelo #${flight.folio} completado`);
         setCompleteOpen(false);
         router.refresh();
       } else {
-        toast.error(res.error ?? "Error al completar");
+        toast.error(
+          esErrorTecnico(res) ? MSG_SERVIDOR_NO_RESPONDIO : (res.error ?? "Error al completar"),
+        );
       }
     });
   };

@@ -290,19 +290,19 @@ describe("predicados", () => {
   });
 
   it("mensajeOmision", () => {
-    expect(mensajeOmision({ vuelo: { folio: 300, completable: true, requiere_iniciar: false } }, false)).toEqual({
+    expect(mensajeOmision({ vuelo: { folio: 300, completable: true, requiere_iniciar: false } }, false, true)).toEqual({
       texto: "Tacómetro omitido. El vuelo #300 ya se puede completar.",
       accion: "completar",
     });
-    expect(mensajeOmision({ vuelo: { folio: 301, completable: false, requiere_iniciar: true } }, false)).toEqual({
+    expect(mensajeOmision({ vuelo: { folio: 301, completable: false, requiere_iniciar: true } }, false, true)).toEqual({
       texto: "Tacómetro omitido. El vuelo #301 nunca se inició en la app: inícialo y complétalo.",
       accion: "iniciar_y_completar",
     });
-    expect(mensajeOmision({ vuelo: { folio: 5, completable: false } }, true)).toEqual({
+    expect(mensajeOmision({ vuelo: { folio: 5, completable: false } }, true, true)).toEqual({
       texto: TOAST_OMITIDO_FALTAN,
       accion: null,
     });
-    expect(mensajeOmision({ vuelo: { folio: 5, completable: false } }, false)).toEqual({
+    expect(mensajeOmision({ vuelo: { folio: 5, completable: false } }, false, true)).toEqual({
       texto: TOAST_OMITIDO,
       accion: null,
     });

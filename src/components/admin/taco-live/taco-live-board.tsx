@@ -143,6 +143,7 @@ export function TacoLiveBoard({
   vuelos: vuelosDelDia,
   fecha,
   puedeOmitir = false,
+  puedeCompletar = false,
   resaltados,
 }: {
   vuelos: TacoLiveVuelo[];
@@ -150,6 +151,8 @@ export function TacoLiveBoard({
   fecha?: string;
   /** Oficina (ADMIN/COORDINADOR/FACTURACION): «Omitir tacómetro» y «Deshacer». */
   puedeOmitir?: boolean;
+  /** `esRolCompletarVuelo(rol)`: el toast de la omisión ofrece completar. */
+  puedeCompletar?: boolean;
   /** ADITIVO (15-oct-2026): vuelos que el pre-cierre manda revisar
       («Tacómetros en revisión → Resolver»): van PRIMERO (orden estable) y
       en ámbar. Fase 1: por VUELO (el tramo exacto llegará con `escala_id`). */
@@ -214,6 +217,7 @@ export function TacoLiveBoard({
                     ? {
                         folio: v.folio,
                         vueloEstado: v.estado,
+                        puedeCompletar,
                         faltanOtras: v.escalas.some(
                           (x) =>
                             x.escala_id !== e.escala_id &&
@@ -285,7 +289,12 @@ function EscalaRow({
   /** true = el vuelo mezcla aviones: cada fila pinta su chip de matrícula. */
   vueloMixto?: boolean;
   /** Solo oficina: datos para «Omitir tacómetro»/«Deshacer» (null = no se ofrece). */
-  omision?: { folio: number; vueloEstado: string; faltanOtras: boolean } | null;
+  omision?: {
+    folio: number;
+    vueloEstado: string;
+    faltanOtras: boolean;
+    puedeCompletar?: boolean;
+  } | null;
 }) {
   // Defensivo: un estado que este panel no conoce no revienta la fila.
   const st = ESTADO_STYLE[escala.estado] ?? ESTADO_STYLE.ESPERANDO;
@@ -403,6 +412,7 @@ function EscalaRow({
               ruta={ruta}
               folio={omision.folio}
               faltanOtras={omision.faltanOtras}
+              puedeCompletar={omision.puedeCompletar === true}
               compacto
             />
           )}

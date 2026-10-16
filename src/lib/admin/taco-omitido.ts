@@ -24,6 +24,13 @@ import { fmtDateTime, fmtDateTimeShort } from "@/lib/datetime";
 
 /** Roles de oficina que pueden omitir/deshacer (espejo de `taco/confirm` en el API). */
 export const ROLES_OMITIR_TACO = ["ADMIN", "COORDINADOR", "FACTURACION"] as const;
+/**
+ * Roles que pueden «Completar vuelo» / «Iniciar y completar»: espejo EXACTO
+ * de `@Roles` de `POST :id/start` y `POST :id/complete` en el API. FACTURACION
+ * omite pero NO completa (el API le responde 403 «Required role: …» en
+ * inglés): a ella el panel no le ofrece el botón ni la acción del toast.
+ */
+export const ROLES_COMPLETAR_VUELO = ["ADMIN", "COORDINADOR", "PILOTO"] as const;
 export const MOTIVO_OMISION_MIN = 10;
 export const MOTIVO_OMISION_MAX = 500;
 export const MOTIVOS_OMISION_FRECUENTES = [
@@ -124,6 +131,11 @@ export const toastOmitidoCompletable = (folio: number) =>
   `Tacómetro omitido. El vuelo #${folio} ya se puede completar.`;
 export const toastOmitidoIniciar = (folio: number) =>
   `Tacómetro omitido. El vuelo #${folio} nunca se inició en la app: inícialo y complétalo.`;
+/** Sin permiso de completar (FACTURACION): lo dice y no ofrece la acción. */
+export const toastOmitidoCompletableSinPermiso = (folio: number) =>
+  `Tacómetro omitido. El vuelo #${folio} ya se puede completar: avisa a coordinación para completarlo.`;
+export const toastOmitidoIniciarSinPermiso = (folio: number) =>
+  `Tacómetro omitido. El vuelo #${folio} nunca se inició en la app: avisa a coordinación para iniciarlo y completarlo.`;
 export const ACCION_COMPLETAR_VUELO = "Completar vuelo";
 export const ACCION_INICIAR_Y_COMPLETAR = "Iniciar y completar";
 export const TOAST_OMISION_DESHECHA =
@@ -224,6 +236,11 @@ export function puedeOmitirTaco(p: {
   return esRolOmitirTaco(p.rol) && tramoOmitible(p);
 }
 
+/** ¿El rol puede completar (e iniciar) el vuelo? (`ROLES_COMPLETAR_VUELO`). */
+export function esRolCompletarVuelo(rol: string | null | undefined): boolean {
+  return !!rol && (ROLES_COMPLETAR_VUELO as readonly string[]).includes(rol);
+}
+
 /** ¿El rol es de oficina con permiso de omitir/deshacer? */
 export function esRolOmitirTaco(rol: string | null | undefined): boolean {
   return !!rol && (ROLES_OMITIR_TACO as readonly string[]).includes(rol);
@@ -286,16 +303,43 @@ export function completableConOmision(
   };
 }
 
-/** Toast tras omitir: qué sigue (completar, iniciar y completar, o nada). */
+/**
+ * Lista de vuelos: ¿pedir `taco-status` de este vuelo? Todo vuelo PROPIO no
+ * cancelado — también los nunca iniciados (RESERVA…CONFIRMADO), que pueden
+ * llevar un tramo omitido pendiente de «Iniciar y completar» (#301/#279).
+ */
+export function pideTacoStatusEnLista(v: { es_externo: boolean; estado: string }): boolean {
+  return !v.es_externo && v.estado !== "CANCELADO";
+}
+
+/**
+ * Lista de vuelos: el triángulo «tacómetro incompleto» solo aplica a vuelos
+ * en curso o cerrados (el API dice `falta: true` de un vuelo futuro sin
+ * lecturas, y eso no es una falta).
+ */
+export function faltaTacoEnLista(estado: string, falta: boolean | undefined): boolean {
+  return falta === true && (estado === "EN_VUELO" || estado === "COMPLETADO");
+}
+
+/**
+ * Toast tras omitir: qué sigue (completar, iniciar y completar, o nada).
+ * `puedeCompletar` = `esRolCompletarVuelo(rol)`: sin él (FACTURACION) el
+ * toast pide avisar a coordinación y NO trae acción (el API le daría 403).
+ */
 export function mensajeOmision(
   r: { vuelo: { folio: number; completable: boolean; requiere_iniciar?: boolean } },
   faltanOtras: boolean,
+  puedeCompletar: boolean,
 ): { texto: string; accion: "completar" | "iniciar_y_completar" | null } {
   if (r.vuelo.completable) {
-    return { texto: toastOmitidoCompletable(r.vuelo.folio), accion: "completar" };
+    return puedeCompletar
+      ? { texto: toastOmitidoCompletable(r.vuelo.folio), accion: "completar" }
+      : { texto: toastOmitidoCompletableSinPermiso(r.vuelo.folio), accion: null };
   }
   if (r.vuelo.requiere_iniciar) {
-    return { texto: toastOmitidoIniciar(r.vuelo.folio), accion: "iniciar_y_completar" };
+    return puedeCompletar
+      ? { texto: toastOmitidoIniciar(r.vuelo.folio), accion: "iniciar_y_completar" }
+      : { texto: toastOmitidoIniciarSinPermiso(r.vuelo.folio), accion: null };
   }
   return { texto: faltanOtras ? TOAST_OMITIDO_FALTAN : TOAST_OMITIDO, accion: null };
 }
