@@ -9,7 +9,7 @@ import {
   puedeReabrirMes,
   textoCargaCierres,
   textoElegirMesCompleto,
-  textoMotivoNoCerrable,
+  textoNoCerrableDeMes,
   tituloEstadoCierre,
 } from "@/lib/admin/cierre-mes";
 import type { InicioOficial } from "@/lib/admin/inicio-oficial";
@@ -63,7 +63,6 @@ export async function CierreMesCard({
     return <NotaCierre texto={textoElegirMesCompleto(hoy, inicio)} />;
   }
   const badge = badgeEstadoCierre(m, vista.mes, vista.enCurso);
-  const motivo = vista.enCurso && !m.motivo_no_cerrable ? "MES_EN_CURSO" : m.motivo_no_cerrable;
   const cerrado = m.estado === "CERRADO";
 
   return (
@@ -79,7 +78,7 @@ export async function CierreMesCard({
         cerrado={cerrado}
         ofreceCerrar={!cerrado && puedeCerrarMes(rol)}
         ofreceReabrir={cerrado && puedeReabrirMes(rol)}
-        motivoNoCerrable={textoMotivoNoCerrable(motivo, vista.mes)}
+        motivoNoCerrable={textoNoCerrableDeMes(m, vista.mes, vista.enCurso)}
         nDiferidos={m.totales?.vuelos_diferidos ?? null}
       />
     </Marco>

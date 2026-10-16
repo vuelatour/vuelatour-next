@@ -40,21 +40,22 @@ import { fmtMonto } from "@/lib/format";
 import { fmtDate } from "@/lib/datetime";
 import { ANCLA_PRE_CIERRE } from "@/lib/admin/pre-cierre-resolver";
 import {
-  CODIGO_PREVIA_CAMBIO,
   ETIQUETA_BOTON_REABRIR,
   ETIQUETA_CARGANDO_PREVIA,
   ETIQUETA_CONFIRMAR_CERRAR,
   ETIQUETA_CONFIRMAR_REABRIR,
   MOTIVO_REABRIR_MAX,
   TEXTO_PREVIA_CAMBIO,
+  decidirRespuestaCerrar,
   deltasReparto,
   etiquetaBotonCerrar,
+  mensajeErrorCierre,
   mesEnMinuscula,
-  previaDeDetails,
+  puedeConfirmarCierre,
   resumenPrevia,
   textoCheckboxCerrar,
   textoConfirmacionReabrir,
-  textoMotivoNoCerrable,
+  textoNoCerrableDePrevia,
   textoToastCerrado,
   textoToastReabierto,
   tituloVuelosQuePasan,
@@ -69,9 +70,12 @@ import {
   reabrirMesAction,
   type ActionResult,
 } from "@/app/admin/reportes/actions";
-import type { PreviaCierre, ResultadoCerrarMes, VueloDiferido } from "@/types/cierres";
+import type { PreviaCierre, ResultadoCerrarMes, ResultadoReabrirMes, VueloDiferido } from "@/types/cierres";
 
-const SIN_CONEXION = "No hubo respuesta del servidor. Recarga la página para ver si el cambio se aplicó.";
+const PREVIA_SIN_RESPUESTA =
+  "No se pudo revisar el mes: el servidor no respondió. Cierra este cuadro y vuelve a abrirlo para reintentar.";
+/** La server action no contestó (Vercel 504, deploy en curso…): el POST pudo aplicarse. */
+const sinRespuesta = <T,>(): ActionResult<T> => ({ ok: false, code: "SIN_CONEXION" });
 
 export function CierreMesAcciones({
   mes,
@@ -164,11 +168,11 @@ function DialogoCerrar({
   useEffect(() => {
     let vivo = true;
     void previaCierreAction(mes)
-      .catch(() => ({ ok: false as const, error: SIN_CONEXION, data: undefined }))
+      .catch(() => ({ ok: false as const, error: PREVIA_SIN_RESPUESTA, data: undefined }))
       .then((r) => {
         if (!vivo) return;
         if (r.ok && r.data) setEstado({ tipo: "ok", previa: r.data, cambio: false });
-        else setEstado({ tipo: "error", texto: r.error ?? SIN_CONEXION });
+        else setEstado({ tipo: "error", texto: r.error || PREVIA_SIN_RESPUESTA });
       });
     return () => {
       vivo = false;
@@ -186,10 +190,11 @@ function DialogoCerrar({
 
   const previa = estado.tipo === "ok" ? estado.previa : null;
   const destino = sumarMeses(mes, 1) ?? mes;
-  const bloqueado = !previa || !previa.listo || !!previa.motivo_no_cerrable;
+  const bloqueado = !puedeConfirmarCierre(previa, true);
+  const puedeConfirmar = puedeConfirmarCierre(previa, entiendo);
 
   const cerrar = () => {
-    if (!previa || bloqueado || !entiendo || enviandoRef.current) return;
+    if (!previa || !puedeConfirmar || enviandoRef.current) return;
     enviandoRef.current = true;
     setEnviando(true);
     setError(null);
@@ -197,27 +202,27 @@ function DialogoCerrar({
       mes,
       previa.vuelos_que_pasan.map((v) => v.id),
     )
-      .catch((): ActionResult<ResultadoCerrarMes> => ({ ok: false, error: SIN_CONEXION, code: "SIN_CONEXION" }))
+      .catch(sinRespuesta<ResultadoCerrarMes>)
       .then((r) => {
         enviandoRef.current = false;
         setEnviando(false);
-        if (r.ok && r.data) {
-          toast.success(textoToastCerrado(mes, r.data.diferidos?.length ?? 0, destino));
+        const d = decidirRespuestaCerrar(r, mes);
+        if (d.tipo === "exito") {
+          toast.success(textoToastCerrado(mes, d.diferidos, destino));
+          refrescarAlCerrar.current = false;
           onOpenChange(false);
           router.refresh();
           return;
         }
-        // Lo de la pantalla ya está viejo: se refresca al cerrar el diálogo.
+        // Lo de la pantalla ya está viejo (o el cierre pudo aplicarse sin
+        // respuesta): se refresca al cerrar el diálogo.
         refrescarAlCerrar.current = true;
-        if (r.code === CODIGO_PREVIA_CAMBIO) {
-          const nueva = previaDeDetails(r.details);
-          if (nueva) {
-            setEstado({ tipo: "ok", previa: nueva, cambio: true });
-            setEntiendo(false);
-            return;
-          }
+        if (d.tipo === "previa_nueva") {
+          setEstado({ tipo: "ok", previa: d.previa, cambio: true });
+          setEntiendo(false);
+          return;
         }
-        setError(r.error ?? SIN_CONEXION);
+        setError(d.texto);
       });
   };
 
@@ -253,10 +258,11 @@ function DialogoCerrar({
               {resumenPrevia(previa)}
             </p>
 
-            {previa.motivo_no_cerrable && previa.motivo_no_cerrable !== "PRECIERRE_NO_LISTO" && (
+            {previa.motivo_no_cerrable &&
+              (previa.motivo_no_cerrable !== "PRECIERRE_NO_LISTO" || previa.bloqueantes.length === 0) && (
               <p role="alert" className="flex items-start gap-1.5 text-destructive">
                 <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                {textoMotivoNoCerrable(previa.motivo_no_cerrable, mes)}
+                {textoNoCerrableDePrevia(previa)}
               </p>
             )}
 
@@ -274,7 +280,7 @@ function DialogoCerrar({
                 </ul>
                 <a
                   href={`#${ANCLA_PRE_CIERRE}`}
-                  onClick={() => onOpenChange(false)}
+                  onClick={() => cambiarAbierto(false)}
                   className="mt-2 inline-block cursor-pointer text-xs font-medium underline underline-offset-2"
                 >
                   Resolver en el pre-cierre →
@@ -291,7 +297,7 @@ function DialogoCerrar({
 
             {previa.vuelos_que_vienen.length > 0 && (
               <TablaVuelos
-                titulo={tituloVuelosQueVienen(sumarMeses(mes, -1) ?? mes)}
+                titulo={tituloVuelosQueVienen(previa.vuelos_que_vienen[0]?.origen || (sumarMeses(mes, -1) ?? mes))}
                 vacio=""
                 vuelos={previa.vuelos_que_vienen}
                 corte={ultimoDiaCorto(mes)}
@@ -329,7 +335,7 @@ function DialogoCerrar({
           <Button
             type="button"
             className="cursor-pointer"
-            disabled={bloqueado || !entiendo || enviando}
+            disabled={!puedeConfirmar || enviando}
             onClick={cerrar}
           >
             <LockClosedIcon className="h-4 w-4" aria-hidden />
@@ -371,9 +377,13 @@ function TablaVuelos({
                 <th className="px-2 py-1 text-left font-medium">Avión</th>
                 <th className="px-2 py-1 text-left font-medium">Fecha</th>
                 <th className="px-2 py-1 text-right font-medium">Venta</th>
-                <th className="px-2 py-1 text-right font-medium">{`Cobrado al ${corte}`}</th>
-                <th className="px-2 py-1 text-right font-medium">Por cobrar</th>
-                <th className="px-2 py-1 text-right font-medium">Cobrado después</th>
+                {/* «Vienen»: los montos son los del CIERRE de su mes de origen
+                    (bitácora del API), no los de este corte. */}
+                <th className="px-2 py-1 text-right font-medium">
+                  {informativo ? "Cobrado al cerrar su mes" : `Cobrado al ${corte}`}
+                </th>
+                <th className="px-2 py-1 text-right font-medium">{informativo ? "Por cobrar entonces" : "Por cobrar"}</th>
+                {!informativo && <th className="px-2 py-1 text-right font-medium">Cobrado después</th>}
               </tr>
             </thead>
             <tbody>
@@ -381,7 +391,7 @@ function TablaVuelos({
                 <tr key={v.id} className="border-t border-border" title={v.leyenda}>
                   <td className="px-2 py-1 font-mono">
                     <a href={`/admin/flights/${v.id}`} className="cursor-pointer underline underline-offset-2">
-                      {v.folio > 0 ? `#${v.folio}` : "vuelo"}
+                      {v.folio != null && v.folio > 0 ? `#${v.folio}` : "vuelo"}
                     </a>
                   </td>
                   <td className="max-w-40 truncate px-2 py-1">{v.cliente ?? "—"}</td>
@@ -392,7 +402,9 @@ function TablaVuelos({
                   <td className="px-2 py-1 text-right font-mono text-amber-700 dark:text-amber-300">
                     {fmtMonto(v.por_cobrar_usd, "USD")}
                   </td>
-                  <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.cobrado_posterior_usd, "USD")}</td>
+                  {!informativo && (
+                    <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.cobrado_posterior_usd, "USD")}</td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -451,10 +463,15 @@ function DialogoReabrir({
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const enviandoRef = useRef(false);
+  const refrescarAlCerrar = useRef(false);
   const invalido = validarMotivoReabrir(motivo);
 
   const cambiarAbierto = (v: boolean) => {
     if (!v && enviandoRef.current) return;
+    if (!v && refrescarAlCerrar.current) {
+      refrescarAlCerrar.current = false;
+      router.refresh();
+    }
     onOpenChange(v);
   };
 
@@ -464,17 +481,21 @@ function DialogoReabrir({
     setEnviando(true);
     setError(null);
     void reabrirMesAction(mes, motivo)
-      .catch(() => ({ ok: false as const, error: SIN_CONEXION }))
+      .catch(sinRespuesta<ResultadoReabrirMes>)
       .then((r) => {
         enviandoRef.current = false;
         setEnviando(false);
         if (r.ok && r.data) {
           toast.success(textoToastReabierto(mes, r.data.revertidos ?? 0));
+          refrescarAlCerrar.current = false;
           onOpenChange(false);
           router.refresh();
           return;
         }
-        setError(r.error ?? SIN_CONEXION);
+        // NO_ESTA_CERRADO / MES_SIGUIENTE_CERRADO / sin respuesta: la card
+        // está vieja ⇒ se refresca al cerrar el diálogo.
+        refrescarAlCerrar.current = true;
+        setError(mensajeErrorCierre(r, "reabrir", mes));
       });
   };
 

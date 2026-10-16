@@ -16,7 +16,9 @@ export type MotivoNoCerrable =
   | "MES_EN_CURSO"
   | "MES_ANTERIOR_ABIERTO"
   | "YA_CERRADO"
-  | "PRECIERRE_NO_LISTO";
+  | "PRECIERRE_NO_LISTO"
+  /** La previa de un mes antes del inicio oficial (el API responde 400 antes). */
+  | "PERIODO_ANTES_DEL_INICIO";
 
 export interface UsuarioCierre {
   id: string;
@@ -62,16 +64,17 @@ export type MotivoDiferir = "SIN_COBRO" | "COBRO_PARCIAL" | "COBRO_POSTERIOR";
 /** Un vuelo que PASA al mes siguiente (o que VINO de uno anterior). */
 export interface VueloDiferido {
   id: string;
-  folio: number;
+  /** El API lo tipa `number | null` (un vuelo sin folio no debería existir). */
+  folio: number | null;
   clave_cliente: string | null;
   cliente: string | null;
-  aeronave: { id: string; matricula: string } | null;
+  aeronave: { id: string; matricula: string | null } | null;
   fecha_vuelo: string | null;
   venta_usd: number;
   cobrado_usd: number;
   por_cobrar_usd: number;
   cobrado_posterior_usd: number;
-  motivo: MotivoDiferir;
+  motivo: MotivoDiferir | null;
   /** `YYYY-MM` al que pasa (en `vuelos_que_pasan`). */
   destino?: string;
   /** `YYYY-MM` del que viene (en `vuelos_que_vienen`). */
@@ -88,6 +91,7 @@ export interface BloqueantePrevia {
 }
 
 export interface RepartoAvionPrevia {
+  aeronave_id?: string;
   matricula: string;
   saldo_usd: number;
   cobrado_usd: number;
@@ -114,6 +118,8 @@ export interface PreviaCierre {
   estado: EstadoCierreMes;
   listo: boolean;
   motivo_no_cerrable: MotivoNoCerrable | null;
+  /** Texto es-MX del motivo, armado por el API (gana sobre el espejo del panel). */
+  texto_no_cerrable?: string | null;
   bloqueantes: BloqueantePrevia[];
   vuelos_que_pasan: VueloDiferido[];
   vuelos_que_vienen: VueloDiferido[];
@@ -144,6 +150,7 @@ export interface ResultadoReabrirMes {
     version: number;
     reabierto_at: string | null;
     reabierto_por: UsuarioCierre | null;
+    reabierto_motivo?: string | null;
   };
   revertidos: number;
   no_revertidos: unknown[];

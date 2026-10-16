@@ -58,19 +58,31 @@ describe("botones «Cerrar <mes>» / «Reabrir mes»", () => {
   });
 });
 
-describe("cableado del diálogo de cierre", () => {
+describe("cableado del diálogo de cierre (las reglas viven en lib/admin/cierre-mes.ts, con su test)", () => {
   const src = leer("src/components/admin/reportes/cierre-mes-acciones.tsx");
-  it("manda los ids que se VIERON (vuelos_esperados) y repinta ante PREVIA_CAMBIO", () => {
+  it("manda los ids que se VIERON (vuelos_esperados) y decide con decidirRespuestaCerrar", () => {
     expect(src).toMatch(/cerrarMesAction\(\s*mes,\s*previa\.vuelos_que_pasan\.map\(\(v\) => v\.id\),?\s*\)/);
-    expect(src).toMatch(/r\.code === CODIGO_PREVIA_CAMBIO[\s\S]*previaDeDetails\(r\.details\)[\s\S]*setEntiendo\(false\)/);
+    expect(src).toContain("decidirRespuestaCerrar(r, mes)");
+    expect(src).toMatch(/d\.tipo === "previa_nueva"[\s\S]*setEntiendo\(false\)/);
   });
-  it("exige la casilla y una previa lista para confirmar", () => {
-    expect(src).toContain("disabled={bloqueado || !entiendo || enviando}");
-    expect(src).toContain("const bloqueado = !previa || !previa.listo || !!previa.motivo_no_cerrable;");
+  it("confirmar exige puedeConfirmarCierre (previa lista + casilla) y no hay otro camino al POST", () => {
+    expect(src).toContain("disabled={!puedeConfirmar || enviando}");
+    expect(src).toContain("if (!previa || !puedeConfirmar || enviandoRef.current) return;");
+    expect(src.match(/cerrarMesAction\(/g)).toHaveLength(1);
+    expect(src.match(/reabrirMesAction\(/g)).toHaveLength(1);
   });
-  it("la action no revalida en el rechazo (el diálogo sigue montado)", () => {
-    const actions = leer("src/app/admin/reportes/actions.ts");
-    expect(actions).not.toMatch(/status === 409\) revalidarCierre/);
+  it("reabrir: texto vía mensajeErrorCierre y refresca al cerrar tras un rechazo (estado rancio)", () => {
+    expect(src).toContain('setError(mensajeErrorCierre(r, "reabrir", mes))');
+    const reabrir = src.slice(src.indexOf("function DialogoReabrir"));
+    expect(reabrir).toMatch(/refrescarAlCerrar\.current = true;\s*\n\s*setError\(mensajeErrorCierre/);
+    expect(reabrir).toMatch(/if \(!v && refrescarAlCerrar\.current\) \{[\s\S]*router\.refresh\(\)/);
+  });
+  it("la tabla de los que VIENEN no rotula sus montos con el corte de este mes ni pinta «Cobrado después»", () => {
+    expect(src).toContain('informativo ? "Cobrado al cerrar su mes"');
+    expect(src).toContain('{!informativo && <th className="px-2 py-1 text-right font-medium">Cobrado después</th>}');
+  });
+  it("Reportes da 300 s a sus server actions (el cierre corre pre-cierre + 2 repartos)", () => {
+    expect(leer("src/app/admin/reportes/page.tsx")).toMatch(/^export const maxDuration = 300;$/m);
   });
 });
 

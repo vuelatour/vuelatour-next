@@ -28,6 +28,7 @@ import { fmtMonto } from "@/lib/format";
 import { esMesValido, etiquetaMes, mesDePeriodo, rangoDeMes, sumarMeses } from "./reparto-pagos";
 import { hrefReportesDesdeVista } from "./balance-vista";
 import { atajoAntesDelInicio, type InicioOficial } from "./inicio-oficial";
+import { esErrorTecnico } from "./errores-tecnicos";
 
 // =============================================================================
 // Roles (ESPEJO del `@Roles` de `CierresController`, contrato §3)
@@ -206,7 +207,13 @@ function usuario(raw: unknown): { id: string; nombre: string } | null {
 }
 
 const ESTADOS = new Set(["ABIERTO", "CERRADO", "REABIERTO"]);
-const MOTIVOS = new Set(["MES_EN_CURSO", "MES_ANTERIOR_ABIERTO", "YA_CERRADO", "PRECIERRE_NO_LISTO"]);
+const MOTIVOS = new Set([
+  "MES_EN_CURSO",
+  "MES_ANTERIOR_ABIERTO",
+  "YA_CERRADO",
+  "PRECIERRE_NO_LISTO",
+  "PERIODO_ANTES_DEL_INICIO",
+]);
 
 function normalizarMes(raw: unknown): MesCierre | null {
   if (!raw || typeof raw !== "object") return null;
@@ -250,6 +257,8 @@ export function normalizarPrevia(raw: unknown): PreviaCierre | null {
     estado: typeof p.estado === "string" && ESTADOS.has(p.estado) ? (p.estado as PreviaCierre["estado"]) : "ABIERTO",
     listo: p.listo,
     motivo_no_cerrable: motivo,
+    texto_no_cerrable:
+      typeof p.texto_no_cerrable === "string" && p.texto_no_cerrable.trim() !== "" ? p.texto_no_cerrable.trim() : null,
     bloqueantes: Array.isArray(p.bloqueantes) ? (p.bloqueantes as PreviaCierre["bloqueantes"]) : [],
     vuelos_que_pasan: lista(p.vuelos_que_pasan),
     vuelos_que_vienen: lista(p.vuelos_que_vienen),
@@ -320,17 +329,23 @@ export function badgeEstadoCierre(m: MesCierre | null, mes: string, enCurso: boo
 }
 
 // =============================================================================
-// Por qué NO se puede cerrar (espejo de los 409 del API; el API manda el
-// código en `GET /v1/cierres` y el texto completo en el 409)
+// Por qué NO se puede cerrar (espejo EXACTO de `textoMotivoNoCerrable` del
+// API: `GET /v1/cierres` solo manda el CÓDIGO; la previa y los 409 traen el
+// texto y entonces gana el del API — ver `textoNoCerrableDePrevia`)
 // =============================================================================
 
 export function textoMotivoNoCerrable(motivo: MotivoNoCerrable | null, mes: string): string | null {
   if (!motivo) return null;
   switch (motivo) {
     case "MES_EN_CURSO": {
+      // EXACTO el texto del 409 del API (`textoMesEnCurso`): «Octubre 2026
+      // todavía está en curso: se cierra a partir del 1 de noviembre.»; el año
+      // solo cuando cambia («… a partir del 1 de enero de 2027.»).
       const sig = sumarMeses(mes, 1);
-      // Mismo texto que el 409 del API (`textoMesEnCurso`).
-      return `${etiquetaMes(mes)} todavía está en curso: se cierra a partir del 1 de ${sig ? mesEnMinuscula(sig) : "mes siguiente"}.`;
+      if (!sig) return `${etiquetaMes(mes)} todavía está en curso.`;
+      const nombre = mesEnMinuscula(sig).replace(/ \d{4}$/, "");
+      const anio = sig.slice(0, 4) === mes.slice(0, 4) ? "" : ` de ${sig.slice(0, 4)}`;
+      return `${etiquetaMes(mes)} todavía está en curso: se cierra a partir del 1 de ${nombre}${anio}.`;
     }
     case "MES_ANTERIOR_ABIERTO": {
       const ant = sumarMeses(mes, -1);
@@ -339,8 +354,95 @@ export function textoMotivoNoCerrable(motivo: MotivoNoCerrable | null, mes: stri
     case "YA_CERRADO":
       return `${etiquetaMes(mes)} ya está cerrado.`;
     case "PRECIERRE_NO_LISTO":
-      return `El pre-cierre de ${mesEnMinuscula(mes)} tiene pendientes que bloquean: resuélvelos arriba y vuelve a intentar.`;
+      return `Antes de cerrar ${mesEnMinuscula(mes)} resuelve los pendientes que bloquean el pre-cierre.`;
+    case "PERIODO_ANTES_DEL_INICIO":
+      return `${etiquetaMes(mes)} es anterior al inicio oficial del sistema: no se cierra aquí.`;
   }
+}
+
+/** El texto de la previa: el del API (`texto_no_cerrable`) si viene; si no, el espejo. */
+export function textoNoCerrableDePrevia(previa: Pick<PreviaCierre, "periodo" | "motivo_no_cerrable" | "texto_no_cerrable">): string | null {
+  if (!previa.motivo_no_cerrable) return null;
+  return previa.texto_no_cerrable || textoMotivoNoCerrable(previa.motivo_no_cerrable, previa.periodo);
+}
+
+/**
+ * Texto de por qué la card NO ofrece cerrar. El código manda; un
+ * `puede_cerrar:false` con un código que el panel no conoce (API más nuevo)
+ * igual deshabilita el botón — nunca se ofrece un cierre que el API negó.
+ */
+export function textoNoCerrableDeMes(
+  m: Pick<MesCierre, "estado" | "puede_cerrar" | "motivo_no_cerrable">,
+  mes: string,
+  enCurso: boolean,
+): string | null {
+  if (m.estado === "CERRADO") return null;
+  const motivo = enCurso && !m.motivo_no_cerrable ? "MES_EN_CURSO" : m.motivo_no_cerrable;
+  if (motivo) return textoMotivoNoCerrable(motivo, mes);
+  return m.puede_cerrar ? null : `${etiquetaMes(mes)} todavía no se puede cerrar.`;
+}
+
+/** ¿El diálogo puede confirmar? Previa leída, lista, sin motivo y con la casilla. */
+export function puedeConfirmarCierre(previa: PreviaCierre | null, entiendo: boolean): boolean {
+  return !!previa && previa.listo && !previa.motivo_no_cerrable && previa.estado !== "CERRADO" && entiendo;
+}
+
+/** Lo que devuelven las actions del cierre (forma de `ActionResult`). */
+export interface RespuestaAccionCierre {
+  ok: boolean;
+  error?: string | null;
+  code?: string | null;
+  details?: unknown;
+  status?: number | null;
+}
+
+/**
+ * Texto de un rechazo de «Cerrar» / «Reabrir». El `message` del API va tal
+ * cual (es-MX), SALVO lo técnico: sin respuesta, HTML de Railway, «Internal
+ * server error», «Forbidden resource»… Un POST sin respuesta pudo haberse
+ * aplicado ⇒ se pide recargar ANTES de reintentar (nunca «vuelve a
+ * intentarlo» a ciegas sobre una escritura).
+ */
+export function mensajeErrorCierre(r: RespuestaAccionCierre, accion: "cerrar" | "reabrir", mes: string): string {
+  const m = mesEnMinuscula(mes);
+  const hecho = accion === "cerrar" ? "quedó cerrado" : "quedó reabierto";
+  if (r.status === 401) return "Tu sesión expiró. Vuelve a entrar e inténtalo de nuevo.";
+  if (r.status === 403) {
+    return accion === "cerrar"
+      ? "Tu usuario no puede cerrar meses: lo hacen administración y facturación."
+      : "Solo un administrador puede reabrir un mes.";
+  }
+  if (clasificarFalloCierres(r.status ?? null, r.code ?? null, r.error ?? null) === "api-previo") {
+    return TEXTO_CIERRE_API_PREVIO;
+  }
+  if (r.status === 503 && r.code === CODIGO_CIERRE_NO_DISPONIBLE) return TEXTO_CIERRE_SIN_MIGRACION;
+  if (r.code === "SIN_CONEXION" || esErrorTecnico({ error: r.error, code: r.code })) {
+    return `No hubo respuesta del servidor. Recarga la página para ver si ${m} ${hecho} antes de volver a intentarlo.`;
+  }
+  return (r.error ?? "").trim();
+}
+
+export type DecisionRespuestaCerrar =
+  | { tipo: "exito"; diferidos: number }
+  | { tipo: "previa_nueva"; previa: PreviaCierre }
+  | { tipo: "error"; texto: string };
+
+/**
+ * Qué hace el diálogo con la respuesta de `cerrarMesAction`: éxito (toast y
+ * refresca), `PREVIA_CAMBIO` con la previa nueva (repinta, desmarca la
+ * casilla) o el error con su texto. Cualquier rechazo deja la pantalla vieja
+ * ⇒ el diálogo refresca al cerrarse.
+ */
+export function decidirRespuestaCerrar(
+  r: RespuestaAccionCierre & { data?: { diferidos?: unknown[] } | null },
+  mes: string,
+): DecisionRespuestaCerrar {
+  if (r.ok && r.data) return { tipo: "exito", diferidos: Array.isArray(r.data.diferidos) ? r.data.diferidos.length : 0 };
+  if (r.code === CODIGO_PREVIA_CAMBIO) {
+    const nueva = previaDeDetails(r.details);
+    if (nueva) return { tipo: "previa_nueva", previa: nueva };
+  }
+  return { tipo: "error", texto: mensajeErrorCierre(r, "cerrar", mes) };
 }
 
 // =============================================================================

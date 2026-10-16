@@ -14,6 +14,7 @@ import {
   chipsCierreVuelo,
   chipsResumenDiferidos,
   clasificarFalloCierres,
+  decidirRespuestaCerrar,
   deltasReparto,
   diferidosDelAvion,
   etiquetaBotonCerrar,
@@ -23,6 +24,7 @@ import {
   lineaDiferido,
   lineasLeyendaPreCierre,
   listasDiferidos,
+  mensajeErrorCierre,
   mesCierreDe,
   mesCorto,
   mesDeVistaCierre,
@@ -32,6 +34,7 @@ import {
   normalizarPrevia,
   previaDeDetails,
   puedeCerrarMes,
+  puedeConfirmarCierre,
   puedeReabrirMes,
   resumenPrevia,
   textoBadgeCierrePeriodo,
@@ -40,6 +43,8 @@ import {
   textoConfirmacionReabrir,
   textoElegirMesCompleto,
   textoMotivoNoCerrable,
+  textoNoCerrableDeMes,
+  textoNoCerrableDePrevia,
   textoNoCoincideSnapshot,
   textoToastCerrado,
   textoToastReabierto,
@@ -262,14 +267,24 @@ describe("badge del estado del mes", () => {
 
 describe("textos de los 409 (mismos que el API)", () => {
   it("MES_EN_CURSO / MES_ANTERIOR_ABIERTO / YA_CERRADO / PRECIERRE_NO_LISTO", () => {
+    // EXACTO `textoMesEnCurso` del API (common/mes-contable.util.ts): el año
+    // del mes siguiente solo cuando cambia.
     expect(textoMotivoNoCerrable("MES_EN_CURSO", "2026-10")).toBe(
-      "Octubre 2026 todavía está en curso: se cierra a partir del 1 de noviembre 2026.",
+      "Octubre 2026 todavía está en curso: se cierra a partir del 1 de noviembre.",
+    );
+    expect(textoMotivoNoCerrable("MES_EN_CURSO", "2026-12")).toBe(
+      "Diciembre 2026 todavía está en curso: se cierra a partir del 1 de enero de 2027.",
     );
     expect(textoMotivoNoCerrable("MES_ANTERIOR_ABIERTO", "2026-10")).toBe(
       "Para cerrar octubre 2026 primero cierra septiembre 2026.",
     );
     expect(textoMotivoNoCerrable("YA_CERRADO", "2026-09")).toBe("Septiembre 2026 ya está cerrado.");
-    expect(textoMotivoNoCerrable("PRECIERRE_NO_LISTO", "2026-09")).toMatch(/pre-cierre de septiembre 2026/);
+    expect(textoMotivoNoCerrable("PRECIERRE_NO_LISTO", "2026-09")).toBe(
+      "Antes de cerrar septiembre 2026 resuelve los pendientes que bloquean el pre-cierre.",
+    );
+    expect(textoMotivoNoCerrable("PERIODO_ANTES_DEL_INICIO", "2026-08")).toBe(
+      "Agosto 2026 es anterior al inicio oficial del sistema: no se cierra aquí.",
+    );
     expect(textoMotivoNoCerrable(null, "2026-09")).toBeNull();
   });
 });
@@ -412,5 +427,107 @@ describe("pre-cierre: leyenda por vuelo", () => {
   it("API previo (sin leyendas) ⇒ ninguna línea: el renglón como siempre", () => {
     expect(lineasLeyendaPreCierre([{ id: "a", folio: 1 }], 1)).toEqual({ lineas: [], restantes: 0 });
     expect(lineasLeyendaPreCierre(null)).toEqual({ lineas: [], restantes: 0 });
+  });
+});
+
+describe("revisión adversaria (16-oct-2026): el texto del API gana y nada se confirma a ciegas", () => {
+  const previa = normalizarPrevia(PREVIA_SEP) as PreviaCierre;
+
+  it("la previa conserva `texto_no_cerrable` del API y el diálogo lo usa tal cual", () => {
+    const conTexto = normalizarPrevia({
+      ...PREVIA_SEP,
+      listo: false,
+      motivo_no_cerrable: "PRECIERRE_NO_LISTO",
+      texto_no_cerrable: "  Antes de cerrar septiembre 2026 resuelve los pendientes que bloquean el pre-cierre.  ",
+    }) as PreviaCierre;
+    expect(conTexto.texto_no_cerrable).toBe(
+      "Antes de cerrar septiembre 2026 resuelve los pendientes que bloquean el pre-cierre.",
+    );
+    expect(textoNoCerrableDePrevia(conTexto)).toBe(conTexto.texto_no_cerrable);
+    // API sin el texto ⇒ el espejo (mismo texto); sin motivo ⇒ nada.
+    expect(textoNoCerrableDePrevia({ ...conTexto, texto_no_cerrable: null })).toBe(conTexto.texto_no_cerrable);
+    expect(textoNoCerrableDePrevia(previa)).toBeNull();
+    // Un motivo que el panel conoce desde esta revisión ya no se pierde.
+    expect(normalizarPrevia({ ...PREVIA_SEP, motivo_no_cerrable: "PERIODO_ANTES_DEL_INICIO" })?.motivo_no_cerrable).toBe(
+      "PERIODO_ANTES_DEL_INICIO",
+    );
+  });
+
+  it("puedeConfirmarCierre: previa leída, lista, sin motivo, no cerrada y con la casilla", () => {
+    expect(puedeConfirmarCierre(previa, true)).toBe(true);
+    expect(puedeConfirmarCierre(previa, false)).toBe(false);
+    expect(puedeConfirmarCierre(null, true)).toBe(false);
+    expect(puedeConfirmarCierre({ ...previa, listo: false }, true)).toBe(false);
+    expect(puedeConfirmarCierre({ ...previa, motivo_no_cerrable: "MES_ANTERIOR_ABIERTO" }, true)).toBe(false);
+    // Otro usuario lo cerró entre la previa y el clic.
+    expect(puedeConfirmarCierre({ ...previa, estado: "CERRADO" }, true)).toBe(false);
+  });
+
+  it("la card: el código manda y un `puede_cerrar:false` desconocido igual deshabilita", () => {
+    const abierto = { estado: "ABIERTO" as const, puede_cerrar: true, motivo_no_cerrable: null };
+    expect(textoNoCerrableDeMes(abierto, "2026-09", false)).toBeNull();
+    expect(textoNoCerrableDeMes(abierto, "2026-10", true)).toBe(
+      "Octubre 2026 todavía está en curso: se cierra a partir del 1 de noviembre.",
+    );
+    expect(
+      textoNoCerrableDeMes({ ...abierto, puede_cerrar: false, motivo_no_cerrable: "MES_ANTERIOR_ABIERTO" }, "2026-10", false),
+    ).toBe("Para cerrar octubre 2026 primero cierra septiembre 2026.");
+    expect(textoNoCerrableDeMes({ ...abierto, puede_cerrar: false }, "2026-10", false)).toBe(
+      "Octubre 2026 todavía no se puede cerrar.",
+    );
+    expect(textoNoCerrableDeMes(SEP_CERRADO, "2026-09", false)).toBeNull();
+  });
+
+  it("mensajeErrorCierre: el message del API tal cual; lo técnico o sin respuesta pide RECARGAR antes de reintentar", () => {
+    const yaCerrado = { ok: false, status: 409, code: "YA_CERRADO", error: "Septiembre 2026 ya está cerrado." };
+    expect(mensajeErrorCierre(yaCerrado, "cerrar", "2026-09")).toBe("Septiembre 2026 ya está cerrado.");
+    const incompleto = {
+      ok: false,
+      status: 500,
+      code: "CIERRE_INCOMPLETO",
+      error:
+        "No se pudo terminar el cierre de septiembre 2026: x. No se movió ningún vuelo y el mes quedó abierto; vuelve a intentarlo.",
+    };
+    expect(mensajeErrorCierre(incompleto, "cerrar", "2026-09")).toBe(incompleto.error);
+    const recargar = "No hubo respuesta del servidor. Recarga la página para ver si septiembre 2026 quedó cerrado antes de volver a intentarlo.";
+    expect(mensajeErrorCierre({ ok: false, code: "SIN_CONEXION" }, "cerrar", "2026-09")).toBe(recargar);
+    expect(mensajeErrorCierre({ ok: false, status: 502, code: "PARSE_ERROR", error: "Bad Gateway" }, "cerrar", "2026-09")).toBe(
+      recargar,
+    );
+    expect(
+      mensajeErrorCierre({ ok: false, status: 500, code: "INTERNAL", error: "Internal server error" }, "reabrir", "2026-09"),
+    ).toBe("No hubo respuesta del servidor. Recarga la página para ver si septiembre 2026 quedó reabierto antes de volver a intentarlo.");
+    expect(mensajeErrorCierre({ ok: false, error: "" }, "cerrar", "2026-09")).toBe(recargar);
+    // 403 del RolesGuard (texto en inglés) ⇒ es-MX por acción.
+    const prohibido = { ok: false, status: 403, code: "FORBIDDEN", error: "Required role: ADMIN" };
+    expect(mensajeErrorCierre(prohibido, "reabrir", "2026-09")).toBe("Solo un administrador puede reabrir un mes.");
+    expect(mensajeErrorCierre(prohibido, "cerrar", "2026-09")).toMatch(/administración y facturación/);
+    // Skew: API 0.0.87 (404 «Cannot POST») y API sin migración (503).
+    expect(mensajeErrorCierre({ ok: false, status: 404, code: "NOT_FOUND", error: "Cannot POST /v1/cierres/2026-09" }, "cerrar", "2026-09")).toBe(
+      TEXTO_CIERRE_API_PREVIO,
+    );
+    expect(mensajeErrorCierre({ ok: false, status: 503, code: "CIERRE_NO_DISPONIBLE", error: "x" }, "cerrar", "2026-09")).toBe(
+      TEXTO_CIERRE_SIN_MIGRACION,
+    );
+  });
+
+  it("decidirRespuestaCerrar: éxito con el conteo real, PREVIA_CAMBIO repinta, lo demás es error con texto claro", () => {
+    expect(decidirRespuestaCerrar({ ok: true, data: { diferidos: [{}, {}, {}, {}, {}] } }, "2026-09")).toEqual({
+      tipo: "exito",
+      diferidos: 5,
+    });
+    expect(decidirRespuestaCerrar({ ok: true, data: {} }, "2026-09")).toEqual({ tipo: "exito", diferidos: 0 });
+    const cambio = decidirRespuestaCerrar(
+      { ok: false, status: 409, code: "PREVIA_CAMBIO", error: "La lista cambió…", details: { previa: PREVIA_SEP } },
+      "2026-09",
+    );
+    expect(cambio.tipo).toBe("previa_nueva");
+    expect(cambio.tipo === "previa_nueva" && cambio.previa.vuelos_que_pasan.map((v) => v.id)).toEqual(["v316"]);
+    // PREVIA_CAMBIO sin previa legible ⇒ el texto del API (nunca un diálogo vacío).
+    expect(
+      decidirRespuestaCerrar({ ok: false, status: 409, code: "PREVIA_CAMBIO", error: "La lista cambió…", details: {} }, "2026-09"),
+    ).toEqual({ tipo: "error", texto: "La lista cambió…" });
+    // ok sin data (respuesta vacía) NO es éxito: no se pinta «cerrado» sin confirmación del API.
+    expect(decidirRespuestaCerrar({ ok: true, data: null }, "2026-09").tipo).toBe("error");
   });
 });

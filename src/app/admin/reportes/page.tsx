@@ -66,6 +66,15 @@ import {
 
 export const dynamic = "force-dynamic";
 
+/**
+ * 300 s (16-oct-2026, cierre de mes): las server actions de esta página
+ * heredan este tope y «Cerrar <mes>» hace en el API el pre-cierre y DOS
+ * repartos completos antes de escribir (decenas de segundos, como el balance
+ * general). Con el tope corto, Vercel cortaba la respuesta con el mes YA
+ * cerrado y el diálogo decía «sin respuesta».
+ */
+export const maxDuration = 300;
+
 export const metadata: Metadata = { title: TITULOS_SECCION.reportes };
 
 interface PageProps {
