@@ -38,9 +38,11 @@ import {
   esParteDeSobre,
 } from "./cobro-sobre-nota";
 import { CobradoDeMasAviso } from "./cobrado-de-mas-aviso";
+import { CobroFacturaChip } from "./cobro-factura-chip";
 import { fmtMonto, fmtUsd } from "@/lib/format";
 import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
 import { puedeAdjuntarComprobante } from "@/lib/admin/facturas-emitidas";
+import { asignacionDisponible, textoEliminarCobroConFactura } from "@/lib/admin/cobro-factura";
 import { FacturaServicioBurbuja } from "@/components/admin/facturas-emitidas/factura-servicio-burbuja";
 import { ComprobanteCobro } from "./comprobante-cobro";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
@@ -209,7 +211,16 @@ export function CobrosCard({
   // mientras se anima la salida.
   const [editando, setEditando] = useState<FlightCobro | null>(null);
   const [editarAbierto, setEditarAbierto] = useState(false);
+  // «Asignar factura» (API 0.0.82): el MISMO formulario de corrección, con
+  // el foco en el selector «Factura».
+  const [enfocarFactura, setEnfocarFactura] = useState(false);
   const abrirEdicion = (c: FlightCobro) => {
+    setEnfocarFactura(false);
+    setEditando(c);
+    setEditarAbierto(true);
+  };
+  const abrirAsignarFactura = (c: FlightCobro) => {
+    setEnfocarFactura(true);
     setEditando(c);
     setEditarAbierto(true);
   };
@@ -491,6 +502,15 @@ export function CobrosCard({
                       {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""}
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
+                    {/* Qué factura AMPARA este cobro (16-oct-2026, API 0.0.82):
+                        chip verde con el número (⇒ PDF) o «Sin factura
+                        asignada» + «Asignar factura». Sin la llave, nada. */}
+                    <CobroFacturaChip
+                      cobro={c}
+                      bloque={facturaServicio}
+                      rol={rol}
+                      onAsignar={abrirAsignarFactura}
+                    />
                     {/* Quién capturó el cobro (22-sep-2026): renglón propio
                         para que una referencia larga no se lo coma con el
                         `truncate` de arriba. Solo cuando el API manda el
@@ -636,6 +656,13 @@ export function CobrosCard({
               {toDelete?.anticipo
                 ? `El monto regresa al saldo del anticipo ${toDelete.anticipo.etiqueta} y el saldo del vuelo se recalcula. Después puedes volver a aplicarlo.`
                 : "Úsalo solo para capturas erróneas: el saldo del vuelo se recalcula al instante y esta acción no se puede deshacer."}
+              {/* Amparado por una factura (API 0.0.82): la liga vive en el
+                  cobro y se va con él — se dice antes de confirmar. */}
+              {textoEliminarCobroConFactura(toDelete) && (
+                <span className="mt-2 block font-medium text-amber-700 dark:text-amber-300">
+                  {textoEliminarCobroConFactura(toDelete)}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -706,6 +733,11 @@ export function CobrosCard({
         tcOficialFecha={tcOficialFecha}
         paywiseComisionPct={paywiseComisionPct}
         cotizacionAbierta={cotizacionAbierta}
+        // FACTURAS POR COBRO (API 0.0.82): selector «Factura» solo si el
+        // bloque dice que el API puede asignar.
+        facturasVigentes={facturaServicio?.facturas ?? null}
+        asignacionFactura={asignacionDisponible(facturaServicio)}
+        rol={rol}
       />
 
       {/* El MISMO formulario, en modo «Corregir cobro». */}
@@ -730,6 +762,10 @@ export function CobrosCard({
         montoUsdOriginal={editando?.monto_usd ?? null}
         saldoUsd={montoTotalUsd - cobradoUsd}
         cotizacionAbierta={cotizacionAbierta}
+        facturasVigentes={facturaServicio?.facturas ?? null}
+        asignacionFactura={asignacionDisponible(facturaServicio)}
+        rol={rol}
+        enfocarFactura={enfocarFactura}
       />
 
       <EntradaBancoSheet detalle={detalleBanco} />

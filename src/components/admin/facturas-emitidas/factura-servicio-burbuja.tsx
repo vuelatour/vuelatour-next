@@ -42,6 +42,15 @@ import {
   type CobroExigeFacturaRow,
 } from "@/lib/admin/factura-obligatoria";
 import { MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
+import {
+  TITULO_COBROS_SIN_FACTURA,
+  TITULO_REGISTRAR_FACTURA,
+  asignacionDisponible,
+  textoCobrosSinFactura,
+  textoFacturaConCobros,
+  tituloFacturaConCobros,
+  tonoSinFactura,
+} from "@/lib/admin/cobro-factura";
 import { NecesitoFacturaDialog } from "./necesito-factura-dialog";
 import { RegistrarFacturaDialog } from "./registrar-factura-dialog";
 import type { FacturaEmitidaMini, FacturaServicioBloque } from "@/types/facturas-emitidas";
@@ -80,6 +89,13 @@ import type { FacturaEmitidaMini, FacturaServicioBloque } from "@/types/facturas
  *    «Retirar» (confirma) como el botón PRINCIPAL y «Registrar factura» en
  *    segundo plano (revisión del 15-oct-2026: un anticipo devuelto no lleva
  *    CFDI). «Marcada Facturado» gana, como en el API.
+ *  - FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API):
+ *    un vuelo puede llevar VARIAS facturas vigentes y cada cobro lleva la
+ *    suya. Con `asignacion_disponible` cada chip suma «· 1 cobro» / «· sin
+ *    cobro asignado» (title con lo que ampara) y, tras los chips, «N cobros
+ *    sin factura asignada» (ámbar solo cuando importa cuál factura ampara
+ *    qué; gris con una sola vigente «global»). «Registrar factura» sigue en
+ *    todos los estados: cada factura ampara sus cobros.
  *
  * `bloque` ausente o `null` (API previo o sin la migración) ⇒ no se pinta
  * NADA: ofrecer un botón que el API rechazaría es peor que no tenerlo.
@@ -140,6 +156,18 @@ export function FacturaServicioBurbuja({
     solicitud != null &&
     bloque.marcado_sin_registro !== true &&
     bloque.solicitud_ya_no_aplica === true;
+  // FACTURAS POR COBRO (16-oct-2026, API 0.0.82): cada chip dice cuántos
+  // cobros de ESTE vuelo ampara y, tras los chips, cuántos cobros no tiene
+  // amparados ninguna. Solo con `asignacion_disponible` (API con la
+  // migración); el tono lo decide `tonoSinFactura` (ámbar solo cuando
+  // importa cuál factura ampara qué).
+  const porCobro = asignacionDisponible(bloque);
+  const tono = tonoSinFactura(bloque);
+  const claseTono =
+    tono === "ambar"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      : "border-border bg-muted/40 text-muted-foreground";
+  const cobrosSinFactura = porCobro && vigentes.length > 0 ? (bloque.cobros_sin_factura ?? 0) : 0;
 
   const verPdf = (f: FacturaEmitidaMini) => {
     void abrirArchivoFirmado(() => urlArchivoFacturaAction(f.id, "pdf")).then((r) => {
@@ -190,27 +218,43 @@ export function FacturaServicioBurbuja({
 
       {vigentes.length > 0 ? (
         <>
-          {vigentes.map((f) =>
-            f.tiene_pdf && puedeVerPdf ? (
+          {vigentes.map((f) => {
+            // Sufijo «· 1 cobro» / «· sin cobro asignado» (API 0.0.82).
+            const sufijo = porCobro ? textoFacturaConCobros(f) : null;
+            const sinCobro = porCobro && (f.cobros_n ?? 0) <= 0;
+            const claseSufijo = `ml-1 font-normal${sinCobro && tono === "ambar" ? " text-amber-700 dark:text-amber-300" : sinCobro ? " text-muted-foreground" : ""}`;
+            const conCobros = porCobro ? ` · ${tituloFacturaConCobros(f)}` : "";
+            return f.tiene_pdf && puedeVerPdf ? (
               <button
                 key={f.id}
                 type="button"
                 onClick={() => verPdf(f)}
                 className="inline-flex cursor-pointer items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
-                title={`Abrir el PDF de la factura ${f.etiqueta}${f.uuid ? ` · Folio fiscal ${f.uuid}` : ""}`}
+                title={`Abrir el PDF de la factura ${f.etiqueta}${conCobros}${f.uuid ? ` · Folio fiscal ${f.uuid}` : ""}`}
               >
                 Factura <span className="ml-1 font-mono tabular-nums">{f.etiqueta}</span>
+                {sufijo && <span className={claseSufijo}>{sufijo}</span>}
               </button>
             ) : (
               <span
                 key={f.id}
                 className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300"
-                title={f.tiene_pdf ? "Solo oficina abre el PDF" : "La factura está registrada pero todavía no tiene PDF"}
+                title={`${f.tiene_pdf ? "Solo oficina abre el PDF" : "La factura está registrada pero todavía no tiene PDF"}${conCobros}`}
               >
                 Factura <span className="ml-1 font-mono tabular-nums">{f.etiqueta}</span>
                 {!f.tiene_pdf && <span className="ml-1 font-normal">· sin PDF</span>}
+                {sufijo && <span className={claseSufijo}>{sufijo}</span>}
               </span>
-            ),
+            );
+          })}
+          {cobrosSinFactura > 0 && (
+            <span
+              data-cobros-sin-factura={tono}
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${claseTono}`}
+              title={TITULO_COBROS_SIN_FACTURA}
+            >
+              {textoCobrosSinFactura(cobrosSinFactura)}
+            </span>
           )}
           {solicitud && (
             <span className="text-[11px] text-muted-foreground">{textoPedidaPor(solicitud)}</span>
@@ -314,7 +358,7 @@ export function FacturaServicioBurbuja({
           variant={yaNoAplica ? "ghost" : "outline"}
           className={yaNoAplica ? "ml-auto h-7 text-muted-foreground" : "ml-auto h-7"}
           onClick={() => setRegistrarAbierto(true)}
-          title="Registra la factura que se le hizo al cliente (con su PDF)"
+          title={TITULO_REGISTRAR_FACTURA}
         >
           Registrar factura
         </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -67,6 +67,13 @@ import {
   CLASE_TEXTO_VISTA_PREVIA,
   vistaPreviaMontoCobro,
 } from "@/lib/admin/cobrado-de-mas";
+import {
+  AYUDA_SELECTOR_FACTURA_COBRO,
+  facturaPreseleccionada,
+  opcionesFacturaDeCobro,
+  textoCobroRegistradoConFactura,
+} from "@/lib/admin/cobro-factura";
+import { puedeRegistrarFactura } from "@/lib/admin/facturas-emitidas";
 import { registerCobroAction, updateCobroAction } from "@/app/admin/flights/actions";
 import {
   cuentaSugeridaPorMetodo,
@@ -76,6 +83,7 @@ import {
 } from "@/lib/admin/metodos-pago";
 import type { MetodoPago } from "@/types/quote";
 import type { FlightCobro } from "@/types/flights";
+import type { FacturaEmitidaMini } from "@/types/facturas-emitidas";
 import { Field } from "@/components/admin/form-field";
 
 type Moneda = "USD" | "MXN";
@@ -123,6 +131,11 @@ const CobroFormSchema = z
     // las decide `erroresEdicionCobro` (lib/admin/cobro-edicion). Campo
     // oculto: nunca viaja al API.
     modo_edicion: z.boolean().optional(),
+    // FACTURAS POR COBRO (16-oct-2026, API 0.0.82): la factura emitida que
+    // AMPARA este cobro ("" = sin factura todavía). Solo viaja si el selector
+    // se pintó (`asignacion_disponible` del bloque); es clasificación, no
+    // dinero.
+    factura_emitida_id: z.string().uuid().optional().or(z.literal("")),
   })
   .superRefine((val, ctx) => {
     if (val.modo_edicion) return;
@@ -219,6 +232,19 @@ interface CobroFormSheetProps {
   cotizacionAbierta?: boolean;
   /** Tras registrar (o corregir) con éxito (además del router.refresh() propio). */
   onRegistrado?: () => void;
+  /**
+   * FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API):
+   * facturas VIGENTES del vuelo (`factura_servicio.facturas`) y si el API
+   * puede asignar (`factura_servicio.asignacion_disponible`). El selector
+   * «Factura» se pinta SOLO con las dos cosas, con ≥ 1 vigente, en un cobro
+   * que no es reembolso y para ADMIN/FACTURACION (`rol`): sin selector, la
+   * llave `factura_emitida_id` jamás viaja (un API ≤ 0.0.81 respondería 400).
+   */
+  facturasVigentes?: ReadonlyArray<FacturaEmitidaMini> | null;
+  asignacionFactura?: boolean;
+  rol?: string | null;
+  /** «Asignar factura» desde el chip del cobro: abre con el foco en el selector. */
+  enfocarFactura?: boolean;
 }
 
 type TcSugerido = { valor: number; fuente: "cotizacion" | "oficial" };
@@ -245,6 +271,7 @@ function defaults(pendingUsd: number, prefill?: CobroPrefill | null): CobroFormV
     fecha_cobro: todayLocal(),
     notas: "",
     modo_edicion: false,
+    factura_emitida_id: "",
   };
   if (!prefill) return base;
   return {
@@ -271,7 +298,7 @@ function defaults(pendingUsd: number, prefill?: CobroPrefill | null): CobroFormV
 }
 
 /** Valores del formulario en EDICIÓN: el cobro tal como está guardado. */
-function defaultsEdicion(inicial: InicialEdicionCobro): CobroFormValues {
+function defaultsEdicion(inicial: InicialEdicionCobro, facturaId = ""): CobroFormValues {
   const v = inicial.valores;
   return {
     monto: v.monto,
@@ -285,11 +312,16 @@ function defaultsEdicion(inicial: InicialEdicionCobro): CobroFormValues {
     fecha_cobro: v.fecha_cobro,
     notas: v.notas,
     modo_edicion: true,
+    factura_emitida_id: facturaId,
   };
 }
 
-/** Lo que el diff de la edición necesita del formulario (sin el modo). */
-function valoresParaEdicion(values: CobroFormValues): ValoresEdicionCobro {
+/**
+ * Lo que el diff de la edición necesita del formulario (sin el modo). La
+ * factura entra SOLO si el selector se pintó: sin él, `undefined` y el campo
+ * no existe para el diff.
+ */
+function valoresParaEdicion(values: CobroFormValues, conFactura: boolean): ValoresEdicionCobro {
   return {
     monto: values.monto,
     moneda: values.moneda,
@@ -301,6 +333,7 @@ function valoresParaEdicion(values: CobroFormValues): ValoresEdicionCobro {
     cuenta_destino: values.cuenta_destino,
     fecha_cobro: values.fecha_cobro,
     notas: values.notas,
+    ...(conFactura ? { factura_emitida_id: values.factura_emitida_id ?? "" } : {}),
   };
 }
 
@@ -324,12 +357,29 @@ export function CobroFormSheet({
   saldoUsd = null,
   cotizacionAbierta = false,
   onRegistrado,
+  facturasVigentes = null,
+  asignacionFactura = false,
+  rol = null,
+  enfocarFactura = false,
 }: CobroFormSheetProps) {
   const diaTcOficial = tcOficialFecha ? fmtDateOnly(tcOficialFecha) : null;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const idSelectorFactura = useId();
   // ---- Modo EDICIÓN («Corregir cobro», 26-sep-2026) ----
   const enEdicion = cobroEditar != null;
+  // ---- FACTURAS POR COBRO (16-oct-2026, API 0.0.82) ----
+  // El selector «Factura» SOLO cuando el API puede asignar, el vuelo tiene
+  // vigentes, el cobro no es reembolso y quien mira puede registrar facturas
+  // (ADMIN/FACTURACION: a los demás el API les descarta el campo). Sin
+  // selector, la llave NO viaja ni en el alta ni en el diff.
+  const vigentes = useMemo(() => facturasVigentes ?? [], [facturasVigentes]);
+  const mostrarSelectorFactura =
+    asignacionFactura &&
+    vigentes.length > 0 &&
+    !(cobroEditar != null && Number(cobroEditar.monto) < 0) &&
+    puedeRegistrarFactura(rol);
+  const opcionesFactura = useMemo(() => opcionesFacturaDeCobro(vigentes), [vigentes]);
   const edicion = useMemo(
     () => (cobroEditar ? edicionDeCobro(cobroEditar) : null),
     [cobroEditar],
@@ -369,13 +419,20 @@ export function CobroFormSheet({
     formState: { errors },
   } = useForm<CobroFormValues>({
     resolver: zodResolver(CobroFormSchema),
-    defaultValues: inicial ? defaultsEdicion(inicial) : defaults(montoPrefill, prefill),
+    defaultValues: inicial
+      ? defaultsEdicion(inicial, facturaPreseleccionada(vigentes, "edicion", cobroEditar))
+      : defaults(montoPrefill, prefill),
   });
 
   useEffect(() => {
     if (open && !inicial) {
       const base = defaults(montoPrefill, prefill);
-      reset(base);
+      // Alta: UNA vigente CON cupo ⇒ preseleccionada; completa o 2+ ⇒ vacío.
+      // Se decide al ABRIR (no al cambiar las vigentes a media captura).
+      reset({
+        ...base,
+        factura_emitida_id: mostrarSelectorFactura ? facturaPreseleccionada(vigentes, "alta") : "",
+      });
       setTcPrefill(null);
       setComisionSugerida(null);
       // Con un prefill explícito de monto (p. ej. el abono de Paywise) NO hay
@@ -384,6 +441,7 @@ export function CobroFormSheet({
         prefill?.monto != null && prefill.monto > 0 ? null : (base.monto as number),
       );
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- la preselección de la factura se fija al abrir
   }, [open, montoPrefill, prefill, reset, inicial]);
 
   // EDICIÓN: el cobro tal como está guardado; nada se sugiere encima. Efecto
@@ -392,14 +450,24 @@ export function CobroFormSheet({
   // a la pestaña) no puede borrar una corrección a medio capturar.
   useEffect(() => {
     if (open && inicial) {
-      reset(defaultsEdicion(inicial));
+      reset(defaultsEdicion(inicial, facturaPreseleccionada(vigentes, "edicion", cobroEditar)));
       setTcPrefill(null);
       setComisionSugerida(null);
       setMontoSugerido(null);
       setConfirmacion(null);
       setErrorGuardado(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- la factura actual se lee del cobro que se corrige
   }, [open, inicial, reset]);
+
+  // «Asignar factura» desde el chip del cobro: el foco va al selector.
+  useEffect(() => {
+    if (!open || !enfocarFactura || !mostrarSelectorFactura) return;
+    const t = window.setTimeout(() => {
+      document.getElementById(idSelectorFactura)?.focus();
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [open, enfocarFactura, mostrarSelectorFactura, idSelectorFactura]);
 
   const moneda = watch("moneda");
   const metodo = watch("metodo_cobro");
@@ -408,6 +476,7 @@ export function CobroFormSheet({
   const comisionPct = watch("comision_banco_pct");
   const comisionMontoDirecto = watch("comision_banco_monto");
   const cuentaDestino = watch("cuenta_destino");
+  const facturaElegida = watch("factura_emitida_id") ?? "";
 
   // TC sugerido al cobrar en MXN: el de la cotización manda (es el que el
   // cliente vio); si la cotización no lo fijó, el oficial de referencia del día.
@@ -575,7 +644,7 @@ export function CobroFormSheet({
     // EDICIÓN: validar lo propio del tipo de cobro, calcular el diff y
     // CONFIRMAR el antes → después (es dinero). Nada viaja todavía.
     if (cobroEditar && inicial && edicion) {
-      const valoresEd = valoresParaEdicion(values);
+      const valoresEd = valoresParaEdicion(values, mostrarSelectorFactura);
       const errores = Object.entries(erroresEdicionCobro(inicial, valoresEd, edicion));
       if (errores.length > 0) {
         for (const [campo, message] of errores) {
@@ -583,7 +652,7 @@ export function CobroFormSheet({
         }
         return;
       }
-      const cambios = cambiosDeCobro(cobroEditar, inicial, valoresEd, edicion);
+      const cambios = cambiosDeCobro(cobroEditar, inicial, valoresEd, edicion, { facturas: vigentes });
       if (!cambios.hayCambios) {
         toast.info(TEXTO_SIN_CAMBIOS_COBRO);
         return;
@@ -622,10 +691,23 @@ export function CobroFormSheet({
           ? cancunInputToIso(`${values.fecha_cobro.slice(0, 10)}T12:00`)
           : undefined,
         notas: values.notas?.trim() || undefined,
+        // La factura SOLO si el selector se pintó y se eligió una: sin la
+        // llave, un API ≤ 0.0.81 responde 400 (`forbidNonWhitelisted`).
+        ...(mostrarSelectorFactura && values.factura_emitida_id
+          ? { factura_emitida_id: values.factura_emitida_id }
+          : {}),
       });
       if (res.ok) {
+        const amparada =
+          mostrarSelectorFactura && values.factura_emitida_id
+            ? (vigentes.find((f) => f.id === values.factura_emitida_id)?.etiqueta ?? null)
+            : null;
         toast.success(
-          cancelado ? "Cargo por cancelación registrado" : "Cobro registrado",
+          cancelado
+            ? "Cargo por cancelación registrado"
+            : amparada
+              ? textoCobroRegistradoConFactura(amparada)
+              : "Cobro registrado",
         );
         onOpenChange(false);
         router.refresh();
@@ -1029,6 +1111,26 @@ export function CobroFormSheet({
           >
             <Input placeholder="Opcional" {...register("referencia")} />
           </Field>
+
+          {/* FACTURAS POR COBRO (API 0.0.82): qué factura ampara este cobro.
+              Clasificación, no dinero: se cambia también en un cobro
+              conciliado o de anticipo. Sin selector, la llave no viaja. */}
+          {mostrarSelectorFactura && (
+            <Field
+              label="Factura"
+              hint={AYUDA_SELECTOR_FACTURA_COBRO}
+              error={errors.factura_emitida_id?.message}
+            >
+              <SearchableSelect
+                id={idSelectorFactura}
+                options={opcionesFactura}
+                value={facturaElegida}
+                onChange={(v) => setValue("factura_emitida_id", v, { shouldValidate: true })}
+                placeholder="Sin factura todavía"
+                searchPlaceholder="Buscar factura…"
+              />
+            </Field>
+          )}
 
           <Field label="Fecha del cobro" error={errors.fecha_cobro?.message}>
             <Input type="date" {...register("fecha_cobro")} />

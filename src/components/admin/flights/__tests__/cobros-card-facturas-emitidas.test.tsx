@@ -699,3 +699,127 @@ describe("comprobante del cobro", () => {
     expect(html).not.toContain("Adjuntar comprobante");
   });
 });
+
+/**
+ * FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API) —
+ * pedido del cliente con la captura de #332 (4 cobros, UNA «Factura A-0420»):
+ * «unos pagos son con una factura y a lo mejor otro con otra». Cada cobro
+ * dice cuál lo ampara; la burbuja, cuántos ampara cada factura y cuántos
+ * quedan sin ninguna. Textos en `lib/admin/cobro-factura.ts`.
+ */
+describe("FACTURAS POR COBRO: chip por cobro, «Asignar factura» y la burbuja", () => {
+  const CON_A123: FlightCobro = { ...COBRO, factura_emitida: { id: "f-1", etiqueta: "A-123" } };
+  const SIN_FACTURA: FlightCobro = { ...COBRO, id: "c-2", factura_emitida: null };
+  // El bloque del API CON la migración: la mini dice qué ampara.
+  const ASIGNABLE: FacturaServicioBloque = {
+    ...FACTURADA,
+    facturas: [{ ...FACTURADA.facturas[0], es_parcial: false, cobros_n: 1, cobros_monto: [{ moneda: "MXN", monto: 136856.8 }] }],
+    cobros_sin_factura: 1,
+    cobros_sin_factura_exigen: 1,
+    asignacion_disponible: true,
+  };
+
+  it("API previo (sin la llave en el cobro ni en el bloque): la card queda como hoy", () => {
+    for (const html of [vuelo({ facturaServicio: FACTURADA, rol: "ADMIN" }), cotizacion({ facturaServicio: FACTURADA, rol: "ADMIN" })]) {
+      expect(html).not.toContain("data-cobro-factura");
+      expect(html).not.toContain("Sin factura asignada");
+      expect(html).not.toContain("sin cobro asignado");
+      expect(html).not.toContain("data-cobros-sin-factura");
+      expect(html).not.toContain("Asignar factura");
+    }
+  });
+
+  it("con factura: chip verde «Factura A-123» por cobro; abre el PDF para oficina, texto para SOCIO", () => {
+    for (const html of [
+      vuelo({ facturaServicio: ASIGNABLE, rol: "ADMIN", cobros: [CON_A123] }),
+      cotizacion({ facturaServicio: ASIGNABLE, rol: "ADMIN", cobros: [CON_A123] }),
+    ]) {
+      expect(html).toMatch(/<button[^>]*data-cobro-factura="f-1"[^>]*>Factura <span[^>]*>A-123<\/span><\/button>/);
+      expect(html).toContain("Este cobro está amparado por la factura A-123");
+      expect(html).not.toContain("Sin factura asignada");
+    }
+    const socio = cotizacion({ facturaServicio: ASIGNABLE, rol: "SOCIO", cobros: [CON_A123] });
+    expect(socio).toMatch(/<span[^>]*data-cobro-factura="f-1"[^>]*>Factura <span[^>]*>A-123<\/span><\/span>/);
+    // Aunque el bloque no pueda asignar (sin migración), lo amparado se ve.
+    expect(vuelo({ facturaServicio: FACTURADA, rol: "ADMIN", cobros: [CON_A123] })).toContain('data-cobro-factura="f-1"');
+  });
+
+  it("sin factura con vigentes y asignación disponible: «Sin factura asignada» (ámbar: #332) + «Asignar factura» solo ADMIN/FACTURACION", () => {
+    for (const rol of ["ADMIN", "FACTURACION"]) {
+      for (const html of [
+        vuelo({ facturaServicio: ASIGNABLE, rol, cobros: [SIN_FACTURA] }),
+        cotizacion({ facturaServicio: ASIGNABLE, rol, cobros: [SIN_FACTURA] }),
+      ]) {
+        expect(html, rol).toContain('data-cobro-sin-factura="ambar"');
+        expect(html).toContain("Sin factura asignada");
+        expect(html).toMatch(/<button[^>]*data-accion="asignar-factura"[^>]*>Asignar factura<\/button>/);
+      }
+    }
+    // COORDINADOR registra cobros pero no clasifica facturas: el chip sí, el
+    // botón no (el tooltip menciona «Asignar factura» como texto, no como acción).
+    const coord = vuelo({ facturaServicio: ASIGNABLE, rol: "COORDINADOR", cobros: [SIN_FACTURA] });
+    expect(coord).toContain("Sin factura asignada");
+    expect(coord).not.toContain('data-accion="asignar-factura"');
+  });
+
+  it("tono GRIS: una vigente «global» que no ampara nada y cobros que no exigen (A-0430)", () => {
+    const global: FacturaServicioBloque = {
+      ...ASIGNABLE,
+      facturas: [{ ...ASIGNABLE.facturas[0], cobros_n: 0, cobros_monto: [] }],
+      cobros_sin_factura: 1,
+      cobros_sin_factura_exigen: 0,
+    };
+    const html = vuelo({ facturaServicio: global, rol: "ADMIN", cobros: [SIN_FACTURA] });
+    expect(html).toContain('data-cobro-sin-factura="gris"');
+    expect(html).toContain('data-cobros-sin-factura="gris"');
+    expect(html).toContain("· sin cobro asignado");
+  });
+
+  it("sin asignación disponible (API 0.0.82 sin migración) o sin vigentes: ni chip ni botón", () => {
+    const sinMigracion = vuelo({ facturaServicio: { ...ASIGNABLE, asignacion_disponible: false }, rol: "ADMIN", cobros: [SIN_FACTURA] });
+    expect(sinMigracion).not.toContain("Sin factura asignada");
+    expect(sinMigracion).not.toContain("sin cobro asignado");
+    const sinVigentes = vuelo({
+      facturaServicio: { ...SIN_NADA, asignacion_disponible: true, cobros_sin_factura: 1, cobros_sin_factura_exigen: 1 },
+      rol: "ADMIN",
+      cobros: [SIN_FACTURA],
+    });
+    expect(sinVigentes).not.toContain("Sin factura asignada");
+    expect(sinVigentes).not.toContain("data-cobros-sin-factura");
+    expect(sinVigentes).toContain("Sin factura");
+  });
+
+  it("reembolso y parte de sobre: nada, aunque la llave venga", () => {
+    const reembolso: FlightCobro = { ...SIN_FACTURA, monto: "-500" };
+    const sobre: FlightCobro = {
+      ...SIN_FACTURA,
+      cobro_grupo_id: "cg-1",
+      cobro_grupo: { id: "cg-1", grupo_id: "g-1", grupo_folio: 12, monto_total: 10000, moneda: "USD" },
+    };
+    for (const c of [reembolso, sobre]) {
+      const html = vuelo({ facturaServicio: ASIGNABLE, rol: "ADMIN", cobros: [c] });
+      expect(html).not.toContain("Sin factura asignada");
+      expect(html).not.toContain("data-cobro-factura");
+    }
+  });
+
+  it("burbuja: «Factura A-123 · 1 cobro» con lo que ampara en el title y «1 cobro sin factura asignada» (ámbar)", () => {
+    const html = vuelo({ facturaServicio: ASIGNABLE, rol: "ADMIN", cobros: [CON_A123, SIN_FACTURA] });
+    expect(html).toMatch(/Factura <span[^>]*>A-123<\/span><span[^>]*>· 1 cobro<\/span><\/button>/);
+    expect(html).toContain("Ampara 1 cobro de este vuelo: $136,856.80 MXN");
+    expect(html).toContain('data-cobros-sin-factura="ambar"');
+    expect(html).toContain("1 cobro sin factura asignada");
+    expect(html).toContain("Hay cobros de este vuelo que ninguna factura ampara.");
+    // «Registrar factura» sigue (un vuelo puede llevar varias) con el title nuevo.
+    expect(html).toContain("Registrar factura");
+    expect(html).toContain("Un vuelo puede llevar varias: cada una ampara sus cobros.");
+  });
+
+  it("«Eliminar» un cobro amparado lo dice en la confirmación (cableado: el diálogo es un portal)", () => {
+    for (const archivo of ["../cobros-card.tsx", "../../quotes/quote-cobros-card.tsx"]) {
+      const fuente = readFileSync(path.resolve(__dirname, archivo), "utf8");
+      expect(fuente).toContain("{textoEliminarCobroConFactura(toDelete) && (");
+      expect(fuente).toContain("<CobroFacturaChip");
+    }
+  });
+});

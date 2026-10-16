@@ -24,6 +24,7 @@ import {
 } from "@/components/admin/quotes/quote-calculator";
 import { QuoteCobrosCard } from "@/components/admin/quotes/quote-cobros-card";
 import { CobroFormSheet } from "@/components/admin/flights/cobro-form-sheet";
+import { asignacionDisponible } from "@/lib/admin/cobro-factura";
 import { QuoteEscalaPdfFecha } from "@/components/admin/quotes/quote-escala-pdf-fecha";
 import { QuoteEscalaPdfToggle } from "@/components/admin/quotes/quote-escala-pdf-toggle";
 import { QuotePresenceIndicator } from "@/components/admin/quotes/quote-presence-indicator";
@@ -678,6 +679,11 @@ export function QuoteWorkspace({
         // Cotización abierta: el total no es el final ⇒ la vista previa no
         // dice «cobrado de más» (el API tampoco avisa).
         cotizacionAbierta={quote.cotizacion_abierta === true}
+        // FACTURAS POR COBRO (16-oct-2026, API 0.0.82): selector «Factura»
+        // solo si el bloque dice que el API puede asignar.
+        facturasVigentes={facturaServicio?.facturas ?? null}
+        asignacionFactura={asignacionDisponible(facturaServicio)}
+        rol={rol}
       />
 
       {/* «Se actualizó la fecha de la cotización» (5-oct-2026): modal FUERA

@@ -33,7 +33,9 @@ import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
 import { ReembolsoButton } from "@/components/admin/flights/reembolso-dialog";
 import { CobroFormSheet } from "@/components/admin/flights/cobro-form-sheet";
+import { CobroFacturaChip } from "@/components/admin/flights/cobro-factura-chip";
 import { EditarCobroBoton } from "@/components/admin/flights/editar-cobro-boton";
+import { asignacionDisponible, textoEliminarCobroConFactura } from "@/lib/admin/cobro-factura";
 import { hayCobrosEditables, TEXTO_SOBRE_NO_SE_EDITA } from "@/lib/admin/cobro-edicion";
 import {
   CobroBancoDetalle,
@@ -161,7 +163,16 @@ export function QuoteCobrosCard({
   // la ficha no cambie de modo mientras se anima la salida.
   const [editando, setEditando] = useState<FlightCobro | null>(null);
   const [editarAbierto, setEditarAbierto] = useState(false);
+  // «Asignar factura» (API 0.0.82): el MISMO formulario de corrección, con
+  // el foco en el selector «Factura».
+  const [enfocarFactura, setEnfocarFactura] = useState(false);
   const abrirEdicion = (c: FlightCobro) => {
+    setEnfocarFactura(false);
+    setEditando(c);
+    setEditarAbierto(true);
+  };
+  const abrirAsignarFactura = (c: FlightCobro) => {
+    setEnfocarFactura(true);
     setEditando(c);
     setEditarAbierto(true);
   };
@@ -325,6 +336,14 @@ export function QuoteCobrosCard({
                     <> · comisión banco {fmtMonto(c.comision_banco_monto, c.moneda)}</>
                   )}
               </p>
+              {/* Qué factura AMPARA este cobro (16-oct-2026, API 0.0.82):
+                  mismo chip que la card del vuelo. Sin la llave, nada. */}
+              <CobroFacturaChip
+                cobro={c}
+                bloque={quoteFolio != null ? facturaServicio : null}
+                rol={rol}
+                onAsignar={abrirAsignarFactura}
+              />
               {/* Quién capturó el cobro (22-sep-2026): solo si el API mandó
                   el nombre; fuente única del texto. */}
               {registro && (
@@ -442,6 +461,12 @@ export function QuoteCobrosCard({
               {toDelete?.anticipo
                 ? `El monto regresa al saldo del anticipo ${toDelete.anticipo.etiqueta}; el vuelo vuelve a quedar pendiente de cobro. Después puedes volver a aplicarlo.`
                 : "El vuelo volverá a quedar pendiente de cobro y la cotización se podrá editar. Esta acción no se puede deshacer."}
+              {/* Amparado por una factura (API 0.0.82): la liga se va con el cobro. */}
+              {textoEliminarCobroConFactura(toDelete) && (
+                <span className="mt-2 block font-medium text-amber-700 dark:text-amber-300">
+                  {textoEliminarCobroConFactura(toDelete)}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -531,6 +556,12 @@ export function QuoteCobrosCard({
         montoUsdOriginal={editando?.monto_usd ?? null}
         saldoUsd={montoTotalUsd - totalCobrado}
         cotizacionAbierta={cotizacionAbierta}
+        // FACTURAS POR COBRO (API 0.0.82): selector «Factura» solo si el
+        // bloque dice que el API puede asignar.
+        facturasVigentes={facturaServicio?.facturas ?? null}
+        asignacionFactura={asignacionDisponible(facturaServicio)}
+        rol={rol}
+        enfocarFactura={enfocarFactura}
       />
 
       <EntradaBancoSheet detalle={detalleBanco} />

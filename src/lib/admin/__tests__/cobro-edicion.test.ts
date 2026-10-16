@@ -625,3 +625,67 @@ describe("UN COBRO, VARIOS ABONOS (API 0.0.78): el candado es «ligado al banco�
     expect(src).toContain(MSG_COBRO_CONCILIADO);
   });
 });
+
+describe("FACTURAS POR COBRO (16-oct-2026, API 0.0.82): la factura entra al diff fuera del candado de dinero", () => {
+  const A0420 = { id: "f-0420", etiqueta: "A-0420" };
+  const A0455 = { id: "f-0455", etiqueta: "A-0455" };
+  const CON_LLAVE: FlightCobro = { ...COBRO_3400, factura_emitida: null };
+
+  it("— → A-0420: viaja el id y la línea dice la etiqueta", () => {
+    const r = cambiosDeCobro(
+      CON_LLAVE,
+      formularioDesdeCobro(CON_LLAVE),
+      valoresDe(CON_LLAVE, { factura_emitida_id: "f-0420" }),
+      edicionDeCobro(CON_LLAVE),
+      { facturas: [A0420, A0455] },
+    );
+    expect(r.patch).toEqual({ factura_emitida_id: "f-0420" });
+    expect(r.lineas).toEqual([{ campo: "factura_emitida", etiqueta: "Factura", antes: "—", despues: "A-0420" }]);
+    expect(r.hayCambios).toBe(true);
+    // Clasificación, no dinero: la confirmación no anuncia recálculo.
+    expect(r.tocaDinero).toBe(false);
+  });
+
+  it("A-0420 → sin factura: viaja null", () => {
+    const c: FlightCobro = { ...COBRO_3400, factura_emitida: A0420 };
+    const r = cambiosDeCobro(c, formularioDesdeCobro(c), valoresDe(c, { factura_emitida_id: "" }), edicionDeCobro(c), {
+      facturas: [A0420],
+    });
+    expect(r.patch).toEqual({ factura_emitida_id: null });
+    expect(r.lineas[0]).toEqual({ campo: "factura_emitida", etiqueta: "Factura", antes: "A-0420", despues: "sin factura" });
+  });
+
+  it("sin cambio ⇒ sin la llave; selector no pintado (undefined) ⇒ nunca entra; API previo (sin `factura_emitida`) ⇒ nunca entra", () => {
+    const c: FlightCobro = { ...COBRO_3400, factura_emitida: A0420 };
+    expect(cambiosDeCobro(c, formularioDesdeCobro(c), valoresDe(c, { factura_emitida_id: "f-0420" }), edicionDeCobro(c)).patch).toEqual({});
+    expect(cambiosDeCobro(c, formularioDesdeCobro(c), valoresDe(c, {}), edicionDeCobro(c)).patch).toEqual({});
+    const viejo = COBRO_3400; // sin la llave
+    expect("factura_emitida" in viejo).toBe(false);
+    expect(cambiosDeCobro(viejo, formularioDesdeCobro(viejo), valoresDe(viejo, { factura_emitida_id: "f-0420" }), edicionDeCobro(viejo)).patch).toEqual({});
+  });
+
+  it("NUNCA la bloquea `dineroBloqueado`: conciliado (parcial o completo) y anticipo cambian de factura (revisión #16)", () => {
+    const conciliado: FlightCobro = { ...COBRO_3400, factura_emitida: null, ligado_banco: true, conciliacion_estado: "PARCIAL" };
+    const anticipo: FlightCobro = {
+      ...COBRO_3400,
+      factura_emitida: null,
+      anticipo: { ingreso_id: "b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d", etiqueta: "ING-12" },
+    };
+    for (const c of [conciliado, anticipo]) {
+      const e = edicionDeCobro(c);
+      expect(e.dineroBloqueado).toBe(true);
+      const r = cambiosDeCobro(c, formularioDesdeCobro(c), valoresDe(c, { factura_emitida_id: "f-0455" }), e, { facturas: [A0455] });
+      expect(r.patch).toEqual({ factura_emitida_id: "f-0455" });
+      expect(r.tocaDinero).toBe(false);
+    }
+  });
+
+  it("errores de la liga (API 0.0.82) salen por la fuente única", () => {
+    expect(mensajeErrorEdicionCobro({ code: "FACTURA_NO_VIGENTE", error: "" })).toContain("ya no está vigente");
+    expect(mensajeErrorEdicionCobro({ code: "FACTURA_NO_LIGADA_AL_VUELO", error: "", details: { folio: 332 } })).toContain("#332");
+    expect(mensajeErrorEdicionCobro({ code: "COBRO_FACTURA_NO_DISPONIBLE", error: "Service Unavailable" })).toContain("20261016000001");
+    expect(mensajeErrorEdicionCobro({ code: "REEMBOLSO_SIN_FACTURA", error: "Un reembolso no se liga a una factura." })).toBe(
+      "Un reembolso no se liga a una factura.",
+    );
+  });
+});

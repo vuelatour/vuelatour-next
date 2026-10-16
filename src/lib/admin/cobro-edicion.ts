@@ -43,6 +43,7 @@
 import type { FlightCobro } from "@/types/flights";
 import type { MetodoPago } from "@/types/quote";
 import { CUENTAS_COBRO, type CuentaCobro } from "@/lib/admin/cobros";
+import { esCodigoCobroFactura, mensajeErrorCobroFactura } from "@/lib/admin/cobro-factura";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { fmtMonto, fmtTc } from "@/lib/format";
 import { cancunInputToIso, fmtDateOnly, isoToCancunInput } from "@/lib/datetime";
@@ -326,6 +327,12 @@ export interface ValoresEdicionCobro {
   /** YYYY-MM-DD (día de pared en Cancún). */
   fecha_cobro?: string;
   notas?: string;
+  /**
+   * FACTURAS POR COBRO (16-oct-2026, API 0.0.82): la factura que ampara el
+   * cobro ("" = ninguna). `undefined` = el selector NO se pintó (API previo,
+   * sin la migración, reembolso o sin vigentes): el campo no entra al diff.
+   */
+  factura_emitida_id?: string;
 }
 
 export interface InicialEdicionCobro {
@@ -430,6 +437,13 @@ export interface PatchCobro {
   /** ISO UTC (día elegido + la hora de pared original del cobro). */
   fecha_cobro?: string;
   notas?: string | null;
+  /**
+   * FACTURAS POR COBRO (API 0.0.82): la factura que ampara el cobro; null =
+   * quitarla. CLASIFICACIÓN, no dinero: el API la acepta aunque el cobro
+   * esté conciliado o venga de un anticipo. Solo viaja si cambió y si el
+   * selector se pintó (nunca contra un API que no conoce la llave).
+   */
+  factura_emitida_id?: string | null;
 }
 
 export type CampoCambioCobro =
@@ -440,7 +454,14 @@ export type CampoCambioCobro =
   | "cuenta_destino"
   | "referencia"
   | "fecha_cobro"
-  | "notas";
+  | "notas"
+  | "factura_emitida";
+
+/** Lo mínimo de una factura vigente para nombrarla en la confirmación. */
+export interface FacturaParaDiff {
+  id: string;
+  etiqueta: string;
+}
 
 export interface LineaCambioCobro {
   campo: CampoCambioCobro;
@@ -513,6 +534,8 @@ export function cambiosDeCobro(
   inicial: InicialEdicionCobro,
   valores: ValoresEdicionCobro,
   edicion: EdicionCobro,
+  /** Vigentes del vuelo (para decir «A-0420» en la línea de la factura). */
+  opciones: { facturas?: ReadonlyArray<FacturaParaDiff> | null } = {},
 ): CambiosCobro {
   const patch: PatchCobro = {};
   const lineas: LineaCambioCobro[] = [];
@@ -667,6 +690,28 @@ export function cambiosDeCobro(
     });
   }
 
+  // ---- Factura que ampara el cobro (API 0.0.82) ----
+  // FUERA de `dineroBloqueado` a propósito: es clasificación, no dinero. Un
+  // cobro conciliado (parcial o completo) o de anticipo SÍ cambia de factura.
+  // Solo entra al diff si el selector se pintó (`valores.factura_emitida_id`
+  // definido) y el API ya manda la llave en el cobro (`factura_emitida`):
+  // contra un API previo jamás viaja.
+  if (valores.factura_emitida_id !== undefined && cobro.factura_emitida !== undefined) {
+    const idAntes = cobro.factura_emitida?.id ?? "";
+    const idDespues = (valores.factura_emitida_id ?? "").trim();
+    if (idDespues !== idAntes) {
+      patch.factura_emitida_id = idDespues || null;
+      const etiquetaDespues =
+        opciones.facturas?.find((f) => f.id === idDespues)?.etiqueta ?? (idDespues ? "otra factura" : "");
+      lineas.push({
+        campo: "factura_emitida",
+        etiqueta: "Factura",
+        antes: cobro.factura_emitida?.etiqueta || "—",
+        despues: etiquetaDespues || "sin factura",
+      });
+    }
+  }
+
   return {
     patch,
     lineas,
@@ -795,8 +840,13 @@ function pareceTextoTecnico(msg: string): boolean {
 export function mensajeErrorEdicionCobro(res: {
   error?: string | null;
   code?: string | null;
+  details?: unknown;
 }): string {
   const msg = (res.error ?? "").trim();
+  // Liga cobro ↔ factura (API 0.0.82): textos de la fuente única.
+  if (esCodigoCobroFactura(res.code)) {
+    return mensajeErrorCobroFactura(res.code, (res.details ?? null) as Record<string, unknown> | null, msg);
+  }
   switch (res.code) {
     case "COBRO_CONCILIADO":
       return msg || MSG_COBRO_CONCILIADO;

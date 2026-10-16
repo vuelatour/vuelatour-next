@@ -226,7 +226,8 @@ describe("cableado de la corrección en el código", () => {
   it("CobroFormSheet: diff de la fuente única y PATCH solo tras confirmar", () => {
     const src = leer("components", "admin", "flights", "cobro-form-sheet.tsx");
     expect(src).toContain("formularioDesdeCobro(cobroEditar)");
-    expect(src).toContain("cambiosDeCobro(cobroEditar, inicial, valoresEd, edicion)");
+    // Desde el 16-oct-2026 el diff recibe las vigentes para nombrar la factura.
+    expect(src).toContain("cambiosDeCobro(cobroEditar, inicial, valoresEd, edicion, { facturas: vigentes })");
     expect(src).toContain("erroresEdicionCobro(inicial, valoresEd, edicion)");
     // Una sola llamada al PATCH, dentro de guardarCorreccion.
     expect(src.match(/updateCobroAction\(/g)).toHaveLength(1);
@@ -243,6 +244,65 @@ describe("cableado de la corrección en el código", () => {
     const card = ws.slice(ws.indexOf("<QuoteCobrosCard"), ws.indexOf("/>", ws.indexOf("<QuoteCobrosCard")));
     for (const prop of ["tcCotizacion=", "montoTotalMxn=", "tcOficial=", "tcOficialFecha=", "paywiseComisionPct=", "rol={rol}"]) {
       expect(card).toContain(prop);
+    }
+  });
+});
+
+/**
+ * FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API): el
+ * selector «Factura» del formulario y lo que las cards le pasan. El
+ * formulario vive en un portal: se vigila el cableado en el código.
+ */
+describe("selector «Factura» del formulario del cobro (cableado)", () => {
+  const leer = (...p: string[]) =>
+    readFileSync(path.resolve(__dirname, "..", "..", "..", "..", ...p), "utf8");
+
+  it("se pinta SOLO con asignación disponible + vigentes + no reembolso + ADMIN/FACTURACION", () => {
+    const src = leer("components", "admin", "flights", "cobro-form-sheet.tsx");
+    const regla = src.slice(src.indexOf("const mostrarSelectorFactura ="), src.indexOf("const opcionesFactura"));
+    expect(regla).toContain("asignacionFactura &&");
+    expect(regla).toContain("vigentes.length > 0 &&");
+    expect(regla).toContain("Number(cobroEditar.monto) < 0");
+    expect(regla).toContain("puedeRegistrarFactura(rol)");
+    expect(src).toContain("{mostrarSelectorFactura && (");
+    expect(src).toContain('label="Factura"');
+    expect(src).toContain("hint={AYUDA_SELECTOR_FACTURA_COBRO}");
+  });
+
+  it("preselección de la fuente única: alta con cupo, edición con la del cobro", () => {
+    const src = leer("components", "admin", "flights", "cobro-form-sheet.tsx");
+    expect(src).toContain('factura_emitida_id: mostrarSelectorFactura ? facturaPreseleccionada(vigentes, "alta") : ""');
+    expect(src).toContain('facturaPreseleccionada(vigentes, "edicion", cobroEditar)');
+  });
+
+  it("la llave NO viaja sin selector: ni en el alta ni en el diff (API ≤ 0.0.81 responde 400)", () => {
+    const src = leer("components", "admin", "flights", "cobro-form-sheet.tsx");
+    expect(src).toContain("...(mostrarSelectorFactura && values.factura_emitida_id");
+    expect(src).toContain("? { factura_emitida_id: values.factura_emitida_id }");
+    expect(src).toContain("valoresParaEdicion(values, mostrarSelectorFactura)");
+    expect(src).toContain('...(conFactura ? { factura_emitida_id: values.factura_emitida_id ?? "" } : {})');
+    // Toast con la factura.
+    expect(src).toContain("textoCobroRegistradoConFactura(amparada)");
+  });
+
+  it("las cards (vuelo ×2 y cotización) y el cotizador pasan vigentes, la sonda y el rol al formulario", () => {
+    for (const [archivo, veces] of [
+      [["components", "admin", "flights", "cobros-card.tsx"], 2],
+      [["components", "admin", "quotes", "quote-cobros-card.tsx"], 1],
+      [["components", "admin", "quotes", "quote-workspace.tsx"], 1],
+    ] as const) {
+      const src = leer(...archivo);
+      expect(src.match(/facturasVigentes=\{facturaServicio\?\.facturas \?\? null\}/g), archivo.join("/")).toHaveLength(veces);
+      expect(src.match(/asignacionFactura=\{asignacionDisponible\(facturaServicio\)\}/g), archivo.join("/")).toHaveLength(veces);
+    }
+    // «Asignar factura» abre la edición con el foco en el selector.
+    for (const archivo of [
+      ["components", "admin", "flights", "cobros-card.tsx"],
+      ["components", "admin", "quotes", "quote-cobros-card.tsx"],
+    ] as const) {
+      const src = leer(...archivo);
+      expect(src).toContain("onAsignar={abrirAsignarFactura}");
+      expect(src).toContain("enfocarFactura={enfocarFactura}");
     }
   });
 });

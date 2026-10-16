@@ -331,6 +331,12 @@ export interface RegisterCobroPayload {
   referencia?: string;
   fecha_cobro?: string;
   notas?: string;
+  /**
+   * FACTURAS POR COBRO (16-oct-2026, API 0.0.82): factura que ampara el
+   * cobro (clasificación). SOLO viaja si el selector se pintó (el API ≤
+   * 0.0.81 responde 400 `forbidNonWhitelisted` a una llave que no conoce).
+   */
+  factura_emitida_id?: string;
 }
 
 export async function registerCobroAction(
