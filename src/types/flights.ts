@@ -361,6 +361,13 @@ export interface FlightCobro {
    * previa «Rebasa el pendiente» al corregir un cobro.
    */
   monto_usd?: number | null;
+  /**
+   * FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API):
+   * la factura emitida que AMPARA este cobro (clasificación, no dinero).
+   * Ausente = API previo o sin la migración (no se ofrece selector ni chips);
+   * `null` = sin factura. La llave se OMITE para roles de campo.
+   */
+  factura_emitida?: { id: string; etiqueta: string } | null;
 }
 
 /** Resumen del sobre de grupo que viaja en cada parte (aditivo del API). */

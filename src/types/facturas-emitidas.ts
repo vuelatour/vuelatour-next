@@ -33,10 +33,53 @@ export interface AvisoFactura {
     | "CFDI_NO_ES_INGRESO"
     | "MONEDA_NO_SOPORTADA"
     | "TOTAL_DISTINTO_VUELO"
-    | "VUELO_SIGUE_FACTURADO";
+    | "VUELO_SIGUE_FACTURADO"
+    // FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API).
+    | "TOTAL_DISTINTO_COBROS"
+    | "COBROS_DESLIGADOS"
+    | "COBROS_SIN_FACTURA";
   /** es-MX, listo para pintar. */
   mensaje: string;
   details?: Record<string, unknown>;
+}
+
+// ---- FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API) ----
+//
+// `cobro_vuelo.factura_emitida_id`: qué factura AMPARA cada cobro. Es
+// CLASIFICACIÓN, no dinero (no toca cobrado, reparto ni balance). Todo lo de
+// abajo es ADITIVO y opcional: con un API previo (o sin la migración
+// `20261016000001`) las llaves no viajan y el panel no ofrece nada nuevo.
+
+/** Por qué una factura trae la alerta DUPLICADO_VUELO («Facturas que no cuadran»). */
+export type MotivoDuplicadoVuelo = "SUMA_SUPERA" | "SIN_COBRO_ASIGNADO";
+
+export interface AlertaFacturaDetalle {
+  /** Hoy solo DUPLICADO_VUELO trae detalle. */
+  code: AlertaFactura;
+  motivo: MotivoDuplicadoVuelo;
+  vuelo_folio: number;
+  /** es-MX, listo para el `title` del chip. */
+  mensaje: string;
+}
+
+/** Cobro que AMPARA una factura (lista/detalle del registro). */
+export interface CobroDeFactura {
+  id: string;
+  vuelo_id: string;
+  vuelo_folio: number;
+  /** BRUTO (lo que pagó el cliente, sin restar la comisión del banco). */
+  monto: number;
+  moneda: MonedaFactura;
+  /** ISO. */
+  fecha_cobro: string;
+  metodo_cobro: string;
+  cuenta_destino: string | null;
+}
+
+/** Cobro de un vuelo candidato (casillas del diálogo «Registrar factura»). */
+export interface CobroCandidatoFactura extends CobroDeFactura {
+  /** null = sin factura; {id, etiqueta} = ya amparado (por ESTA u otra). */
+  factura: { id: string; etiqueta: string } | null;
 }
 
 /** Insumos del semáforo de cobro de UN vuelo (el panel pinta con SU estadoCobroSemaforo). */
@@ -75,6 +118,10 @@ export interface VueloDeFactura {
   cobro: CobroResumen;
   /** Etiquetas de OTRAS facturas VIGENTES ligadas al mismo vuelo («A-120»). */
   otras_vigentes: string[];
+  /** ADITIVO (API 0.0.82): cobros de este vuelo amparados por ESTA factura. */
+  cobros_n?: number;
+  /** ADITIVO (API 0.0.82): cobros de este vuelo sin ninguna factura. */
+  cobros_sin_factura?: number;
 }
 
 export interface FacturaEmitida {
@@ -114,6 +161,13 @@ export interface FacturaEmitida {
   created_at: string;
   created_por_nombre: string | null;
   updated_at: string;
+  /**
+   * ADITIVOS (API 0.0.82): los cobros que ampara (orden vuelo_folio,
+   * fecha_cobro; `[]` sin la migración) y el detalle de sus alertas (`[]` si
+   * no hay). Ausentes = API previo.
+   */
+  cobros?: CobroDeFactura[];
+  alertas_detalle?: AlertaFacturaDetalle[];
 }
 
 /** «Ya está registrada» (409 y leer-archivo). */
@@ -220,6 +274,13 @@ export interface FacturaEmitidaDatos {
   es_parcial?: boolean;
   /** ≤50 uuids. Alta: default []. PATCH: si viene, REEMPLAZA el conjunto. */
   vuelo_ids?: string[];
+  /**
+   * ADITIVO (API 0.0.82): cobros que AMPARA esta factura (≤200 uuids, de sus
+   * propios vuelos). Ausente = no se tocan; presente = REEMPLAZA el conjunto
+   * (`[]` = el operador vio las casillas y no marcó ninguna). El panel solo lo
+   * manda cuando TODOS los vuelos elegidos trajeron sus `cobros` (API nuevo).
+   */
+  cobro_ids?: string[];
 }
 
 export interface ResultadoGuardarFactura {
@@ -247,6 +308,13 @@ export interface FacturaEmitidaMini {
   metodo_pago: MetodoPagoFactura | null;
   tiene_pdf: boolean;
   tiene_xml: boolean;
+  /**
+   * ADITIVOS (API 0.0.82, en este orden): anticipo/finiquito; cobros de ESTE
+   * vuelo que ampara y su Σ por moneda (BRUTO). Ausentes = API previo.
+   */
+  es_parcial?: boolean;
+  cobros_n?: number;
+  cobros_monto?: { moneda: MonedaFactura; monto: number }[];
 }
 
 /** Bloque ADITIVO `factura_servicio` del snapshot del vuelo. */
@@ -283,6 +351,18 @@ export interface FacturaServicioBloque {
    * estado del vuelo (también en un cancelado). Una manual, nunca.
    */
   solicitud_ya_no_aplica?: boolean;
+  /**
+   * FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API),
+   * ÚLTIMAS llaves y en este orden: cobros positivos del vuelo (sin sobre)
+   * que ninguna factura ampara; de esos, los que EXIGEN factura por su
+   * cuenta/método (deciden el tono del chip); y si el API puede asignar
+   * (`asignacion_disponible` = la migración está aplicada). El panel ofrece
+   * selector, casillas y chips SOLO con `asignacion_disponible: true`.
+   * Ausentes = API previo.
+   */
+  cobros_sin_factura?: number;
+  cobros_sin_factura_exigen?: number;
+  asignacion_disponible?: boolean;
 }
 
 /** Campo ADITIVO por fila de GET /flights y GET /quotes. */
@@ -371,6 +451,12 @@ export interface VueloCandidatoFactura {
   /** Tiene solicitud pendiente (por facturar). */
   solicitud: boolean;
   grupo: GrupoDeVueloFactura | null;
+  /**
+   * ADITIVO (API 0.0.82, SOLO con la migración): cobros positivos del vuelo
+   * (sin sobre), orden fecha_cobro asc, cada uno con la factura que lo
+   * ampara. Ausente = API previo o sin la migración: sin casillas.
+   */
+  cobros?: CobroCandidatoFactura[];
 }
 
 export interface ResponsablesFacturacion {
