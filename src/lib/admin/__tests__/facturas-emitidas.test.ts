@@ -266,7 +266,10 @@ describe("filtros de la URL", () => {
       expect(alerta).toBe(filtro.toUpperCase());
       expect(ETIQUETAS_ALERTA[alerta].label.length).toBeGreaterThan(0);
     }
-    expect(ETIQUETAS_ALERTA.DUPLICADO_VUELO.label).toBe("Vuelo con 2 facturas");
+    // Desde el 16-oct-2026 (facturas por cobro): dos facturas que CUADRAN
+    // ya no son alerta; el rótulo es el mismo que el Excel del API.
+    expect(ETIQUETAS_ALERTA.DUPLICADO_VUELO.label).toBe("Facturas que no cuadran");
+    expect(ETIQUETAS_ALERTA.DUPLICADO_VUELO.title).toContain("¿Qué cobros cubre?");
     expect(ETIQUETAS_ALERTA.VUELO_CANCELADO.title).toContain("cargo por cancelación");
   });
 });
@@ -518,6 +521,42 @@ describe("formulario ⇒ datos del API", () => {
     const v = valoresDeFactura(f);
     expect(v.emisora_id).toBe(EMISORA_OTRA);
     expect(cambiosDeEdicion(f, datosDeFormulario(v, [VUELO]))).toEqual({});
+  });
+
+  // FACTURAS POR COBRO (16-oct-2026, API 0.0.82): `cobro_ids` viaja SOLO
+  // cuando viene (aunque sea []); ausente ≠ [] (revisión #6).
+  it("cobro_ids: ausente ⇒ sin la llave; [] ⇒ viaja vacío; con ids ⇒ sin repetidos", () => {
+    expect("cobro_ids" in datosDeFormulario(lleno, [VUELO])).toBe(false);
+    expect("cobro_ids" in datosDeFormulario(lleno, [VUELO], undefined)).toBe(false);
+    expect("cobro_ids" in datosDeFormulario(lleno, [VUELO], null)).toBe(false);
+    expect(datosDeFormulario(lleno, [VUELO], []).cobro_ids).toEqual([]);
+    expect(datosDeFormulario(lleno, [VUELO], ["c-1", "c-2", "c-1"]).cobro_ids).toEqual(["c-1", "c-2"]);
+  });
+
+  it("EDICIÓN: cobro_ids se compara como CONJUNTO contra los cobros que la factura ya ampara", () => {
+    const cobro = (id: string) => ({
+      id,
+      vuelo_id: VUELO,
+      vuelo_folio: 341,
+      monto: 1700,
+      moneda: "MXN" as const,
+      fecha_cobro: "2026-09-21T17:00:00.000Z",
+      metodo_cobro: "TRANSFERENCIA",
+      cuenta_destino: "Scotiabank Pesos",
+    });
+    const f = factura({ cobros: [cobro("c-1"), cobro("c-2")] });
+    const v = valoresDeFactura(f);
+    // Mismo conjunto en otro orden: no viaja.
+    expect(cambiosDeEdicion(f, datosDeFormulario(v, [VUELO], ["c-2", "c-1"]))).toEqual({});
+    // Sin la llave (casillas apagadas / API previo): no viaja.
+    expect(cambiosDeEdicion(f, datosDeFormulario(v, [VUELO]))).toEqual({});
+    // Se desmarcó uno: viaja el conjunto nuevo (el API REEMPLAZA).
+    expect(cambiosDeEdicion(f, datosDeFormulario(v, [VUELO], ["c-1"]))).toEqual({ cobro_ids: ["c-1"] });
+    // Todo desmarcado: viaja [].
+    expect(cambiosDeEdicion(f, datosDeFormulario(v, [VUELO], []))).toEqual({ cobro_ids: [] });
+    // API 0.0.82 sin cobros (`[]`) y casillas sin marcar: nada cambió.
+    const sinCobros = factura({ cobros: [] });
+    expect(cambiosDeEdicion(sinCobros, datosDeFormulario(valoresDeFactura(sinCobros), [VUELO], []))).toEqual({});
   });
 });
 

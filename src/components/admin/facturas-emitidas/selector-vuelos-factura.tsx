@@ -8,7 +8,9 @@ import { folioTexto } from "@/lib/admin/grupos-ui";
 import { fmtDate } from "@/lib/datetime";
 import { fmtMonto } from "@/lib/format";
 import { buscarVuelosCandidatos } from "@/lib/api/facturas-emitidas-browser";
+import { TITULO_TIENE_FACTURA, textoTieneFactura } from "@/lib/admin/cobro-factura";
 import type {
+  CobroCandidatoFactura,
   GrupoDeVueloFactura,
   TotalVuelo,
   VueloCandidatoFactura,
@@ -26,6 +28,13 @@ export interface VueloSeleccionado {
   /** `undefined` = no se sabe todavía (se hidrata con `ids`). */
   grupo?: GrupoDeVueloFactura | null;
   facturas_vigentes?: string[];
+  /**
+   * FACTURAS POR COBRO (16-oct-2026, API 0.0.82): los cobros del vuelo
+   * (casillas «¿Qué cobros cubre esta factura?»). `undefined` = todavía no se
+   * hidrató (o la hidratación falló); `null` = el API los hidrató SIN la
+   * llave (API previo o sin la migración: no hay casillas que pintar).
+   */
+  cobros?: CobroCandidatoFactura[] | null;
 }
 
 export function vueloDeCandidato(v: VueloCandidatoFactura): VueloSeleccionado {
@@ -39,6 +48,7 @@ export function vueloDeCandidato(v: VueloCandidatoFactura): VueloSeleccionado {
     total: v.total,
     grupo: v.grupo,
     facturas_vigentes: v.facturas_vigentes,
+    cobros: Array.isArray(v.cobros) ? v.cobros : null,
   };
 }
 
@@ -121,10 +131,15 @@ export function SelectorVuelosFactura({
   }, [q, abierto]);
 
   // Hidrata el grupo de los vuelos que llegaron sin él (edición): así se
-  // ofrece «Agregar los N del grupo» también al editar.
+  // ofrece «Agregar los N del grupo» también al editar. Desde el 16-oct-2026
+  // (API 0.0.82) la misma hidratación trae los `cobros` del vuelo (casillas
+  // «¿Qué cobros cubre esta factura?»): se hidrata también un vuelo que llegó
+  // con grupo pero sin cobros (bandeja «Por facturar»).
   useEffect(() => {
     if (hidratadoRef.current) return;
-    const faltan = seleccionados.filter((v) => v.grupo === undefined).map((v) => v.id);
+    const faltan = seleccionados
+      .filter((v) => v.grupo === undefined || v.cobros === undefined)
+      .map((v) => v.id);
     if (faltan.length === 0) return;
     hidratadoRef.current = true;
     void buscarVuelosCandidatos("", { ids: faltan }).then((res) => {
@@ -133,7 +148,11 @@ export function SelectorVuelosFactura({
       onChange(
         seleccionadosRef.current.map((v) => {
           const h = porId.get(v.id);
-          return h ? { ...vueloDeCandidato(h), ...v, grupo: h.grupo } : { ...v, grupo: v.grupo ?? null };
+          if (!h) return { ...v, grupo: v.grupo ?? null };
+          const hid = vueloDeCandidato(h);
+          // Lo que el vuelo ya traía manda; el grupo y los cobros vienen de
+          // la hidratación (null = el API no manda cobros).
+          return { ...hid, ...v, grupo: h.grupo, cobros: v.cobros ?? hid.cobros };
         }),
       );
     });
@@ -272,8 +291,12 @@ export function SelectorVuelosFactura({
                     >
                       <span className="font-medium">{textoCandidato(v)}</span>
                       {v.solicitud && <ChipMini tono="ambar">Por facturar</ChipMini>}
+                      {/* Informativo (16-oct-2026): un vuelo puede llevar
+                          varias facturas, cada una ampara sus cobros. */}
                       {v.facturas_vigentes.length > 0 && (
-                        <ChipMini tono="gris">Ya tiene {v.facturas_vigentes.join(", ")}</ChipMini>
+                        <span title={TITULO_TIENE_FACTURA}>
+                          <ChipMini tono="gris">{textoTieneFactura(v.facturas_vigentes)}</ChipMini>
+                        </span>
                       )}
                       {v.estado === "CANCELADO" && <ChipMini tono="rojo">Cancelado</ChipMini>}
                       {v.grupo && v.grupo.total_aviones > 1 && (

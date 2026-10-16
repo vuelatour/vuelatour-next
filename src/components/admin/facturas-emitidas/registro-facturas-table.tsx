@@ -15,6 +15,11 @@ import {
   semaforoDeCobro,
   type FiltrosFacturas,
 } from "@/lib/admin/facturas-emitidas";
+import {
+  textoCobrosDeVueloRegistro,
+  textoSinFacturaRegistro,
+  tituloAlertasDetalle,
+} from "@/lib/admin/cobro-factura";
 import { FacturaAccionesMenu, verArchivoFactura } from "./factura-acciones-menu";
 import type { ClienteOpcion, EmisoraOpcion } from "./registrar-factura-dialog";
 import type { FacturaEmitida } from "@/types/facturas-emitidas";
@@ -146,6 +151,21 @@ export function RegistroFacturasTable({
                       cancelado
                     </span>
                   )}
+                  {/* FACTURAS POR COBRO (API 0.0.82): cuántos cobros de este
+                      vuelo ampara y cuántos siguen sin factura (ámbar). */}
+                  {textoCobrosDeVueloRegistro(v.cobros_n) && (
+                    <span className="ml-1 font-sans text-[10px] text-muted-foreground">
+                      {textoCobrosDeVueloRegistro(v.cobros_n)}
+                    </span>
+                  )}
+                  {textoSinFacturaRegistro(v.cobros_sin_factura) && (
+                    <span
+                      className="ml-1 font-sans text-[10px] text-amber-700 dark:text-amber-300"
+                      title="Cobros de este vuelo que ninguna factura ampara"
+                    >
+                      {textoSinFacturaRegistro(v.cobros_sin_factura)}
+                    </span>
+                  )}
                 </Link>
               ))}
             </span>
@@ -270,7 +290,13 @@ export function RegistroFacturasTable({
                 <span
                   key={a}
                   className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 whitespace-nowrap"
-                  title={ETIQUETAS_ALERTA[a]?.title}
+                  // «Facturas que no cuadran» (API 0.0.82): el tooltip dice
+                  // POR QUÉ con el detalle del API; sin detalle, la ayuda.
+                  title={
+                    a === "DUPLICADO_VUELO"
+                      ? tituloAlertasDetalle(f.alertas_detalle)
+                      : ETIQUETAS_ALERTA[a]?.title
+                  }
                 >
                   {ETIQUETAS_ALERTA[a]?.label ?? a}
                 </span>

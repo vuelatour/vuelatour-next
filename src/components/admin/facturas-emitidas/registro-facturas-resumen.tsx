@@ -9,6 +9,7 @@ import {
   type AlertaFiltro,
   type FiltrosFacturas,
 } from "@/lib/admin/facturas-emitidas";
+import { ETIQUETA_VUELOS_FACTURAS_NO_CUADRAN } from "@/lib/admin/cobro-factura";
 import type {
   EstatusFacturaEmitida,
   ListaFacturasEmitidas,
@@ -46,7 +47,9 @@ export function RegistroFacturasResumen({
     { label: "Sin PDF", valor: r.sin_pdf, alerta: "sin_pdf", alertaTono: true },
     { label: "Sin vuelo", valor: r.sin_vuelo, alerta: "sin_vuelo", alertaTono: true },
     {
-      label: "Vuelos con 2 facturas",
+      // `vuelos_con_varias` conserva nombre y significado en el API («vuelos
+      // con alerta DUPLICADO_VUELO»); el rótulo cambió el 16-oct-2026.
+      label: ETIQUETA_VUELOS_FACTURAS_NO_CUADRAN,
       valor: r.vuelos_con_varias,
       alerta: "duplicado_vuelo",
       alertaTono: true,

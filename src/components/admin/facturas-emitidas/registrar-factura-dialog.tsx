@@ -36,6 +36,7 @@ import {
   clasificarArchivosFactura,
   datosDeFormulario,
   diferenciasLecturaVsFormulario,
+  parseMonto,
   prellenarSinPisar,
   validarFormularioFactura,
   valoresDeFactura,
@@ -44,6 +45,21 @@ import {
   type CampoFormularioFactura,
   type ValoresFormularioFactura,
 } from "@/lib/admin/facturas-emitidas";
+import {
+  AYUDA_FACTURA_PARCIAL,
+  NOTA_COBROS_NO_CARGADOS,
+  NOTA_SOBRE_DE_GRUPO,
+  TEXTO_VUELO_SIN_COBROS,
+  cobrosHidratados,
+  esCodigoCobroFactura,
+  hayCobrosQueMostrar,
+  mensajeErrorCobroFactura,
+  prefillCobrosDeFactura,
+  resumenMarcados,
+  textoCobroCandidato,
+  textoYaTieneFactura,
+  tituloCobrosDeVuelo,
+} from "@/lib/admin/cobro-factura";
 import { megasDe } from "@/lib/admin/factura-cliente";
 import { todayCancun } from "@/lib/datetime";
 import {
@@ -98,6 +114,17 @@ type ErroresFormulario = Partial<Record<keyof ValoresFormularioFactura, string>>
  * `xml`): el tope de 4.5 MB de Vercel mataría el PDF en una server action.
  * El pie con «Guardar» es sticky: el diálogo es largo y el operador no debe
  * tabular a ciegas para encontrarlo.
+ *
+ * FACTURAS POR COBRO (16-oct-2026, API 0.0.82, invariante 84 del API): bajo
+ * los vuelos, por cada vuelo elegido que trajo sus `cobros` (hidratación por
+ * `ids` del selector o resultado de búsqueda), las casillas «¿Qué cobros
+ * cubre esta factura? — Vuelo #332». Prefill: en el alta la MISMA regla del
+ * backfill del API sobre los cobros libres con el total tecleado (se
+ * re-prellena solo mientras el operador no toque una casilla); en edición,
+ * los que ya ampara. `cobro_ids` viaja SOLO cuando TODOS los vuelos elegidos
+ * trajeron sus cobros: el PATCH REEMPLAZA el conjunto y mandar las casillas
+ * de los que sí cargaron desligaría en silencio los del que no cargó. Un
+ * API previo nunca manda `cobros` ⇒ sin casillas y sin la llave.
  */
 export function RegistrarFacturaDialog({
   open,
@@ -151,6 +178,12 @@ export function RegistrarFacturaDialog({
   const [existente, setExistente] = useState<FacturaExistente | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [arrastrando, setArrastrando] = useState(false);
+  // ---- Casillas «¿Qué cobros cubre esta factura?» (API 0.0.82) ----
+  const [cobroIds, setCobroIds] = useState<Set<string>>(() => new Set());
+  const [casillasTocadas, setCasillasTocadas] = useState(false);
+  // Vuelos a los que ya se les aplicó el prefill (uno agregado después se
+  // prellena solo; uno quitado y vuelto a agregar, también).
+  const prefillAplicadoRef = useRef<Set<string>>(new Set());
 
   // ----------------------------------------------------- catálogos (si faltan)
   const [clientesCargados, setClientesCargados] = useState<ClienteOpcion[] | null>(null);
@@ -301,6 +334,63 @@ export function RegistrarFacturaDialog({
     void leer(nuevoPdf, nuevoXml);
   };
 
+  // ------------------------------------------------ casillas de los cobros
+  const totalTecleado = (() => {
+    const t = parseMonto(valoresEfectivos.total);
+    return t != null && !Number.isNaN(t) && t > 0 ? t : null;
+  })();
+  const monedaFactura = valoresEfectivos.moneda;
+  const idFacturaEdicion = editar && factura ? factura.id : null;
+  const hayCasillas = hayCobrosQueMostrar(vuelos);
+  const hidratados = cobrosHidratados(vuelos);
+  // Algún vuelo elegido no trajo sus cobros (hidratación caída): TODAS las
+  // casillas se apagan y `cobro_ids` no viaja (el PATCH reemplaza el conjunto).
+  const casillasIncompletas = hayCasillas && !hidratados;
+  const cobrosDeVuelos = useMemo(() => vuelos.flatMap((v) => v.cobros ?? []), [vuelos]);
+
+  useEffect(() => {
+    const totalRef =
+      !idFacturaEdicion && totalTecleado != null && monedaFactura
+        ? { monto: totalTecleado, moneda: monedaFactura }
+        : null;
+    const idsVuelos = new Set(vuelos.map((v) => v.id));
+    for (const id of [...prefillAplicadoRef.current]) {
+      if (!idsVuelos.has(id)) prefillAplicadoRef.current.delete(id);
+    }
+    setCobroIds((prev) => {
+      const next = new Set<string>();
+      // Solo sobreviven las casillas de cobros que siguen en la lista (un
+      // vuelo quitado se lleva las suyas).
+      const conocidos = new Set(cobrosDeVuelos.map((c) => c.id));
+      for (const id of prev) if (conocidos.has(id)) next.add(id);
+      for (const v of vuelos) {
+        if (!Array.isArray(v.cobros)) continue;
+        // Re-prellenar mientras el operador no toque una casilla (el total
+        // tecleado cambia la regla); un vuelo nuevo se prellena siempre.
+        if (prefillAplicadoRef.current.has(v.id) && casillasTocadas) continue;
+        for (const c of v.cobros) next.delete(c.id);
+        for (const id of prefillCobrosDeFactura(v.cobros, idFacturaEdicion, totalRef)) next.add(id);
+        prefillAplicadoRef.current.add(v.id);
+      }
+      if (next.size === prev.size && [...next].every((id) => prev.has(id))) return prev;
+      return next;
+    });
+  }, [vuelos, cobrosDeVuelos, totalTecleado, monedaFactura, casillasTocadas, idFacturaEdicion]);
+
+  const marcarCobro = (id: string, marcado: boolean) => {
+    setCasillasTocadas(true);
+    setCobroIds((prev) => {
+      const next = new Set(prev);
+      if (marcado) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const resumen = hayCasillas
+    ? resumenMarcados(cobrosDeVuelos, cobroIds, totalTecleado, monedaFactura)
+    : null;
+
   // ------------------------------------------------------ banners derivados
   const yaRegistrada =
     lectura?.ya_registrada && !(editar && factura && lectura.ya_registrada.id === factura.id)
@@ -324,9 +414,14 @@ export function RegistrarFacturaDialog({
       setErrorGuardar("Revisa los campos marcados en rojo.");
       return;
     }
+    // `cobro_ids` SOLO con todos los vuelos hidratados (API nuevo y todo
+    // cargado); en el alta viaja también `[]` cuando se desmarcó todo (el API
+    // evalúa «quedan cobros sin factura»). En edición, `cambiosDeEdicion` lo
+    // compara como conjunto y solo lo manda si cambió.
     let datos = datosDeFormulario(
       valoresEfectivos,
       vuelos.map((v) => v.id),
+      hidratados ? [...cobroIds] : undefined,
     );
     if (editar && factura) {
       datos = cambiosDeEdicion(factura, datos);
@@ -347,7 +442,13 @@ export function RegistrarFacturaDialog({
     });
     setGuardando(false);
     if (!res.ok) {
-      setErrorGuardar(res.error);
+      // Rechazos de la liga cobro ↔ factura (409 COBRO_CON_OTRA_FACTURA…):
+      // texto de la fuente única, en el banner rojo junto a «Guardar».
+      setErrorGuardar(
+        esCodigoCobroFactura(res.code)
+          ? mensajeErrorCobroFactura(res.code, (res.details ?? null) as Record<string, unknown> | null, res.error)
+          : res.error,
+      );
       const det = res.details as { existente?: FacturaExistente } | undefined;
       if (
         (res.code === "FACTURA_DUPLICADA" || res.code === "UUID_DUPLICADO") &&
@@ -691,9 +792,7 @@ export function RegistrarFacturaDialog({
             <Label htmlFor={idParcial} className="text-sm font-normal">
               Factura parcial (anticipo o finiquito)
             </Label>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Márcala si el vuelo lleva más de una factura a propósito.
-            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{AYUDA_FACTURA_PARCIAL}</p>
           </div>
         </div>
 
@@ -716,6 +815,82 @@ export function RegistrarFacturaDialog({
             </p>
           )}
         </div>
+
+        {/* ---------------- ¿Qué cobros cubre? (API 0.0.82) ---------------- */}
+        {hayCasillas && (
+          <div className="space-y-3 rounded-lg border border-border bg-muted/20 px-3 py-2" data-cobros-de-factura>
+            {casillasIncompletas && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-300" role="status">
+                {NOTA_COBROS_NO_CARGADOS}
+              </p>
+            )}
+            {vuelos
+              .filter((v) => Array.isArray(v.cobros))
+              .map((v) => {
+                const cobros = v.cobros ?? [];
+                return (
+                  <div key={v.id} className="space-y-1.5">
+                    <p className="text-sm font-medium">{tituloCobrosDeVuelo(v.folio)}</p>
+                    {cobros.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">{TEXTO_VUELO_SIN_COBROS}</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {cobros.map((c) => {
+                          // Amparado por OTRA factura: se ve, no se marca (se
+                          // le quita desde esa factura o desde el cobro).
+                          const otra = c.factura && c.factura.id !== idFacturaEdicion ? c.factura : null;
+                          const deshabilitada = bloqueado || casillasIncompletas || otra != null;
+                          return (
+                            <li key={c.id}>
+                              <label
+                                className={`flex items-start gap-2 text-xs ${
+                                  deshabilitada ? "cursor-not-allowed opacity-70" : "cursor-pointer"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5 h-4 w-4 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
+                                  data-cobro-casilla={c.id}
+                                  checked={cobroIds.has(c.id)}
+                                  disabled={deshabilitada}
+                                  onChange={(e) => marcarCobro(c.id, e.target.checked)}
+                                />
+                                <span>
+                                  {textoCobroCandidato(c)}
+                                  {otra && (
+                                    <span className="ml-1 text-muted-foreground">
+                                      {textoYaTieneFactura(otra.etiqueta)}
+                                    </span>
+                                  )}
+                                </span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {v.grupo && v.grupo.total_aviones > 1 && (
+                      <p className="text-[11px] text-muted-foreground">{NOTA_SOBRE_DE_GRUPO}</p>
+                    )}
+                  </div>
+                );
+              })}
+            {resumen && !casillasIncompletas && (
+              <p
+                data-resumen-marcados={resumen.tono}
+                className={`text-xs ${
+                  resumen.tono === "ambar"
+                    ? "font-medium text-amber-700 dark:text-amber-300"
+                    : resumen.tono === "ok"
+                      ? "text-emerald-700 dark:text-emerald-300"
+                      : "text-muted-foreground"
+                }`}
+              >
+                {resumen.texto}
+              </p>
+            )}
+          </div>
+        )}
 
         <CampoTexto
           label="Notas"

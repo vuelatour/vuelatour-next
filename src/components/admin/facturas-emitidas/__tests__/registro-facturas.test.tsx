@@ -198,7 +198,9 @@ describe("tabla del registro", () => {
     expect(html).toContain(">PPD<");
     expect(html).toContain(">Parcial<"); // semáforo de cobro del vuelo
     expect(html).toContain("Sin PDF");
-    expect(html).toContain("Vuelo con 2 facturas");
+    // Rótulo del 16-oct-2026 (facturas por cobro): dos facturas que cuadran ya no son alerta.
+    expect(html).toContain("Facturas que no cuadran");
+    expect(html).not.toContain("Vuelo con 2 facturas");
     expect(html).toContain('aria-label="Acciones de la factura A-123"');
     // Emisor solo con ≥2 razones sociales en las filas.
     expect(html).not.toContain(">Emisor<");

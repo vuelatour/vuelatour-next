@@ -27,6 +27,7 @@ import { CANCUN_TZ } from "@/lib/datetime";
 import { esDiaValido, rangoFiltro, uuidFiltro, valorDeCatalogo } from "./url-params";
 import { MAX_BYTES_FACTURA, textoPesoExcedido } from "./factura-cliente";
 import { estadoCobroSemaforo, type EstadoCobroSemaforo } from "./cobros";
+import { ETIQUETA_FACTURAS_NO_CUADRAN, TITULO_FACTURAS_NO_CUADRAN } from "./cobro-factura";
 import type {
   AlertaFactura,
   CamposLeidosFactura,
@@ -206,12 +207,16 @@ export const ALERTA_DE_FILTRO: Record<AlertaFiltro, AlertaFactura> = {
   vuelo_cancelado: "VUELO_CANCELADO",
 };
 
-/** Chips de alerta: etiqueta corta + qué hacer (tooltip). */
+/**
+ * Chips de alerta: etiqueta corta + qué hacer (tooltip). Desde el 16-oct-2026
+ * (API 0.0.82, facturas por cobro) un vuelo con 2 facturas que CUADRAN ya no
+ * es alerta: DUPLICADO_VUELO se rotula «Facturas que no cuadran» (mismo rótulo
+ * en el Excel del API) y el tooltip de la fila usa `alertas_detalle`.
+ */
 export const ETIQUETAS_ALERTA: Record<AlertaFactura, { label: string; title: string }> = {
   DUPLICADO_VUELO: {
-    label: "Vuelo con 2 facturas",
-    title:
-      "Uno de sus vuelos tiene otra factura vigente. Si es anticipo y finiquito, márcalas como «Factura parcial»; si es una re-emisión, cancela la anterior.",
+    label: ETIQUETA_FACTURAS_NO_CUADRAN,
+    title: TITULO_FACTURAS_NO_CUADRAN,
   },
   SIN_PDF: {
     label: "Sin PDF",
@@ -734,10 +739,17 @@ function redondear2(n: number): number {
  * API: serie en MAYÚSCULAS, folio con espacios colapsados, UUID en
  * MAYÚSCULAS, RFC sin espacios/guiones, «Otra / no es de VuelaTour» ⇒
  * `emisora_id: null` explícito.
+ *
+ * `cobroIds` (16-oct-2026, API 0.0.82): los cobros que AMPARA la factura.
+ * SOLO se agrega cuando viene (array, aunque sea `[]` = «vi las casillas y no
+ * marqué ninguna»); `undefined` = la llave no viaja (API previo, casillas
+ * apagadas o vuelos sin hidratar). El API ≤ 0.0.81 responde 400 a una llave
+ * que no conoce, y el PATCH con la llave REEMPLAZA el conjunto.
  */
 export function datosDeFormulario(
   v: ValoresFormularioFactura,
   vueloIds: string[],
+  cobroIds?: ReadonlyArray<string> | null,
 ): FacturaEmitidaDatos {
   const subtotal = parseMonto(v.subtotal);
   const iva = parseMonto(v.iva);
@@ -769,6 +781,7 @@ export function datosDeFormulario(
   // el API la detecta sola con `verificarEmisor`.
   if (v.emisora_id === EMISORA_OTRA) datos.emisora_id = null;
   else if (v.emisora_id) datos.emisora_id = v.emisora_id;
+  if (Array.isArray(cobroIds)) datos.cobro_ids = [...new Set(cobroIds)];
   return datos;
 }
 
@@ -782,7 +795,8 @@ function mismoValor(a: unknown, b: unknown): boolean {
 /**
  * EDICIÓN: solo lo que cambió respecto a la factura original (PATCH). `{}` =
  * nada que cambiar (el API respondería 400 NADA_QUE_CAMBIAR si además no hay
- * archivos).
+ * archivos). `cobro_ids` se compara como CONJUNTO contra los cobros que la
+ * factura ya ampara (`original.cobros`): si no cambió, no viaja.
  */
 export function cambiosDeEdicion(
   original: FacturaEmitida,
@@ -791,6 +805,7 @@ export function cambiosDeEdicion(
   const base = datosDeFormulario(
     valoresDeFactura(original),
     original.vuelos.map((x) => x.id),
+    original.cobros?.map((c) => c.id),
   );
   // La emisora original: la que tiene (o null explícito si no tiene).
   base.emisora_id = original.emisora?.id ?? null;

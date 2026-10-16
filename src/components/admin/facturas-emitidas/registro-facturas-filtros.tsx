@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SIN_EMISORA, type FiltrosFacturas } from "@/lib/admin/facturas-emitidas";
+import { ETIQUETA_FACTURAS_NO_CUADRAN } from "@/lib/admin/cobro-factura";
 import { PARAMS_FOCO_PRE_CIERRE } from "@/lib/admin/pre-cierre-resolver";
 
 const ESTATUS = [
@@ -18,7 +19,9 @@ const ESTATUS = [
 
 const ALERTAS = [
   { value: "", label: "Todas" },
-  { value: "duplicado_vuelo", label: "Vuelo con 2 facturas" },
+  // El valor del filtro no cambia (enlaces viejos siguen vivos); el rótulo
+  // sí (16-oct-2026): dos facturas que cuadran ya no son alerta.
+  { value: "duplicado_vuelo", label: ETIQUETA_FACTURAS_NO_CUADRAN },
   { value: "sin_pdf", label: "Sin PDF" },
   { value: "sin_vuelo", label: "Sin vuelo" },
   { value: "vuelo_cancelado", label: "Vuelo cancelado" },
