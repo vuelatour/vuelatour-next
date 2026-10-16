@@ -403,8 +403,23 @@ export interface InventarioListResponse {
   regla_costo?: ReglaCosto;
 }
 
+/**
+ * Renglón «Saldo inicial al 1-sep-2026» del cardex (ADITIVO 16-oct-2026, API
+ * 0.0.85, inicio oficial): existencia y último precio de compra tras el
+ * último movimiento ANTERIOR al inicio (el API ya no lista esos
+ * movimientos). null = sin inicio o sin movimientos previos; ausente = API
+ * previo. Se lee con `normalizarSaldoInicialCardex`.
+ */
+export interface SaldoInicialCardexApi {
+  fecha: string;
+  etiqueta: string;
+  existencia: number;
+  costo_vigente: { moneda: string; unitario: number } | null;
+}
+
 export interface InventarioItemDetail extends InventarioItemWithStock {
   movimientos: InventarioMovimiento[];
+  saldo_inicial?: SaldoInicialCardexApi | null;
 }
 
 /** Fila del bloque COMPRAS del resumen del producto (montos en MXN). */
@@ -600,6 +615,8 @@ export interface InventarioItemResumen {
   precio_vigente?: PrecioVigenteFicha | null;
   dinero_generado?: DineroGenerado;
   periodo: { desde: string | null; hasta: string | null } | null;
+  /** ADITIVO API 0.0.85 (ver `SaldoInicialCardexApi`). */
+  saldo_inicial?: SaldoInicialCardexApi | null;
   compras: ResumenCompra[];
   ventas: ResumenVenta[];
   resumen_diario: ResumenDia[];

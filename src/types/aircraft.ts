@@ -229,6 +229,14 @@ export interface TacometroHistorial {
     taco_obs_por?: string | null;
     taco_obs_fecha?: string | null;
   }[];
+  /**
+   * ADITIVO (16-oct-2026, API 0.0.85, inicio oficial): el `historial` ya no
+   * trae filas anteriores al inicio; `taco` = `taco_llegada` de la fila
+   * previa inmediata (con él se valida el salto de la fila fechada más vieja
+   * y se pinta «Saldo inicial al 1-sep-2026»). null = sin inicio o sin filas
+   * previas; ausente = API previo. Se lee con `normalizarSaldoInicialTaco`.
+   */
+  saldo_inicial?: { fecha: string; taco: number | null } | null;
 }
 
 export interface Motor {
@@ -417,6 +425,12 @@ export interface AircraftMetrics {
    * Horas y vuelos NO se recortan.
    */
   finanzas_desde?: string | null;
+  /**
+   * ADITIVO (16-oct-2026, API 0.0.85): desde qué día cuentan `horas_anio` y
+   * `vuelos_anio` (el inicio oficial, si cae en el año en curso) o null =
+   * desde el 1-ene. Ausente = API previo. `horas_total` no se recorta.
+   */
+  anio_desde?: string | null;
 }
 
 export interface ListResponse<T> {

@@ -48,6 +48,11 @@ import {
   textoMonto,
   tonoDe,
 } from "@/lib/admin/inventario-utilidad";
+import {
+  normalizarSaldoInicialCardex,
+  textoDesdeInicio,
+  textoSinFilasDesde,
+} from "@/lib/admin/inicio-oficial";
 import type {
   InventarioItemResumen,
   MonedaInventario,
@@ -157,6 +162,11 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
   const unidadesVendidas =
     "unidades_vendidas" in totales ? numeroONulo(totales.unidades_vendidas) : totales.ventas_cant;
   const bajoMinimo = textoBajoMinimo(bajoStock, stockMinimo);
+  // Inicio oficial (API 0.0.85): compras, ventas, resumen por día y dinero
+  // generado ya vienen DESDE el inicio; la existencia de cada día y la de
+  // hoy, del cardex completo. Con movimientos anteriores llega el
+  // `saldo_inicial` (existencia al arrancar): sin él, todo como siempre.
+  const saldoInicial = normalizarSaldoInicialCardex(resumen.saldo_inicial);
 
   return (
     <section className="space-y-3">
@@ -209,7 +219,11 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
                       colSpan={4}
                       className="py-6 text-center text-sm text-muted-foreground whitespace-normal"
                     >
-                      Sin compras registradas. Registra una entrada para dar de alta stock.
+                      {textoSinFilasDesde(
+                        saldoInicial,
+                        "Sin compras registradas. Registra una entrada para dar de alta stock.",
+                        "compras",
+                      )}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -269,7 +283,11 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
                     colSpan={5}
                     className="py-6 text-center text-sm text-muted-foreground whitespace-normal"
                   >
-                    Sin ventas todavía. Se registran al dar salida a un avión.
+                    {textoSinFilasDesde(
+                      saldoInicial,
+                      "Sin ventas todavía. Se registran al dar salida a un avión.",
+                      "ventas",
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -324,13 +342,26 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
               </TableRow>
             </TableHeader>
             <TableBody>
+              {/* Orden cronológico: el saldo inicial va ARRIBA, antes del
+                  primer día visible. */}
+              {saldoInicial && (
+                <TableRow data-saldo-inicial className="bg-muted/40 hover:bg-muted/40">
+                  <TableCell className="text-xs font-medium whitespace-normal">
+                    {saldoInicial.etiqueta}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {conUnidad(saldoInicial.existencia)}
+                  </TableCell>
+                  <TableCell />
+                </TableRow>
+              )}
               {resumen_diario.length === 0 ? (
                 <TableRow>
                   <TableCell
                     colSpan={3}
                     className="py-6 text-center text-sm text-muted-foreground whitespace-normal"
                   >
-                    Sin movimientos todavía.
+                    {textoSinFilasDesde(saldoInicial, "Sin movimientos todavía.")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -386,7 +417,11 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
         </div>
       </div>
 
-      <DineroGeneradoRenglon dinero={dinero} unidad={unidad} />
+      <DineroGeneradoRenglon
+        dinero={dinero}
+        unidad={unidad}
+        desde={saldoInicial ? textoDesdeInicio(saldoInicial.fecha) : null}
+      />
 
       <p className="text-xs text-muted-foreground">
         {reglaNueva ? notaFicha(margen) : NOTA_FICHA_API_PREVIO}
@@ -559,9 +594,12 @@ function FilaVenta({ v, unidad }: { v: ResumenVenta; unidad: string | null }) {
 function DineroGeneradoRenglon({
   dinero,
   unidad,
+  desde,
 }: {
   dinero: ReturnType<typeof dineroGeneradoDeTotales>;
   unidad: string | null;
+  /** «desde el 1-sep-2026» (API 0.0.85 con saldo inicial) o null. */
+  desde?: string | null;
 }) {
   const piezas = piezasDineroGenerado(dinero);
   const usd = lineaUsdOriginal(dinero.vendido_usd_original, dinero.utilidad_usd_original);
@@ -573,6 +611,7 @@ function DineroGeneradoRenglon({
     <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
         {TITULO_DINERO}
+        {desde ? ` (${desde})` : ""}
       </p>
       {sinVentas ? (
         <p className="mt-1 text-sm text-muted-foreground">{SIN_VENTAS}</p>

@@ -867,3 +867,62 @@ describe("cableado de la SALIDA (movimiento-dialog)", () => {
     expect(costo).toContain("updateMovimientoCostoAction(movimiento.itemId, movimiento.id, cuerpo,");
   });
 });
+
+describe("inicio oficial (API 0.0.85): «Saldo inicial al 1-sep-2026» del cardex", () => {
+  // Lo que manda el API cuando hubo movimientos antes del 1-sep (30 + 120
+  // entradas del fixture ⇒ 150): la existencia tras el último previo y el
+  // último precio de compra (USD 21.25). Los movimientos de julio/agosto ya
+  // NO vienen en `movimientos`.
+  const SALDO = {
+    fecha: "2026-09-01",
+    etiqueta: "Saldo inicial al 1-sep-2026",
+    existencia: 150,
+    costo_vigente: { moneda: "USD", unitario: 21.25 },
+  };
+  const soloSeptiembre = () =>
+    item15w50().movimientos.filter((m) => m.fecha_movimiento >= "2026-09-01");
+
+  it("cardex: renglón al PIE con existencia y último precio de compra; las cifras del API tal cual", async () => {
+    api.item = item15w50({ movimientos: soloSeptiembre(), saldo_inicial: SALDO });
+    api.resumen = { ...resumen15w50(), saldo_inicial: SALDO };
+    const html = await renderPagina(ID_15W50);
+    const t = texto(html);
+    expect(t).toContain("Saldo inicial al 1-sep-2026 Existencia 150 cuarto (qt) Último precio de compra $21.25 USD");
+    // Va DESPUÉS de la tabla del cardex (más reciente → más viejo).
+    const cardex = html.indexOf('id="cardex"');
+    expect(cardex).toBeGreaterThan(-1);
+    expect(html.indexOf("data-saldo-inicial", cardex)).toBeGreaterThan(cardex);
+    // Resumen por día: renglón ARRIBA (orden cronológico) y «dinero generado» rotulado.
+    expect(t).toContain("Fecha del día Existencia Utilidad / pérdida (MXN) Saldo inicial al 1-sep-2026 150 cuarto (qt)");
+    expect(t).toContain("Dinero generado por este producto (desde el 1-sep-2026)");
+    // La existencia de HOY sigue siendo la del API (cardex completo).
+    expect(t).toContain("Hoy 84 cuarto (qt)");
+  });
+
+  it("todo el cardex fue antes del inicio: «Sin movimientos desde el 1-sep-2026.» + saldo (no «todavía»)", async () => {
+    api.item = item15w50({ movimientos: [], saldo_inicial: { ...SALDO, costo_vigente: null } });
+    api.resumen = resumen15w50();
+    const t = texto(await renderPagina(ID_15W50));
+    expect(t).toContain("Sin movimientos desde el 1-sep-2026.");
+    expect(t).not.toContain("Sin movimientos todavía. Registra una entrada");
+    expect(t).toContain("Saldo inicial al 1-sep-2026 Existencia 150 cuarto (qt)");
+    expect(t).not.toContain("Último precio de compra");
+  });
+
+  it("sin la llave (API 0.0.84) o null: marcado IDÉNTICO al de siempre", async () => {
+    api.item = item15w50();
+    api.resumen = resumen15w50();
+    const antes = await renderPagina(ID_15W50);
+    api.item = item15w50({ saldo_inicial: null });
+    api.resumen = { ...resumen15w50(), saldo_inicial: null };
+    const conNull = await renderPagina(ID_15W50);
+    expect(conNull).toBe(antes);
+    expect(antes).not.toContain("data-saldo-inicial");
+    expect(texto(antes)).toContain("Dinero generado por este producto ");
+    expect(antes).not.toContain("(desde el 1-sep-2026)");
+    api.item = item15w50({ movimientos: [] });
+    expect(texto(await renderPagina(ID_15W50))).toContain(
+      "Sin movimientos todavía. Registra una entrada para dar de alta stock.",
+    );
+  });
+});

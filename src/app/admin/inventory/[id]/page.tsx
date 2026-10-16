@@ -21,6 +21,11 @@ import { MovimientoButton } from "@/components/admin/inventory/movimiento-button
 import { CardexLibroButton } from "@/components/admin/inventory/cardex-libro-button";
 import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicion";
 import { MovimientosEliminadosCard } from "@/components/admin/inventory/movimientos-eliminados-card";
+import { FilaSaldoInicialCardex } from "@/components/admin/inventory/saldo-inicial-cardex";
+import {
+  normalizarSaldoInicialCardex,
+  textoSinFilasDesde,
+} from "@/lib/admin/inicio-oficial";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
 import { ResumenProducto } from "@/components/admin/inventory/resumen-producto";
 import { FichaPlegable } from "@/components/admin/inventory/ficha-plegable";
@@ -140,7 +145,7 @@ export default async function InventoryItemPage({
   const ubicaciones = ubicacionesRes.disponible ? ubicacionesRes.data : null;
   const { texto: descripcion, aeronaveUso } = partirDescripcion(item.descripcion);
   // El formulario de «Editar» no necesita el cardex: no se serializa al cliente.
-  const { movimientos, ...itemSinCardex } = item;
+  const { movimientos, saldo_inicial: saldoInicialCardex, ...itemSinCardex } = item;
 
   const empaques = item.empaques ?? [];
   const empaqueEscaneado =
@@ -305,9 +310,15 @@ export default async function InventoryItemPage({
         resumen={resumenPlegableCardex(movimientos.length)}
       >
         {movimientos.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            Sin movimientos todavía. Registra una entrada para dar de alta stock.
-          </p>
+          <>
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              {textoSinFilasDesde(
+                normalizarSaldoInicialCardex(saldoInicialCardex),
+                "Sin movimientos todavía. Registra una entrada para dar de alta stock.",
+              )}
+            </p>
+            <FilaSaldoInicialCardex saldo={saldoInicialCardex} unidad={item.unidad} className="-mx-4" />
+          </>
         ) : (
           <div className="-mx-4">
             <CardexConEdicion
@@ -318,6 +329,10 @@ export default async function InventoryItemPage({
               puedeEditarCosto={puedeEditarCosto}
               puedeEliminar={puedeEliminar}
             />
+            {/* Inicio oficial (API 0.0.85): el cardex va del más reciente
+                al más viejo y ya no trae los movimientos anteriores; su
+                saldo va AL PIE. */}
+            <FilaSaldoInicialCardex saldo={saldoInicialCardex} unidad={item.unidad} />
           </div>
         )}
 

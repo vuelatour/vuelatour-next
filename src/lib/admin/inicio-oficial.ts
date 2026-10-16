@@ -323,3 +323,152 @@ export function textoArrancaEnMes(inicio: string): string {
 export function textoSaldoInicial(inicio: string): string {
   return `Saldo inicial al ${fechaInicioCorta(inicio)}`;
 }
+
+// ─── Auditoría 16-oct-2026 (API 0.0.85, llaves ADITIVAS) ───────────────────
+//
+// El API 0.0.85 dejó de mandar filas anteriores al inicio en tacómetros y
+// cardex, y agregó llaves para rotular lo que ya viene recortado. TODAS son
+// opcionales: sin ellas (API 0.0.84) cada función devuelve el texto o el
+// cálculo de siempre. Ningún número se recalcula aquí: solo se LEE lo que
+// el API ya calculó con el historial completo.
+
+/** `saldo_inicial` de `GET /v1/aircraft/:id/tacometros` (0.0.85). */
+export interface SaldoInicialTaco {
+  /** Día del inicio oficial («AAAA-MM-DD»). */
+  fecha: string;
+  /** `taco_llegada` de la fila previa inmediata (null si no la capturaron). */
+  taco: number | null;
+}
+
+/** Valida el `saldo_inicial` de tacómetros; ausente o mal formado ⇒ `null`. */
+export function normalizarSaldoInicialTaco(raw: unknown): SaldoInicialTaco | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as { fecha?: unknown; taco?: unknown };
+  const fecha = normalizarInicioOficial(r.fecha);
+  if (!fecha) return null;
+  const taco = typeof r.taco === "number" && Number.isFinite(r.taco) ? r.taco : null;
+  return { fecha, taco };
+}
+
+/**
+ * «Salto en la cadena» del histórico de tacómetros (más reciente primero):
+ * la salida de una fila no coincide con la llegada de la fila SIGUIENTE (más
+ * vieja). Con el API 0.0.85 la fila previa al inicio ya no viaja: la fila
+ * fechada más vieja se compara contra `saldo_inicial.taco`, que ES la
+ * llegada de esa fila previa ⇒ el salto sale idéntico al de antes del
+ * recorte. Las filas sin fecha (el API las ordena al final, después de las
+ * anteriores al inicio) se comparan entre sí como siempre. Sin
+ * `saldoInicial` (API 0.0.84 o sin filas previas) ⇒ el cálculo de siempre.
+ */
+export function saltosDeCadena<
+  H extends { fecha: string | null; taco_salida: number | null; taco_llegada: number | null },
+>(historial: H[], saldoInicial?: SaldoInicialTaco | null): (H & { salto: boolean })[] {
+  let ultimaFechada = -1;
+  if (saldoInicial) {
+    for (let i = historial.length - 1; i >= 0; i--) {
+      if (historial[i].fecha) {
+        ultimaFechada = i;
+        break;
+      }
+    }
+  }
+  return historial.map((h, i) => {
+    const llegadaPrevia =
+      i === ultimaFechada ? saldoInicial!.taco : (historial[i + 1]?.taco_llegada ?? null);
+    const salto = h.taco_salida != null && llegadaPrevia != null && h.taco_salida !== llegadaPrevia;
+    return { ...h, salto };
+  });
+}
+
+/** Último precio de compra a la fecha del saldo inicial (cardex, 0.0.85). */
+export interface CostoVigenteSaldoInicial {
+  moneda: string;
+  /** En `moneda`, tal cual lo capturaron. */
+  unitario: number;
+}
+
+/** `saldo_inicial` del cardex de un artículo (0.0.85). */
+export interface SaldoInicialCardex {
+  fecha: string;
+  /** «Saldo inicial al 1-sep-2026» (del API, listo para pintar). */
+  etiqueta: string;
+  /** Existencia tras el ÚLTIMO movimiento anterior al inicio. */
+  existencia: number;
+  costo_vigente: CostoVigenteSaldoInicial | null;
+}
+
+/** Valida el `saldo_inicial` del cardex; ausente o mal formado ⇒ `null`. */
+export function normalizarSaldoInicialCardex(raw: unknown): SaldoInicialCardex | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as {
+    fecha?: unknown;
+    etiqueta?: unknown;
+    existencia?: unknown;
+    costo_vigente?: unknown;
+  };
+  const fecha = normalizarInicioOficial(r.fecha);
+  const existencia = Number(r.existencia);
+  if (!fecha || r.existencia == null || !Number.isFinite(existencia)) return null;
+  const etiqueta =
+    typeof r.etiqueta === "string" && r.etiqueta.trim() !== ""
+      ? r.etiqueta.trim()
+      : textoSaldoInicial(fecha);
+  let costo: CostoVigenteSaldoInicial | null = null;
+  const c = r.costo_vigente as { moneda?: unknown; unitario?: unknown } | null | undefined;
+  if (c && typeof c === "object" && typeof c.moneda === "string") {
+    const unitario = Number(c.unitario);
+    if (c.unitario != null && Number.isFinite(unitario)) costo = { moneda: c.moneda, unitario };
+  }
+  return { fecha, etiqueta, existencia, costo_vigente: costo };
+}
+
+/**
+ * Lista vacía de un historial recortado: con renglón de saldo inicial dice
+ * «Sin movimientos desde el 1-sep-2026.» (había historia antes); sin él, el
+ * texto de siempre.
+ */
+export function textoSinFilasDesde(
+  saldo: { fecha: string } | null | undefined,
+  textoDeSiempre: string,
+  sustantivo = "movimientos",
+): string {
+  return saldo ? `Sin ${sustantivo} ${textoDesdeInicio(saldo.fecha)}.` : textoDeSiempre;
+}
+
+/**
+ * KPI de la ficha del avión: «Horas mes / año» o, con `metrics.anio_desde`
+ * (0.0.85, el año cuenta desde el inicio), «Horas mes / desde el 1-sep-2026».
+ */
+export function rotuloHorasMesAnio(anioDesde: unknown): string {
+  const desde = normalizarInicioOficial(anioDesde);
+  return desde ? `Horas mes / ${textoDesdeInicio(desde)}` : "Horas mes / año";
+}
+
+/**
+ * Total de honorarios del piloto externo: «Histórico» o, con
+ * `honorarios.desde` (0.0.85), «Desde el 1-sep-2026».
+ */
+export function rotuloTotalHonorarios(desde: unknown): string {
+  const d = normalizarInicioOficial(desde);
+  return d ? etiquetaDesdeInicio(d) : "Histórico";
+}
+
+/**
+ * Chip «Registradas» del resumen de Facturas emitidas: con `resumen.desde`
+ * (0.0.85, conteos y totales desde el inicio) «Registradas desde el
+ * 1-sep-2026»; sin la llave, «Registradas».
+ */
+export function rotuloRegistradas(desde: unknown): string {
+  const d = normalizarInicioOficial(desde);
+  return d ? `Registradas ${textoDesdeInicio(d)}` : "Registradas";
+}
+
+/**
+ * «La cuenta no puede arrancar antes de septiembre de 2026 (inicio
+ * oficial).» — el MISMO texto del 400 `CUENTA_ANTES_DEL_INICIO` del API
+ * 0.0.85, para avisarlo en el formulario antes de guardar.
+ */
+export function textoCuentaAntesDelInicio(inicio: string): string {
+  const m = Number(inicio.slice(5, 7));
+  return `La cuenta no puede arrancar antes de ${MESES_LARGOS_ES[m - 1] ?? inicio.slice(5, 7)} de ${inicio.slice(0, 4)} (inicio oficial).`;
+}

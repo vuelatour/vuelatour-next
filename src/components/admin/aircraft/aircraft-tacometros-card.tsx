@@ -37,6 +37,13 @@ import { DataTable } from "@/components/admin/data-table";
 import { ImagePreview } from "@/components/admin/image-preview";
 import { pathDeUrlFirmada } from "@/lib/admin/foto-firmada";
 import { BitacoraPdfButton } from "./bitacora-pdf-button";
+import { RenglonSaldoInicial } from "@/components/admin/renglon-saldo-inicial";
+import {
+  normalizarSaldoInicialTaco,
+  saltosDeCadena,
+  textoSaldoInicial,
+  textoSinFilasDesde,
+} from "@/lib/admin/inicio-oficial";
 
 const inputCls =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -655,160 +662,196 @@ export function AircraftTacometrosCard({
           {loading ? (
             <p className="text-sm text-muted-foreground">Cargando…</p>
           ) : !data || data.historial.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin lecturas registradas.</p>
+            <>
+              <p className="text-sm text-muted-foreground">
+                {textoSinFilasDesde(
+                  normalizarSaldoInicialTaco(data?.saldo_inicial),
+                  "Sin lecturas registradas.",
+                  "lecturas",
+                )}
+              </p>
+              <FilaSaldoInicialTaco saldo={data?.saldo_inicial} className="mt-2" />
+            </>
           ) : (
             (() => {
               /* Paginado con el DataTable compartido (10/20/50/100 + búsqueda),
                  igual que las demás listas: el histórico completo hacía
                  kilométrico el expediente. El "salto" de cadena depende de la
                  fila SIGUIENTE (más antigua), así que se precalcula sobre el
-                 arreglo COMPLETO antes de paginar. */
-              const filas = data.historial.map((h, i) => {
-                const anterior = data.historial[i + 1];
-                const salto =
-                  h.taco_salida != null &&
-                  anterior?.taco_llegada != null &&
-                  h.taco_salida !== anterior.taco_llegada;
-                return { ...h, salto };
-              });
+                 arreglo COMPLETO antes de paginar. Inicio oficial (API
+                 0.0.85): las filas anteriores ya no viajan; la fila fechada
+                 más vieja se valida contra `saldo_inicial.taco` (la llegada
+                 de la fila previa) ⇒ el mismo salto de siempre. */
+              const filas = saltosDeCadena(
+                data.historial,
+                normalizarSaldoInicialTaco(data.saldo_inicial),
+              );
               return (
-                <DataTable
-                  rows={filas}
-                  rowKey={(h) => h.escala_id}
-                  defaultPageSize={10}
-                  searchText={(h) =>
-                    [
-                      h.ruta,
-                      h.folio != null ? `#${h.folio}` : "",
-                      h.fecha ? fmtDateTime(h.fecha) : "",
-                    ].join(" ")
-                  }
-                  searchPlaceholder="Buscar por ruta, folio o fecha…"
-                  columns={[
-                    {
-                      key: "fecha",
-                      header: "Fecha",
-                      cell: (h) => (h.fecha ? fmtDateTime(h.fecha) : "—"),
-                    },
-                    {
-                      key: "ruta",
-                      header: "Ruta",
-                      cell: (h) => (
-                        <>
-                          {h.ruta}
-                          {h.folio != null &&
-                            (h.vuelo_id ? (
-                              <Link
-                                href={`/admin/flights/${h.vuelo_id}`}
-                                className="ml-1 text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground transition-colors"
-                                title={`Ver detalle del vuelo #${h.folio}`}
-                              >
-                                #{h.folio}
-                              </Link>
-                            ) : (
-                              <span className="ml-1 text-xs text-muted-foreground">
-                                #{h.folio}
-                              </span>
-                            ))}
-                        </>
-                      ),
-                    },
-                    {
-                      key: "salida",
-                      header: "Salida",
-                      headClassName: "text-right",
-                      cellClassName: "text-right tabular-nums",
-                      cell: (h) => (
-                        <span
-                          className={
-                            h.salto || h.taco_salida_obs
-                              ? "inline-block rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
-                              : undefined
-                          }
-                          title={
-                            [
-                              h.salto
-                                ? "Salto en la cadena de tacómetros"
-                                : null,
-                              h.taco_salida_obs
-                                ? `Observación: ${h.taco_salida_obs}${
+                <>
+                  <DataTable
+                    rows={filas}
+                    rowKey={(h) => h.escala_id}
+                    defaultPageSize={10}
+                    searchText={(h) =>
+                      [
+                        h.ruta,
+                        h.folio != null ? `#${h.folio}` : "",
+                        h.fecha ? fmtDateTime(h.fecha) : "",
+                      ].join(" ")
+                    }
+                    searchPlaceholder="Buscar por ruta, folio o fecha…"
+                    columns={[
+                      {
+                        key: "fecha",
+                        header: "Fecha",
+                        cell: (h) => (h.fecha ? fmtDateTime(h.fecha) : "—"),
+                      },
+                      {
+                        key: "ruta",
+                        header: "Ruta",
+                        cell: (h) => (
+                          <>
+                            {h.ruta}
+                            {h.folio != null &&
+                              (h.vuelo_id ? (
+                                <Link
+                                  href={`/admin/flights/${h.vuelo_id}`}
+                                  className="ml-1 text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground transition-colors"
+                                  title={`Ver detalle del vuelo #${h.folio}`}
+                                >
+                                  #{h.folio}
+                                </Link>
+                              ) : (
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  #{h.folio}
+                                </span>
+                              ))}
+                          </>
+                        ),
+                      },
+                      {
+                        key: "salida",
+                        header: "Salida",
+                        headClassName: "text-right",
+                        cellClassName: "text-right tabular-nums",
+                        cell: (h) => (
+                          <span
+                            className={
+                              h.salto || h.taco_salida_obs
+                                ? "inline-block rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
+                                : undefined
+                            }
+                            title={
+                              [
+                                h.salto
+                                  ? "Salto en la cadena de tacómetros"
+                                  : null,
+                                h.taco_salida_obs
+                                  ? `Observación: ${h.taco_salida_obs}${
+                                      h.taco_obs_por
+                                        ? ` — ${h.taco_obs_por}${h.taco_obs_fecha ? `, ${h.taco_obs_fecha}` : ""}`
+                                        : ""
+                                    }`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join("\n") || undefined
+                            }
+                          >
+                            <TacoLink h={h}>{h.taco_salida ?? "—"}</TacoLink>
+                            {h.taco_salida_obs && (
+                              <span className="ml-1">{"\ud83d\udcdd"}</span>
+                            )}
+                          </span>
+                        ),
+                      },
+                      {
+                        key: "llegada",
+                        header: "Llegada",
+                        headClassName: "text-right",
+                        cellClassName: "text-right tabular-nums",
+                        cell: (h) => (
+                          <span
+                            className={
+                              h.taco_llegada_obs
+                                ? "inline-block rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
+                                : undefined
+                            }
+                            title={
+                              h.taco_llegada_obs
+                                ? `Observación: ${h.taco_llegada_obs}${
                                     h.taco_obs_por
                                       ? ` — ${h.taco_obs_por}${h.taco_obs_fecha ? `, ${h.taco_obs_fecha}` : ""}`
                                       : ""
                                   }`
-                                : null,
-                            ]
-                              .filter(Boolean)
-                              .join("\n") || undefined
-                          }
-                        >
-                          <TacoLink h={h}>{h.taco_salida ?? "—"}</TacoLink>
-                          {h.taco_salida_obs && (
-                            <span className="ml-1">{"\ud83d\udcdd"}</span>
-                          )}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "llegada",
-                      header: "Llegada",
-                      headClassName: "text-right",
-                      cellClassName: "text-right tabular-nums",
-                      cell: (h) => (
-                        <span
-                          className={
-                            h.taco_llegada_obs
-                              ? "inline-block rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
-                              : undefined
-                          }
-                          title={
-                            h.taco_llegada_obs
-                              ? `Observación: ${h.taco_llegada_obs}${
-                                  h.taco_obs_por
-                                    ? ` — ${h.taco_obs_por}${h.taco_obs_fecha ? `, ${h.taco_obs_fecha}` : ""}`
-                                    : ""
-                                }`
-                              : undefined
-                          }
-                        >
-                          <TacoLink h={h}>{h.taco_llegada ?? "—"}</TacoLink>
-                          {h.taco_llegada_obs && (
-                            <span className="ml-1">{"\ud83d\udcdd"}</span>
-                          )}
-                        </span>
-                      ),
-                    },
-                    {
-                      key: "horas",
-                      header: "Horas",
-                      headClassName: "text-right",
-                      cellClassName: "text-right tabular-nums",
-                      cell: (h) => (h.horas != null ? `${h.horas} h` : "—"),
-                    },
-                    {
-                      key: "fotos",
-                      header: "Fotos",
-                      headClassName: "text-center",
-                      cell: (h) => (
-                        <div className="flex items-center justify-center gap-1">
-                          <TacoFoto url={h.foto_salida_url} label="Salida" />
-                          <TacoFoto url={h.foto_llegada_url} label="Llegada" />
-                          {!h.foto_salida_url && !h.foto_llegada_url && (
-                            <span className="text-xs text-muted-foreground">
-                              —
-                            </span>
-                          )}
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
+                                : undefined
+                            }
+                          >
+                            <TacoLink h={h}>{h.taco_llegada ?? "—"}</TacoLink>
+                            {h.taco_llegada_obs && (
+                              <span className="ml-1">{"\ud83d\udcdd"}</span>
+                            )}
+                          </span>
+                        ),
+                      },
+                      {
+                        key: "horas",
+                        header: "Horas",
+                        headClassName: "text-right",
+                        cellClassName: "text-right tabular-nums",
+                        cell: (h) => (h.horas != null ? `${h.horas} h` : "—"),
+                      },
+                      {
+                        key: "fotos",
+                        header: "Fotos",
+                        headClassName: "text-center",
+                        cell: (h) => (
+                          <div className="flex items-center justify-center gap-1">
+                            <TacoFoto url={h.foto_salida_url} label="Salida" />
+                            <TacoFoto url={h.foto_llegada_url} label="Llegada" />
+                            {!h.foto_salida_url && !h.foto_llegada_url && (
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
+                            )}
+                          </div>
+                        ),
+                      },
+                    ]}
+                  />
+                  {/* La tabla va del más reciente al más viejo: el saldo
+                      inicial va al PIE, bajo la fila más vieja. */}
+                  <FilaSaldoInicialTaco saldo={data.saldo_inicial} />
+                </>
               );
             })()
           )}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * «Saldo inicial al 1-sep-2026 · Tacómetro 1234.5» (API 0.0.85): la
+ * llegada de la última lectura anterior al inicio. Sin la llave (API
+ * previo) o sin lecturas previas, nada.
+ */
+function FilaSaldoInicialTaco({
+  saldo,
+  className,
+}: {
+  saldo: unknown;
+  className?: string;
+}) {
+  const s = normalizarSaldoInicialTaco(saldo);
+  if (!s) return null;
+  return (
+    <RenglonSaldoInicial
+      etiqueta={textoSaldoInicial(s.fecha)}
+      piezas={[{ titulo: "Tacómetro", valor: s.taco != null ? String(s.taco) : "—" }]}
+      className={className}
+    />
   );
 }
 
