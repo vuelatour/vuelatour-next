@@ -7712,7 +7712,8 @@ al reanalizar (invariante 46, `folio-relectura.util.ts`).
   confirmación. Al guardar viaja la lista completa SOLO si cambió, encima de
   la lectura de la IA (fresca o guardada); quitar la última manda `{}`.
 - **Tablas** (`expenses-table.tsx`, `flight-gastos-table.tsx`): junto a la
-  miniatura, «+N hojas» con tooltip (se abren en «Verificar / editar»).
+  miniatura, «+N hojas» con tooltip. Desde el 16-oct-2026 es un BOTÓN que
+  abre el comprobante completo con visor (ver «Varias facturas por gasto»).
 - `lib/storage/gasto-fotos.ts` importa el cliente de Supabase del navegador
   de forma DIFERIDA (exige sus variables al cargar el módulo y ahora lo
   importan diálogos que se renderizan en pruebas sin ellas).
@@ -11037,3 +11038,121 @@ historial completo.
   `components/admin/__tests__/inicio-oficial-auditoria.test.tsx` y el
   bloque «inicio oficial (API 0.0.85)» de
   `components/admin/inventory/__tests__/ficha-producto.test.tsx`.
+
+## Varias facturas por gasto (16-oct-2026, API 0.0.86)
+
+Pedido del cliente con captura: en «Verificar / editar» las «Hojas del
+comprobante» PDF salían como chips «PDF» que no se veían ahí, y «Subir
+factura» aceptaba UN PDF + UN XML (la segunda REEMPLAZABA a la primera).
+ASA entrega 5 CFDI por carga de gasavión (gasto 24b941d4…, 29-sep, N4142R):
+Mary terminó metiendo los 5 PDF como hojas. Contrato: invariante 87 del API
+(tabla puente `gasto_factura_recibida`, migración `20261016000003`;
+`gasto.factura_recibida_id` sigue siendo la PRINCIPAL — folio de
+Conciliación/Excel, trigger FACTURADA). Fuente única del panel:
+`lib/admin/facturas-gasto.ts` (PURA; prueba
+`lib/admin/__tests__/facturas-gasto.test.ts`).
+
+- **Lo que viaja**: `POST /v1/invoices/recibidas/de-gasto` con `archivos[]`
+  (una entrada POR FACTURA: `{xml_b64?, pdf_b64?, nombre?}`, 1–10) por
+  `subirFacturasGastoAction({gastoId, archivos})` (UN objeto: regla del
+  base64). La respuesta trae `facturas`, `agregadas` (ligadas en este envío;
+  incluye las `EXISTENTE` del buzón, que `detalle[]` cuenta como
+  `reutilizadas`), `ya_existian` (las que YA estaban en ESTE gasto),
+  `avisos` y `facturas_multiples`. El detalle `GET /v1/expenses/:id` (solo
+  roles de oficina) trae `facturas`, `facturas_avisos` y
+  `facturas_multiples`; la lista, `facturas_n` (leerlo SIEMPRE con
+  `nFacturasDeFila`). Quitar = `DELETE
+  /v1/invoices/recibidas/:id/gastos/:gastoId` (quita la LIGA; la factura
+  sigue en el buzón; si era la principal, el API promueve la más antigua).
+- **Selector ÚNICO** (`gasto-facturas-dialog.tsx`, `GastoFacturasDialog`):
+  `type="file" multiple` con PDF y XML juntos (y arrastre). Se emparejan con
+  `emparejarArchivosFactura`: (1) mismo nombre base
+  (`ACC…_FCUN_1299718.pdf` ↔ `.xml`); (2) si no, por las pistas del XML
+  (`pistasDeXmlCfdi`: UUID del timbre o serie+folio/folio ≥ 4 dígitos dentro
+  del nombre del PDF), solo con candidato ÚNICO; (3) si queda UN PDF suelto
+  y UN XML suelto, son la misma (el caso de siempre: XML del SAT con su
+  PDF) y se DICE en ámbar («se emparejaron aunque los nombres no
+  coinciden…»). Lo demás va suelto («solo PDF» / «solo XML»). Rechaza
+  —diciéndolo— tipos ajenos, vacíos, > 8 MB, repetidos y lo que pase de 10
+  facturas. Lista previa «Factura 1…N» con ✕ por factura.
+- **Lotes que caben en Vercel**: `partirEnLotes` (≤ 3.5 M caracteres de
+  base64 y ≤ 10 facturas por llamada; un PDF nunca se separa de su XML; una
+  factura que sola pasa del tope va sola). Un lote que falla NO detiene los
+  demás: sus archivos SIGUEN en la lista con el motivo
+  (`textoFalloLotes`); los subidos salen de la lista. Al terminar se
+  recarga la lista y el toast dice cuántas se agregaron
+  (`textoResultadoSubida`).
+- **Las actions NO revalidan** (el diálogo sigue abierto con la lista y los
+  avisos): al CERRAR con cambios, `router.refresh()` (convención «Red /
+  API»). En «Verificar / editar» el refresh trae un `gasto` nuevo y el
+  diálogo ya lo tolera (BASE de la sesión).
+- **SKEW (obligatorio)**:
+  - API 0.0.85 (sin `archivos` ⇒ 400 «property archivos should not
+    exist»): la action reintenta con el shape de SIEMPRE `{xml_b64,
+    pdf_b64, pdf_nombre}` SOLO si es UNA factura (modo `LEGADO`); con varias
+    no sube NADA y responde `CODIGO_API_SIN_VARIAS` ⇒ el diálogo deja todo
+    en la lista y lo dice (`TEXTO_API_SIN_VARIAS`). Si un lote de una sola
+    factura entró en modo `LEGADO` y quedan más, SE DETIENE
+    (`TEXTO_LEGADO_PARCIAL`): la siguiente la reemplazaría.
+  - API 0.0.86 con la migración PENDIENTE: varias ⇒ 503
+    `FACTURAS_GASTO_NO_DISPONIBLE` (no escribe nada) ⇒ el mismo código; una
+    sola ⇒ `facturas_multiples: false` ⇒ modo `LEGADO`.
+  - `facturasDeGastoAction`: con `facturas` en el detalle, `varias =
+    facturas_multiples ?? true`; sin la llave (0.0.85) arma la lista con la
+    ÚNICA factura (`GET /v1/invoices/recibidas/:id`) y `varias: false`. Con
+    `varias: false` el selector admite UNA factura (`decidirSubida`,
+    `TEXTO_SOLO_UNA_FACTURA`) y, si ya hay una, el aviso ámbar
+    `TEXTO_LEGADO_YA_TIENE` («si subes otra, la REEMPLAZA») y subir CONFIRMA
+    antes («¿Reemplazar la factura de este gasto?»: lo destructivo pregunta;
+    antes era solo el aviso). «Quitar de
+    este gasto» solo con `varias === true`; un 404 «Cannot DELETE» se dice
+    en es-MX (`TEXTO_QUITAR_NO_DISPONIBLE`).
+  - Sin `facturas_n` en la lista, el ícono es el de siempre (⬆ / 📎).
+- **Columna Facturación** (`gasto-factura-button.tsx`): ⬆ sin facturas, 📎
+  con una, 📎 + número con varias (junto al semáforo se lee «● Facturada
+  📎 5»; el semáforo sigue siendo el menú de estados, por eso el número va
+  en el ícono y no dentro del pill). Clic = el diálogo con la lista: cada
+  factura con folio (`etiquetaFactura`: SERIE-FOLIO, el nombre del PDF o el
+  UUID corto), emisor · total · qué archivos tiene, «Ver aquí» (visor del
+  PDF), «PDF ↗», «XML ↗» y «Quitar de este gasto» CON confirmación
+  (`TITULO_QUITAR_FACTURA` / `textoQuitarFactura`: «NO se borra…», «era la
+  principal…», «era la única: regresa a Pendiente»).
+- **Avisos ámbar NO bloqueantes**: SOLO los del API (`facturas_avisos` del
+  detalle, que se recarga tras subir/quitar). El panel NO calcula la suma:
+  el API excluye las facturas que amparan además OTROS gastos (VIP SAESA) y
+  un espejo aquí avisaría en falso.
+- **«Verificar / editar»** (`expense-verify-dialog.tsx`): bloque «Facturas
+  del gasto (N)» (`FacturasDelGastoSeccion`: la lista con «Ver aquí» y el
+  botón «Subir facturas», que abre el MISMO diálogo anidado; fuera del
+  `<form>`). En «Hojas del comprobante» cada PDF (principal o guardada)
+  tiene «Ver aquí» ⇒ visor incrustado debajo de la lista (uno a la vez; se
+  cierra al reabrir el diálogo o al quitar esa hoja). Una hoja sin firma ya
+  NO es texto sin enlace: «Abrir» pide la firma en el clic; la principal sin
+  firma dice su nombre con «Abrir» (antes «no tiene foto»).
+- **Tablas** (`expenses-table.tsx`, `flight-gastos-table.tsx`): «+N hojas»
+  es un botón (`hojas-comprobante-boton.tsx`) que abre el comprobante
+  completo (hoja 1 = la que lee la IA): fotos con su miniatura (zoom), PDF
+  con «Ver aquí» (el primer PDF se abre solo) y «Abrir en pestaña nueva».
+- **Visor** (`components/admin/visor-archivo.tsx`): `VisorPdf` = `<iframe>`
+  con la URL FIRMADA (Supabase sirve el PDF inline; el panel no tiene CSP
+  que lo impida). La URL VENCE: al montar, si la que trae la página es
+  vieja (`debeRenovarUrl`, el `exp` del token) o no hay, pide otra ANTES de
+  pintar el iframe — un iframe con firma vencida enseña el JSON
+  `InvalidJWT` y no hay `onError` que lo detecte. «Volver a cargar» siempre
+  re-firma; «Abrir en pestaña nueva» (`BotonAbrirFirmado`) usa la fresca o
+  la pide en el MISMO clic (`abrirArchivoFirmado`, Safari). Facturas =
+  bucket `facturas` (firmable para ADMIN/COORDINADOR/FACTURACION en
+  `/v1/storage/firmar`); hojas = `gasto-fotos`. En el celular el iframe
+  puede mostrar solo la primera página: el texto lo dice y ofrece la
+  pestaña nueva.
+- `fileToBase64` se importa DIFERIDO en el diálogo (su módulo carga el
+  cliente de Supabase del navegador, que exige variables al CARGAR, y el
+  diálogo vive dentro de «Verificar / editar», que las pruebas renderizan
+  sin ellas).
+- Tests: `lib/admin/__tests__/facturas-gasto.test.ts` (emparejar, pistas,
+  lotes, skew, textos), `app/admin/expenses/__tests__/facturas-gasto-actions.test.ts`
+  (archivos[], reintento legado, 400/503 con varias, detalle 0.0.85/0.0.86,
+  DELETE) y `components/admin/expenses/__tests__/facturas-gasto-ui.test.tsx`
+  (ícono con número, lista sin «sin facturas» en fallo, cableado de
+  confirmación, refresco al cerrar y visores). `verFacturaGastoAction` y
+  `subirFacturaGastoAction` (una sola) se fueron: no tenían otros usuarios.
