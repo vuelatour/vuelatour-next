@@ -105,6 +105,12 @@ vi.mock("@/components/admin/reportes/aircraft-balance-picker", () => ({
 vi.mock("@/components/admin/reportes/pre-cierre-card", () => ({
   PreCierreCard: () => null,
 }));
+// Cierre formal del mes (16-oct-2026, API 0.0.88): lee `GET /v1/cierres` con
+// `apiServer` (→ `@/lib/env`); aquí se apaga como el pre-cierre.
+vi.mock("@/components/admin/reportes/cierre-mes-card", () => ({
+  CierreMesCard: () => null,
+  CierreMesCardCargando: () => null,
+}));
 vi.mock("@/lib/api/flights-server", () => ({
   listFlights: () => api.vuelos(),
 }));

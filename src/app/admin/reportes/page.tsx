@@ -23,6 +23,7 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { PreCierreCard } from "@/components/admin/reportes/pre-cierre-card";
 import { PreCierreCardCargando } from "@/components/admin/reportes/pre-cierre-card-cargando";
 import { VerEnPantallaLink } from "@/components/admin/reportes/ver-en-pantalla-link";
+import { CierreMesCard, CierreMesCardCargando } from "@/components/admin/reportes/cierre-mes-card";
 import { listFlights } from "@/lib/api/flights-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
@@ -282,7 +283,13 @@ export default async function ReportesPage({ searchParams }: PageProps) {
             <CardTitle className="text-base">Cierre y reparto del periodo</CardTitle>
             <CardDescription>{DESCRIPCION_CIERRE_REPARTO}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* Cierre FORMAL del mes (16-oct-2026, API 0.0.88): estado,
+                «Cerrar <mes>» y «Reabrir mes». Su propio Suspense: con un API
+                lento no detiene las descargas. */}
+            <Suspense key={`cierre:${desde}:${hasta}`} fallback={<CierreMesCardCargando />}>
+              <CierreMesCard desde={desde} hasta={hasta} hoy={hoy} inicio={inicio} rol={rol} />
+            </Suspense>
             <CierreRepartoSection desde={desde} hasta={hasta} rol={rol ?? undefined} />
           </CardContent>
         </Card>
