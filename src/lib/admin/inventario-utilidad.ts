@@ -25,6 +25,11 @@
  */
 
 import { fmtMxn, fmtUsd } from "@/lib/format";
+import {
+  atajoAntesDelInicio,
+  textoDesdeInicio,
+  type InicioOficial,
+} from "@/lib/admin/inicio-oficial";
 
 export type Moneda = "MXN" | "USD";
 
@@ -295,15 +300,23 @@ const pad = (n: number) => String(n).padStart(2, "0");
 
 /**
  * Rango en días Cancún (`hoyCancun` = `todayCancun()`, YYYY-MM-DD):
- *  - `todo` ⇒ null (todo el historial).
+ *  - `todo` ⇒ null (todo el historial) o, con inicio oficial (auditoría
+ *    16-oct-2026), del inicio a HOY: el API 0.0.85 ya sube el `desde` de la
+ *    tarjeta, y así la columna de utilidad por ítem y el Excel cuentan lo
+ *    MISMO que la tarjeta (con el API 0.0.84 también).
  *  - `mes` ⇒ del 1.º del mes a HOY.
  *  - `mes-anterior` ⇒ el mes pasado completo.
  */
 export function rangoPeriodoTienda(
   periodo: PeriodoTienda,
   hoyCancun: string,
+  inicio: InicioOficial = null,
 ): { desde: string; hasta: string } | null {
-  if (periodo === "todo") return null;
+  if (periodo === "todo") {
+    return inicio && inicio <= hoyCancun.slice(0, 10)
+      ? { desde: inicio, hasta: hoyCancun.slice(0, 10) }
+      : null;
+  }
   const [y, m] = hoyCancun.slice(0, 10).split("-").map(Number);
   if (periodo === "mes") return { desde: `${y}-${pad(m)}-01`, hasta: hoyCancun.slice(0, 10) };
   const ya = m === 1 ? y - 1 : y;
@@ -313,13 +326,47 @@ export function rangoPeriodoTienda(
   return { desde: `${ya}-${pad(ma)}-01`, hasta: `${ya}-${pad(ma)}-${pad(ultimo)}` };
 }
 
-/** Descripción del periodo para la tarjeta («todo el historial», «del 1 al 25 sep»). */
-export function textoPeriodoTienda(periodo: PeriodoTienda): string {
+/**
+ * Descripción del periodo para la tarjeta («todo el historial», «del 1 al 25
+ * sep»). Con inicio oficial, «Todo» es «desde el 1-sep-2026».
+ */
+export function textoPeriodoTienda(periodo: PeriodoTienda, inicio: InicioOficial = null): string {
   return periodo === "todo"
-    ? "todo el historial"
+    ? inicio
+      ? textoDesdeInicio(inicio)
+      : "todo el historial"
     : periodo === "mes"
       ? "este mes (hasta hoy)"
       : "el mes pasado";
+}
+
+/**
+ * Chips de periodo de la tarjeta: «Mes pasado» NO se ofrece si queda entero
+ * antes del inicio oficial (en septiembre de 2026 sería agosto). Con `null`,
+ * los de siempre.
+ */
+export function periodosTiendaOfrecidos(
+  hoyCancun: string,
+  inicio: InicioOficial = null,
+): (typeof PERIODOS_TIENDA)[number][] {
+  if (!inicio) return [...PERIODOS_TIENDA];
+  return PERIODOS_TIENDA.filter(
+    (p) => !atajoAntesDelInicio(rangoPeriodoTienda(p.valor, hoyCancun), inicio),
+  );
+}
+
+/**
+ * Periodo EFECTIVO: un `?periodo=mes-anterior` que cae entero antes del
+ * inicio (URL vieja) se ve como «Todo» (desde el inicio). Con `null`, tal cual.
+ */
+export function periodoTiendaConInicio(
+  periodo: PeriodoTienda,
+  hoyCancun: string,
+  inicio: InicioOficial = null,
+): PeriodoTienda {
+  return inicio && atajoAntesDelInicio(rangoPeriodoTienda(periodo, hoyCancun), inicio)
+    ? PERIODO_TIENDA_DEFAULT
+    : periodo;
 }
 
 // ───────────────────────── Ventas del detalle ─────────────────────────
