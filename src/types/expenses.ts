@@ -1,5 +1,6 @@
 import type { CompraRef, CompraRol } from "./compras";
 import type { ConciliacionAlCrear } from "./conciliacion";
+import type { FacturaDeGasto } from "@/lib/admin/facturas-gasto";
 
 /**
  * REFACCIÓN A INVENTARIO/TIENDA (12-oct-2026, API 0.0.72, invariante 57):
@@ -101,8 +102,16 @@ export interface Gasto {
   origen: string | null;
   /** Aterrizaje al que corresponde (gastos de pista). */
   escala_id: string | null;
-  /** Factura recibida que lo ampara (amarre 1 factura → N gastos). */
+  /** Factura recibida que lo ampara (amarre 1 factura → N gastos). Desde el
+   *  API 0.0.86 es la PRINCIPAL: el gasto puede tener varias (`facturas`). */
   factura_recibida_id: string | null;
+  /** ADITIVO (API 0.0.86, lista de gastos): cuántas facturas lo amparan.
+   *  Sin la llave (API previo) ⇒ 1 si hay principal. Leerlo SIEMPRE vía
+   *  `nFacturasDeFila` (@/lib/admin/facturas-gasto). */
+  facturas_n?: number | null;
+  /** ADITIVO (API 0.0.86, solo en el detalle `GET /v1/expenses/:id`): las
+   *  facturas del gasto. Leerlo vía `facturasDeRespuesta`. */
+  facturas?: FacturaDeGasto[];
   notas: string | null;
   /** Llegada al servidor (gatea la ventana de edición). */
   created_at: string;

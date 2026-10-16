@@ -20,6 +20,22 @@ import {
   type PasoGuardado,
   type ResultadoGastoConReparto,
 } from "@/lib/admin/reparto-gasto";
+import {
+  CODIGO_API_SIN_VARIAS,
+  TEXTO_API_SIN_VARIAS,
+  TEXTO_QUITAR_NO_DISPONIBLE,
+  avisosDeRespuesta,
+  cuerpoLegado,
+  esRechazoArchivos,
+  esVariasNoDisponible,
+  facturaDesdeRecibida,
+  facturasDeRespuesta,
+  resultadoDeRespuestaSubida,
+  variasDeRespuesta,
+  type ArchivoFacturaEntrada,
+  type FacturaDeGasto,
+  type ResultadoSubidaFacturas,
+} from "@/lib/admin/facturas-gasto";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
 import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -1188,92 +1204,130 @@ export async function saveRepartoMasivoAction(
 // pasa a 🟢 FACTURADA solo. El panel NO toca `estatus_facturacion` por su
 // cuenta — si lo hiciera, tendría dos fuentes para el mismo semáforo.
 
-export interface FacturaDeGastoInput {
-  /** XML del CFDI en base64 SIN el prefijo `data:`. De él salen `uuid_fiscal`,
-      emisor y total; puede faltar si se sube solo el PDF. */
-  xml_b64?: string;
-  /** PDF de la factura en base64 (el que manda impreso el proveedor). */
-  pdf_b64?: string;
-  /** Nombre original del PDF (queda en las notas de la factura). */
-  pdf_nombre?: string;
+// VARIAS FACTURAS POR GASTO (16-oct-2026, API 0.0.86): ASA entrega 5 CFDI
+// por carga. El POST acepta `archivos[]` (1–10) y AGREGA (nunca reemplaza);
+// el detalle del gasto trae `facturas` y nace
+// `DELETE /v1/invoices/recibidas/:id/gastos/:gastoId`. Regla pura y textos
+// en `lib/admin/facturas-gasto.ts`.
+//
+// SKEW: contra el API 0.0.85 (DTO sin `archivos` ⇒ 400 «property archivos
+// should not exist») la action reintenta con el shape de SIEMPRE solo si es
+// UNA factura; con varias NO sube nada y responde CODIGO_API_SIN_VARIAS (con
+// el API previo la segunda reemplazaría a la primera en silencio). El 0.0.86
+// con la migración pendiente responde 503 FACTURAS_GASTO_NO_DISPONIBLE ante
+// varias (no escribe nada) ⇒ el mismo código; con una sola contesta
+// `facturas_multiples: false` (REEMPLAZÓ) ⇒ modo LEGADO.
+//
+// Estas actions NO revalidan: el diálogo de facturas sigue abierto (lista,
+// avisos) y quien lo abre hace `router.refresh()` al cerrarlo (convención
+// «Red / API» del AGENTS.md).
+
+export interface SubirFacturasGastoInput {
+  gastoId: string;
+  /** Una entrada por FACTURA (su PDF y/o su XML en base64, sin `data:`). */
+  archivos: ArchivoFacturaEntrada[];
 }
 
-export interface FacturaDeGastoResultado {
-  factura_id: string;
-  /** true = ese CFDI ya estaba en el buzón y solo se le sumó este gasto. */
-  ya_existia: boolean;
-}
-
-interface RecibidaDeGastoResp {
-  id: string;
-  ya_existia?: boolean;
-}
-
-export async function subirFacturaGastoAction(
-  gastoId: string,
-  input: FacturaDeGastoInput,
-): Promise<ActionResult<FacturaDeGastoResultado>> {
-  const xml = input.xml_b64?.trim();
-  const pdf = input.pdf_b64?.trim();
-  if (!xml && !pdf) {
+export async function subirFacturasGastoAction(
+  input: SubirFacturasGastoInput,
+): Promise<ActionResult<ResultadoSubidaFacturas>> {
+  if (!esUuid(input.gastoId)) return { ok: false, error: "Gasto inválido." };
+  const archivos = (input.archivos ?? [])
+    .map((a) => ({
+      ...(a.xml_b64?.trim() ? { xml_b64: a.xml_b64.trim() } : {}),
+      ...(a.pdf_b64?.trim() ? { pdf_b64: a.pdf_b64.trim() } : {}),
+      ...(a.nombre?.trim() ? { nombre: a.nombre.trim().slice(0, 200) } : {}),
+    }))
+    .filter((a) => a.xml_b64 || a.pdf_b64);
+  if (archivos.length === 0) {
     return {
       ok: false,
       error: "Elige al menos un archivo: el XML del CFDI o el PDF de la factura.",
     };
   }
   try {
-    const factura = await apiServer<RecibidaDeGastoResp>(
-      "/v1/invoices/recibidas/de-gasto",
-      {
+    const resp = await apiServer<unknown>("/v1/invoices/recibidas/de-gasto", {
+      method: "POST",
+      body: { gasto_id: input.gastoId, archivos },
+    });
+    return { ok: true, data: resultadoDeRespuestaSubida(resp, "VARIAS") };
+  } catch (err) {
+    if (isApiError(err) && esVariasNoDisponible(err.status, err.code)) {
+      return { ok: false, error: TEXTO_API_SIN_VARIAS, code: CODIGO_API_SIN_VARIAS, status: 503 };
+    }
+    if (!(isApiError(err) && esRechazoArchivos(err.status, err.message))) return fail(err);
+    // API 0.0.85: no conoce `archivos`.
+    if (archivos.length !== 1) {
+      return { ok: false, error: TEXTO_API_SIN_VARIAS, code: CODIGO_API_SIN_VARIAS, status: 400 };
+    }
+    try {
+      const resp = await apiServer<unknown>("/v1/invoices/recibidas/de-gasto", {
         method: "POST",
-        body: {
-          gasto_id: gastoId,
-          ...(xml ? { xml_b64: xml } : {}),
-          ...(pdf ? { pdf_b64: pdf } : {}),
-          ...(pdf && input.pdf_nombre ? { pdf_nombre: input.pdf_nombre } : {}),
+        body: cuerpoLegado(input.gastoId, archivos[0]),
+      });
+      return { ok: true, data: resultadoDeRespuestaSubida(resp, "LEGADO") };
+    } catch (err2) {
+      return fail(err2);
+    }
+  }
+}
+
+/** Las facturas del gasto. `varias` = las nuevas se AGREGAN (0.0.86 con la
+ *  migración); con el previo se arma la lista con la ÚNICA factura amarrada.
+ *  `avisos` = los NO bloqueantes del API (Σ facturas vs monto). */
+export interface FacturasDeGastoResultado {
+  varias: boolean;
+  facturas: FacturaDeGasto[];
+  avisos: string[];
+}
+
+export async function facturasDeGastoAction(
+  gastoId: string,
+): Promise<ActionResult<FacturasDeGastoResultado>> {
+  if (!esUuid(gastoId)) return { ok: false, error: "Gasto inválido." };
+  try {
+    const gasto = await apiServer<Record<string, unknown>>(`/v1/expenses/${gastoId}`);
+    const lista = facturasDeRespuesta(gasto);
+    if (lista) {
+      return {
+        ok: true,
+        data: {
+          varias: variasDeRespuesta(gasto) ?? true,
+          facturas: lista,
+          avisos: avisosDeRespuesta(gasto),
         },
-      },
-    );
-    revalidatePath("/admin/expenses");
-    revalidatePath("/admin/facturas-recibidas");
-    revalidatePath("/admin/flights", "layout");
-    return {
-      ok: true,
-      data: { factura_id: factura.id, ya_existia: factura.ya_existia === true },
-    };
+      };
+    }
+    const principal =
+      typeof gasto?.factura_recibida_id === "string" ? gasto.factura_recibida_id : null;
+    if (!principal) return { ok: true, data: { varias: false, facturas: [], avisos: [] } };
+    const recibida = await apiServer<unknown>(`/v1/invoices/recibidas/${principal}`);
+    const f = facturaDesdeRecibida(recibida);
+    return { ok: true, data: { varias: false, facturas: f ? [f] : [], avisos: [] } };
   } catch (err) {
     return fail(err);
   }
 }
 
-/**
- * «Ver factura» desde la fila de un gasto ya amarrado: pide la factura
- * recibida y FIRMA su archivo (el bucket `facturas` es privado). Se prefiere
- * el PDF —es el papel que la oficina enseña— y se cae al XML.
- */
-export async function verFacturaGastoAction(
-  facturaRecibidaId: string,
-): Promise<ActionResult<string>> {
+/** «Quitar de este gasto»: la factura NO se borra (sigue en el buzón). El
+ *  panel lo pregunta antes (acción destructiva ⇒ confirmación). */
+export async function quitarFacturaDeGastoAction(input: {
+  facturaId: string;
+  gastoId: string;
+}): Promise<ActionResult<null>> {
+  if (!esUuid(input.facturaId) || !esUuid(input.gastoId)) {
+    return { ok: false, error: "Factura o gasto inválido." };
+  }
   try {
-    const factura = await apiServer<{
-      xml_url?: string | null;
-      pdf_url?: string | null;
-    }>(`/v1/invoices/recibidas/${facturaRecibidaId}`);
-    const path = factura.pdf_url ?? factura.xml_url ?? null;
-    if (!path) {
-      return {
-        ok: false,
-        error: "Esa factura no tiene archivo guardado (se registró sin XML ni PDF).",
-      };
-    }
-    const urls = await apiServer<Record<string, string>>(
-      "/v1/invoices/recibidas/file-urls",
-      { method: "POST", body: { paths: [path] } },
-    );
-    const url = urls[path];
-    if (!url) return { ok: false, error: "No se pudo abrir el archivo de la factura." };
-    return { ok: true, data: url };
+    await apiServer(`/v1/invoices/recibidas/${input.facturaId}/gastos/${input.gastoId}`, {
+      method: "DELETE",
+    });
+    return { ok: true, data: null };
   } catch (err) {
+    // API previo: la ruta no existe («Cannot DELETE …»).
+    if (isApiError(err) && err.status === 404 && /cannot delete/i.test(err.message)) {
+      return { ok: false, error: TEXTO_QUITAR_NO_DISPONIBLE };
+    }
     return fail(err);
   }
 }
