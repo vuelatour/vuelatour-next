@@ -15,7 +15,7 @@ import {
 
 const V = "7f0c2a10-0000-4000-8000-000000000070";
 const INSTRUCCION =
-  "La cotización no cobra TUA: ábrela y enciende «Se cobran TUAS» o agrégala como extra.";
+  "La cotización no cobra TUA: ábrela y enciende «Se cobran TUAS» o agrégala como extra con «TUA» en el concepto.";
 
 describe("TUA pagada sin cobrar: clave y «Resolver →»", () => {
   it("clave del API", () => {

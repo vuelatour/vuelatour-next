@@ -90,7 +90,7 @@ export function chipVueloTuaPagada(v: VueloTuaPagadaPrecierre): ChipPreCierre {
     href: `/admin/quotes/${v.id}`,
     title:
       `TUA pagada por Operación (IVA incluido)${montos ? `: ${montos}` : ""}${facturas}${avion}. ` +
-      "La cotización no cobra TUA: ábrela y enciende «Se cobran TUAS» o agrégala como extra." +
+      "La cotización no cobra TUA: ábrela y enciende «Se cobran TUAS» o agrégala como extra con «TUA» en el concepto." +
       notaPase,
   };
 }
