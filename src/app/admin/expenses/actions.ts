@@ -23,6 +23,7 @@ import {
 import {
   CODIGO_API_SIN_VARIAS,
   TEXTO_API_SIN_VARIAS,
+  TEXTO_ERROR_FACTURAS,
   TEXTO_QUITAR_NO_DISPONIBLE,
   avisosDeRespuesta,
   cuerpoLegado,
@@ -1226,6 +1227,13 @@ export interface SubirFacturasGastoInput {
   gastoId: string;
   /** Una entrada por FACTURA (su PDF y/o su XML en base64, sin `data:`). */
   archivos: ArchivoFacturaEntrada[];
+  /**
+   * ¿Se vale el shape de SIEMPRE si el API rechaza `archivos`? Con el API
+   * previo la factura nueva REEMPLAZA a la del gasto: solo si el gasto no
+   * tiene factura o el operador CONFIRMÓ el reemplazo (revisión adversaria:
+   * subir mientras la lista cargaba reemplazaba sin preguntar).
+   */
+  permitirLegado?: boolean;
 }
 
 export async function subirFacturasGastoAction(
@@ -1257,7 +1265,7 @@ export async function subirFacturasGastoAction(
     }
     if (!(isApiError(err) && esRechazoArchivos(err.status, err.message))) return fail(err);
     // API 0.0.85: no conoce `archivos`.
-    if (archivos.length !== 1) {
+    if (archivos.length !== 1 || input.permitirLegado !== true) {
       return { ok: false, error: TEXTO_API_SIN_VARIAS, code: CODIGO_API_SIN_VARIAS, status: 400 };
     }
     try {
@@ -1288,6 +1296,12 @@ export async function facturasDeGastoAction(
   try {
     const gasto = await apiServer<Record<string, unknown>>(`/v1/expenses/${gastoId}`);
     const lista = facturasDeRespuesta(gasto);
+    // API 0.0.86 que NO pudo leer las facturas (bandera sin lista, o
+    // `facturas_error`): es un fallo de carga, no «API previo» — tratarlo
+    // como previo diría «la reemplaza» y escondería las demás facturas.
+    if (!lista && (gasto?.facturas_error === true || typeof gasto?.facturas_multiples === "boolean")) {
+      return { ok: false, error: TEXTO_ERROR_FACTURAS };
+    }
     if (lista) {
       return {
         ok: true,
@@ -1328,6 +1342,8 @@ export async function quitarFacturaDeGastoAction(input: {
     if (isApiError(err) && err.status === 404 && /cannot delete/i.test(err.message)) {
       return { ok: false, error: TEXTO_QUITAR_NO_DISPONIBLE };
     }
-    return fail(err);
+    // 404 FACTURA_NO_LIGADA / 409 GASTO_FACTURAS_CAMBIARON (otra persona ya
+    // la quitó): con código, para que el diálogo recargue la lista.
+    return failConCodigo(err);
   }
 }

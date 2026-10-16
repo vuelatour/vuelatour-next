@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -39,6 +39,8 @@ import { nombreCorto } from "@/lib/admin/comprobante-hojas";
 import {
   ACCEPT_FACTURAS,
   AYUDA_SUBIR_FACTURAS,
+  AYUDA_SUBIR_UNA_FACTURA,
+  BOTON_SEPARAR,
   BOTON_AGREGAR_ARCHIVOS,
   BOTON_ELEGIR_ARCHIVOS,
   BOTON_QUITAR_DE_GASTO,
@@ -52,6 +54,7 @@ import {
   TEXTO_LEGADO_PARCIAL,
   TEXTO_LEGADO_YA_TIENE,
   TEXTO_POR_PISTA,
+  TEXTO_REVISA_LISTA,
   TEXTO_SIN_FACTURAS,
   TITULO_FACTURAS_DIALOGO,
   TITULO_QUITAR_FACTURA,
@@ -111,6 +114,15 @@ export function GastoFacturasDialog({
   const { carga, recargar, marcarApiPrevio } = useFacturasDeGasto(gasto.id, open);
   const [archivos, setArchivos] = useState<File[]>([]);
   const [pistas, setPistas] = useState<Map<File, string[]>>(() => new Map());
+  const [separados, setSeparados] = useState<Set<File>>(() => new Set());
+  // Espejos de la selección para los manejadores ASÍNCRONOS (leer los XML,
+  // subir): con el `archivos` del cierre, dos selecciones seguidas o una ✕
+  // durante la lectura se perdían (revisión adversaria). Toda escritura de
+  // la selección pasa por `fijarArchivos`.
+  const archivosRef = useRef<File[]>([]);
+  const pistasRef = useRef<Map<File, string[]>>(new Map());
+  const separadosRef = useRef<Set<File>>(new Set());
+  const [leyendo, setLeyendo] = useState(0);
   const [subiendo, setSubiendo] = useState<string | null>(null);
   const [fallo, setFallo] = useState<string | null>(null);
   const [aQuitar, setAQuitar] = useState<FacturaDeGasto | null>(null);
@@ -120,21 +132,52 @@ export function GastoFacturasDialog({
   // eso confirma (regla del cliente: lo destructivo pregunta).
   const [confirmarReemplazo, setConfirmarReemplazo] = useState(false);
   const huboCambio = useRef(false);
+  const abiertoRef = useRef(open);
   const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    abiertoRef.current = open;
+  }, [open]);
 
   const { grupos } = useMemo(
-    () => emparejarArchivosFactura(archivos, { pistas: (f) => pistas.get(f) ?? [] }),
-    [archivos, pistas],
+    () =>
+      emparejarArchivosFactura(archivos, {
+        pistas: (f) => pistas.get(f) ?? [],
+        separados: (f) => separados.has(f),
+      }),
+    [archivos, pistas, separados],
   );
+  const listo = carga.fase === "listo";
   const decision = decidirSubida({ varias: carga.varias, nGrupos: grupos.length });
-  const nYaTiene = carga.fase === "listo" ? carga.facturas.length : nFacturasDeFila(gasto);
+  const nYaTiene = listo ? carga.facturas.length : nFacturasDeFila(gasto);
   const ocupado = subiendo !== null || quitando;
+  // Solo con la lista CARGADA se sabe si el API agrega o reemplaza: subir
+  // antes (o con la carga fallida) reemplazaba sin preguntar con el API
+  // previo (revisión adversaria).
+  const puedeSubir = listo && leyendo === 0 && !ocupado && grupos.length > 0 && decision.ok;
+  const reemplaza = carga.varias === false && nYaTiene > 0;
+
+  const fijarArchivos = (calcular: (prev: File[]) => File[]) => {
+    const sig = calcular(archivosRef.current);
+    archivosRef.current = sig;
+    setArchivos(sig);
+  };
+
+  /** Si el diálogo ya se cerró cuando terminó algo que cambió datos. */
+  const refrescarSiCerrado = () => {
+    if (!abiertoRef.current && huboCambio.current) {
+      huboCambio.current = false;
+      router.refresh();
+    }
+  };
 
   const cerrar = () => {
     if (ocupado) return;
     onOpenChange(false);
-    setArchivos([]);
-    setPistas(new Map());
+    fijarArchivos(() => []);
+    pistasRef.current = new Map();
+    setPistas(pistasRef.current);
+    separadosRef.current = new Set();
+    setSeparados(separadosRef.current);
     setFallo(null);
     if (huboCambio.current) {
       huboCambio.current = false;
@@ -144,36 +187,47 @@ export function GastoFacturasDialog({
 
   const agregar = async (nuevos: File[]) => {
     if (nuevos.length === 0) return;
-    // Pistas del XML (UUID/folio) para emparejarlo con un PDF de otro nombre.
-    const conPistas = new Map(pistas);
-    await Promise.all(
-      nuevos
-        .filter((f) => tipoArchivoFactura(f) === "XML" && f.size > 0 && f.size <= MAX_BYTES_ARCHIVO_FACTURA)
-        .map(async (f) => {
-          try {
-            conPistas.set(f, pistasDeXmlCfdi(await f.text()));
-          } catch {
-            /* sin pistas: se empareja por nombre */
-          }
-        }),
-    );
-    const r = emparejarArchivosFactura([...archivos, ...nuevos], {
-      pistas: (f) => conPistas.get(f) ?? [],
+    setLeyendo((n) => n + 1);
+    try {
+      // Pistas del XML (UUID/folio) para emparejarlo con un PDF de otro nombre.
+      await Promise.all(
+        nuevos
+          .filter((f) => tipoArchivoFactura(f) === "XML" && f.size > 0 && f.size <= MAX_BYTES_ARCHIVO_FACTURA)
+          .map(async (f) => {
+            try {
+              const p = pistasDeXmlCfdi(await f.text());
+              pistasRef.current = new Map(pistasRef.current).set(f, p);
+            } catch {
+              /* sin pistas: se empareja por nombre */
+            }
+          }),
+      );
+    } finally {
+      setLeyendo((n) => n - 1);
+    }
+    setPistas(pistasRef.current);
+    const r = emparejarArchivosFactura([...archivosRef.current, ...nuevos], {
+      pistas: (f) => pistasRef.current.get(f) ?? [],
+      separados: (f) => separadosRef.current.has(f),
     });
     if (r.mensaje) toast.error(r.mensaje);
-    setPistas(conPistas);
-    setArchivos(archivosDeGrupos(r.grupos));
+    fijarArchivos(() => archivosDeGrupos(r.grupos));
     setFallo(null);
   };
 
   const quitarGrupo = (g: GrupoFactura<File>) =>
-    setArchivos((prev) => prev.filter((f) => f !== g.pdf && f !== g.xml));
+    fijarArchivos((prev) => prev.filter((f) => f !== g.pdf && f !== g.xml));
 
-  const reemplaza = carga.varias === false && nYaTiene > 0;
+  /** «Separar»: ese XML deja de emparejarse con el PDF que no es suyo. */
+  const separar = (g: GrupoFactura<File>) => {
+    if (!g.xml) return;
+    separadosRef.current = new Set(separadosRef.current).add(g.xml);
+    setSeparados(separadosRef.current);
+  };
 
   const subir = async (reemplazoConfirmado = false) => {
-    if (!decision.ok) {
-      toast.error(decision.mensaje);
+    if (!puedeSubir) {
+      if (!decision.ok) toast.error(decision.mensaje);
       return;
     }
     if (reemplaza && !reemplazoConfirmado) {
@@ -182,6 +236,9 @@ export function GastoFacturasDialog({
     }
     setConfirmarReemplazo(false);
     setFallo(null);
+    // El shape de siempre (que REEMPLAZA con el API previo) solo se vale si
+    // el gasto no tiene factura o el operador lo confirmó.
+    const permitirLegado = nYaTiene === 0 || reemplazoConfirmado;
     const lotes = partirEnLotes(grupos);
     // Import diferido: ese módulo carga el cliente de Supabase del navegador,
     // que exige sus variables al CARGAR (y este diálogo vive dentro de
@@ -196,8 +253,11 @@ export function GastoFacturasDialog({
     const resultados: ResultadoSubidaFacturas[] = [];
     const subidos = new Set<File>();
     const fallos: string[] = [];
-    // API previo: «rechazó varias» (no subió nada) o «subió una con el shape
-    // de siempre y se paró» (la siguiente la reemplazaría).
+    // ¿Algún lote pudo haber escrito a medias? (red, 5xx, 504 de Vercel: el
+    // API no es atómico por lote) ⇒ se recarga la lista y se pide revisarla.
+    let enDuda = false;
+    // API previo: «rechazó» (no subió nada) o «subió una con el shape de
+    // siempre y se paró» (la siguiente la reemplazaría).
     let apiPrevio: "rechazo" | "parcial" | null = null;
     for (const [i, lote] of lotes.entries()) {
       setSubiendo(lotes.length > 1 ? `Subiendo ${i + 1} de ${lotes.length}…` : "Subiendo…");
@@ -215,9 +275,10 @@ export function GastoFacturasDialog({
         continue;
       }
       const r = await llamarSinLanzar(() =>
-        subirFacturasGastoAction({ gastoId: gasto.id, archivos: entrada }),
+        subirFacturasGastoAction({ gastoId: gasto.id, archivos: entrada, permitirLegado }),
       );
       if (!r.ok) {
+        enDuda = true;
         fallos.push(textoFalloLotes(nombresDe(lote), r.error));
         continue;
       }
@@ -226,6 +287,8 @@ export function GastoFacturasDialog({
           apiPrevio = resultados.length > 0 ? "parcial" : "rechazo";
           break;
         }
+        // Un 4xx es rechazo limpio (no escribió); lo demás puede ser a medias.
+        if (!(typeof r.valor.status === "number" && r.valor.status < 500)) enDuda = true;
         fallos.push(textoFalloLotes(nombresDe(lote), r.valor.error ?? "el servidor no respondió"));
         continue;
       }
@@ -241,24 +304,28 @@ export function GastoFacturasDialog({
       }
     }
     setSubiendo(null);
-    setArchivos((prev) => prev.filter((f) => !subidos.has(f)));
+    fijarArchivos((prev) => prev.filter((f) => !subidos.has(f)));
     if (apiPrevio) marcarApiPrevio();
-    if (resultados.length > 0) {
+    if (resultados.length > 0 || enDuda) {
       huboCambio.current = true;
-      const c = combinarResultados(resultados);
-      toast.success(textoResultadoSubida(c));
       recargar();
       onCambio?.();
+    }
+    if (resultados.length > 0) {
+      const c = combinarResultados(resultados);
+      toast.success(textoResultadoSubida({ ...c, reemplazo: c.legado && nYaTiene > 0 }));
     }
     const mensajes = [
       ...(apiPrevio === "rechazo" ? [TEXTO_API_SIN_VARIAS] : []),
       ...(apiPrevio === "parcial" ? [TEXTO_LEGADO_PARCIAL] : []),
       ...fallos,
+      ...(enDuda ? [TEXTO_REVISA_LISTA] : []),
     ];
     if (mensajes.length > 0) {
       setFallo(mensajes.join(" "));
       toast.error(mensajes[0]);
     }
+    refrescarSiCerrado();
   };
 
   const confirmarQuitar = async () => {
@@ -271,6 +338,12 @@ export function GastoFacturasDialog({
     setQuitando(false);
     if (!r.ok || !r.valor.ok) {
       toast.error((r.ok ? r.valor.error : r.error) || "No se pudo quitar la factura");
+      // Otra persona ya la quitó o cambió las facturas (404/409): la lista
+      // está vieja; se cierra la confirmación y se recarga.
+      if (r.ok && (r.valor.status === 404 || r.valor.status === 409)) {
+        setAQuitar(null);
+        recargar();
+      }
       return;
     }
     setAQuitar(null);
@@ -278,180 +351,207 @@ export function GastoFacturasDialog({
     toast.success("Factura quitada de este gasto. Sigue en Facturas recibidas.");
     recargar();
     onCambio?.();
+    refrescarSiCerrado();
   };
 
   // Avisos NO bloqueantes del API (Σ facturas vs monto, ámbar): los del
   // detalle, que se recarga tras subir o quitar.
   const avisos = carga.avisos;
+  const varias = carga.varias === true;
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : cerrar())}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl" data-facturas-gasto>
-          <DialogHeader>
-            <DialogTitle>{TITULO_FACTURAS_DIALOGO}</DialogTitle>
-            <DialogDescription>
-              Las facturas quedan en Facturas recibidas y amparan este gasto, que pasa a 🟢
-              Facturada. Puedes subir varias (por ejemplo, las 5 de una carga de ASA).
-            </DialogDescription>
-          </DialogHeader>
+    <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : cerrar())}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl" data-facturas-gasto>
+        <DialogHeader>
+          <DialogTitle>{TITULO_FACTURAS_DIALOGO}</DialogTitle>
+          <DialogDescription>
+            Las facturas quedan en Facturas recibidas y amparan este gasto, que pasa a 🟢
+            Facturada.
+            {varias && " Puedes subir varias (por ejemplo, las 5 de una carga de ASA)."}
+          </DialogDescription>
+        </DialogHeader>
 
-          <ListaFacturas
-            carga={carga}
-            onReintentar={recargar}
-            onQuitar={carga.varias === true ? setAQuitar : undefined}
-            deshabilitado={ocupado}
+        <ListaFacturas
+          carga={carga}
+          onReintentar={recargar}
+          onQuitar={varias ? setAQuitar : undefined}
+          deshabilitado={ocupado}
+        />
+
+        {avisos.length > 0 && <AvisosAmbar avisos={avisos} />}
+
+        {/* Subir: UN selector para PDF y XML juntos. */}
+        <div
+          className={
+            "space-y-2 rounded-lg border border-dashed p-3 text-sm transition-colors " +
+            (arrastrando ? "border-brand-500 bg-brand-500/5" : "border-border")
+          }
+          onDragOver={(e) => {
+            e.preventDefault();
+            setArrastrando(true);
+          }}
+          onDragLeave={() => setArrastrando(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setArrastrando(false);
+            if (!ocupado) void agregar(Array.from(e.dataTransfer.files ?? []));
+          }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium">{varias ? BOTON_SUBIR_FACTURAS : "Subir factura"}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-xs"
+              onClick={() => inputRef.current?.click()}
+              disabled={ocupado}
+            >
+              <DocumentArrowUpIcon className="h-3.5 w-3.5" aria-hidden="true" />
+              {archivos.length > 0 ? BOTON_AGREGAR_ARCHIVOS : BOTON_ELEGIR_ARCHIVOS}
+            </Button>
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            accept={ACCEPT_FACTURAS}
+            className="hidden"
+            onChange={(e) => {
+              void agregar(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
           />
-
-          {avisos.length > 0 && <AvisosAmbar avisos={avisos} />}
-
-          {/* Subir: UN selector para PDF y XML juntos. */}
-          <div
-            className={
-              "space-y-2 rounded-lg border border-dashed p-3 text-sm transition-colors " +
-              (arrastrando ? "border-brand-500 bg-brand-500/5" : "border-border")
-            }
-            onDragOver={(e) => {
-              e.preventDefault();
-              setArrastrando(true);
-            }}
-            onDragLeave={() => setArrastrando(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setArrastrando(false);
-              if (!ocupado) void agregar(Array.from(e.dataTransfer.files ?? []));
-            }}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-medium">Subir facturas</p>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1 text-xs"
-                onClick={() => inputRef.current?.click()}
-                disabled={ocupado}
-              >
-                <DocumentArrowUpIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                {archivos.length > 0 ? BOTON_AGREGAR_ARCHIVOS : BOTON_ELEGIR_ARCHIVOS}
-              </Button>
-            </div>
-            <input
-              ref={inputRef}
-              type="file"
-              multiple
-              accept={ACCEPT_FACTURAS}
-              className="hidden"
-              onChange={(e) => {
-                void agregar(Array.from(e.target.files ?? []));
-                e.target.value = "";
-              }}
-            />
-            <p className="text-[11px] text-muted-foreground">{AYUDA_SUBIR_FACTURAS}</p>
-            {carga.varias === false && nYaTiene > 0 ? (
-              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
-                {TEXTO_LEGADO_YA_TIENE}
-              </p>
-            ) : (
-              textoSeAgregan(nYaTiene) && (
-                <p className="text-xs font-medium">{textoSeAgregan(nYaTiene)}</p>
-              )
-            )}
-            {grupos.length > 0 && (
-              <ul className="space-y-1" data-lista-previa>
-                {grupos.map((g, i) => (
-                  <li key={`${nombreDeGrupo(g)}-${i}`} className="flex items-start gap-2 text-xs">
-                    <span className="w-16 shrink-0 text-muted-foreground">Factura {i + 1}</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate" title={[g.pdf?.name, g.xml?.name].filter(Boolean).join(" + ")}>
-                        {nombreCorto(nombreDeGrupo(g) ?? "")}
-                        {g.porPista && g.xml && <> + {nombreCorto(g.xml.name, 28)}</>}
-                      </span>
-                      <span className="text-muted-foreground">{textoContenidoGrupo(g)}</span>
-                      {g.porPista && (
-                        <span className="block text-amber-700 dark:text-amber-400">{TEXTO_POR_PISTA}</span>
-                      )}
+          <p className="text-[11px] text-muted-foreground">
+            {carga.varias === false ? AYUDA_SUBIR_UNA_FACTURA : AYUDA_SUBIR_FACTURAS}
+          </p>
+          {reemplaza ? (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+              {TEXTO_LEGADO_YA_TIENE}
+            </p>
+          ) : (
+            varias &&
+            textoSeAgregan(nYaTiene) && <p className="text-xs font-medium">{textoSeAgregan(nYaTiene)}</p>
+          )}
+          {grupos.length > 0 && (
+            <ul className="space-y-1" data-lista-previa>
+              {grupos.map((g, i) => (
+                <li key={`${nombreDeGrupo(g)}-${i}`} className="flex items-start gap-2 text-xs">
+                  <span className="w-16 shrink-0 text-muted-foreground">Factura {i + 1}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate" title={[g.pdf?.name, g.xml?.name].filter(Boolean).join(" + ")}>
+                      {nombreCorto(nombreDeGrupo(g) ?? "")}
+                      {g.porPista && g.xml && <> + {nombreCorto(g.xml.name, 28)}</>}
                     </span>
+                    <span className="text-muted-foreground">{textoContenidoGrupo(g)}</span>
+                    {g.porPista && (
+                      <span className="block text-amber-700 dark:text-amber-400">{TEXTO_POR_PISTA}</span>
+                    )}
+                  </span>
+                  {g.porPista && (
                     <button
                       type="button"
-                      title="Quitar de la lista"
-                      aria-label={`Quitar ${nombreDeGrupo(g) ?? "archivo"} de la lista`}
-                      onClick={() => quitarGrupo(g)}
+                      onClick={() => separar(g)}
                       disabled={ocupado}
-                      className="cursor-pointer rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      title="No son la misma factura: subirlas por separado"
+                      className="cursor-pointer rounded-md px-1.5 py-0.5 text-[11px] font-medium text-brand-600 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 dark:text-brand-400"
                     >
-                      <XMarkIcon className="h-3.5 w-3.5" />
+                      {BOTON_SEPARAR}
                     </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {!decision.ok && grupos.length > 0 && (
-              <p className="text-xs text-amber-700 dark:text-amber-400">{decision.mensaje}</p>
-            )}
-            {fallo && (
-              <p className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-                {fallo}
-              </p>
-            )}
-          </div>
+                  )}
+                  <button
+                    type="button"
+                    title="Quitar de la lista"
+                    aria-label={`Quitar ${nombreDeGrupo(g) ?? "archivo"} de la lista`}
+                    onClick={() => quitarGrupo(g)}
+                    disabled={ocupado}
+                    className="cursor-pointer rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <XMarkIcon className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!decision.ok && grupos.length > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">{decision.mensaje}</p>
+          )}
+          {grupos.length > 0 && !listo && (
+            <p className="text-xs text-muted-foreground">
+              {carga.fase === "error"
+                ? "Para subir, primero tienen que cargar las facturas que ya tiene el gasto (pulsa «Reintentar» arriba)."
+                : "Espera a que carguen las facturas que ya tiene el gasto…"}
+            </p>
+          )}
+          {fallo && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+              {fallo}
+            </p>
+          )}
+        </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={cerrar} disabled={ocupado}>
-              Cerrar
-            </Button>
-            <Button onClick={() => void subir()} disabled={ocupado || grupos.length === 0 || !decision.ok}>
-              {subiendo ??
-                (grupos.length > 1 ? `${BOTON_SUBIR_FACTURAS} (${grupos.length})` : "Subir factura")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <DialogFooter>
+          <Button variant="outline" onClick={cerrar} disabled={ocupado}>
+            Cerrar
+          </Button>
+          <Button onClick={() => void subir()} disabled={!puedeSubir}>
+            {subiendo ??
+              (leyendo > 0
+                ? "Leyendo archivos…"
+                : grupos.length > 1
+                  ? `${BOTON_SUBIR_FACTURAS} (${grupos.length})`
+                  : "Subir factura")}
+          </Button>
+        </DialogFooter>
 
-      <AlertDialog open={confirmarReemplazo} onOpenChange={(o) => !o && setConfirmarReemplazo(false)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{TITULO_REEMPLAZAR_FACTURA}</AlertDialogTitle>
-            <AlertDialogDescription>{TEXTO_LEGADO_YA_TIENE}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                void subir(true);
-              }}
-            >
-              Sí, reemplazar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {/* Confirmaciones ANIDADAS dentro del popup (Base UI registra el
+            anidado solo así) y con backdrop propio (AGENTS.md, «Confirmaciones
+            de dinero anidadas»): Esc o un clic no cierran el diálogo de abajo. */}
+        <AlertDialog open={confirmarReemplazo} onOpenChange={(o) => !o && setConfirmarReemplazo(false)}>
+          <AlertDialogContent backdropForceRender>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{TITULO_REEMPLAZAR_FACTURA}</AlertDialogTitle>
+              <AlertDialogDescription>{TEXTO_LEGADO_YA_TIENE}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void subir(true);
+                }}
+              >
+                Sí, reemplazar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-      <AlertDialog open={aQuitar !== null} onOpenChange={(o) => !o && !quitando && setAQuitar(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{TITULO_QUITAR_FACTURA}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {aQuitar ? textoQuitarFactura(aQuitar, nYaTiene) : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={quitando}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                void confirmarQuitar();
-              }}
-              disabled={quitando}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {quitando ? "Quitando…" : BOTON_QUITAR_DE_GASTO}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+        <AlertDialog open={aQuitar !== null} onOpenChange={(o) => !o && !quitando && setAQuitar(null)}>
+          <AlertDialogContent backdropForceRender>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{TITULO_QUITAR_FACTURA}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {aQuitar ? textoQuitarFactura(aQuitar, nYaTiene) : ""}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={quitando}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmarQuitar();
+                }}
+                disabled={quitando}
+                className="bg-destructive text-white hover:bg-destructive/90"
+              >
+                {quitando ? "Quitando…" : BOTON_QUITAR_DE_GASTO}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 

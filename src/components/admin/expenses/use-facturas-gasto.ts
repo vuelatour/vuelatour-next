@@ -25,6 +25,14 @@ export function useFacturasDeGasto(gastoId: string, activo: boolean) {
     avisos: [],
   });
   const [pedido, setPedido] = useState(0);
+  // Al (re)abrir, la lista de la vez anterior NO cuenta como «listo»: con
+  // ella el diálogo habilitaba «Subir» con un `varias` viejo (revisión
+  // adversaria). Ajuste de estado durante el render (patrón de React).
+  const [activoPrevio, setActivoPrevio] = useState(activo);
+  if (activo !== activoPrevio) {
+    setActivoPrevio(activo);
+    if (activo) setCarga((prev) => ({ ...prev, fase: "cargando" }) as CargaFacturas);
+  }
 
   useEffect(() => {
     if (!activo) return;

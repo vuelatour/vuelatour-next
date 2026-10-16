@@ -274,15 +274,23 @@ export function decidirSubida({
 // ============================================================================
 
 export const MAX_FACTURAS_POR_ENVIO = 10;
-/** Tope por archivo (base64 +33 % contra el bodySizeLimit de 12 MB). */
-export const MAX_BYTES_ARCHIVO_FACTURA = 8 * 1024 * 1024;
 /**
- * Tope de base64 por LLAMADA a la server action: Vercel rechaza cuerpos de
- * más de 4.5 MB (413), así que 5 PDF + 5 XML se parten en varias llamadas
- * (sección «Server actions: un archivo en base64…» del AGENTS.md). Una
- * factura que sola pasa del tope viaja sola.
+ * Tope por archivo: 3 MB. NO es capricho: el archivo viaja en base64 (+33 %)
+ * por una server action y Vercel rechaza cuerpos de más de 4.5 MB con 413
+ * (sección «Server actions: un archivo en base64…» del AGENTS.md). El botón
+ * viejo prometía 8 MB y un PDF de 4 MB fallaba SIEMPRE como «el servidor no
+ * respondió» (revisión adversaria 16-oct-2026).
  */
-export const LIMITE_LOTE_B64 = 3_500_000;
+export const MAX_BYTES_ARCHIVO_FACTURA = 3 * 1024 * 1024;
+/** Tope de base64 por LLAMADA (y por factura: su PDF + su XML). */
+export const LIMITE_LOTE_B64 = 4_300_000;
+/**
+ * Facturas por LLAMADA: el API procesa cada una en fila (lee el XML en
+ * pyservices, sube 2 archivos, saca la huella de los PDF previos); 10 en
+ * una llamada pueden pasar del tiempo de la función de Vercel. Con 3 cada
+ * llamada es corta y un fallo deja menos en duda.
+ */
+export const MAX_FACTURAS_POR_LOTE = 3;
 
 export const ACCEPT_FACTURAS = ".pdf,.xml,application/pdf,text/xml,application/xml";
 
@@ -349,17 +357,30 @@ export interface ResultadoEmparejar<F> {
  * son la misma factura (ASA: `ACC…_FCUN_1299718.pdf` ↔ `.xml`). Si los
  * nombres no coinciden, se empareja por las pistas del XML (UUID o folio en
  * el nombre del PDF) y, al final, si queda UN PDF suelto y UN XML suelto, son
- * la misma factura (el caso de siempre: «el XML del SAT con su PDF»). Lo
- * demás va suelto («solo PDF» / «solo XML»). Rechaza tipos ajenos, archivos
- * vacíos o de más de 8 MB, repetidos y lo que pase de 10 facturas.
+ * la misma factura — SOLO si la selección son exactamente esos 2 archivos
+ * (el caso de siempre: «el XML del SAT con su PDF»); con más archivos un
+ * emparejamiento a ciegas pegaría el PDF de una factura al XML de otra y el
+ * API guardaría su huella en la fila equivocada (revisión adversaria). Los
+ * XML de `separados` (botón «Separar» de la lista previa) no se emparejan
+ * por pista. Lo demás va suelto («solo PDF» / «solo XML»). Rechaza tipos
+ * ajenos, archivos vacíos o de más de 3 MB, repetidos, una factura cuyo PDF +
+ * XML no cabe en una llamada y lo que pase de 10 facturas.
  */
 export function emparejarArchivosFactura<F extends ArchivoLike>(
   archivos: readonly F[],
   {
     pistas,
+    separados,
     max = MAX_FACTURAS_POR_ENVIO,
     maxBytes = MAX_BYTES_ARCHIVO_FACTURA,
-  }: { pistas?: (f: F) => readonly string[]; max?: number; maxBytes?: number } = {},
+    limiteFactura = LIMITE_LOTE_B64,
+  }: {
+    pistas?: (f: F) => readonly string[];
+    separados?: (f: F) => boolean;
+    max?: number;
+    maxBytes?: number;
+    limiteFactura?: number;
+  } = {},
 ): ResultadoEmparejar<F> {
   const rechazos: string[] = [];
   const porClave = new Map<string, GrupoFactura<F>>();
@@ -395,6 +416,7 @@ export function emparejarArchivosFactura<F extends ArchivoLike>(
 
   // Emparejar sueltos: primero por pistas del XML (únicas), luego 1 ↔ 1.
   let grupos = orden.filter((g) => g.pdf || g.xml);
+  const nAceptados = grupos.reduce((n, g) => n + (g.pdf ? 1 : 0) + (g.xml ? 1 : 0), 0);
   const sueltosPdf = () => grupos.filter((g) => g.pdf && !g.xml);
   const sueltosXml = () => grupos.filter((g) => g.xml && !g.pdf);
   const unir = (gPdf: GrupoFactura<F>, gXml: GrupoFactura<F>) => {
@@ -404,15 +426,31 @@ export function emparejarArchivosFactura<F extends ArchivoLike>(
   };
   if (pistas) {
     for (const gx of sueltosXml()) {
+      if (separados?.(gx.xml as F)) continue;
       const claves = (pistas(gx.xml as F) ?? []).filter((p) => p.length >= 4);
       if (claves.length === 0) continue;
       const candidatos = sueltosPdf().filter((gp) => claves.some((c) => gp.clave.includes(c)));
       if (candidatos.length === 1) unir(candidatos[0], gx);
     }
   }
-  if (sueltosPdf().length === 1 && sueltosXml().length === 1) {
+  if (
+    nAceptados === 2 &&
+    sueltosPdf().length === 1 &&
+    sueltosXml().length === 1 &&
+    !separados?.(sueltosXml()[0].xml as F)
+  ) {
     unir(sueltosPdf()[0], sueltosXml()[0]);
   }
+
+  // Una factura (PDF + XML) que no cabe en UNA llamada: Vercel la rechazaría.
+  grupos = grupos.filter((g) => {
+    const peso = largoBase64(g.pdf?.size ?? 0) + largoBase64(g.xml?.size ?? 0);
+    if (peso <= limiteFactura) return true;
+    rechazos.push(
+      `${[g.pdf?.name, g.xml?.name].filter(Boolean).join(" + ")} (juntos pesan demasiado para subirse desde el panel)`,
+    );
+    return false;
+  });
 
   if (grupos.length > max) {
     const fuera = grupos.slice(max);
@@ -451,7 +489,7 @@ export function largoBase64(bytes: number): number {
 export function partirEnLotes<G extends { pdf: { size: number } | null; xml: { size: number } | null }>(
   grupos: readonly G[],
   limite = LIMITE_LOTE_B64,
-  maxPorLote = MAX_FACTURAS_POR_ENVIO,
+  maxPorLote = MAX_FACTURAS_POR_LOTE,
 ): G[][] {
   const lotes: G[][] = [];
   let actual: G[] = [];
@@ -530,9 +568,16 @@ export const TEXTO_CARGANDO_FACTURAS = "Cargando las facturas…";
 export const TEXTO_ERROR_FACTURAS = "No se pudieron cargar las facturas de este gasto.";
 export const TEXTO_SIN_FACTURAS = "Este gasto todavía no tiene facturas.";
 export const AYUDA_SUBIR_FACTURAS =
-  "Elige de una vez los PDF y los XML (hasta 10 facturas, 8 MB cada archivo). Un PDF y un XML con el mismo nombre se toman como la misma factura. Con el XML se guardan el UUID fiscal, el emisor y el total; si el proveedor solo mandó el PDF, se guarda igual.";
+  "Elige de una vez los PDF y los XML (hasta 10 facturas, 3 MB cada archivo). Un PDF y un XML con el mismo nombre se toman como la misma factura. Con el XML se guardan el UUID fiscal, el emisor y el total; si el proveedor solo mandó el PDF, se guarda igual.";
+/** Con el API previo (una factura por gasto). */
+export const AYUDA_SUBIR_UNA_FACTURA =
+  "Elige el PDF y el XML de la factura (3 MB cada archivo). Con el XML se guardan el UUID fiscal, el emisor y el total; si el proveedor solo mandó el PDF, se guarda igual.";
 export const TEXTO_POR_PISTA =
-  "se emparejaron aunque los nombres no coinciden; si no son la misma factura, quítala y súbelas por separado";
+  "se emparejaron aunque los nombres no coinciden; si no son la misma factura, pulsa «Separar»";
+export const BOTON_SEPARAR = "Separar";
+/** Un lote falló: el API pudo haber escrito parte (no es atómico por lote). */
+export const TEXTO_REVISA_LISTA =
+  "Puede que algunas sí se hayan guardado: revisa la lista de arriba antes de volver a intentar.";
 
 export function tituloSeccionFacturas(n: number): string {
   return `Facturas del gasto (${n})`;
@@ -583,16 +628,21 @@ export function textoResultadoSubida({
   reutilizadas,
   ya_existian,
   legado = false,
+  reemplazo = false,
 }: {
   agregadas: number;
   reutilizadas: number;
   ya_existian: number;
   legado?: boolean;
+  /** Modo legado con una factura previa: la nueva la REEMPLAZÓ. */
+  reemplazo?: boolean;
 }): string {
   const partes: string[] = [];
   if (agregadas > 0) {
     partes.push(
-      legado
+      legado && reemplazo
+        ? "Se reemplazó la factura del gasto (la anterior sigue en Facturas recibidas)."
+        : legado
         ? "Factura amarrada a este gasto."
         : agregadas === 1
           ? "Se agregó 1 factura a este gasto."

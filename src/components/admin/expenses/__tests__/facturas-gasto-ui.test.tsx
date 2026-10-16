@@ -117,18 +117,31 @@ describe("cableado", () => {
     expect(src).toMatch(/type="file"\s+multiple\s+accept=\{ACCEPT_FACTURAS\}/);
     expect(src).toMatch(/emparejarArchivosFactura\(/);
     expect(src).toMatch(/partirEnLotes\(grupos\)/);
-    expect(src).toMatch(/subirFacturasGastoAction\(\{ gastoId: gasto\.id, archivos: entrada \}\)/);
+    expect(src).toMatch(/subirFacturasGastoAction\(\{ gastoId: gasto\.id, archivos: entrada, permitirLegado \}\)/);
+    // El shape de siempre (REEMPLAZA con el API previo) solo sin factura o confirmado.
+    expect(src).toMatch(/const permitirLegado = nYaTiene === 0 \|\| reemplazoConfirmado;/);
+    // Subir SOLO con la lista cargada (si no, no se sabe si agrega o reemplaza).
+    expect(src).toMatch(/const puedeSubir = listo && leyendo === 0 && !ocupado && grupos\.length > 0 && decision\.ok;/);
+    expect(src).toMatch(/disabled=\{!puedeSubir\}/);
+    // Un lote dudoso (red/5xx) recarga la lista y pide revisarla.
+    expect(src).toMatch(/if \(resultados\.length > 0 \|\| enDuda\) \{\s*huboCambio\.current = true;\s*recargar\(\);/);
     // Skew: el API previo rechaza varias ⇒ no se pierde nada y se marca.
     expect(src).toMatch(/r\.valor\.code === CODIGO_API_SIN_VARIAS/);
     expect(src).toMatch(/r\.valor\.data\.modo === "LEGADO" && i < lotes\.length - 1/);
-    expect(src).toMatch(/setArchivos\(\(prev\) => prev\.filter\(\(f\) => !subidos\.has\(f\)\)\)/);
+    expect(src).toMatch(/fijarArchivos\(\(prev\) => prev\.filter\(\(f\) => !subidos\.has\(f\)\)\)/);
+    // La selección asíncrona parte del espejo, no del cierre.
+    expect(src).toMatch(/emparejarArchivosFactura\(\[\.\.\.archivosRef\.current, \.\.\.nuevos\]/);
     // Quitar pasa por la confirmación (regla del cliente).
-    expect(src).toMatch(/onQuitar=\{carga\.varias === true \? setAQuitar : undefined\}/);
+    expect(src).toMatch(/const varias = carga\.varias === true;/);
+    expect(src).toMatch(/onQuitar=\{varias \? setAQuitar : undefined\}/);
     expect(src).toMatch(/<AlertDialogTitle>\{TITULO_QUITAR_FACTURA\}<\/AlertDialogTitle>/);
     expect(src).toMatch(/quitarFacturaDeGastoAction\(\{ facturaId: f\.id, gastoId: gasto\.id \}\)/);
     // API previo con factura: subir otra la REEMPLAZA ⇒ confirma primero.
     expect(src).toMatch(/if \(reemplaza && !reemplazoConfirmado\) \{\s*setConfirmarReemplazo\(true\);\s*return;/);
     expect(src).toMatch(/<AlertDialogTitle>\{TITULO_REEMPLAZAR_FACTURA\}<\/AlertDialogTitle>/);
+    // Confirmaciones anidadas DENTRO del popup y con backdrop propio.
+    expect((src.match(/<AlertDialogContent backdropForceRender>/g) ?? []).length).toBe(2);
+    expect(src.indexOf("<AlertDialog ")).toBeLessThan(src.lastIndexOf("</DialogContent>"));
     // Al cerrar con cambios se refresca la página (las actions no revalidan).
     expect(src).toMatch(/if \(huboCambio\.current\) \{\s*huboCambio\.current = false;\s*router\.refresh\(\);/);
     // El visor incrustado de la factura.

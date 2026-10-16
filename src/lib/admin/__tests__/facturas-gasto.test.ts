@@ -221,6 +221,31 @@ describe("emparejar XML ↔ PDF", () => {
     expect(r.grupos.find((g) => g.pdf?.name === "otra.pdf")?.xml).toBeNull();
   });
 
+  it("el 1 ↔ 1 SOLO con exactamente 2 archivos: entre más, no pega el PDF de una al XML de otra", () => {
+    const r = emparejarArchivosFactura([arch("x.pdf"), arch("y.xml"), arch("z.pdf"), arch("z.xml")]);
+    expect(r.grupos).toHaveLength(3);
+    expect(r.grupos.find((g) => g.pdf?.name === "x.pdf")?.xml).toBeNull();
+  });
+
+  it("«Separar»: un XML separado no se empareja por pista ni 1 ↔ 1", () => {
+    const xml = arch("6f9a-uuid.xml");
+    const r = emparejarArchivosFactura([arch("FCUN-1299718.pdf"), xml], { separados: (f) => f === xml });
+    expect(r.grupos).toHaveLength(2);
+    const conPista = emparejarArchivosFactura([arch("FCUN 1299718.pdf"), xml, arch("otra.pdf")], {
+      pistas: () => ["1299718"],
+      separados: (f) => f === xml,
+    });
+    expect(conPista.grupos).toHaveLength(3);
+  });
+
+  it("una factura cuyo PDF + XML no cabe en una llamada se rechaza diciéndolo", () => {
+    const mb = 1024 * 1024;
+    const r = emparejarArchivosFactura([arch("a.pdf", 3 * mb), arch("a.xml", 300_000)]);
+    expect(r.grupos).toHaveLength(0);
+    expect(r.mensaje).toContain("a.pdf + a.xml (juntos pesan demasiado");
+    expect(emparejarArchivosFactura([arch("b.pdf", 3 * mb)]).grupos).toHaveLength(1);
+  });
+
   it("varios sueltos sin pistas NO se emparejan al azar", () => {
     const r = emparejarArchivosFactura([arch("a.pdf"), arch("b.pdf"), arch("c.xml"), arch("d.xml")]);
     expect(r.grupos).toHaveLength(4);
@@ -238,7 +263,7 @@ describe("emparejar XML ↔ PDF", () => {
     expect(r.grupos).toHaveLength(1);
     expect(r.mensaje).toContain("foto.jpg (no es PDF ni XML)");
     expect(r.mensaje).toContain("vacio.pdf (está vacío)");
-    expect(r.mensaje).toContain("enorme.pdf (pesa más de 8 MB)");
+    expect(r.mensaje).toContain("enorme.pdf (pesa más de 3 MB)");
     expect(r.mensaje).toContain("A.PDF (repetido");
     const once = emparejarArchivosFactura(Array.from({ length: 12 }, (_, i) => arch(`f${i}.pdf`)));
     expect(once.grupos).toHaveLength(10);
@@ -275,7 +300,8 @@ describe("lotes que quepan en Vercel", () => {
   it("parte por peso sin separar el PDF de su XML; una factura enorme va sola", () => {
     const g = (pdf: number, xml: number) => ({ pdf: { size: pdf }, xml: { size: xml } });
     const chicos = Array.from({ length: 5 }, () => g(100_000, 10_000));
-    expect(partirEnLotes(chicos)).toHaveLength(1);
+    // Las 5 de ASA: lotes de a lo más 3 facturas por llamada.
+    expect(partirEnLotes(chicos).map((l) => l.length)).toEqual([3, 2]);
     const mb = 1024 * 1024;
     const lotes = partirEnLotes([g(2 * mb, 0), g(2 * mb, 0), g(5 * mb, 0), g(1000, 1000)]);
     expect(lotes.map((l) => l.length)).toEqual([1, 1, 1, 1]);
@@ -326,6 +352,9 @@ describe("resultados, avisos y textos", () => {
     );
     expect(textoResultadoSubida({ agregadas: 1, reutilizadas: 0, ya_existian: 0, legado: true })).toBe(
       "Factura amarrada a este gasto.",
+    );
+    expect(textoResultadoSubida({ agregadas: 1, reutilizadas: 0, ya_existian: 0, legado: true, reemplazo: true })).toBe(
+      "Se reemplazó la factura del gasto (la anterior sigue en Facturas recibidas).",
     );
     expect(textoResultadoSubida({ agregadas: 0, reutilizadas: 0, ya_existian: 0 })).toMatch(/ya estaban/);
     expect(textoFalloLotes(["a.pdf", "b.pdf", "c.pdf", "d.pdf"], "XML inválido.")).toBe(

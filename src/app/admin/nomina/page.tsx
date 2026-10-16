@@ -65,6 +65,10 @@ import {
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
+// «Subir facturas» del gasto (16-oct-2026): la server action vive en esta
+// página y el API procesa cada factura en fila (lee el XML, sube los
+// archivos); sin esto Vercel podía cortar un lote a medias.
+export const maxDuration = 60;
 
 export const metadata: Metadata = { title: TITULOS_SECCION.nomina };
 

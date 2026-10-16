@@ -74,6 +74,7 @@ describe("subirFacturasGastoAction", () => {
     const r = await subirFacturasGastoAction({
       gastoId: GASTO,
       archivos: [{ pdf_b64: "PDF1", xml_b64: "XML1", nombre: "a.pdf" }],
+      permitirLegado: true,
     });
     expect(apiServer).toHaveBeenCalledTimes(2);
     expect(apiServer.mock.calls[1][1].body).toEqual({
@@ -83,6 +84,13 @@ describe("subirFacturasGastoAction", () => {
       pdf_nombre: "a.pdf",
     });
     expect(r).toMatchObject({ ok: true, data: { modo: "LEGADO", agregadas: 1, ya_existian: 0, facturas: null } });
+  });
+
+  it("API 0.0.85 con UNA factura SIN permiso de reemplazar: no sube nada (no reemplaza a ciegas)", async () => {
+    apiServer.mockRejectedValueOnce(rechazoArchivos());
+    const r = await subirFacturasGastoAction({ gastoId: GASTO, archivos: [{ pdf_b64: "P1" }] });
+    expect(apiServer).toHaveBeenCalledTimes(1);
+    expect(r.code).toBe(CODIGO_API_SIN_VARIAS);
   });
 
   it("API 0.0.85 con VARIAS: no sube nada y lo dice con su código", async () => {
@@ -169,6 +177,15 @@ describe("facturasDeGastoAction", () => {
     expect(r.data?.facturas[0]).toMatchObject({ id: FACT, principal: true, nombre: "a.pdf" });
   });
 
+  it("0.0.86 que no pudo leer las facturas (bandera sin lista): FALLO de carga, no «API previo»", async () => {
+    apiServer.mockResolvedValueOnce({ id: GASTO, factura_recibida_id: FACT, facturas_multiples: true });
+    const r = await facturasDeGastoAction(GASTO);
+    expect(r.ok).toBe(false);
+    expect(apiServer).toHaveBeenCalledTimes(1);
+    apiServer.mockResolvedValueOnce({ id: GASTO, factura_recibida_id: FACT, facturas_error: true });
+    expect((await facturasDeGastoAction(GASTO)).ok).toBe(false);
+  });
+
   it("API 0.0.85 sin factura: lista vacía sin segunda llamada; un fallo NO es «sin facturas»", async () => {
     apiServer.mockResolvedValueOnce({ id: GASTO, factura_recibida_id: null });
     expect((await facturasDeGastoAction(GASTO)).data).toEqual({ varias: false, facturas: [], avisos: [] });
@@ -186,6 +203,14 @@ describe("quitarFacturaDeGastoAction", () => {
     expect(apiServer.mock.calls[0][0]).toBe(`/v1/invoices/recibidas/${FACT}/gastos/${GASTO}`);
     expect(apiServer.mock.calls[0][1]).toEqual({ method: "DELETE" });
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("409 GASTO_FACTURAS_CAMBIARON: con código y status (el diálogo recarga)", async () => {
+    apiServer.mockRejectedValueOnce(
+      new ApiError({ statusCode: 409, code: "GASTO_FACTURAS_CAMBIARON", message: "Las facturas de este gasto cambiaron." }),
+    );
+    const r = await quitarFacturaDeGastoAction({ facturaId: FACT, gastoId: GASTO });
+    expect(r).toMatchObject({ ok: false, status: 409, code: "GASTO_FACTURAS_CAMBIARON" });
   });
 
   it("API previo (la ruta no existe): texto en es-MX", async () => {
