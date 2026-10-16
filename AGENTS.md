@@ -10901,8 +10901,8 @@ pinta el chip/franja de lo anterior.
   (`type="month"`: `min` = mes del inicio), Ingresos, Conciliación (+ «Cruzar
   pendientes», «Sugerir con IA», reporte Excel, Paywise y sugerencias de
   abonos), Facturación automática, Facturas emitidas, Caja chica,
-  `PeriodSelector` y Taco-live. **Excepción: la ficha del piloto**
-  (`mes-stats-selector`) queda libre: son horas. `MesReporteSelect` ofrece
+  `PeriodSelector` y Taco-live. La ficha del piloto (`mes-stats-selector`)
+  dejó de ser excepción en la auditoría 16-oct (ver abajo). `MesReporteSelect` ofrece
   meses desde el del inicio (`opcionesMesReporte`; `null` ⇒ desde ene-2026).
 - **Atajos**: «Mes pasado / Mes anterior» (Reportes, Reparto, Ingresos,
   Conciliación, Cotizaciones) no se ofrece si el mes queda entero antes;
@@ -10952,9 +10952,10 @@ pinta el chip/franja de lo anterior.
 - **Ficha del avión**: `metrics.finanzas_desde` (aditivo) ⇒ «Cobrado vs
   gastos (desde el 1-sep-2026)» / «Utilidad (desde el 1-sep-2026)»; sin la
   llave, «acumulado» de siempre. Horas y vuelos no cambian.
-- **No se toca**: inventario/tienda, horas (tacómetros, motores, hélices),
-  ficha del piloto, cuenta de socios (ya arranca en `2026-09` por su cuenta) y
-  el Inicio del panel (su bug de mes en UTC es aparte).
+- **No se toca**: existencias/valorizado del inventario, horas de vida
+  (horómetro, motores, hélices), saldos y el Inicio del panel (su bug de mes
+  en UTC es aparte). Ficha del piloto, tienda, tacómetros, cardex y cuenta
+  de socios SÍ se tocaron en la auditoría 16-oct (solo filas y rótulos).
 - **Ligas a un movimiento de antes** (revisión adversaria, 16-oct-2026):
   «Ver en Conciliación» de un cargo/abono anterior al inicio llega con
   `?mov=&desde=&hasta=` de ese día, y el listado ya no lo trae NUNCA. Con
@@ -10971,3 +10972,68 @@ pinta el chip/franja de lo anterior.
   `lib/api/__tests__/inicio-oficial-server.test.ts`,
   `components/admin/__tests__/inicio-oficial-ui.test.tsx`,
   `components/admin/__tests__/inicio-oficial-revision.test.tsx`.
+
+### Auditoría 16-oct-2026 (API 0.0.85)
+
+Pedido del cliente tras el deploy: «Ocultarlos está bien, solo asegúrate que
+no se vean en ningún módulo». El API 0.0.85 recorta más listas y manda llaves
+ADITIVAS; el panel las lee con reglas puras del MISMO archivo
+(`lib/admin/inicio-oficial.ts`, sección «Auditoría 16-oct-2026»). **Sin las
+llaves (API 0.0.84) o con `null`, el marcado es idéntico** (los tests lo
+fijan). Ningún número se recalcula: solo se LEE lo que el API calculó con el
+historial completo.
+
+- **Tacómetros del avión** (`aircraft-tacometros-card`): el `historial` ya no
+  trae filas anteriores. El «salto en la cadena» se calcula con
+  `saltosDeCadena(historial, saldo_inicial)`: la fila FECHADA más vieja se
+  compara contra `saldo_inicial.taco` (= llegada de la fila previa) ⇒ el
+  mismo salto de antes del recorte; las filas sin fecha (el API las pone al
+  final) se comparan entre sí como siempre. Renglón «Saldo inicial al
+  1-sep-2026 · Tacómetro N» AL PIE (la tabla va del más reciente al más
+  viejo; mismo componente `RenglonSaldoInicial` que el cardex, aspecto de
+  Caja chica). Lista vacía con saldo ⇒ «Sin lecturas desde el 1-sep-2026.».
+- **Cardex** (ficha del artículo): `saldo_inicial` del API
+  (`normalizarSaldoInicialCardex`) ⇒ `FilaSaldoInicialCardex` al PIE del
+  cardex (existencia + último precio de compra, tal cual) y arriba del
+  RESUMEN por día (orden cronológico); «Dinero generado por este producto
+  (desde el 1-sep-2026)» y «Sin compras/ventas/movimientos desde el
+  1-sep-2026.» SOLO cuando llega el saldo (con él se sabe que el API recortó).
+  El panel NO calcula existencias corridas (las manda el API).
+- **Caja chica del panel**: sin cambio (el API sigue mandando el libro
+  completo al panel; solo «Mi caja» de la app se recortó).
+- **Ficha del piloto (a)**: `min` = mes del inicio en el selector y un
+  `?mes=` anterior se pide como el mes del inicio con `AvisoPeriodoAjustado`
+  (mismo patrón de Nómina; funciona igual con 0.0.84). «Histórico» de
+  honorarios ⇒ «Desde el 1-sep-2026» con `honorarios.desde`.
+- **Ficha del avión (b)**: `metrics.anio_desde` ⇒ KPI «Horas mes / desde el
+  1-sep-2026» (`rotuloHorasMesAnio`); sin la llave «Horas mes / año».
+- **Bitácora PDF (d)**: `min` del inicio en las dos fechas, el `desde` que
+  viaja pasa por `pisoDesde` y un `hasta` anterior al inicio no se pide.
+- **Vuelo anterior del avión (e)**: la liga se conserva; chip SOLO con
+  `anterior.antes_del_inicio === true` (`ChipInicioOficial antes`: la
+  bandera del API decide, no la fecha).
+- **Facturas emitidas (f)**: chip «Registradas desde el 1-sep-2026» con
+  `resumen.desde` (`rotuloRegistradas`); los huecos siguen sobre la serie.
+- **Cuenta de socios (h)**: `opcionesMesArranque`, `opcionesFiltroMeses`,
+  `filtroMesesCuenta` (sube `?desde=2026-07` con `ajustado` ⇒ aviso),
+  `mesParaVerEntregasPrevias` (si entre el inicio y el arranque no cabe un
+  mes ⇒ null: ya no manda a ver agosto) y `validarFormCuenta` reciben el
+  inicio (parámetro opcional; `null` ⇒ como antes). El 400
+  `CUENTA_ANTES_DEL_INICIO` pinta el `message` del API (respaldo sin fecha
+  en duro en `MENSAJES_RESPALDO`); el formulario lo avisa antes con
+  `textoCuentaAntesDelInicio`.
+- **Ingresos (i)**: chip por `fecha_vuelo` en los vuelos candidatos de
+  «Registrar ingreso», «Cobro desde abono» y «Aplicar anticipo», y en el
+  aviso «Este abono cuadra con un cobro de vuelo». `vuelosCandidatos` NO
+  lleva piso (un depósito de septiembre puede pagar un vuelo de agosto).
+- **Utilidad de la tienda** (revisión adversaria): el API 0.0.85 sube el
+  `desde` de `tienda/resumen` aunque no se mande ⇒ «Todo» decía «todo el
+  historial» y la columna de utilidad por ítem seguía de por vida. Ahora
+  `rangoPeriodoTienda("todo", hoy, inicio)` = del inicio a hoy (tarjeta,
+  columna y Excel cuentan lo mismo con 0.0.84 y 0.0.85), rótulo «desde el
+  1-sep-2026» y «Mes pasado» no se ofrece si queda entero antes
+  (`periodosTiendaOfrecidos`, `periodoTiendaConInicio`).
+- Tests: `lib/admin/__tests__/inicio-oficial-auditoria.test.ts`,
+  `components/admin/__tests__/inicio-oficial-auditoria.test.tsx` y el
+  bloque «inicio oficial (API 0.0.85)» de
+  `components/admin/inventory/__tests__/ficha-producto.test.tsx`.
