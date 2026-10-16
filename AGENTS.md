@@ -10858,3 +10858,104 @@ determinista). Fuente única del panel: `lib/admin/cobro-factura.ts`
   «FACTURAS POR COBRO»), `cobros-card-editar.test.tsx` (cableado del
   selector) y `facturas-emitidas/__tests__/registrar-factura-dialog.test.tsx`
   (cableado de las casillas; el diálogo es un portal).
+
+## Inicio oficial 1-sep-2026 (16-oct-2026, API 0.0.84)
+
+Pedido del cliente: «Quitemos todo lo de Agosto … para que iniciemos en
+septiembre 2026 de forma oficial», porque agosto se cerró en el sistema
+anterior. Promesa: vuelos, cotizaciones, gastos, ingresos, conciliación,
+reportes, pre-cierre y reparto arrancan en septiembre; los datos QUEDAN
+GUARDADOS; es reversible y NO toca inventario ni horas. **El piso solo
+oculta**: ningún número de un periodo ≥ inicio cambia, ni un saldo acumulado.
+El que recorta listados y reportes es el API (invariante 86); el panel solo
+acota sus selectores, sube un `?desde` viejo con aviso, recorta atajos y
+pinta el chip/franja de lo anterior.
+
+- **Fuente ÚNICA**: `GET /v1/me` → `config.inicio_oficial` («AAAA-MM-DD» de
+  pared Cancún o `null`). NUNCA la fecha en duro: `lib/admin/inicio-oficial.ts`
+  no tiene constante por defecto. `inicioOficialDeMe` valida (inválida ⇒
+  `null`).
+  - Servidor: `getInicioOficial()` (`lib/api/inicio-oficial.ts`, `react.cache`
+    sobre `getMe`: cero HTTP extra; si `/me` falla ⇒ `null`, jamás tumba la
+    página).
+  - Cliente: `InicioOficialProvider` lo monta `AdminShell` con
+    `inicioOficialDeMe(me)`; `useInicioOficial()` (fuera del Provider ⇒ `null`).
+  - **`generateMetadata` NO lo lee** (regla 5 de titulos-pestana: el head no
+    toca el API). El título de una URL vieja puede decir agosto; la página
+    dice el periodo ajustado.
+- **Skew**: API ≤ 0.0.83 (sin la llave), fila apagada (`activa=false`) o
+  inválida ⇒ `null` ⇒ **cero cambios visibles** (todas las funciones devuelven
+  su entrada tal cual; los tests lo fijan con «null ⇒ idéntico»). Orden de
+  despliegue: API 0.0.84 → panel → migración `20261016000002` (el interruptor).
+- **Reglas puras** (`lib/admin/inicio-oficial.ts`, espejo de
+  `common/inicio-oficial.util.ts` del API): `ajustarRangoAlInicio` (URL
+  vieja: `hasta < inicio` ⇒ el mes del inicio, cortado en hoy si es el mes en
+  curso; solo `desde < inicio` ⇒ `desde = inicio`; sin extremos NO inventa
+  rango), `ajustarMesAlInicio`, `pisoDesde`/`pisoMes`, `ventanaConPiso`
+  (`max(hoy − N, inicio)`), `mesesDesdeInicio`, `recortarAtajos` (quita el
+  atajo ENTERO antes; la ventana que lo cruza se llama «Desde el 1-sep-2026»),
+  `esAntesDelInicio` (un instante pasa a día Cancún: `2026-09-01T04:59:59Z` es
+  31-ago), `vaciarDiasAntesDelInicio` (calendario) y los textos exactos.
+- **Selectores** (`min`): las barras de Vuelos, Cotizaciones, Grupos, Gastos
+  (fecha y captura), Otros gastos, Nómina, Gastos personales, Combustibles
+  (`type="month"`: `min` = mes del inicio), Ingresos, Conciliación (+ «Cruzar
+  pendientes», «Sugerir con IA», reporte Excel, Paywise y sugerencias de
+  abonos), Facturación automática, Facturas emitidas, Caja chica,
+  `PeriodSelector` y Taco-live. **Excepción: la ficha del piloto**
+  (`mes-stats-selector`) queda libre: son horas. `MesReporteSelect` ofrece
+  meses desde el del inicio (`opcionesMesReporte`; `null` ⇒ desde ene-2026).
+- **Atajos**: «Mes pasado / Mes anterior» (Reportes, Reparto, Ingresos,
+  Conciliación, Cotizaciones) no se ofrece si el mes queda entero antes;
+  «Últimos 90 días» (Ingresos, Conciliación) ⇒ «Desde el 1-sep-2026»; «Cruzar
+  pendientes» / «Sugerir con IA» (30 días) y «Por conciliar» (90 días, SIN
+  aviso: nadie pidió agosto) ⇒ `max(hoy − N, inicio)`.
+- **URL vieja ⇒ aviso sin redirigir** (`AvisoPeriodoAjustado`: «El sistema
+  arranca el 1-sep-2026; ajustamos el periodo a partir de esa fecha.»):
+  Reportes, Balance en pantalla, Reparto, Tableros, Otros gastos, Nómina,
+  Gastos personales, Combustibles, Calendario, Ingresos; y en las listas sin
+  rango por defecto (Vuelos, Cotizaciones —también en el detalle, para que las
+  flechas coincidan—, Grupos, Gastos, Conciliación, Facturación, Facturas
+  emitidas) solo se sube un `?desde`/`?hasta` explícito. La llave `ajustado`
+  de los filtros existe SOLO cuando es `true` y nunca viaja al API.
+- **Flechas**: Calendario «Mes anterior» y Nómina «‹ anterior» deshabilitadas
+  en el mes del inicio (`title` «El sistema arranca en septiembre de 2026»);
+  en la cuadrícula los días anteriores van en gris y sin eventos (el API de
+  calendario no se toca: lo usa la app).
+- **«Todas las fechas»** ⇒ «desde el 1-sep-2026»: encabezado y nota de
+  Cotizaciones, nota sin periodo y ventana «sin banco» de Conciliación,
+  «Limpiar» de Caja chica. «Anticipos con saldo (todas las fechas)» NO cambia:
+  es saldo vivo.
+- **Cruces (chip y franja)**: `ChipInicioOficial` («De antes del inicio
+  oficial (1-sep-2026)») junto a cobros del detalle del vuelo, gasto/cobro
+  ligado en Conciliación (también cada gasto de un lote: `LineaGastoLote.fecha`),
+  vuelos de una factura en el registro de Facturas emitidas y anticipos con
+  saldo. `FranjaAntesDelInicio` arriba del detalle por id (vuelo, cotización,
+  hoja de un ingreso). Se edita como siempre (no bloquea). Donde el API solo
+  manda el folio del vuelo (gasto → vuelo, entrada de Ingresos → vuelo,
+  cobro de Conciliación → vuelo) NO hay chip del vuelo: el vuelo abre por id
+  con su franja (sin campo nuevo en el API, por contrato).
+- **Capturas con fecha anterior** (`AvisoCapturaAntesDelInicio`, no
+  bloqueante, mismo patrón que `avisoFechaAntesDelArranque`): alta y
+  verificación de gasto, cobro, reembolso, cobro de grupo, ingreso,
+  movimiento de caja chica y corregir la fecha desde Conciliación. El API
+  acepta la fecha (la cola offline de la app tiene capturas fechadas).
+- **Caja chica**: el API sigue mandando el libro COMPLETO (saldo por fila y
+  tarjetas intactos, `NOTA_SALDO_LIBRO_COMPLETO`). Sin `?desde` la vista va
+  `{desde: inicio}` (no cuenta como filtro: sin «Limpiar»); «Limpiar» vuelve
+  ahí, no al libro completo. **«Saldo inicial al 1-sep-2026»**
+  (`saldoInicialAlInicio`): `saldo` y `por_reponer` de la ÚLTIMA fila
+  anterior al inicio tal como los calculó el API (el `historial` llega del
+  más reciente al más viejo: la primera anterior en ese orden; no se reordena
+  ni recalcula). Como la tabla va del más reciente al más viejo, el renglón
+  sintético va AL PIE, bajo la fila más vieja visible, y solo cuando la vista
+  arranca en el inicio. Sin filas anteriores, no hay renglón.
+- **Ficha del avión**: `metrics.finanzas_desde` (aditivo) ⇒ «Cobrado vs
+  gastos (desde el 1-sep-2026)» / «Utilidad (desde el 1-sep-2026)»; sin la
+  llave, «acumulado» de siempre. Horas y vuelos no cambian.
+- **No se toca**: inventario/tienda, horas (tacómetros, motores, hélices),
+  ficha del piloto, cuenta de socios (ya arranca en `2026-09` por su cuenta) y
+  el Inicio del panel (su bug de mes en UTC es aparte).
+- Tests: `lib/admin/__tests__/inicio-oficial.test.ts`,
+  `lib/admin/__tests__/inicio-oficial-modulos.test.ts`,
+  `lib/api/__tests__/inicio-oficial-server.test.ts`,
+  `components/admin/__tests__/inicio-oficial-ui.test.tsx`.
