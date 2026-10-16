@@ -83,10 +83,11 @@ export function textoHojas(n: number): string | null {
   return n === 1 ? "+1 hoja" : `+${n} hojas`;
 }
 
+/** Tooltip de «+N hojas» (16-oct-2026: es un botón que abre el comprobante). */
 export function tituloHojas(n: number): string {
   return n === 1
-    ? "Este comprobante tiene una hoja más: ábrelo en «Verificar / editar»."
-    : `Este comprobante tiene ${n} hojas más: ábrelas en «Verificar / editar».`;
+    ? "Este comprobante tiene una hoja más: clic para verla."
+    : `Este comprobante tiene ${n} hojas más: clic para verlas.`;
 }
 
 export type VeredictoArchivos =

@@ -11,6 +11,7 @@ import {
 } from "react";
 import Link from "next/link";
 import {
+  EyeIcon,
   InformationCircleIcon,
   PlusIcon,
   ShoppingCartIcon,
@@ -229,6 +230,9 @@ import {
   vueloCercanoLabel,
 } from "@/components/admin/expenses/vuelo-cancelado-hint";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
+import { BotonAbrirFirmado, VisorPdf, esPdfPath } from "@/components/admin/visor-archivo";
+import { FacturasDelGastoSeccion } from "@/components/admin/expenses/gasto-facturas-dialog";
+import { BOTON_VER_AQUI } from "@/lib/admin/facturas-gasto";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import { pedirUrlFirmada } from "@/lib/storage/url-firmada";
 import {
@@ -462,6 +466,9 @@ export function ExpenseVerifyDialog({
   const [hojasNuevas, setHojasNuevas] = useState<File[]>([]);
   const [urlsHojas, setUrlsHojas] = useState<Record<string, string>>({});
   const [hojaAQuitar, setHojaAQuitar] = useState<string | null>(null);
+  // Visor incrustado (16-oct-2026): el path de la hoja PDF que se ve AQUÍ
+  // (la principal o una guardada); null = cerrado.
+  const [hojaEnVisor, setHojaEnVisor] = useState<string | null>(null);
   const hojasRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -484,6 +491,7 @@ export function ExpenseVerifyDialog({
   // las nuevas. Sin principal, la primera que se agregue pasará a serlo.
   const primeraHoja = gasto.foto_url ? 2 : 1;
   const totalHojas = (gasto.foto_url ? 1 : 0) + hojas.length + hojasNuevas.length;
+  const alternarVisor = (path: string) => setHojaEnVisor((v) => (v === path ? null : path));
   const agregarHojas = (archivos: File[]) => {
     if (archivos.length === 0) return;
     const v = aceptarArchivosComprobante(archivos, totalHojas);
@@ -535,6 +543,7 @@ export function ExpenseVerifyDialog({
       // Hojas del comprobante: las guardadas de ESTE gasto, sin pendientes.
       setHojas(hojasDe(gasto));
       setHojasNuevas([]);
+      setHojaEnVisor(null);
       // Reparto: lo que dice el embed de la lista, sin nada de la apertura
       // anterior (banners, confirmaciones, aviones, prellenado).
       const partes = partesDeGasto(gasto);
@@ -1822,6 +1831,12 @@ export function ExpenseVerifyDialog({
                 alt="Comprobante del gasto"
                 thumbClassName="w-full h-auto min-h-32 max-h-[45vh] object-contain"
               />
+              {esPdfPath(gasto.foto_url) && (
+                <BotonVerAqui
+                  activo={hojaEnVisor === gasto.foto_url}
+                  onClick={() => alternarVisor(gasto.foto_url ?? "")}
+                />
+              )}
             </div>
             {/* Reanálisis: para gastos capturados antes de una mejora del
                 prompt (p. ej. separación TUA/FBO) cuyo dato viejo se quedó. */}
@@ -1862,6 +1877,23 @@ export function ExpenseVerifyDialog({
                 )}
               </div>
             )}
+          </div>
+        ) : gasto.foto_url ? (
+          // La firma de la página faltó: el archivo EXISTE; se abre pidiendo
+          // la firma en el clic (nunca «no tiene foto» si sí la tiene).
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate" title={gasto.foto_url}>
+              Comprobante: {nombreCorto(gasto.foto_url.split("/").pop() ?? gasto.foto_url)}
+            </span>
+            {esPdfPath(gasto.foto_url) && (
+              <BotonVerAqui
+                activo={hojaEnVisor === gasto.foto_url}
+                onClick={() => alternarVisor(gasto.foto_url ?? "")}
+              />
+            )}
+            <BotonAbrirFirmado bucket="gasto-fotos" path={gasto.foto_url} className={CLASE_ENLACE_HOJA}>
+              Abrir
+            </BotonAbrirFirmado>
           </div>
         ) : (
           <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
@@ -1921,9 +1953,18 @@ export function ExpenseVerifyDialog({
                       thumbClassName="h-10 w-10 rounded object-cover"
                     />
                   ) : (
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground" title={p}>
-                      {nombreCorto(p.split("/").pop() ?? p)}
-                    </span>
+                    <>
+                      <span className="min-w-0 flex-1 truncate text-muted-foreground" title={p}>
+                        {nombreCorto(p.split("/").pop() ?? p)}
+                      </span>
+                      {/* Sin firma: el enlace la pide en el clic (nunca texto sin enlace). */}
+                      <BotonAbrirFirmado bucket="gasto-fotos" path={p} className={CLASE_ENLACE_HOJA}>
+                        Abrir
+                      </BotonAbrirFirmado>
+                    </>
+                  )}
+                  {esPdfPath(p) && (
+                    <BotonVerAqui activo={hojaEnVisor === p} onClick={() => alternarVisor(p)} />
                   )}
                   <button
                     type="button"
@@ -1958,7 +1999,22 @@ export function ExpenseVerifyDialog({
               ))}
             </ul>
           )}
+          {hojaEnVisor && (
+            <VisorPdf
+              key={hojaEnVisor}
+              bucket="gasto-fotos"
+              path={hojaEnVisor}
+              url={hojaEnVisor === gasto.foto_url ? fotoUrl : urlsHojas[hojaEnVisor]}
+              titulo={nombreCorto(hojaEnVisor.split("/").pop() ?? hojaEnVisor)}
+              onCerrar={() => setHojaEnVisor(null)}
+            />
+          )}
         </div>
+
+        {/* Facturas del gasto (16-oct-2026, API 0.0.86): pueden ser varias
+            (ASA: 5 CFDI por carga). «Subir facturas» abre el MISMO diálogo
+            de la columna Facturación; con el API previo, una sola. */}
+        <FacturasDelGastoSeccion gasto={gasto} activo={open} />
 
         {/* Match automático piloto+fecha (IA si es ambiguo): propone, el humano
             confirma. Se OCULTA en modo reparto y con reparto guardado o por
@@ -3025,6 +3081,7 @@ export function ExpenseVerifyDialog({
                   const p = hojaAQuitar;
                   setHojaAQuitar(null);
                   if (p) setHojas((prev) => prev.filter((x) => x !== p));
+                  if (p && hojaEnVisor === p) setHojaEnVisor(null);
                 }}
               >
                 {BOTON_QUITAR_HOJA}
@@ -3037,6 +3094,25 @@ export function ExpenseVerifyDialog({
   );
 }
 
+
+const CLASE_ENLACE_HOJA =
+  "inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-brand-600 hover:bg-muted dark:text-brand-400";
+
+/** «Ver aquí» de una hoja PDF: abre/cierra el visor incrustado (16-oct-2026). */
+function BotonVerAqui({ activo, onClick }: { activo: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activo}
+      title={activo ? "Ocultar el visor" : "Ver el PDF aquí mismo"}
+      className={CLASE_ENLACE_HOJA}
+    >
+      <EyeIcon className="h-3.5 w-3.5" aria-hidden="true" />
+      {activo ? "Ocultar" : BOTON_VER_AQUI}
+    </button>
+  );
+}
 
 function defaults(g: Gasto): GastoVerifyValues {
   // El formulario separa ticket y propina; en BD monto = TOTAL PAGADO

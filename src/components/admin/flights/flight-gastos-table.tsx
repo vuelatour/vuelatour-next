@@ -3,7 +3,8 @@
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
-import { hojasDe, textoHojas, tituloHojas } from "@/lib/admin/comprobante-hojas";
+import { hojasDe } from "@/lib/admin/comprobante-hojas";
+import { HojasComprobanteBoton } from "@/components/admin/expenses/hojas-comprobante-boton";
 import { etiquetaComprobante } from "@/lib/admin/comprobante-badge";
 import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
@@ -164,14 +165,10 @@ export function FlightGastosTable({
               alt={`Comprobante · ${g.categoria}`}
             />
           )}
-          {/* Hojas 2..N del comprobante (12-oct-2026): se abren en «Verificar / editar». */}
-          {textoHojas(hojasDe(g).length) && (
-            <span
-              className="whitespace-nowrap text-[11px] text-muted-foreground"
-              title={tituloHojas(hojasDe(g).length)}
-            >
-              {textoHojas(hojasDe(g).length)}
-            </span>
+          {/* Hojas 2..N del comprobante (12-oct-2026): «+N hojas» abre el
+              comprobante completo con el visor (16-oct-2026). */}
+          {hojasDe(g).length > 0 && (
+            <HojasComprobanteBoton gasto={g} fotoUrl={g.foto_url ? fotoUrls[g.foto_url] : undefined} />
           )}
           {/* «Factura» ya no se pinta (14-sep-2026): se confundía con el
               semáforo «Facturada/Pendiente» de al lado; la miniatura basta. */}

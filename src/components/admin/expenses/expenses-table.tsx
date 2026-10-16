@@ -22,7 +22,8 @@ import { puedeVerDetalleBancoGasto } from "@/lib/admin/gasto-banco";
 import { GastoFacturaButton } from "@/components/admin/expenses/gasto-factura-button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
-import { hojasDe, textoHojas, tituloHojas } from "@/lib/admin/comprobante-hojas";
+import { hojasDe } from "@/lib/admin/comprobante-hojas";
+import { HojasComprobanteBoton } from "@/components/admin/expenses/hojas-comprobante-boton";
 import { etiquetaComprobante } from "@/lib/admin/comprobante-badge";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import {
@@ -543,7 +544,7 @@ export function ExpensesTable({
         cell: (f) => {
           if (f.kind === "compra") return GUION;
           const g = f.gasto;
-          // Hojas 2..N del comprobante (12-oct-2026): se abren en «Verificar / editar».
+          // Hojas 2..N del comprobante (12-oct-2026): «+N hojas» las abre.
           const nHojas = hojasDe(g).length;
           const firmada = g.foto_url ? fotoUrls[g.foto_url] : undefined;
           return (
@@ -566,14 +567,8 @@ export function ExpensesTable({
                   {ETIQUETA_SIN_VISTA_PREVIA}
                 </span>
               )}
-              {textoHojas(nHojas) && (
-                <span
-                  className="whitespace-nowrap text-[11px] text-muted-foreground"
-                  title={tituloHojas(nHojas)}
-                >
-                  {textoHojas(nHojas)}
-                </span>
-              )}
+              {/* «+N hojas» abre el comprobante completo con el visor (16-oct-2026). */}
+              {nHojas > 0 && <HojasComprobanteBoton gasto={g} fotoUrl={firmada} />}
               {/* «Factura» ya no se pinta (14-sep-2026): se confundía con el
                   semáforo «Facturada/Pendiente» de al lado; la miniatura basta. */}
               {etiquetaComprobante(g.estatus_comprobante) && (

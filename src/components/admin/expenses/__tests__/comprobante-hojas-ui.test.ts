@@ -52,16 +52,22 @@ describe("comprobante con varias hojas: cableado", () => {
     expect(src).toMatch(/setHojas\(hojasDe\(gasto\)\);\s*setHojasNuevas\(\[\]\);/);
   });
 
-  it("las tablas de Gastos y del vuelo dicen «+N hojas» desde la fuente única", () => {
+  it("las tablas de Gastos y del vuelo dicen «+N hojas» desde la fuente única y ABREN el comprobante", () => {
     for (const rel of [
       "components/admin/expenses/expenses-table.tsx",
       "components/admin/flights/flight-gastos-table.tsx",
     ]) {
       const src = leer(rel);
       expect(src, rel).toContain('from "@/lib/admin/comprobante-hojas"');
-      expect(src, rel).toMatch(/textoHojas\(/);
-      expect(src, rel).toMatch(/title=\{tituloHojas\(/);
+      // 16-oct-2026: «+N hojas» ya no es texto muerto; es el botón que abre
+      // el comprobante completo con el visor del PDF.
+      expect(src, rel).toMatch(/<HojasComprobanteBoton gasto=\{g\}/);
     }
+    const boton = leer("components/admin/expenses/hojas-comprobante-boton.tsx");
+    expect(boton).toMatch(/textoHojas\(/);
+    expect(boton).toMatch(/title=\{tituloHojas\(/);
+    expect(boton).toMatch(/<button\s+type="button"\s+onClick=\{\(\) => setOpen\(true\)\}/);
+    expect(boton).toMatch(/<VisorPdf/);
   });
 
   it("los schemas dejan viajar foto_url y las hojas dentro de valor_ia_extraido", () => {
