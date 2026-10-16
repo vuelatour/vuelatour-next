@@ -11280,3 +11280,26 @@ ni decide qué vuelo pasa**: copia montos, leyendas (`leyenda`,
   Sin `cierre` / `cierre_marca` / `leyenda` en los payloads ⇒ ningún chip.
   Orden de despliegue: migración ⇒ pyservices ⇒ API ⇒ panel. El PRIMER
   cierre lo hace la oficina desde el panel.
+- **Revisión adversaria (16-oct-2026, contra el API real)**:
+  - Textos de «no se puede cerrar»: espejo EXACTO de `textoMotivoNoCerrable`
+    del API («… se cierra a partir del 1 de noviembre.»; el año solo si
+    cambia: «1 de enero de 2027»), incluido `PERIODO_ANTES_DEL_INICIO`. En
+    el diálogo gana `previa.texto_no_cerrable` del API
+    (`textoNoCerrableDePrevia`). La card deshabilita también con
+    `puede_cerrar:false` y un código desconocido (`textoNoCerrableDeMes`).
+  - Confirmar = `puedeConfirmarCierre` (previa leída, `listo`, sin motivo,
+    no CERRADA, casilla). La respuesta la decide `decidirRespuestaCerrar`
+    (éxito / previa nueva / error); el texto de un rechazo de cerrar o
+    reabrir, `mensajeErrorCierre`: el `message` del API tal cual salvo lo
+    técnico (sin respuesta, `PARSE_ERROR`, «Internal server error»,
+    403 del RolesGuard en inglés, 404 «Cannot POST», 503 sin migración).
+    **Un POST sin respuesta pudo aplicarse**: el texto pide RECARGAR antes
+    de reintentar. Reabrir también refresca al cerrar tras un rechazo.
+  - `/admin/reportes` lleva **`maxDuration = 300`**: sus server actions lo
+    heredan y el cierre corre en el API pre-cierre + dos repartos.
+  - La tabla «Vuelos que vienen de …» rotula «Cobrado al cerrar su mes» /
+    «Por cobrar entonces» (montos de la bitácora del cierre de ORIGEN) y no
+    pinta «Cobrado después».
+  - Pruebas: `app/admin/reportes/__tests__/cierre-actions.test.ts` (cuerpo
+    exacto, nada inválido sale a la red, solo el éxito revalida, el
+    rechazo conserva code/details/status, skew de la previa).
