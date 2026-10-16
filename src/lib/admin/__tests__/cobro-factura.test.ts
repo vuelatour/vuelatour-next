@@ -16,11 +16,14 @@ import {
   AYUDA_FACTURA_PARCIAL,
   AYUDA_SELECTOR_FACTURA_COBRO,
   BOTON_ASIGNAR_FACTURA,
+  DESCRIPCION_FACTURA_DE_OTRO_VUELO,
   ETIQUETA_FACTURAS_NO_CUADRAN,
   NOTA_COBROS_NO_CARGADOS,
+  NOTA_FACTURA_NO_VIGENTE,
   OPCION_SIN_FACTURA,
   TEXTO_COBRO_SIN_FACTURA,
   TITULO_REGISTRAR_FACTURA,
+  TITULO_SIN_FACTURA_REGISTRO,
   TITULO_TIENE_FACTURA,
   TOLERANCIA_COBROS_FACTURA,
   asignacionDisponible,
@@ -50,6 +53,7 @@ import {
   tituloCobrosDeVuelo,
   tituloFacturaConCobros,
   tonoSinFactura,
+  tonoSinFacturaRegistro,
 } from "../cobro-factura";
 
 const A0420: FacturaEmitidaMini = {
@@ -404,5 +408,38 @@ describe("errores del API en es-MX", () => {
     expect(esCodigoCobroFactura("COBRO_FACTURA_NO_DISPONIBLE")).toBe(true);
     expect(esCodigoCobroFactura("FACTURA_DUPLICADA")).toBe(false);
     expect(esCodigoCobroFactura(null)).toBe(false);
+  });
+});
+
+/**
+ * Revisión adversaria (16-oct-2026): lo que se corrigió tras leer el panel
+ * contra el contrato y el API real.
+ */
+describe("revisión: registro en gris con una factura global, opción de la factura ajena y factura no vigente", () => {
+  it("«· N sin factura» del registro: ámbar solo cuando importa cuál factura ampara qué; gris con una global sin clasificar", () => {
+    // FA-A-0433 (12 vuelos, 0 ligas): ninguno de sus folios amanece en ámbar.
+    expect(tonoSinFacturaRegistro({ cobros_n: 0, otras_vigentes: [] })).toBe("gris");
+    expect(tonoSinFacturaRegistro({ otras_vigentes: [] })).toBe("gris");
+    // A-0420 en #332: ya clasificó un cobro y quedan 3 sin factura ⇒ ámbar.
+    expect(tonoSinFacturaRegistro({ cobros_n: 1, otras_vigentes: [] })).toBe("ambar");
+    // Otra vigente en el vuelo ⇒ importa cuál ampara qué ⇒ ámbar.
+    expect(tonoSinFacturaRegistro({ cobros_n: 0, otras_vigentes: ["A-0455"] })).toBe("ambar");
+    expect(TITULO_SIN_FACTURA_REGISTRO).toBe("Cobros de este vuelo que ninguna factura ampara");
+  });
+
+  it("selector en edición: la factura del cobro que NO está entre las vigentes entra como opción (si no, el selector diría «Sin factura todavía»)", () => {
+    const ops = opcionesFacturaDeCobro([A0420_COMPLETA], { id: "f-orig", etiqueta: "A-0399" });
+    expect(ops.map((o) => o.value)).toEqual(["", "f-0420", "f-orig"]);
+    expect(ops[2]).toEqual({ value: "f-orig", label: "A-0399", description: DESCRIPCION_FACTURA_DE_OTRO_VUELO });
+    // Si ya está entre las vigentes, no se repite; sin factura actual, nada extra.
+    expect(opcionesFacturaDeCobro([A0420_COMPLETA], { id: "f-0420", etiqueta: "A-0420" })).toHaveLength(2);
+    expect(opcionesFacturaDeCobro([A0420_COMPLETA], null)).toHaveLength(2);
+    expect(opcionesFacturaDeCobro([], undefined)).toEqual([OPCION_SIN_FACTURA]);
+  });
+
+  it("nota de la factura no vigente en edición (el API respondería 409 FACTURA_NO_VIGENTE)", () => {
+    expect(NOTA_FACTURA_NO_VIGENTE).toBe(
+      "Esta factura no está vigente: no puede amparar cobros. Reactívala y después márcale los suyos.",
+    );
   });
 });

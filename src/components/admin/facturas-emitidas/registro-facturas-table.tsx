@@ -16,9 +16,11 @@ import {
   type FiltrosFacturas,
 } from "@/lib/admin/facturas-emitidas";
 import {
+  TITULO_SIN_FACTURA_REGISTRO,
   textoCobrosDeVueloRegistro,
   textoSinFacturaRegistro,
   tituloAlertasDetalle,
+  tonoSinFacturaRegistro,
 } from "@/lib/admin/cobro-factura";
 import { FacturaAccionesMenu, verArchivoFactura } from "./factura-acciones-menu";
 import type { ClienteOpcion, EmisoraOpcion } from "./registrar-factura-dialog";
@@ -152,7 +154,9 @@ export function RegistroFacturasTable({
                     </span>
                   )}
                   {/* FACTURAS POR COBRO (API 0.0.82): cuántos cobros de este
-                      vuelo ampara y cuántos siguen sin factura (ámbar). */}
+                      vuelo ampara y cuántos siguen sin factura (ámbar solo
+                      cuando importa cuál factura ampara qué; gris con una
+                      sola factura global sin clasificar). */}
                   {textoCobrosDeVueloRegistro(v.cobros_n) && (
                     <span className="ml-1 font-sans text-[10px] text-muted-foreground">
                       {textoCobrosDeVueloRegistro(v.cobros_n)}
@@ -160,8 +164,13 @@ export function RegistroFacturasTable({
                   )}
                   {textoSinFacturaRegistro(v.cobros_sin_factura) && (
                     <span
-                      className="ml-1 font-sans text-[10px] text-amber-700 dark:text-amber-300"
-                      title="Cobros de este vuelo que ninguna factura ampara"
+                      data-sin-factura={tonoSinFacturaRegistro(v)}
+                      className={`ml-1 font-sans text-[10px] ${
+                        tonoSinFacturaRegistro(v) === "ambar"
+                          ? "text-amber-700 dark:text-amber-300"
+                          : "text-muted-foreground"
+                      }`}
+                      title={TITULO_SIN_FACTURA_REGISTRO}
                     >
                       {textoSinFacturaRegistro(v.cobros_sin_factura)}
                     </span>

@@ -48,6 +48,7 @@ import {
 import {
   AYUDA_FACTURA_PARCIAL,
   NOTA_COBROS_NO_CARGADOS,
+  NOTA_FACTURA_NO_VIGENTE,
   NOTA_SOBRE_DE_GRUPO,
   TEXTO_VUELO_SIN_COBROS,
   cobrosHidratados,
@@ -342,10 +343,14 @@ export function RegistrarFacturaDialog({
   const monedaFactura = valoresEfectivos.moneda;
   const idFacturaEdicion = editar && factura ? factura.id : null;
   const hayCasillas = hayCobrosQueMostrar(vuelos);
-  const hidratados = cobrosHidratados(vuelos);
+  // Una factura que ya no está VIGENTE (cancelada o de baja) no puede amparar
+  // cobros: el API responde 409 FACTURA_NO_VIGENTE. Las casillas se apagan
+  // con la nota y `cobro_ids` no viaja (se reactiva y luego se asignan).
+  const facturaNoVigente = editar && factura != null && factura.estatus !== "VIGENTE";
+  const hidratados = cobrosHidratados(vuelos) && !facturaNoVigente;
   // Algún vuelo elegido no trajo sus cobros (hidratación caída): TODAS las
   // casillas se apagan y `cobro_ids` no viaja (el PATCH reemplaza el conjunto).
-  const casillasIncompletas = hayCasillas && !hidratados;
+  const casillasIncompletas = hayCasillas && !cobrosHidratados(vuelos);
   const cobrosDeVuelos = useMemo(() => vuelos.flatMap((v) => v.cobros ?? []), [vuelos]);
 
   useEffect(() => {
@@ -357,20 +362,26 @@ export function RegistrarFacturaDialog({
     for (const id of [...prefillAplicadoRef.current]) {
       if (!idsVuelos.has(id)) prefillAplicadoRef.current.delete(id);
     }
+    // Qué vuelos se (re)prellenan: los que traen `cobros` y, una vez que el
+    // operador tocó una casilla, solo los que todavía no se habían prellenado
+    // (un vuelo agregado después). Se decide AQUÍ y no dentro del updater:
+    // el updater debe ser PURO (React lo invoca dos veces en desarrollo y un
+    // `ref.add` adentro hacía que la segunda pasada saltara el prefill del
+    // vuelo recién agregado).
+    const aPrellenar = vuelos.filter(
+      (v) => Array.isArray(v.cobros) && !(prefillAplicadoRef.current.has(v.id) && casillasTocadas),
+    );
+    for (const v of aPrellenar) prefillAplicadoRef.current.add(v.id);
+    // Solo sobreviven las casillas de cobros que siguen en la lista (un
+    // vuelo quitado se lleva las suyas).
+    const conocidos = new Set(cobrosDeVuelos.map((c) => c.id));
     setCobroIds((prev) => {
       const next = new Set<string>();
-      // Solo sobreviven las casillas de cobros que siguen en la lista (un
-      // vuelo quitado se lleva las suyas).
-      const conocidos = new Set(cobrosDeVuelos.map((c) => c.id));
       for (const id of prev) if (conocidos.has(id)) next.add(id);
-      for (const v of vuelos) {
-        if (!Array.isArray(v.cobros)) continue;
-        // Re-prellenar mientras el operador no toque una casilla (el total
-        // tecleado cambia la regla); un vuelo nuevo se prellena siempre.
-        if (prefillAplicadoRef.current.has(v.id) && casillasTocadas) continue;
-        for (const c of v.cobros) next.delete(c.id);
-        for (const id of prefillCobrosDeFactura(v.cobros, idFacturaEdicion, totalRef)) next.add(id);
-        prefillAplicadoRef.current.add(v.id);
+      for (const v of aPrellenar) {
+        const cobros = v.cobros ?? [];
+        for (const c of cobros) next.delete(c.id);
+        for (const id of prefillCobrosDeFactura(cobros, idFacturaEdicion, totalRef)) next.add(id);
       }
       if (next.size === prev.size && [...next].every((id) => prev.has(id))) return prev;
       return next;
@@ -824,6 +835,11 @@ export function RegistrarFacturaDialog({
                 {NOTA_COBROS_NO_CARGADOS}
               </p>
             )}
+            {facturaNoVigente && !casillasIncompletas && (
+              <p className="text-[11px] text-muted-foreground" role="status">
+                {NOTA_FACTURA_NO_VIGENTE}
+              </p>
+            )}
             {vuelos
               .filter((v) => Array.isArray(v.cobros))
               .map((v) => {
@@ -839,7 +855,7 @@ export function RegistrarFacturaDialog({
                           // Amparado por OTRA factura: se ve, no se marca (se
                           // le quita desde esa factura o desde el cobro).
                           const otra = c.factura && c.factura.id !== idFacturaEdicion ? c.factura : null;
-                          const deshabilitada = bloqueado || casillasIncompletas || otra != null;
+                          const deshabilitada = bloqueado || casillasIncompletas || facturaNoVigente || otra != null;
                           return (
                             <li key={c.id}>
                               <label
@@ -875,7 +891,7 @@ export function RegistrarFacturaDialog({
                   </div>
                 );
               })}
-            {resumen && !casillasIncompletas && (
+            {resumen && !casillasIncompletas && !facturaNoVigente && (
               <p
                 data-resumen-marcados={resumen.tono}
                 className={`text-xs ${

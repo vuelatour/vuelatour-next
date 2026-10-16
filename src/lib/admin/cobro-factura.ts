@@ -29,6 +29,7 @@ import type {
   FacturaEmitidaMini,
   FacturaServicioBloque,
   MonedaFactura,
+  VueloDeFactura,
 } from "@/types/facturas-emitidas";
 import type { FlightCobro } from "@/types/flights";
 
@@ -109,16 +110,25 @@ export function textoAmparado(f: Pick<FacturaEmitidaMini, "cobros_n" | "cobros_m
   return `Ampara ${montos.map((m) => fmtMonto(numero(m.monto), m.moneda)).join(" + ")}`;
 }
 
+/** Descripción de la factura que ampara el cobro pero NO está entre las vigentes del vuelo. */
+export const DESCRIPCION_FACTURA_DE_OTRO_VUELO = "Ligada a otro vuelo: no aparece entre las facturas de este";
+
 /**
  * Opciones del selector: «Sin factura todavía» y una por VIGENTE del vuelo
- * («A-0420 · $68,208 MXN · 21 sep 2026», con lo que ya ampara debajo).
+ * («A-0420 · $68,208 MXN · 21 sep 2026», con lo que ya ampara debajo). En
+ * EDICIÓN, si la factura del cobro no está entre las vigentes (la liga
+ * quedó en el vuelo original tras `reassignAircraft`), se agrega como
+ * opción: sin ella el selector mostraría «Sin factura todavía» con una
+ * factura puesta.
  */
 export function opcionesFacturaDeCobro(
   vigentes: ReadonlyArray<FacturaEmitidaMini> | null | undefined,
+  actual?: { id: string; etiqueta: string } | null,
 ): OpcionFacturaDeCobro[] {
-  return [
+  const lista = vigentes ?? [];
+  const opciones: OpcionFacturaDeCobro[] = [
     OPCION_SIN_FACTURA,
-    ...(vigentes ?? []).map((f) => ({
+    ...lista.map((f) => ({
       value: f.id,
       label: [f.etiqueta, fmtMonto(numero(f.total), f.moneda), fmtDateOnly(f.fecha_emision)]
         .filter((x) => x && x !== "—")
@@ -126,6 +136,10 @@ export function opcionesFacturaDeCobro(
       description: textoAmparado(f),
     })),
   ];
+  if (actual?.id && !lista.some((f) => f.id === actual.id)) {
+    opciones.push({ value: actual.id, label: actual.etiqueta, description: DESCRIPCION_FACTURA_DE_OTRO_VUELO });
+  }
+  return opciones;
 }
 
 /**
@@ -268,6 +282,10 @@ export const NOTA_SOBRE_DE_GRUPO = "Las partes de un sobre de grupo no se asigna
 
 export const NOTA_COBROS_NO_CARGADOS =
   "No se pudieron cargar los cobros: guarda la factura y asígnala desde cada cobro.";
+
+/** Edición de una factura cancelada o de baja: no puede amparar cobros (el API responde 409). */
+export const NOTA_FACTURA_NO_VIGENTE =
+  "Esta factura no está vigente: no puede amparar cobros. Reactívala y después márcale los suyos.";
 
 /** Ayuda nueva del switch «Factura parcial (anticipo o finiquito)». */
 export const AYUDA_FACTURA_PARCIAL =
@@ -419,11 +437,27 @@ export function textoCobrosDeVueloRegistro(cobrosN: number | null | undefined): 
   return n === 1 ? "· 1 cobro" : `· ${n} cobros`;
 }
 
-/** Bajo el folio, en ámbar: «· 3 sin factura» (null con 0). */
+/** Bajo el folio: «· 3 sin factura» (null con 0). */
 export function textoSinFacturaRegistro(n: number | null | undefined): string | null {
   const k = n ?? 0;
   return k > 0 ? `· ${k} sin factura` : null;
 }
+
+/**
+ * Tono de «· N sin factura» bajo el folio del registro: la MISMA regla de
+ * `tonoSinFactura` con lo que la fila sabe del vuelo. ÁMBAR cuando importa
+ * cuál factura ampara qué (esta factura ya clasificó cobros de ese vuelo o el
+ * vuelo tiene OTRA vigente); GRIS con una sola factura «global» que no
+ * clasificó nada (FA-A-0433 ×12, A-0430 ×6): sin esto el registro amanecía
+ * con ~30 folios en ámbar sin que nada estuviera mal (revisión #11).
+ */
+export function tonoSinFacturaRegistro(
+  v: Pick<VueloDeFactura, "cobros_n" | "otras_vigentes">,
+): TonoSinFactura {
+  return (v.cobros_n ?? 0) > 0 || (v.otras_vigentes ?? []).length > 0 ? "ambar" : "gris";
+}
+
+export const TITULO_SIN_FACTURA_REGISTRO = "Cobros de este vuelo que ninguna factura ampara";
 
 // =============================================================================
 // Errores del API en es-MX

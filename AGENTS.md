@@ -10778,7 +10778,11 @@ determinista). Fuente única del panel: `lib/admin/cobro-factura.ts`
   vigentes.length > 0 && !reembolso && puedeRegistrarFactura(rol)`
   (COORDINADOR ve el formulario de siempre: el API le descarta el campo).
   Opciones «Sin factura todavía» + «A-0420 · $68,208 MXN · 21 sep 2026» con
-  «Ampara $68,208 MXN» / «No ampara ningún cobro todavía» debajo.
+  «Ampara $68,208 MXN» / «No ampara ningún cobro todavía» debajo; en
+  edición, la factura del cobro que no esté entre las vigentes del vuelo
+  (liga que quedó en el original tras reasignar avión) entra como opción
+  «Ligada a otro vuelo…» para que el selector no diga «Sin factura
+  todavía» con una factura puesta.
   **Preselección del alta solo con cupo** (`facturaPreseleccionada`: UNA
   vigente que todavía no ampara su total ⇒ esa; ya completa —A-0420 tras el
   backfill, FA-A-0434— o 2+ ⇒ vacío): preseleccionar una ya completa ligaba
@@ -10809,7 +10813,12 @@ determinista). Fuente única del panel: `lib/admin/cobro-factura.ts`
   con «No se pudieron cargar los cobros: guarda la factura y asígnala desde
   cada cobro». En el alta viaja también `[]` (el API evalúa «quedan cobros
   sin factura»); ausente ≠ `[]`. En edición `cambiosDeEdicion` lo compara
-  como conjunto contra `factura.cobros` y solo lo manda si cambió.
+  como conjunto contra `factura.cobros` y solo lo manda si cambió. Editar
+  una factura CANCELADA (el menú lo permite): casillas apagadas con «Esta
+  factura no está vigente: no puede amparar cobros…» y sin la llave (el API
+  respondería 409 `FACTURA_NO_VIGENTE`). El updater de `setCobroIds` es
+  PURO: qué vuelos se prellenan (y el `ref.add`) se decide fuera de él
+  (React lo invoca dos veces en desarrollo).
   Avisos nuevos del API (`TOTAL_DISTINTO_COBROS`, `COBROS_DESLIGADOS`,
   `COBROS_SIN_FACTURA`) salen como `toast.warning` de 10 s; el 409
   `COBRO_CON_OTRA_FACTURA` va al banner rojo con `mensajeErrorCobroFactura`.
@@ -10826,7 +10835,10 @@ determinista). Fuente única del panel: `lib/admin/cobro-factura.ts`
   su tooltip son los `alertas_detalle[].mensaje` unidos por « · » (sin
   detalle, la ayuda general). Un vuelo con 2 facturas que cuadran ya no es
   alerta. Bajo cada folio de «Vuelo(s)»: «· 1 cobro» / «· 3 cobros» y «· 3
-  sin factura» en ámbar.
+  sin factura» (`tonoSinFacturaRegistro`: ámbar solo si esta factura ya
+  clasificó cobros de ese vuelo o el vuelo tiene otra vigente; gris con una
+  sola factura global sin clasificar, para que FA-A-0433 ×12 no amanezca
+  en ámbar).
 - **Pre-cierre** (`lib/admin/pre-cierre-factura.ts`): el renglón
   `vuelos_cobrados_sin_factura` acepta vuelos que YA tienen factura cuando
   el API manda `registrada` + `cobros_sin_factura` ⇒ chip «#332 (A-0420 · 3

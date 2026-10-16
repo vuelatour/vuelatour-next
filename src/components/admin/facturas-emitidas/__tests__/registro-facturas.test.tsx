@@ -187,6 +187,21 @@ describe("tabla del registro", () => {
     expect(render([factura()], "folio_asc")).toContain("Factura ↑");
   });
 
+  it("«· N sin factura» bajo el folio: GRIS con una factura global sin clasificar, ÁMBAR si ya clasificó cobros o hay otra vigente (revisión 16-oct-2026)", () => {
+    const vuelo = factura().vuelos[0];
+    const global = render([factura({ vuelos: [{ ...vuelo, otras_vigentes: [], cobros_n: 0, cobros_sin_factura: 3 }] })]);
+    expect(global).toContain('data-sin-factura="gris"');
+    expect(global).toContain("· 3 sin factura");
+    expect(global).not.toContain("· 0 cobros");
+    const clasifico = render([factura({ vuelos: [{ ...vuelo, otras_vigentes: [], cobros_n: 1, cobros_sin_factura: 3 }] })]);
+    expect(clasifico).toContain('data-sin-factura="ambar"');
+    expect(clasifico).toContain("· 1 cobro");
+    const otra = render([factura({ vuelos: [{ ...vuelo, otras_vigentes: ["A-120"], cobros_n: 0, cobros_sin_factura: 1 }] })]);
+    expect(otra).toContain('data-sin-factura="ambar"');
+    // API previo (sin las llaves): nada.
+    expect(render([factura()])).not.toContain("sin factura");
+  });
+
   it("fila: número, receptor, vuelo, total con moneda, método, semáforo, Sin PDF, alertas y ⋯", () => {
     const html = render([factura()]);
     expect(html).toContain(">A-123</span>");

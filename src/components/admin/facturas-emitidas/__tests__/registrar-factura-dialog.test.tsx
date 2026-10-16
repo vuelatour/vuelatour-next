@@ -73,7 +73,7 @@ describe("casillas «¿Qué cobros cubre esta factura?» (cableado)", () => {
     expect(src).toContain("{tituloCobrosDeVuelo(v.folio)}");
     expect(src).toContain("{textoCobroCandidato(c)}");
     expect(src).toContain("const otra = c.factura && c.factura.id !== idFacturaEdicion ? c.factura : null;");
-    expect(src).toContain("const deshabilitada = bloqueado || casillasIncompletas || otra != null;");
+    expect(src).toContain("const deshabilitada = bloqueado || casillasIncompletas || facturaNoVigente || otra != null;");
     expect(src).toContain("{textoYaTieneFactura(otra.etiqueta)}");
     expect(src).toContain("{TEXTO_VUELO_SIN_COBROS}");
     expect(src).toContain("{NOTA_SOBRE_DE_GRUPO}");
@@ -82,19 +82,34 @@ describe("casillas «¿Qué cobros cubre esta factura?» (cableado)", () => {
   });
 
   it("prefill con la regla del backfill (alta, con el total tecleado) / los de esta factura (edición); se re-prellena solo sin casillas tocadas", () => {
-    expect(src).toContain("prefillCobrosDeFactura(v.cobros, idFacturaEdicion, totalRef)");
+    expect(src).toContain("prefillCobrosDeFactura(cobros, idFacturaEdicion, totalRef)");
     expect(src).toContain("!idFacturaEdicion && totalTecleado != null && monedaFactura");
-    expect(src).toContain("if (prefillAplicadoRef.current.has(v.id) && casillasTocadas) continue;");
+    expect(src).toContain("!(prefillAplicadoRef.current.has(v.id) && casillasTocadas)");
     expect(src).toContain("setCasillasTocadas(true);");
     // Un vuelo quitado se lleva sus casillas.
     expect(src).toContain("for (const id of prev) if (conocidos.has(id)) next.add(id);");
+    // Revisión: el updater de `setCobroIds` es PURO (React lo invoca dos
+    // veces en desarrollo); qué vuelos se prellenan y el `ref.add` se
+    // deciden ANTES, fuera del updater.
+    const updater = src.slice(src.indexOf("setCobroIds((prev) => {"), src.indexOf("}, [vuelos, cobrosDeVuelos"));
+    expect(updater).not.toContain("prefillAplicadoRef");
+    expect(src).toContain("for (const v of aPrellenar) prefillAplicadoRef.current.add(v.id);");
+    expect(src.indexOf("for (const v of aPrellenar) prefillAplicadoRef.current.add(v.id);")).toBeLessThan(
+      src.indexOf("setCobroIds((prev) => {"),
+    );
   });
 
   it("hidratación incompleta: todas apagadas con la nota y `cobro_ids` NO viaja (revisión #5)", () => {
-    expect(src).toContain("const casillasIncompletas = hayCasillas && !hidratados;");
+    expect(src).toContain("const casillasIncompletas = hayCasillas && !cobrosHidratados(vuelos);");
     expect(src).toContain("{NOTA_COBROS_NO_CARGADOS}");
     expect(src).toContain("hidratados ? [...cobroIds] : undefined,");
-    expect(src).toContain("const hidratados = cobrosHidratados(vuelos);");
+    expect(src).toContain("const hidratados = cobrosHidratados(vuelos) && !facturaNoVigente;");
+  });
+
+  it("edición de una factura NO vigente: casillas apagadas con la nota y `cobro_ids` NO viaja (el API respondería 409)", () => {
+    expect(src).toContain('const facturaNoVigente = editar && factura != null && factura.estatus !== "VIGENTE";');
+    expect(src).toContain("{NOTA_FACTURA_NO_VIGENTE}");
+    expect(src).toContain("{resumen && !casillasIncompletas && !facturaNoVigente && (");
   });
 
   it("pie con el resumen (ámbar no bloquea) y 409 de la liga en el banner con el texto de la fuente única", () => {

@@ -379,7 +379,14 @@ export function CobroFormSheet({
     vigentes.length > 0 &&
     !(cobroEditar != null && Number(cobroEditar.monto) < 0) &&
     puedeRegistrarFactura(rol);
-  const opcionesFactura = useMemo(() => opcionesFacturaDeCobro(vigentes), [vigentes]);
+  // En edición, la factura del cobro entra como opción aunque no sea de este
+  // vuelo (liga que quedó en el original tras reasignar avión): el selector
+  // debe mostrar lo que el cobro tiene puesto.
+  const facturaActual = cobroEditar?.factura_emitida ?? null;
+  const opcionesFactura = useMemo(
+    () => opcionesFacturaDeCobro(vigentes, facturaActual),
+    [vigentes, facturaActual],
+  );
   const edicion = useMemo(
     () => (cobroEditar ? edicionDeCobro(cobroEditar) : null),
     [cobroEditar],
