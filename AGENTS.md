@@ -11190,3 +11190,93 @@ y con la migración el shape viejo también AGREGA).
   (ícono con número, lista sin «sin facturas» en fallo, cableado de
   confirmación, refresco al cerrar y visores). `verFacturaGastoAction` y
   `subirFacturaGastoAction` (una sola) se fueron: no tenían otros usuarios.
+
+## Cierre de mes y vuelos diferidos (16-oct-2026, API 0.0.88)
+
+Pedido del cliente: «Necesito una opción para cerrar el mes que no es el
+corriente, para el mes anterior … y los vuelos que aún no se cobren se marquen
+en el balance y se muevan para el siguiente mes hasta que se cobre y
+complete». Decisiones ya tomadas (16-oct): el vuelo pasa COMPLETO (venta,
+gastos del vuelo, comisiones; las HORAS se quedan en su fecha real), un cobro
+parcial también pasa, mes cerrado = BLOQUEADO para capturas (409
+`MES_CERRADO`) y «Reabrir» solo ADMIN con confirmación. Contrato del API:
+invariante 89 (`cierre_mes`, `cierre_mes_vuelo`, `vuelo.periodo_contable` /
+`fecha_contable`, migración `20261016000004`). **El panel no calcula dinero
+ni decide qué vuelo pasa**: copia montos, leyendas (`leyenda`,
+`cierre_marca`) y textos de los 409 del API. Fuentes únicas PURAS:
+`lib/admin/cierre-mes.ts` (roles, textos, badge, normalización, chips) y
+`lib/admin/mes-cerrado.ts` (aviso del 409); pruebas en
+`lib/admin/__tests__/cierre-mes.test.ts`, `mes-cerrado.test.ts` y
+`components/admin/reportes/__tests__/cierre-mes-ui.test.tsx`. Tipos en
+`types/cierres.ts`.
+
+- **Reportes → «Cierre y reparto del periodo»** (`cierre-mes-card.tsx`,
+  servidor, en su PROPIO Suspense; `cierre-mes-acciones.tsx`, cliente). Lee
+  `GET /v1/cierres` (`lib/api/cierres-server.ts`, `react.cache`, nunca lanza)
+  y evalúa el MES del periodo (`mesDeVistaCierre`: mes calendario completo o
+  «Este mes»; otro rango ⇒ guía «elige «Mes pasado · Septiembre 2026»»).
+  Badge: «Abierto» / «Cerrado el 16-oct-2026 por Ale» / «Reabierto el … por
+  … (motivo)» / «En curso (se cierra a partir del 1-nov)».
+  - **«Cerrar <mes>»** (ADMIN y FACTURACION; deshabilitado con el texto de
+    `motivo_no_cerrable`, mismo texto que el 409 del API). El diálogo pide
+    la previa AL ABRIR (`previaCierreAction` → `GET
+    /v1/cierres/:periodo/previa`, lectura pesada) y pinta: bloqueantes (con
+    «Resolver en el pre-cierre →» al ancla de la card de arriba), la tabla
+    «Vuelos que pasarán a octubre 2026» (folio · cliente · avión · fecha ·
+    venta · cobrado al 30-sep · por cobrar · cobrado después), «Vuelos que
+    vienen de …» si hay, el resumen y el saldo del reparto antes → después
+    solo de los aviones que cambian. Casilla «Entiendo que septiembre 2026
+    quedará bloqueado para capturas» obligatoria. `cerrarMesAction` manda
+    `vuelos_esperados` = los ids que se VIERON: con 409 `PREVIA_CAMBIO` el
+    diálogo se repinta con la previa nueva de `details` y hay que volver a
+    marcar la casilla; cualquier otro rechazo, el `message` del API tal cual.
+  - **«Reabrir mes»** (solo ADMIN): motivo 5–300 y la confirmación «Al
+    reabrir, los 5 vuelos que pasaron a octubre 2026 regresan a septiembre
+    2026 y el mes vuelve a aceptar capturas. Octubre 2026 debe estar
+    abierto.» (`totales.vuelos_diferidos`).
+  - Las actions (`app/admin/reportes/actions.ts`) **solo revalidan en el
+    éxito** (Reportes, balance en pantalla, reparto); en un rechazo el
+    diálogo sigue montado y hace `router.refresh()` al cerrarse (convención
+    «Red / API»).
+- **Chips** (`components/admin/chip-cierre.tsx`, sin hooks): el TEXTO es
+  siempre el del API; el color sale de cómo arranca (`tonoMarcaCierre`):
+  «Pasa a…» ámbar, «Viene de…» azul, «Pendiente de cobro…» / «Pasará a…»
+  ámbar claro; un texto que no reconoce NO se pinta. Dónde:
+  - Reparto (`/admin/profit-sharing`): `CierreRepartoAviso` (estado del mes,
+    aviso rojo si `coincide_con_snapshot === false`, bloques «Pasan a
+    octubre 2026 (no se reparten)» / «Vienen de…» / «Pendientes de cobro:
+    pasarán a … al cerrar»), `CierreRepartoAvion` en cada card y
+    `cierre_marca` junto a la ruta en el desglose.
+  - Balance en pantalla: junto al título, estado + conteos («5 pasan a
+    octubre 2026», `chipsResumenDiferidos`) de `libro.cierre` (pyservices lo
+    copia a la raíz del JSON). Las marcas por vuelo YA vienen en las celdas.
+  - Pre-cierre: badge del estado en el título; en `cobros_pendientes` y el
+    renglón nuevo `vuelos_que_vienen` una línea por vuelo con su `leyenda`
+    (`lineasLeyendaPreCierre`, tope 8 + «y N más» contra `count`); sin
+    leyendas (API previo) los chips genéricos de siempre.
+  - Detalle del vuelo: «Viene de septiembre 2026» / «Mes cerrado»
+    (`chipsCierreVuelo`, de `snapshot.cierre`).
+  - Libro Dinero: es Excel (sin pantalla); la marca la pinta pyservices.
+- **409 `MES_CERRADO` en formularios**: `toastMesCerradoSiAplica(res)`
+  (`components/admin/aviso-mes-cerrado.tsx`) pinta el `message` del API tal
+  cual («Septiembre 2026 ya está cerrado (Ale, 16-oct). Reábrelo en Reportes
+  para corregir.») con la acción «Ir a Reportes» (el mes completo, donde
+  ADMIN ve «Reabrir mes») y devuelve true para que el formulario no pinte su
+  toast genérico. Cableado en: alta/edición/baja de gasto (crear,
+  verificar/editar —con y sin reparto—, eliminar, repartir), cobros
+  (registrar, corregir, eliminar en vuelo y cotización, desde abono, aplicar
+  anticipo), ingresos (registrar/editar, baja), caja chica (movimiento,
+  eliminar), entregas a socios (registrar/editar, eliminar), cotizador
+  (`decidirErrorRevise` ⇒ tipo `mes_cerrado`: ANTES no era «la cotización
+  cambió mientras editabas») y «Corregir fecha» de Conciliación (`bloqueo`
+  de esa fecha). Las actions de Gastos y Caja chica conservan `code` /
+  `details` SOLO para este código (el resto de sus fallos, la forma de
+  siempre). No hay aviso preventivo antes de enviar: decide el API.
+- **SKEW**: panel nuevo + API 0.0.87 ⇒ `GET /v1/cierres` 404 «Cannot GET» ⇒
+  la card dice «El cierre formal necesita el API 0.0.88…» y nada más
+  cambia; sin la migración (503 `CIERRE_NO_DISPONIBLE` o
+  `disponible:false`) ⇒ «todavía no está activo en la base de datos»; sin
+  permiso ⇒ nada; red/500 ⇒ «No se pudo leer…» (jamás «Abierto» sin leer).
+  Sin `cierre` / `cierre_marca` / `leyenda` en los payloads ⇒ ningún chip.
+  Orden de despliegue: migración ⇒ pyservices ⇒ API ⇒ panel. El PRIMER
+  cierre lo hace la oficina desde el panel.
