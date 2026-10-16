@@ -290,7 +290,8 @@ describe("filtro Desde/Hasta del historial", () => {
   it("cableado: el MISMO borrador de Gastos/Cotizaciones, URL validada, página 1 y sin brincar", () => {
     const src = leer("../historial-periodo-filtro.tsx");
     expect(src).toContain('import { useRangoBorrador, type CambiosUrl } from "@/hooks/use-rango-borrador";');
-    expect(src).toContain('rangoHistorialCaja(sp.get("desde"), sp.get("hasta"))');
+    // Inicio oficial (16-oct-2026): el mismo ajuste que la página (default desde el inicio).
+    expect(src).toContain('rangoHistorialCaja(sp.get("desde"), sp.get("hasta"), inicio)');
     expect(src).toContain("consultaBaseParaNavegar(sp.toString(), pendiente.current)");
     expect(src).toContain("pendiente.current = pendienteVigente(sp.toString(), pendiente.current);");
     expect(src).toContain('params.delete("tp");');
@@ -304,7 +305,7 @@ describe("filtro Desde/Hasta del historial", () => {
 
   it("cableado de la página: filas filtradas sobre el libro completo; tarjetas y Excel intactos", () => {
     const page = leer("../../../../app/admin/caja-chica/[id]/page.tsx");
-    expect(page).toContain("const rango = rangoHistorialCaja(sp.desde, sp.hasta);");
+    expect(page).toContain("const rango = rangoHistorialCaja(sp.desde, sp.hasta, inicio);");
     expect(page).toContain("const entradas = filtrarHistorialPorRango(fondo.historial, rango);");
     expect(page).toContain("const historial: MovimientoFondoRow[] = entradas.map((e) => {");
     expect(page).toContain("textoPeriodoHistorial(rango, entradas.length, fondo.historial.length)");
