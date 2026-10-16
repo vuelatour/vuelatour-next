@@ -10,6 +10,7 @@ import {
 import { useFilasActivas } from "@/hooks/use-filas-activas";
 import { FilaNavegable } from "@/components/admin/fila-navegable";
 import { Badge } from "@/components/ui/badge";
+import { ChipMarcaCierre } from "@/components/admin/chip-cierre";
 import {
   Table,
   TableBody,
@@ -271,6 +272,10 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                                 </Badge>
                               )}
                               <MultiAvionChip v={v} />
+                              {/* Cierre de mes (API 0.0.88): «Viene de
+                                  septiembre 2026» / «Pendiente de cobro:
+                                  pasará a…». Texto del API. */}
+                              <ChipMarcaCierre marca={v.cierre_marca} className="mt-0.5" />
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">
                               <span className="inline-flex items-center justify-end gap-1">

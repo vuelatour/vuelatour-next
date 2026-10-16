@@ -86,6 +86,9 @@ import {
 } from "@/lib/admin/pre-cierre-transporte";
 import { hrefConciliacion } from "@/lib/admin/conciliacion-vista";
 import { ANCLA_PRE_CIERRE, hrefResolverItem } from "@/lib/admin/pre-cierre-resolver";
+import { lineasLeyendaPreCierre, textoBadgeCierrePeriodo } from "@/lib/admin/cierre-mes";
+import { ChipEstadoCierre, ChipMarcaCierre } from "@/components/admin/chip-cierre";
+import type { CierrePeriodoAditivo } from "@/types/cierres";
 
 /** Gasto que parece transporte de pasajeros (transporte_pagado_sin_cotizar). Del API. */
 interface PreCierreGastoTransporte {
@@ -143,6 +146,14 @@ interface PreCierreVuelo {
   causa?: string;
   causa_etiqueta?: string;
   excedente_usd?: number;
+  /** ADITIVOS (cierre de mes, 16-oct-2026, API 0.0.88): en `cobros_pendientes`
+      el mes al que pasará al cerrar y su leyenda («Pasará a noviembre 2026 al
+      cerrar (cobrado $0.00 de $2,076.40 USD)»); en `vuelos_que_vienen` el mes
+      de origen y «Viene de septiembre 2026». Textos del API, tal cual. */
+  leyenda?: string | null;
+  pasara_a?: string | null;
+  origen?: string | null;
+  cobrado_al_corte_usd?: number | null;
 }
 
 /** Cobro sin banco al corte (cobros_bancarios_sin_conciliar). Montos del API. */
@@ -241,6 +252,8 @@ interface PreCierre {
   periodo: { desde: string; hasta: string };
   listo: boolean;
   items: PreCierreItem[];
+  /** ADITIVO (cierre de mes, 16-oct-2026, API 0.0.88): estado del mes. */
+  cierre?: CierrePeriodoAditivo | null;
 }
 
 /** A dónde ir a resolver cada pendiente del checklist. */
@@ -341,6 +354,9 @@ const LINK_POR_CLAVE: Record<
   // vuelos del periodo; cada chip lleva a la card de cobros de su vuelo, donde
   // el aviso dice la causa y qué hacer.
   [CLAVE_PRECIERRE_COBRADOS_DE_MAS]: hrefPrecierreCobradosDeMas,
+  // Cierre de mes (16-oct-2026, API 0.0.88, INFORMATIVO): no hay link de
+  // renglón; cada vuelo lleva a su detalle (sus fechas reales son de otro mes
+  // y la lista de vuelos del periodo no los mostraría).
 };
 
 /** El texto del enlace cuando no es «Resolver →» (un renglón informativo se REVISA). */
@@ -443,6 +459,9 @@ export async function PreCierreCard({
             <ExclamationTriangleIcon className="h-5 w-5 text-amber-500" />
           )}
           Pre-cierre del periodo
+          {/* Mes cerrado (API 0.0.88): el pre-cierre se sigue calculando en
+              vivo, pero el estado del cierre manda. */}
+          <ChipEstadoCierre badge={textoBadgeCierrePeriodo(data.cierre)} className="font-normal" />
         </CardTitle>
         <CardDescription>
           {data.listo
@@ -506,6 +525,14 @@ export async function PreCierreCard({
             // diferencia explicada: #81 y #84 (…).», revisión del 15-oct-2026).
             const esCobradosDeMas = item.clave === CLAVE_PRECIERRE_COBRADOS_DE_MAS;
             const explicados = esCobradosDeMas ? lineaExplicadosPreCierre(item.explicados) : null;
+            // Cierre de mes (API 0.0.88): la leyenda de cada vuelo de
+            // `cobros_pendientes` («Pasará a noviembre 2026 al cerrar…») y de
+            // `vuelos_que_vienen` («Viene de septiembre 2026»). Con leyendas,
+            // reemplazan a los chips genéricos (dirían el mismo folio dos veces).
+            const leyendas = lineasLeyendaPreCierre(
+              item.clave in CHIP_POR_CLAVE ? null : item.vuelos,
+              item.count,
+            );
             // Cobros sin banco: los PARCIALES (API 0.0.78) dicen lo que falta.
             const parciales =
               item.clave === "cobros_bancarios_sin_conciliar"
@@ -574,8 +601,27 @@ export async function PreCierreCard({
                         )}
                       </p>
                     )}
+                  {leyendas.lineas.length > 0 && (
+                    <ul className="text-xs mt-1 space-y-0.5" data-precierre-leyendas={item.clave}>
+                      {leyendas.lineas.map((l) => (
+                        <li key={l.id} className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+                          <Link
+                            href={`/admin/flights/${l.id}`}
+                            className="cursor-pointer underline underline-offset-2 hover:text-foreground"
+                          >
+                            {l.folio}
+                          </Link>
+                          {l.tono ? <ChipMarcaCierre marca={l.texto} /> : <span>{l.texto}</span>}
+                        </li>
+                      ))}
+                      {leyendas.restantes > 0 && (
+                        <li className="text-muted-foreground">y {leyendas.restantes} más…</li>
+                      )}
+                    </ul>
+                  )}
                   {!chipDeClave &&
-                    item.vuelos && item.vuelos.length > 0 && (
+                    item.vuelos && item.vuelos.length > 0 &&
+                    leyendas.lineas.length === 0 && (
                     <p className="text-xs mt-1 flex flex-wrap gap-1.5">
                       {item.vuelos.slice(0, 8).map((v) => (
                         <Link

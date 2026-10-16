@@ -11,6 +11,8 @@ import {
 import { BackLink } from "@/components/admin/back-link";
 import { ClaveClienteCabecera } from "@/components/admin/clave-cliente";
 import { Badge } from "@/components/ui/badge";
+import { ChipCierre } from "@/components/admin/chip-cierre";
+import { chipsCierreVuelo } from "@/lib/admin/cierre-mes";
 import {
   Card,
   CardContent,
@@ -437,6 +439,11 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               <Badge variant="outline" className={ESTADO_STYLES[snapshot.estado]}>
                 {ESTADO_LABELS[snapshot.estado]}
               </Badge>
+              {/* Cierre de mes (16-oct-2026, API 0.0.88): «Viene de
+                  septiembre 2026» / «Mes cerrado». Sin `cierre` ⇒ nada. */}
+              {chipsCierreVuelo(snapshot.cierre).map((c) => (
+                <ChipCierre key={c.texto} tono={c.tono} texto={c.texto} title={c.title} />
+              ))}
               {snapshot.es_externo && (
                 <Badge variant="outline" className="text-xs">
                   {/* Con ficha capturada: "Externo · HAWKER 400 A · XA-REG"

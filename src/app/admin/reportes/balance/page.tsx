@@ -11,6 +11,8 @@ import { BackLink } from "@/components/admin/back-link";
 import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
 import { LibroExcel } from "@/components/admin/reportes/libro-excel";
+import { ChipCierre, ChipEstadoCierre } from "@/components/admin/chip-cierre";
+import { chipsResumenDiferidos, textoBadgeCierrePeriodo } from "@/lib/admin/cierre-mes";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -154,6 +156,17 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
             <InformationCircleIcon className="h-4 w-4" aria-hidden />
           </span>
         </div>
+        {/* Cierre de mes (16-oct-2026, API 0.0.88): estado y conteos de
+            vuelos que pasan / vienen, de `cierre` de la raíz del libro. Las
+            marcas de cada vuelo ya vienen en las celdas (pyservices). */}
+        {libro?.cierre ? (
+          <div className="flex flex-wrap items-center gap-1.5" data-cierre-libro>
+            <ChipEstadoCierre badge={textoBadgeCierrePeriodo(libro.cierre)} />
+            {chipsResumenDiferidos(libro.cierre).map((c) => (
+              <ChipCierre key={c.tono} tono={c.tono} texto={c.texto} title={c.title} />
+            ))}
+          </div>
+        ) : null}
         {destino.tipo === "vuelatour" ? (
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Libro">
             {MODOS_BALANCE_VUELATOUR.map((modo) => {

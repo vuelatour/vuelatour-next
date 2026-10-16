@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/card";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { DesgloseSection } from "./desglose-section";
+import { CierreRepartoAvion } from "./cierre-reparto-aviso";
+import type { CierrePeriodoAditivo } from "@/types/cierres";
 import { SociosSection } from "./socios-section";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import {
@@ -52,6 +54,7 @@ export function AvionRepartoCard({
   puedeDescargarBalance = true,
   rol = null,
   usuarioId = null,
+  cierre = null,
 }: {
   avion: AvionReparto;
   desde: string;
@@ -63,6 +66,9 @@ export function AvionRepartoCard({
    *  en la tabla de reparto (`hrefCuentaSocioDesdeReparto`). */
   rol?: string | null;
   usuarioId?: string | null;
+  /** Cierre de mes (ADITIVO, API 0.0.88): `cierre` de la raíz del reparto;
+   *  la card pinta los vuelos de ESTE avión que pasan / vienen. */
+  cierre?: CierrePeriodoAditivo | null;
 }) {
   const positivo = avion.saldo_disponible_usd >= 0;
   const totalVuelos =
@@ -327,6 +333,8 @@ export function AvionRepartoCard({
           rol={rol}
           usuarioId={usuarioId}
         />
+
+        <CierreRepartoAvion cierre={cierre} matricula={avion.aeronave.matricula} />
 
         {detalle && <DesgloseSection detalle={detalle} />}
       </CardContent>

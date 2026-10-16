@@ -1,3 +1,5 @@
+import type { CierrePeriodoAditivo } from "./cierres";
+
 export interface RepartoSocio {
   socio_id: string;
   socio_nombre: string;
@@ -65,6 +67,12 @@ export interface DetalleVuelo {
       este vuelo se convirtieron con el TC oficial de referencia del día de
       la cotización (la cotización no trae tc_usd_mxn). */
   tc_oficial?: { tc: number; fecha_dato: string; fuente: string };
+  /** ADITIVOS (cierre de mes, 16-oct-2026, API 0.0.88): marca del API
+      («Viene de septiembre 2026» / «Pendiente de cobro: pasará a…») y los
+      meses `YYYY-MM` de/a los que se difirió. Ausentes con un API previo. */
+  cierre_marca?: string | null;
+  diferido_de?: string | null;
+  diferido_a?: string | null;
 }
 
 /** Conteo/monto de lo convertido con el TC oficial de referencia del día
@@ -266,4 +274,7 @@ export interface ProfitSharingResult {
   /** ADITIVO (29-ago-2026): resumen global del TC oficial de respaldo. */
   tc_oficial?: TcOficialResumen | null;
   aviones: AvionReparto[];
+  /** ADITIVO (cierre de mes, 16-oct-2026, API 0.0.88): estado del mes y los
+      vuelos que salen / entran / pasarían. Ausente con un API previo. */
+  cierre?: CierrePeriodoAditivo | null;
 }

@@ -11,6 +11,7 @@ import { KpiStrip } from "@/components/admin/profit-sharing/kpi-strip";
 import { AvionRepartoCard } from "@/components/admin/profit-sharing/avion-reparto-card";
 import { SociosPorEntregarSection } from "@/components/admin/profit-sharing/socios-por-entregar-section";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { CierreRepartoAviso } from "@/components/admin/profit-sharing/cierre-reparto-aviso";
 import {
   getContextoRegistro,
   getProfitSharing,
@@ -134,6 +135,10 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
 
       <AvisoDegradado faltantes={degradado.faltantes} />
 
+      {/* Cierre de mes (16-oct-2026, API 0.0.88): estado del periodo y los
+          vuelos que pasan / vienen / pasarían. Sin `cierre` ⇒ nada. */}
+      <CierreRepartoAviso cierre={result.cierre} />
+
       <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
         <InformationCircleIcon className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
         <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
@@ -208,6 +213,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 puedeDescargarBalance={me.rol === "ADMIN" || me.rol === "ANALISTA"}
                 rol={me.rol}
                 usuarioId={me.id}
+                cierre={result.cierre}
               />
             ))}
           </div>

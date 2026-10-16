@@ -1,4 +1,5 @@
 import type { ListResponse } from "./aircraft";
+import type { VueloCierreAditivo } from "./cierres";
 import type { MetodoPago } from "./quote";
 import type {
   FacturaServicioBloque,
@@ -389,6 +390,12 @@ export interface CobroGrupoResumen {
  */
 export interface FlightSnapshot extends FlightListItem, SeguimientoContadores {
   escalas: FlightEscala[];
+  /** ADITIVOS (cierre de mes, 16-oct-2026, API 0.0.88; solo con la
+   *  migración): mes contable del vuelo y si viene/pasa de mes o su mes ya
+   *  se cerró. Ausentes con un API previo ⇒ ningún chip. */
+  periodo_contable?: string | null;
+  mes_contable?: string | null;
+  cierre?: VueloCierreAditivo | null;
   /**
    * true = las escalas son la ruta REAL del piloto y la cotización es otra
    * ruta (CUN→…→CUN) que no se cruza por tramo. Viene de `vuelo` (el

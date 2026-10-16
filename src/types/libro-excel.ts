@@ -1,3 +1,5 @@
+import type { CierrePeriodoAditivo } from "./cierres";
+
 /**
  * Libro de Excel como JSON para la VISTA EN PANTALLA de los balances
  * (12-oct-2026). COPIA 1:1 de `pyservices/libro-vista.types.ts` del API,
@@ -114,6 +116,11 @@ export interface LibroExcel {
    *  del 13-oct-2026). Ausente = pyservices o API previo: un `?gasto=` no se
    *  puede ubicar y la franja lo dice. */
   vinculos_gasto?: boolean;
+  /** ADITIVO (cierre de mes, 16-oct-2026, API 0.0.88): el bloque `cierre`
+   *  del payload del balance, copiado por pyservices a la raíz. El panel
+   *  solo pinta el estado del mes junto al título; las celdas ya traen las
+   *  marcas. Ausente con pyservices/API previos. */
+  cierre?: CierrePeriodoAditivo | null;
 }
 
 /** `GET /v1/aircraft/balance-general/libro?desde&hasta&modo`. */
