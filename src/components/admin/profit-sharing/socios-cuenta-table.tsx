@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 import { fmtUsd } from "@/lib/format";
 import {
   ETIQUETA_COLUMNA_SALDO,
@@ -45,6 +46,7 @@ export function SociosCuentaTable({
   hastaMes,
   puedeRegistrar,
   registro,
+  resaltados,
 }: {
   socios: ResumenCuentaSocio[];
   totales: TotalesCuentasSocios | null;
@@ -53,7 +55,11 @@ export function SociosCuentaTable({
   /** ADMIN/FACTURACION: registran entregas y configuran cuentas. */
   puedeRegistrar: boolean;
   registro: ContextoRegistro;
+  /** ADITIVO (15-oct-2026): socios que el pre-cierre manda revisar (por
+      entregar / adelantados), su fila en ámbar SIN reordenar (manda el API). */
+  resaltados?: string[];
 }) {
+  const set = conjuntoResaltado(resaltados);
   return (
     <Table data-tabla-cuentas-socios>
       <TableHeader>
@@ -72,7 +78,11 @@ export function SociosCuentaTable({
           const enCurso = textoMesEnCurso(s.mes_en_curso_usd, hastaMes);
           const adelantado = marcaSaldoAdelantado(s.estado, s.por_entregar_usd);
           return (
-            <TableRow key={s.socio.id} data-socio-cuenta={s.socio.id}>
+            <TableRow
+              key={s.socio.id}
+              data-socio-cuenta={s.socio.id}
+              className={claseFilaResaltada(set, s.socio.id)}
+            >
               <TableCell className="min-w-[11rem] whitespace-normal align-top text-sm">
                 <Link
                   href={hrefCuentaSocio(s.socio.id)}

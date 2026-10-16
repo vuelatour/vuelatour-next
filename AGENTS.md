@@ -19,6 +19,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
   NO revalida y quien la llama hace `router.refresh()` al cerrar (caso
   `corregirFechaGastoAction`, sección «Conciliación: corregir la fecha del
   gasto…»).
+- **Foco del pre-cierre** (`pc`, `ids`, `pcn`, `pct`, `pcd`, `pcp`; 15-oct-2026):
+  son parámetros SOLO del panel. Ninguna consulta al API los reenvía; cada
+  página los lee aparte con `leerFocoPreCierre` (validados: basura ⇒ sin foco,
+  jamás un 400). Ver «Pre-cierre: «Resolver →» marca en ámbar».
 
 ## Cuando el API no contesta: reintento, degradar sin mentir — 21-sep-2026
 
@@ -276,6 +280,13 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
 - **Cotización de UN avión** (alta `/admin/quotes/new` y página única
   `/admin/quotes/[id]`): ver la sección «Cotizador» más abajo — un solo
   `QuoteCalculator`, edición directa, vista previa real y candados.
+- **Fila resaltada / foco del pre-cierre** (15-oct-2026): el foco sale SOLO
+  de `lib/admin/pre-cierre-resolver.ts` (leer, ordenar, marcar, textos) y la
+  franja SOLO de `components/admin/franja-pre-cierre.tsx`. La marca ámbar es
+  UNA: `CLASE_FILA_RESALTADA` (= `CLASE_FILA_ENFOCADA` de
+  `conciliacion-vista.ts`, = la literal de «Por facturar»). `DataTable` no se
+  toca: el resaltado entra por `rowClassName` y el «primero» por el ORDEN de
+  las filas que recibe.
 
 ## Cotizador (alta y página única de la cotización)
 
@@ -4929,7 +4940,9 @@ la 000003, que ya usa la comisión del vendedor del avión).
 - **Historial de gastos del vuelo**: «TUA incluida: Lectura de la IA →
   $3,443.89» (`null` se pinta «Lectura de la IA» y la línea siempre es «antes
   → después», nunca «se agregó» / «se quitó»: `CAMPOS_NULL_CON_NOMBRE`).
-- **Pre-cierre**: renglón NO bloqueante `tua_cobrada_sin_pagada` («Vuelos con
+- **Pre-cierre**: **RETIRADO el 15-oct-2026** (ver «## Pre-cierre: fuera
+  `pistas_sin_gasto` y `tua_cobrada_sin_pagada`…» al final) — renglón NO
+  bloqueante `tua_cobrada_sin_pagada` («Vuelos con
   TUA cobrada al cliente sin TUA pagada», justo después de
   `vuelos_sin_gasto_operaciones`): renderer genérico (chips `#folio` al
   vuelo, `monto_usd` = TUA cobrada sin IVA, `lectura_fallida` ⇒ «sin
@@ -10532,3 +10545,139 @@ pinta y se decide la UI.
   `app/admin/flights/__tests__/actions-taco-omitido.test.ts` (rutas, body
   objeto, `status`, revalidación de taco-live, VUELO_YA_INICIADO tolerado y
   el fallo a medias).
+
+## Pre-cierre: fuera `pistas_sin_gasto` y `tua_cobrada_sin_pagada`; nacen `tua_pagada_sin_cobrar` y `transporte_pagado_sin_cotizar` (15-oct-2026, API 0.0.81)
+
+Pedidos 3 y 4 del cliente (capturas del pre-cierre de septiembre): el renglón
+de pistas por tramo marcaba 96 con todo capturado (contaba por `escala_id` y
+la oficina captura la cuota por `vuelo_id`) y el de «TUA cobrada sin pagada»
+no era el que importa («el que nos importa es cuando no se cotizó pero sí se
+pagó nosotros Operación los TUAS … igual con los transportes»).
+
+- `pre-cierre-card.tsx`: fuera las entradas `pistas_sin_gasto` y
+  `tua_cobrada_sin_pagada` de `LINK_POR_CLAVE` y el tipo
+  `PreCierreVuelo.tua_cobrada_usd`; nuevos tipos ADITIVOS (todos opcionales)
+  `tua_pagada_mxn/usd`, `pase_abordar`, `gastos_n`, `monto_mxn/usd` (del vuelo
+  de transporte) y `gastos[] {id, texto, monto, moneda}`
+  (`PreCierreGastoTransporte`). Mapa `CHIP_POR_CLAVE` (clave ⇒ helper PURO que
+  da `{texto, href, title}`) con `vuelos_cobrados_sin_factura` (el mismo
+  `chipVueloSinFactura` de antes) y las dos claves nuevas; el renderer
+  genérico (`#folio` + sufijos, al detalle del vuelo) solo para las claves
+  SIN entrada (`{!chipDeClave && …}`). Mismo tope de 8 chips + «y N más…»;
+  el `<p>` lleva `data-precierre-chips={item.clave}` (sustituye a
+  `data-precierre-sin-factura`) y los chips `cursor-pointer`.
+- `lib/admin/pre-cierre-tua-pagada.ts` (PURO): `CLAVE_PRECIERRE_TUA_PAGADA_SIN_COBRAR`;
+  «Resolver →» `hrefPrecierreTuaPagada` = `/admin/quotes?desde&hasta` (la
+  lista de Cotizaciones del periodo, solo la BASE); chip «#70 ($2,355.39 MXN ·
+  2 facturas)» / «#125 ($430.49 MXN)» / «#154 (pase de abordar · $756.48
+  MXN)» / dos monedas «($1,000 MXN + $50 USD)» a `/admin/quotes/<id>` con
+  `title` que dice qué hacer (encender «Se cobran TUAS» o agregar el extra;
+  con pase de abordar, revisar la factura en Gastos → «Verificar / editar»).
+  Exporta también `ChipPreCierre`, `montosPorMonedaTexto` y
+  `folioChipPrecierre` (compartidos con el de transporte).
+- `lib/admin/pre-cierre-transporte.ts` (PURO): mismo «Resolver →»
+  (`hrefPrecierreTransporte`); chip «#190 ($400 MXN · Transporte Chetumal a
+  Carl's…)» (texto del API ≤ 60, recortado a `CHIP_TEXTO_TRANSPORTE_MAX` = 28
+  + «…» en el chip); varios ⇒ «#404 ($700 MXN · 2 gastos)»; `title` con cada
+  gasto («$400 MXN · <texto>; …») y lo manual («Seguimiento de la
+  cotización»). Es una SEÑAL: el `detalle` del API lo dice.
+- El panel NO calcula dinero ni decide qué entra (fuentes únicas del API:
+  `trasladosPagadosDeGasto`, `particionIngresoVuelo`, la heurística
+  `transporte-pasajeros.util`); los montos por moneda del renglón se pintan
+  los dos con `textoMontoItem` y los del chip con `fmtMonto`, NUNCA se suman.
+- PEDIDO 2 («Resolver →» en ámbar): los dos renglones exponen sus ids en
+  `vuelos[].id` (no llevan `ids`); la marca ámbar (`CLASE_FILA_ENFOCADA`)
+  aplica a `quotes-table`, no a Vuelos.
+- Skew: con API ≤ 0.0.80 no llegan las claves nuevas y los retirados se
+  pintan con el renderer genérico (chips al vuelo) SIN «Resolver →»; con
+  panel viejo y API 0.0.81 los nuevos salen genéricos. Sin rutas ni server
+  actions nuevas. Las claves retiradas no se reusan nunca.
+- Pruebas: `lib/admin/__tests__/pre-cierre-tua-pagada.test.ts`,
+  `lib/admin/__tests__/pre-cierre-transporte.test.ts`,
+  `components/admin/reportes/__tests__/pre-cierre-inversos.test.tsx` (render
+  de los dos renglones, lectura fallida, renglón en 0, retirados sin
+  «Resolver →» y cableado por regex: `LINK_POR_CLAVE` / `CHIP_POR_CLAVE` / sin
+  `tua_cobrada_usd`); `expenses/__tests__/tua-incluida-ui.test.tsx` ya no
+  pinta el renglón retirado (conserva la regla de `fmtMonto`);
+  `lib/admin/__tests__/pre-cierre-factura.test.ts` congela el cableado nuevo
+  (`CHIP_POR_CLAVE` / `chipDeClave`).
+
+## Pre-cierre: «Resolver →» marca en ámbar (15-oct-2026, API 0.0.81)
+
+Pedido 2 del cliente (captura del renglón «Gastos sin avión asignado
+(bandeja) · 6 … Resolver →»): «el botón de Resolver estaría genial que te
+marque bien lo que se debe resolver en amarillo, para poder saber dónde
+atacar». «Resolver →» lleva a la pantalla DE SIEMPRE (su filtro + su
+periodo) con un FOCO; la pantalla pinta esas filas PRIMERO y en ÁMBAR y monta
+una franja arriba. NADA se resuelve solo (resolver en línea desde el
+pre-cierre = fase 2, decide el cliente).
+
+- **El API decide qué se cuenta; el panel solo pinta.** Desde el API 0.0.81
+  los 11 renglones de gasto/movimiento traen `ids: string[]` (los CONTADOS,
+  tope 500, `ids_truncado: true` al cortar; últimas llaves). Los demás ya
+  traen su arreglo con id y el panel los deriva en este orden:
+  `item.ids` → `vuelos[].id` → `cobros[].id` → `ligas[].movimiento_id` →
+  `grupos[].grupo_id` → `sobres[].grupo_id` → `socios[].socio.id`
+  (`idsDeItemPreCierre`: uuid válido, minúsculas, sin repetidos).
+- `lib/admin/pre-cierre-resolver.ts` (PURO, sin React ni red): params `pc`
+  (clave, `RE_CLAVE_PRE_CIERRE`), `pcn` (count), `pcp` (`desde,hasta`), `pct`
+  / `pcd` (título ≤ 120 / detalle ≤ 400, recortados con «…») e `ids` (≤
+  `TOPE_IDS_URL` = 100; con más viaja solo `pcn` y la franja lo dice). Orden
+  fijo al anexar: pc, pcn, pcp, pct, pcd, ids; el `#hash` queda al final.
+  `hrefResolverItem(item, periodo, base)`: sin base ⇒ null; informativo o
+  `lectura_fallida` ⇒ la base intacta (sin franja: no hay qué resaltar). `leerFocoPreCierre(sp)` VALIDA (pc inválido ⇒ null; ids
+  basura fuera; pcn no entero ⇒ null; pcp inválido ⇒ null).
+  `filasResaltadasPrimero` (generaliza `filasConFoco` a un conjunto: sin ids
+  ⇒ el MISMO arreglo), `conjuntoResaltado` / `claseFilaResaltada`,
+  `textoConteoResolver` («6 por resolver · 4 en esta vista · 2 ya no están en
+  esta vista (quizá ya se resolvieron)»; «M» = ids que viajaron y SÍ están en
+  la lista pintada; «N» = el `count` del API), `hrefQuitarResaltado` (la URL
+  sin los 6 params) y `hrefVolverPreCierre` (`/admin/reportes?desde&hasta#pre-cierre`,
+  periodo del foco o el mes en curso).
+- `components/admin/franja-pre-cierre.tsx` (server-safe): «Del pre-cierre:
+  <título>», detalle, nota de la vista, conteo (`data-conteo`), «Volver al
+  pre-cierre →» y «Quitar resaltado»; `role="status"`,
+  `data-franja-pre-cierre="<clave>"`. Va después de la barra de filtros y de
+  los avisos de degradación, antes de la tabla; solo con foco.
+- Card del pre-cierre: ancla `id="pre-cierre"` + `scroll-mt-24` en la card,
+  en la de error y en `PreCierreCardCargando`. `LINK_POR_CLAVE` gana periodo
+  o destino: `gastos_sin_avion` ⇒ Gastos «Pendientes» del periodo;
+  `gastos_sin_tc` / `matricula_recibo_distinta` ⇒ Gastos del periodo;
+  `sin_conciliar` / `gastos_bancarios_sin_conciliar` /
+  `cobros_bancarios_sin_conciliar` ⇒ su pestaña de Conciliación DEL periodo;
+  `externos_sin_honorario` ⇒ Vuelos (el honorario se captura desde el vuelo);
+  `repartos_incoherentes` ⇒ Otros gastos del mes. Enlaces NUEVOS:
+  `combustible_sin_avion` (Combustibles del mes), `duplicados_sin_resolver`,
+  `fijos_con_avion` (Gastos), `vuelos_sin_precio`, `extras_sin_desglose`
+  (Cotizaciones), `fechas_tramos_incoherentes`,
+  `vuelos_sin_gasto_operaciones`, `seguimiento_cotizacion_pendiente`
+  (Vuelos). `vuelos_cobrados_sin_factura` ⇒ `/admin/facturas-emitidas#por-facturar`
+  (el foco va ANTES del `#`). `tua_pagada_sin_cobrar` /
+  `transporte_pagado_sin_cotizar` siguen en Cotizaciones (se corrigen en la
+  cotización), así que su ámbar va en `quotes-table`, no en Vuelos.
+- Pantallas destino (página lee el foco; tabla con prop ADITIVA
+  `resaltados?: string[]`; sin ella el marcado es el de siempre): Vuelos,
+  Gastos (reordena `gastos` ANTES de la tabla: la compra de un pago resaltado
+  sube con él y la compra plegada también se marca), Conciliación (lista:
+  primero los del pre-cierre y DESPUÉS el `?mov=`, que sigue primero; «Gastos
+  sin banco» y «Cobros sin banco» por `id`), Combustibles (sin reordenar: la
+  agrupación por avión manda; nota de mes), Otros gastos (nota de mes),
+  Cotizaciones, Grupos, Tacómetros en vivo (Cards primero y en ámbar; un día
+  a la vez, con su nota), Pagos a socios (fila del socio, sin reordenar) y
+  Facturas emitidas («Por facturar», «Marcados…» y «Ya no aplican»: después
+  del `?resaltar=` y con la misma marca; cambiar un filtro del registro borra
+  también el foco).
+- Las barras que COPIAN la URL conservan el foco; las pestañas y los enlaces
+  que arman su propia URL (Gastos `FILTROS_URL`, Conciliación `hrefVista`,
+  Facturas `hrefFacturas`) lo quitan: es correcto («Quitar resaltado» es
+  explícito y «Volver al pre-cierre» siempre está).
+- Skew: con API ≤ 0.0.80 los 11 renglones de gasto/movimiento viajan sin
+  `ids` ⇒ franja «N por resolver» sin resaltar (los de `vuelos[]` sí
+  resaltan); un panel previo ignora `ids`.
+- Pruebas: `lib/admin/__tests__/pre-cierre-resolver.test.ts`,
+  `components/admin/__tests__/franja-pre-cierre.test.tsx`,
+  `components/admin/reportes/__tests__/pre-cierre-resolver-card.test.tsx` y
+  `components/admin/__tests__/pre-cierre-resolver-cableado.test.ts`; las de la
+  card que congelaban el href de «Resolver →» esperan ahora `…&pc=<clave>…`,
+  y `conciliacion/__tests__/enfoque.test.tsx` / `seleccion.test.tsx` la línea
+  nueva de `rowClassName` de `movimientos-table`.

@@ -8,6 +8,14 @@ import { getMe } from "@/lib/api/me";
 import { escalaLiveOmitida, esRolOmitirTaco } from "@/lib/admin/taco-omitido";
 import { TacoLiveBoard, type TacoLiveVuelo } from "@/components/admin/taco-live/taco-live-board";
 import { TacoLiveDatePicker } from "@/components/admin/taco-live/taco-live-date-picker";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  NOTA_VISTA_TACO_LIVE,
+  conjuntoResaltado,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +31,17 @@ function shiftDay(fecha: string, delta: number): string {
 }
 
 interface TacoLivePageProps {
-  searchParams: Promise<{ fecha?: string }>;
+  searchParams: Promise<{
+    fecha?: string;
+    /** Foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel; NO
+        toca `?fecha=` ni viaja al API. */
+    pc?: string;
+    ids?: string;
+    pcn?: string;
+    pct?: string;
+    pcd?: string;
+    pcp?: string;
+  }>;
 }
 
 /**
@@ -56,6 +74,8 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
   const puedeOmitir = esRolOmitirTaco(me?.rol);
 
   const fecha = data.fecha;
+  const focoPc = leerFocoPreCierre(sp);
+  const idsPc = conjuntoResaltado(focoPc);
   // Los contadores describen EL DÍA: un viaje multi-día trae también sus
   // tramos de otros días (atenuados en el tablero) y no deben inflar el
   // encabezado.
@@ -125,7 +145,25 @@ export default async function TacoLivePage({ searchParams }: TacoLivePageProps) 
         </div>
       </div>
 
-      <TacoLiveBoard vuelos={data.vuelos} fecha={fecha} puedeOmitir={puedeOmitir} />
+      {/* «Resolver →» del pre-cierre (15-oct-2026): los vuelos de ESTE día en
+          ámbar y primero; los de otros días cuentan como «ya no están en
+          esta vista» y la nota lo explica. */}
+      {focoPc && (
+        <FranjaPreCierre
+          foco={focoPc}
+          encontrados={data.vuelos.filter((v) => idsPc.has(v.vuelo_id.toLowerCase())).length}
+          hrefQuitar={hrefQuitarResaltado("/admin/taco-live", sp)}
+          hrefVolver={hrefVolverPreCierre(focoPc, todayCancun())}
+          notaVista={NOTA_VISTA_TACO_LIVE}
+        />
+      )}
+
+      <TacoLiveBoard
+        vuelos={data.vuelos}
+        fecha={fecha}
+        puedeOmitir={puedeOmitir}
+        resaltados={focoPc?.ids}
+      />
     </div>
   );
 }

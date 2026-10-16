@@ -99,7 +99,7 @@ describe("permisos_sin_avion (bloquea: el permiso lo carga el avión)", () => {
     expect(html).toMatch(/Permisos sin avión <span[^>]*>· 1<\/span><span[^>]*> · \$5,000 MXN<\/span>/);
     expect(html).toContain(DETALLE_PERMISOS);
     expect(html).toMatch(
-      /href="\/admin\/expenses\?categoria=PERMISO&amp;desde=2026-09-01&amp;hasta=2026-09-30"[^>]*>Resolver →</,
+      /href="\/admin\/expenses\?categoria=PERMISO&amp;desde=2026-09-01&amp;hasta=2026-09-30&amp;pc=permisos_sin_avion&amp;[^"]*"[^>]*>Resolver →</,
     );
   });
 

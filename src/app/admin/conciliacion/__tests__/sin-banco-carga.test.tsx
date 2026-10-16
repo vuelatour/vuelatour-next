@@ -32,7 +32,8 @@ describe("la página: la tabla SOLO con la lectura buena", () => {
 
   it("«Gastos sin banco»: la tabla bajo `sinBanco ?` y, si falló, el aviso", () => {
     expect(pagina).toMatch(
-      /\{sinBanco \? \(\s*<GastosSinBancoTable rows=\{sinBancoRows\} \/>\s*\) : \(\s*<AvisoListaSinBancoNoCargo \/>\s*\)\}/,
+      // 15-oct-2026: las filas ya ordenadas con el foco del pre-cierre (mismas filas).
+      /\{sinBanco \? \(\s*<GastosSinBancoTable rows=\{sinBancoPc\.filas\} resaltados=\{idsPc\} \/>\s*\) : \(\s*<AvisoListaSinBancoNoCargo \/>\s*\)\}/,
     );
     // UNA sola tabla montada: no hay otro camino que la pinte vacía.
     expect(pagina.match(/<GastosSinBancoTable\b/g)?.length).toBe(1);
@@ -40,7 +41,7 @@ describe("la página: la tabla SOLO con la lectura buena", () => {
 
   it("«Cobros sin banco»: el mismo patrón y el mismo aviso", () => {
     expect(pagina).toMatch(
-      /\{cobrosSinBanco \? \(\s*<CobrosSinBancoTable rows=\{cobrosSinBanco\.data\} \/>\s*\) : \(\s*<AvisoListaSinBancoNoCargo \/>\s*\)\}/,
+      /\{cobrosSinBanco \? \(\s*<CobrosSinBancoTable rows=\{cobrosSinBancoPc\.filas\} resaltados=\{idsPc\} \/>\s*\) : \(\s*<AvisoListaSinBancoNoCargo \/>\s*\)\}/,
     );
     expect(pagina.match(/<CobrosSinBancoTable\b/g)?.length).toBe(1);
   });

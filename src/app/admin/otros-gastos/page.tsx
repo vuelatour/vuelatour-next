@@ -17,6 +17,14 @@ import {
 import { OtrosGastosFilterBar } from "@/components/admin/expenses/otros-gastos-filter-bar";
 import { listOtrosGastos } from "@/lib/api/expenses-server";
 import { todayCancun, fmtDateOnly } from "@/lib/datetime";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  NOTA_VISTA_MES,
+  filasResaltadasPrimero,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
@@ -53,7 +61,16 @@ const num = (v: string | number | null | undefined): number => {
 const ordenMoneda = (m: string) => (m === "MXN" ? 0 : m === "USD" ? 1 : 2);
 
 interface PageProps {
-  searchParams: Promise<{ mes?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    /** Foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel. */
+    pc?: string;
+    ids?: string;
+    pcn?: string;
+    pct?: string;
+    pcd?: string;
+    pcp?: string;
+  }>;
 }
 
 export default async function OtrosGastosPage({ searchParams }: PageProps) {
@@ -100,6 +117,12 @@ export default async function OtrosGastosPage({ searchParams }: PageProps) {
       remanente,
     };
   });
+  // «Resolver →» del pre-cierre (15-oct-2026): los repartos incoherentes van
+  // PRIMERO y en ámbar (el chip de categoría de la tabla no altera el orden).
+  const focoPc = leerFocoPreCierre(sp);
+  const conFoco = focoPc
+    ? filasResaltadasPrimero(rows, focoPc.ids, (r) => r.id)
+    : { filas: rows, encontrados: 0 };
 
   // Detalle de la parte de VuelaTour (pedido explícito del cliente: "cuánto
   // tuvo en Otros gastos VuelaTour en ese mes y sus detalles"): remanente del
@@ -134,6 +157,16 @@ export default async function OtrosGastosPage({ searchParams }: PageProps) {
 
       <OtrosGastosFilterBar mes={mes} />
 
+      {focoPc && (
+        <FranjaPreCierre
+          foco={focoPc}
+          encontrados={conFoco.encontrados}
+          hrefQuitar={hrefQuitarResaltado("/admin/otros-gastos", sp)}
+          hrefVolver={hrefVolverPreCierre(focoPc, todayCancun())}
+          notaVista={NOTA_VISTA_MES}
+        />
+      )}
+
       {rows.length === 0 ? (
         <EmptyState
           icon={BanknotesIcon}
@@ -158,7 +191,7 @@ export default async function OtrosGastosPage({ searchParams }: PageProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              <OtrosGastosTable gastos={rows} />
+              <OtrosGastosTable gastos={conFoco.filas} resaltados={focoPc?.ids} />
             </CardContent>
           </Card>
         </>

@@ -17,6 +17,14 @@ import { listGruposTodos } from "@/lib/api/grupos-server";
 import { getMe } from "@/lib/api/me";
 import { ESTADOS_GRUPO } from "@/lib/admin/grupos-ui";
 import type { EstadoGrupo } from "@/types/grupos";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  filasResaltadasPrimero,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
+import { todayCancun } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +37,13 @@ interface GruposPageProps {
     desde?: string;
     hasta?: string;
     q?: string;
+    /** Foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel. */
+    pc?: string;
+    ids?: string;
+    pcn?: string;
+    pct?: string;
+    pcd?: string;
+    pcp?: string;
   }>;
 }
 
@@ -92,6 +107,12 @@ export default async function GruposPage({ searchParams }: GruposPageProps) {
     (r) => r.estado !== "CANCELADO" && r.paxAsignados !== r.pasajerosTotal,
   ).length;
   const huboCorte = grupos.length < count;
+  // «Resolver →» del pre-cierre (15-oct-2026): los grupos con saldo / sobre
+  // descuadrado van PRIMERO y en ámbar.
+  const focoPc = leerFocoPreCierre(sp);
+  const conFoco = focoPc
+    ? filasResaltadasPrimero(rows, focoPc.ids, (g) => g.id)
+    : { filas: rows, encontrados: 0 };
 
   return (
     <div className="space-y-6">
@@ -155,6 +176,15 @@ export default async function GruposPage({ searchParams }: GruposPageProps) {
         }}
       />
 
+      {focoPc && (
+        <FranjaPreCierre
+          foco={focoPc}
+          encontrados={conFoco.encontrados}
+          hrefQuitar={hrefQuitarResaltado("/admin/quotes/grupo", sp)}
+          hrefVolver={hrefVolverPreCierre(focoPc, todayCancun())}
+        />
+      )}
+
       {rows.length === 0 ? (
         <EmptyState
           icon={UserGroupIcon}
@@ -177,7 +207,7 @@ export default async function GruposPage({ searchParams }: GruposPageProps) {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <GruposTable rows={rows} huboCorte={huboCorte} />
+            <GruposTable rows={conFoco.filas} huboCorte={huboCorte} resaltados={focoPc?.ids} />
           </CardContent>
         </Card>
       )}

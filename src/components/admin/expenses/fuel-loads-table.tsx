@@ -31,6 +31,7 @@ import {
   type AvionCatalogoGasto,
 } from "@/lib/admin/combustibles";
 import type { Gasto } from "@/types/expenses";
+import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 
 /** Fila-viewmodel serializable que arma la página (lookups ya resueltos). */
 export interface FuelLoadRow {
@@ -73,6 +74,7 @@ export function FuelLoadsTable({
   aircraftMenu,
   providers,
   rol,
+  resaltados,
 }: {
   loads: FuelLoadRow[];
   /** Aeronaves ACTIVAS para el diálogo "Asignar avión". */
@@ -91,7 +93,14 @@ export function FuelLoadsTable({
    * («Eliminar», «Dar visto bueno»). Sin dato, el menú no esconde nada.
    */
   rol?: string | null;
+  /**
+   * ADITIVO (15-oct-2026): cargas (ids de gasto) que el pre-cierre manda
+   * resolver («Resolver →»): su fila va en ámbar. NO se reordena: la
+   * agrupación por avión manda y la franja dice cuántas están aquí.
+   */
+  resaltados?: string[];
 }) {
+  const resaltadosSet = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   const columns = useMemo<Array<DataTableColumn<FuelLoadRow>>>(
     () => [
       {
@@ -421,6 +430,7 @@ export function FuelLoadsTable({
                 key={g.matricula ?? "__sin_avion"}
                 matricula={g.matricula}
                 filas={g.filas}
+                resaltados={resaltadosSet}
                 columns={columns}
                 nCols={nCols}
                 subtotal={filaTotales(
@@ -449,9 +459,11 @@ function FuelGroup({
   columns,
   nCols,
   subtotal,
+  resaltados,
 }: {
   matricula: string | null;
   filas: FuelLoadRow[];
+  resaltados: ReadonlySet<string>;
   columns: Array<DataTableColumn<FuelLoadRow>>;
   nCols: number;
   subtotal: React.ReactNode;
@@ -470,7 +482,7 @@ function FuelGroup({
         </TableCell>
       </TableRow>
       {filas.map((l) => (
-        <TableRow key={l.id}>
+        <TableRow key={l.id} className={claseFilaResaltada(resaltados, l.id)}>
           {columns.map((c) => (
             <TableCell key={c.key} className={c.cellClassName}>
               {c.cell(l)}

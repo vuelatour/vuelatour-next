@@ -24,6 +24,12 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { confirmTacoAction, tacoObsAction } from "@/app/admin/flights/actions";
 import { TacoClearDialog } from "@/components/admin/flights/taco-clear-dialog";
 import { fmtDateTime } from "@/lib/datetime";
+import { cn } from "@/lib/utils";
+import {
+  claseFilaResaltada,
+  conjuntoResaltado,
+  filasResaltadasPrimero,
+} from "@/lib/admin/pre-cierre-resolver";
 import { fotoDudosa, leyendaOrigen } from "@/lib/taco-procedencia";
 import {
   TacoOmitidoDeshacer,
@@ -134,16 +140,23 @@ function sugerenciaLlegada(e: TacoLiveEscala): number | null {
 // detalle del vuelo muestra exactamente lo mismo.
 
 export function TacoLiveBoard({
-  vuelos,
+  vuelos: vuelosDelDia,
   fecha,
   puedeOmitir = false,
+  resaltados,
 }: {
   vuelos: TacoLiveVuelo[];
   /** Día consultado (YYYY-MM-DD) — distingue tramos pasados de futuros. */
   fecha?: string;
   /** Oficina (ADMIN/COORDINADOR/FACTURACION): «Omitir tacómetro» y «Deshacer». */
   puedeOmitir?: boolean;
+  /** ADITIVO (15-oct-2026): vuelos que el pre-cierre manda revisar
+      («Tacómetros en revisión → Resolver»): van PRIMERO (orden estable) y
+      en ámbar. Fase 1: por VUELO (el tramo exacto llegará con `escala_id`). */
+  resaltados?: string[];
 }) {
+  const set = conjuntoResaltado(resaltados);
+  const vuelos = filasResaltadasPrimero(vuelosDelDia, resaltados ?? [], (v) => v.vuelo_id).filas;
   if (vuelos.length === 0) {
     return (
       <EmptyState
@@ -165,7 +178,11 @@ export function TacoLiveBoard({
         return (
         // Ancla por vuelo: el histórico de tacómetros del avión enlaza aquí
         // (scroll-mt para que el header no lo tape).
-        <Card key={v.vuelo_id} id={`vuelo-${v.vuelo_id}`} className="scroll-mt-24">
+        <Card
+          key={v.vuelo_id}
+          id={`vuelo-${v.vuelo_id}`}
+          className={cn("scroll-mt-24", claseFilaResaltada(set, v.vuelo_id))}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex flex-wrap items-center gap-2">
               <Link

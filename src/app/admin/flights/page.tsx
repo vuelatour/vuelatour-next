@@ -29,6 +29,14 @@ import { textoSinVerificar } from "@/lib/admin/lotes";
 import { cobroFiltro, estadoFiltro, rangoFiltro, uuidFiltro } from "@/lib/admin/url-params";
 import type { FlightListItem } from "@/types/flights";
 import type { VueloConGrupo } from "@/types/grupos";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  filasResaltadasPrimero,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
+import { todayCancun } from "@/lib/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +52,14 @@ interface FlightsPageProps {
     hasta?: string;
     /** Solo los aviones (hijos) de una cotización de GRUPO. */
     grupo_id?: string;
+    /** Foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel,
+        nunca viajan al API (`lib/admin/pre-cierre-resolver.ts`). */
+    pc?: string;
+    ids?: string;
+    pcn?: string;
+    pct?: string;
+    pcd?: string;
+    pcp?: string;
   }>;
 }
 
@@ -214,6 +230,12 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
     }
     return b.fecha_vuelo.localeCompare(a.fecha_vuelo);
   });
+  // «Resolver →» del pre-cierre (15-oct-2026): los vuelos que manda resolver
+  // van PRIMERO y en ámbar (mismo orden de arriba para los demás).
+  const foco = leerFocoPreCierre(sp);
+  const conFoco = foco
+    ? filasResaltadasPrimero(rows, foco.ids, (r) => r.id)
+    : { filas: rows, encontrados: 0 };
   const sinFecha = rows.filter((r) => !r.fecha_vuelo).length;
   // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
   // de dejar que un vuelo "desaparezca" en silencio.
@@ -325,6 +347,16 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
         }}
       />
 
+      {foco && (
+        <FranjaPreCierre
+          foco={foco}
+          // Sin vuelos operativos la tabla no se pinta: nada está «en esta vista».
+          encontrados={operativos.length === 0 ? 0 : conFoco.encontrados}
+          hrefQuitar={hrefQuitarResaltado("/admin/flights", sp)}
+          hrefVolver={hrefVolverPreCierre(foco, todayCancun())}
+        />
+      )}
+
       {operativos.length === 0 ? (
         <EmptyState icon={PaperAirplaneIcon} title="Sin vuelos activos" description={<>Cuando confirmes una cotización en{" "}
               <Link href="/admin/quotes" className="underline">
@@ -334,7 +366,11 @@ export default async function FlightsPage({ searchParams }: FlightsPageProps) {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <FlightsTable rows={rows} huboCorte={huboCorte} />
+            <FlightsTable
+              rows={conFoco.filas}
+              huboCorte={huboCorte}
+              resaltados={foco?.ids}
+            />
           </CardContent>
         </Card>
       )}

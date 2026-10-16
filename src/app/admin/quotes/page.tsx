@@ -25,6 +25,13 @@ import {
   textoVacioCotizaciones,
 } from "@/lib/admin/quote-navegacion";
 import { todayCancun } from "@/lib/datetime";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  filasResaltadasPrimero,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
 import { listClients } from "@/lib/api/clients-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listPilots } from "@/lib/api/pilots-server";
@@ -51,6 +58,14 @@ interface QuotesPageProps {
     /** Rango de la FECHA DEL VUELO (día Cancún `YYYY-MM-DD`, 13-oct-2026). */
     desde?: string;
     hasta?: string;
+    /** Foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel;
+        `filtrosListaDeParams` no los conoce (ni viajan al API ni a las flechas). */
+    pc?: string;
+    ids?: string;
+    pcn?: string;
+    pct?: string;
+    pcd?: string;
+    pcp?: string;
   }>;
 }
 
@@ -232,6 +247,13 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
     }
     return b.fechaVuelo.localeCompare(a.fechaVuelo);
   });
+  // «Resolver →» del pre-cierre (15-oct-2026): los vuelos que manda resolver
+  // (sin precio, extras sin desglose, TUA pagada sin cobrar, transporte
+  // pagado sin cotizar) van PRIMERO y en ámbar.
+  const focoPc = leerFocoPreCierre(sp);
+  const conFoco = focoPc
+    ? filasResaltadasPrimero(rows, focoPc.ids, (r) => r.id)
+    : { filas: rows, encontrados: 0 };
   const sinAsignar = rows.filter((r) => r.sinAsignar).length;
   const sinFecha = rows.filter((r) => !r.fechaVuelo).length;
   // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
@@ -392,6 +414,15 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         rangoIgnorado={rangoIgnorado}
       />
 
+      {focoPc && (
+        <FranjaPreCierre
+          foco={focoPc}
+          encontrados={conFoco.encontrados}
+          hrefQuitar={hrefQuitarResaltado("/admin/quotes", sp)}
+          hrefVolver={hrefVolverPreCierre(focoPc, hoy)}
+        />
+      )}
+
       {quotes.length === 0 ? (
         <EmptyState
             icon={CalculatorIcon}
@@ -401,7 +432,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <QuotesTable quotes={rows} huboCorte={huboCorte} />
+            <QuotesTable quotes={conFoco.filas} huboCorte={huboCorte} resaltados={focoPc?.ids} />
           </CardContent>
         </Card>
       )}

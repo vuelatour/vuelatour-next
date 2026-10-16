@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import {
   ExclamationTriangleIcon,
   PaperAirplaneIcon,
@@ -16,6 +17,7 @@ import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 
 /** Liga con la cotización de GRUPO (hijo): badge "Grupo G-12 · avión 3 de 7". */
 export interface GrupoDeFila {
@@ -270,11 +272,17 @@ const columns: Array<DataTableColumn<QuoteListRow>> = [
 export function QuotesTable({
   quotes,
   huboCorte = false,
+  resaltados,
 }: {
   quotes: QuoteListRow[];
   /** true = la página no logró cargar TODAS las filas (corte defensivo). */
   huboCorte?: boolean;
+  /** ADITIVO (15-oct-2026): ids de vuelo que el pre-cierre manda resolver
+      («Resolver →»: sin precio, extras sin desglose, TUA pagada sin cobrar,
+      transporte pagado sin cotizar), en ámbar (la página ya los puso primero). */
+  resaltados?: string[];
 }) {
+  const set = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   return (
     <DataTable
       columns={columns}
@@ -282,6 +290,7 @@ export function QuotesTable({
       huboCorte={huboCorte}
       rowKey={(q) => q.id}
       rowHref={(q) => q.href}
+      rowClassName={(q) => claseFilaResaltada(set, q.id)}
       searchText={(q) =>
         `#${q.folio} ${q.clienteNombre ?? ""} ${q.operadorExterno ?? ""} ${q.ruta} ${q.avionMatricula ?? ""} ${q.grupo ? `G-${q.grupo.folio ?? ""} ${q.grupo.nombre ?? ""}` : ""} ${q.claveCliente ?? ""}`
       }

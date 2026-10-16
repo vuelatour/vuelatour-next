@@ -53,6 +53,7 @@ import {
 } from "./registrar-factura-dialog";
 import type { VueloSeleccionado } from "./selector-vuelos-factura";
 import type { FacturaDelClienteSugerida, PorFacturarItem } from "@/types/facturas-emitidas";
+import { conjuntoResaltado, filasResaltadasPrimero } from "@/lib/admin/pre-cierre-resolver";
 
 function vueloDeItem(it: PorFacturarItem): VueloSeleccionado {
   return {
@@ -113,10 +114,15 @@ export function PorFacturarTable({
   emisoras,
   syncId,
   yaNoAplican = false,
+  resaltados,
 }: {
   items: PorFacturarItem[];
   rol: string | null;
   resaltar?: string;
+  /** ADITIVO (15-oct-2026): vuelos que el pre-cierre manda facturar
+      («Vuelos cobrados … sin factura → Resolver»): van después de `resaltar`
+      (en su orden) y con el MISMO anillo ámbar. */
+  resaltados?: string[];
   clientes?: ClienteOpcion[];
   emisoras?: EmisoraOpcion[];
   /** Llave de paginación de la DataTable (varias tablas en la misma página). */
@@ -135,12 +141,15 @@ export function PorFacturarTable({
 
   // La fila de la notificación va PRIMERO (la tabla pagina y podría quedar en
   // otra página) y se trae a la vista al montar.
+  // Después, los que manda resolver el pre-cierre (15-oct-2026), en su orden.
+  const resaltadosSet = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   const filas = useMemo(() => {
-    if (!resaltar) return items;
-    const i = items.findIndex((it) => it.vuelo.id === resaltar);
-    if (i <= 0) return items;
-    return [items[i], ...items.slice(0, i), ...items.slice(i + 1)];
-  }, [items, resaltar]);
+    const conPreCierre = filasResaltadasPrimero(items, resaltados ?? [], (it) => it.vuelo.id).filas;
+    if (!resaltar) return conPreCierre;
+    const i = conPreCierre.findIndex((it) => it.vuelo.id === resaltar);
+    if (i <= 0) return conPreCierre;
+    return [conPreCierre[i], ...conPreCierre.slice(0, i), ...conPreCierre.slice(i + 1)];
+  }, [items, resaltar, resaltados]);
 
   useEffect(() => {
     if (!resaltar) return;
@@ -397,7 +406,9 @@ export function PorFacturarTable({
         syncId={syncId ?? "pf"}
         defaultPageSize={50}
         rowClassName={(it) =>
-          it.vuelo.id === resaltar ? "ring-2 ring-inset ring-amber-400 bg-amber-500/5" : undefined
+          it.vuelo.id === resaltar || resaltadosSet.has(it.vuelo.id.toLowerCase())
+            ? "ring-2 ring-inset ring-amber-400 bg-amber-500/5"
+            : undefined
         }
       />
 

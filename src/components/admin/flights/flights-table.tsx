@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { ExclamationTriangleIcon, MinusCircleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
@@ -16,6 +17,8 @@ import { fmtUsd } from "@/lib/format";
 import { ESTADO_LABELS, ESTADO_STYLES } from "@/lib/admin/estado-vuelo";
 import { TITULO_BADGE_LISTA_OMITIDO } from "@/lib/admin/taco-omitido";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
+import { cn } from "@/lib/utils";
+import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
 
 /** Fila-viewmodel serializable: la página resuelve nombres/lookup y aplana. */
 export interface FlightRow {
@@ -218,11 +221,16 @@ const columns: Array<DataTableColumn<FlightRow>> = [
 export function FlightsTable({
   rows,
   huboCorte = false,
+  resaltados,
 }: {
   rows: FlightRow[];
   /** true = la página no logró cargar TODAS las filas (corte defensivo). */
   huboCorte?: boolean;
+  /** ADITIVO (15-oct-2026): ids de vuelo que el pre-cierre manda resolver
+      («Resolver →»): se pintan en ámbar. La página ya los puso PRIMERO. */
+  resaltados?: string[];
 }) {
+  const set = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   return (
     <DataTable
       columns={columns}
@@ -235,7 +243,10 @@ export function FlightsTable({
       // (aún no hay nada operativo que ver).
       rowHref={hrefDeFila}
       // Azul = aún en cotización (sin confirmar): identificable de un vistazo.
-      rowClassName={(v) => (v.en_cotizacion ? "bg-sky-500/[0.07]" : undefined)}
+      // Ámbar = lo que el pre-cierre manda resolver (gana sobre el azul).
+      rowClassName={(v) =>
+        cn(v.en_cotizacion && "bg-sky-500/[0.07]", claseFilaResaltada(set, v.id)) || undefined
+      }
       // El ID por cliente también se busca: «january02» empata por inicio de
       // palabra (el «-» no separa palabras en `normalizarTexto`).
       searchText={(v) =>

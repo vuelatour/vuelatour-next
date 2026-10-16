@@ -15,9 +15,9 @@ import {
 const V = "eb474572-8bda-469f-adca-db556f811d86";
 
 describe("chips de «Vuelos cobrados en cuentas que exigen factura…»", () => {
-  it("clave y «Resolver →» (Facturas emitidas)", () => {
+  it("clave y «Resolver →» (Facturas emitidas, sección «Por facturar»)", () => {
     expect(CLAVE_PRECIERRE_VUELOS_SIN_FACTURA).toBe("vuelos_cobrados_sin_factura");
-    expect(hrefPrecierreVuelosSinFactura()).toBe("/admin/facturas-emitidas");
+    expect(hrefPrecierreVuelosSinFactura()).toBe("/admin/facturas-emitidas#por-facturar");
   });
 
   it("sin pedir: folio + cuenta; lleva a la card de cobros del vuelo y dice qué hacer", () => {
@@ -73,8 +73,12 @@ describe("cableado en la card del pre-cierre", () => {
   });
 
   it("sus chips salen del helper (con su title) y los genéricos no se repiten para este renglón", () => {
-    expect(fuente).toContain("const chip = chipVueloSinFactura(v);");
+    // Desde el 15-oct-2026 el caso especial vive en `CHIP_POR_CLAVE` (junto a
+    // los renglones inversos); el genérico solo pinta las claves sin helper.
+    expect(fuente).toContain("[CLAVE_PRECIERRE_VUELOS_SIN_FACTURA]: chipVueloSinFactura,");
+    expect(fuente).toContain("const chipDeClave = CHIP_POR_CLAVE[item.clave];");
+    expect(fuente).toContain("const chip = chipDeClave(v);");
     expect(fuente).toMatch(/href=\{chip\.href\}\s*title=\{chip\.title\}/);
-    expect(fuente).toContain("item.clave !== CLAVE_PRECIERRE_VUELOS_SIN_FACTURA &&");
+    expect(fuente).toMatch(/\{!chipDeClave &&\s*item\.vuelos && item\.vuelos\.length > 0 &&/);
   });
 });

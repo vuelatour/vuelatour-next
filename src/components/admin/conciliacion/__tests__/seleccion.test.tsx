@@ -263,7 +263,7 @@ describe("cableado (regex sobre los fuentes)", () => {
   const src = leer("../movimientos-table.tsx");
 
   it("la línea `rowClassName` sigue LITERAL y el orden de MovimientoActions no cambia", () => {
-    expect(src).toContain("rowClassName={(m) => (resaltar && m.id === resaltar ? CLASE_FILA_ENFOCADA : undefined)}");
+    expect(src).toContain("rowClassName={(m) => ((resaltar && m.id === resaltar) || resaltadosSet.has(m.id.toLowerCase()) ? CLASE_FILA_ENFOCADA : undefined)}");
     expect(src).toMatch(/<MovimientoActions\s+movimiento=\{m\}\s+gastos=\{gastos\}\s+abonos=\{abonos\}/);
     // La selección se marca en la CELDA, nunca con data-state/aria-selected.
     expect(src).not.toContain('data-state="selected"');

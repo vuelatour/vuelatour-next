@@ -85,7 +85,10 @@ describe("pre-cierre: movimientos omitidos de la conciliación", () => {
       items: [item(), { clave: "sin_conciliar", titulo: "Movimientos bancarios sin conciliar", detalle: "x", count: 3 }],
     });
     const html = await pintar();
-    expect(html).toMatch(/href="\/admin\/conciliacion"[^>]*>Resolver →</);
+    // 15-oct-2026 (PEDIDO 2): «Pendientes» del periodo + el foco del pre-cierre.
+    expect(html).toMatch(
+      /href="\/admin\/conciliacion\?f=pendientes&amp;desde=2026-10-01&amp;hasta=2026-10-31&amp;pc=sin_conciliar&amp;[^"]*"[^>]*>Resolver →</,
+    );
     expect(html).toContain("Revisar los omitidos →");
   });
 });

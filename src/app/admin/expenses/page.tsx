@@ -31,6 +31,13 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { esCategoriaCompra } from "@/types/compras";
 import { todayCancun } from "@/lib/datetime";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  filasResaltadasPrimero,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
 import { Degradaciones, principal } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { avionCatalogoGasto } from "@/lib/admin/combustibles";
@@ -114,6 +121,14 @@ export default async function ExpensesPage({
     cap_hasta?: string;
     /** fecha (default) | captura: orden del listado y del Excel. */
     orden?: string;
+    /** Foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel; NO
+        entran a `FILTROS_URL` ni a `claveVista` ni viajan al API. */
+    pc?: string;
+    ids?: string;
+    pcn?: string;
+    pct?: string;
+    pcd?: string;
+    pcp?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -240,7 +255,15 @@ export default async function ExpensesPage({
   // compras plegadas, sin fila activa); un refresh deja la misma clave.
   const claveVista = paramsFiltros(filtro, true).toString();
 
-  const gastos = lista.ok ? lista.datos.data : [];
+  const gastosLista = lista.ok ? lista.datos.data : [];
+  // «Resolver →» del pre-cierre (15-oct-2026): los gastos que manda resolver
+  // van PRIMERO (ANTES de la tabla: la compra de un pago resaltado sube con
+  // él, porque la tabla agrupa por la primera aparición) y en ámbar.
+  const foco = leerFocoPreCierre(sp);
+  const conFoco = foco
+    ? filasResaltadasPrimero(gastosLista, foco.ids, (g) => g.id)
+    : { filas: gastosLista, encontrados: 0 };
+  const gastos = conFoco.filas;
   // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
   // de dejar que un gasto "desaparezca" en silencio (auditoría 29-ago).
   const huboCorte = lista.ok && gastos.length < lista.datos.count;
@@ -369,6 +392,16 @@ export default async function ExpensesPage({
           {/* Catálogos/contadores/fotos que no cargaron: se dice en vez de pintar 0. */}
           <AvisoDegradado faltantes={degradado.faltantes} />
 
+          {foco && (
+            <FranjaPreCierre
+              foco={foco}
+              // Lista caída ⇒ no se sabe qué hay «en esta vista».
+              encontrados={lista.ok ? conFoco.encontrados : null}
+              hrefQuitar={hrefQuitarResaltado("/admin/expenses", sp)}
+              hrefVolver={hrefVolverPreCierre(foco, hoy)}
+            />
+          )}
+
           {huboCorte && lista.ok && (
             <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
               <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
@@ -407,6 +440,7 @@ export default async function ExpensesPage({
                   fotoUrls={fotoUrls}
                   huboCorte={huboCorte}
                   rol={me?.rol ?? null}
+                  resaltados={foco?.ids}
                 />
               </CardContent>
             </Card>

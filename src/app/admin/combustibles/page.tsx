@@ -15,6 +15,14 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { FuelBulkUploadDialog } from "@/components/admin/expenses/fuel-bulk-upload-dialog";
 import { todayCancun } from "@/lib/datetime";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import {
+  NOTA_VISTA_MES,
+  conjuntoResaltado,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
@@ -64,7 +72,17 @@ interface ResumenAvion {
 }
 
 interface PageProps {
-  searchParams: Promise<{ mes?: string; aeronave_id?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    aeronave_id?: string;
+    /** Foco del pre-cierre («Resolver →», 15-oct-2026): SOLO del panel. */
+    pc?: string;
+    ids?: string;
+    pcn?: string;
+    pct?: string;
+    pcd?: string;
+    pcp?: string;
+  }>;
 }
 
 export default async function CombustiblesPage({ searchParams }: PageProps) {
@@ -78,6 +96,8 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
   const aeronaveId = uuidFiltro(sp.aeronave_id) ?? "";
   const { desde, hasta } = rangoDeMes(mes);
   const mesLabel = labelDeMes(mes);
+  const focoPc = leerFocoPreCierre(sp);
+  const idsPc = conjuntoResaltado(focoPc);
 
   // Las CARGAS son el dato principal; la flota resuelve matrículas y llena
   // el filtro: degrada con aviso (21-sep-2026). Los proveedores alimentan
@@ -243,6 +263,18 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
 
       <FuelFilterBar mes={mes} aeronaveId={aeronaveId} aircraft={aircraftOpts} />
 
+      {/* «Resolver →» del pre-cierre (15-oct-2026): las cargas en ámbar, SIN
+          reordenar (la agrupación por avión manda). */}
+      {focoPc && (
+        <FranjaPreCierre
+          foco={focoPc}
+          encontrados={rows.filter((r) => idsPc.has(r.id.toLowerCase())).length}
+          hrefQuitar={hrefQuitarResaltado("/admin/combustibles", sp)}
+          hrefVolver={hrefVolverPreCierre(focoPc, todayCancun())}
+          notaVista={NOTA_VISTA_MES}
+        />
+      )}
+
       {fotosError && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-300">
           No se pudieron cargar los recibos — recarga la página.
@@ -329,6 +361,7 @@ export default async function CombustiblesPage({ searchParams }: PageProps) {
                 aircraftMenu={aircraftMenu}
                 providers={providers}
                 rol={me?.rol ?? null}
+                resaltados={focoPc?.ids}
               />
             </CardContent>
           </Card>

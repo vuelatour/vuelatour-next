@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SIN_EMISORA, type FiltrosFacturas } from "@/lib/admin/facturas-emitidas";
+import { PARAMS_FOCO_PRE_CIERRE } from "@/lib/admin/pre-cierre-resolver";
 
 const ESTATUS = [
   { value: "", label: "Todas" },
@@ -58,6 +59,9 @@ export function RegistroFacturasFiltros({
       // de la tabla.
       sp.delete("resaltar");
       sp.delete("fep");
+      // Ni el foco del pre-cierre (15-oct-2026): «Quitar resaltado» es
+      // explícito y «Volver al pre-cierre» vive en la franja.
+      for (const k of PARAMS_FOCO_PRE_CIERRE) sp.delete(k);
       const qs = sp.toString();
       startTransition(() => {
         router.replace(qs ? `${pathname}?${qs}` : pathname);

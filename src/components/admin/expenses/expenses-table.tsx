@@ -10,6 +10,11 @@ import {
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import {
+  CLASE_FILA_RESALTADA,
+  claseFilaResaltada,
+  conjuntoResaltado,
+} from "@/lib/admin/pre-cierre-resolver";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { BancoBadge } from "@/components/admin/expenses/banco-badge";
 import { GastoBancoSheet, useDetalleBancoGasto } from "@/components/admin/expenses/gasto-banco-sheet";
@@ -136,6 +141,7 @@ export function ExpensesTable({
   fotoUrls,
   huboCorte = false,
   rol,
+  resaltados,
 }: {
   gastos: Gasto[];
   aircraft: AvionCatalogoGasto[];
@@ -145,7 +151,11 @@ export function ExpensesTable({
   huboCorte?: boolean;
   /** Rol de quien mira: el menú ⋯ esconde lo que su rol no puede hacer. */
   rol?: string | null;
+  /** ADITIVO (15-oct-2026): ids de gasto que el pre-cierre manda resolver
+      («Resolver →»): se pintan en ámbar (la página ya los puso PRIMERO). */
+  resaltados?: string[];
 }) {
+  const resaltadosSet = useMemo(() => conjuntoResaltado(resaltados), [resaltados]);
   const seleccion = useSeleccionGastos();
   const [expandidas, setExpandidas] = useState<Set<string>>(() => new Set());
   // «Conciliación al revés» (13-oct-2026): UNA hoja por tabla. Solo ADMIN /
@@ -665,8 +675,12 @@ export function ExpensesTable({
         huboCorte={huboCorte}
         // Tinte neutro (antes `bg-brand-600/5`, que se confundía con el
         // tinte rojizo de la fila ACTIVA).
+        // Ámbar (15-oct-2026) = lo que el pre-cierre manda resolver; la
+        // compra plegada que contiene un pago resaltado también se marca.
         rowClassName={(f) =>
-          f.kind === "compra" ? "bg-muted/40" : f.hijo ? "bg-muted/20" : undefined
+          f.kind === "compra"
+            ? cn("bg-muted/40", f.pagos.some((p) => resaltadosSet.has(p.id.toLowerCase())) && CLASE_FILA_RESALTADA)
+            : cn(f.hijo && "bg-muted/20", claseFilaResaltada(resaltadosSet, f.gasto.id)) || undefined
         }
         // Los pagos van pegados al grupo (no se paginan ni se filtran sueltos).
         subRows={(f) => (f.kind === "compra" && f.abierta ? f.hijos : undefined)}
