@@ -71,6 +71,25 @@ import {
   tituloCausaPreCierre,
 } from "@/lib/admin/cobrado-de-mas";
 import { chipParcialPreCierre } from "@/lib/admin/cobro-banco";
+import {
+  CLAVE_PRECIERRE_TUA_PAGADA_SIN_COBRAR,
+  chipVueloTuaPagada,
+  hrefPrecierreTuaPagada,
+  type ChipPreCierre,
+} from "@/lib/admin/pre-cierre-tua-pagada";
+import {
+  CLAVE_PRECIERRE_TRANSPORTE_PAGADO_SIN_COTIZAR,
+  chipVueloTransporte,
+  hrefPrecierreTransporte,
+} from "@/lib/admin/pre-cierre-transporte";
+
+/** Gasto que parece transporte de pasajeros (transporte_pagado_sin_cotizar). Del API. */
+interface PreCierreGastoTransporte {
+  id: string;
+  texto: string;
+  monto: number;
+  moneda: string;
+}
 
 interface PreCierreVuelo {
   id: string;
@@ -90,10 +109,20 @@ interface PreCierreVuelo {
   solicitada?: boolean;
   matricula?: string | null;
   fecha_vuelo?: string | null;
-  /** ADITIVO (tua_cobrada_sin_pagada, 13-oct-2026, API 0.0.75): TUA cobrada
-      al cliente (sin IVA, USD) del vuelo que no tiene gasto que la pague.
-      El renderer genérico pinta el chip #folio; el total va en `monto_usd`. */
-  tua_cobrada_usd?: number;
+  /** ADITIVOS (tua_pagada_sin_cobrar, 15-oct-2026, API 0.0.81, NO bloquea):
+      TUA pagada por Operación (IVA incluido) en la moneda de cada gasto
+      —nunca sumadas entre sí—, si el pasajero compró su pase de abordar y
+      cuántos gastos la pagan. Chip «#70 ($2,355.39 MXN · 2 facturas)». */
+  tua_pagada_mxn?: number;
+  tua_pagada_usd?: number;
+  pase_abordar?: boolean;
+  gastos_n?: number;
+  /** ADITIVO (transporte_pagado_sin_cotizar, 15-oct-2026, API 0.0.81, NO
+      bloquea): los gastos que parecen transporte de pasajeros (texto ≤ 60).
+      Los montos del vuelo viajan en `monto_mxn` / `monto_usd`. */
+  gastos?: PreCierreGastoTransporte[];
+  monto_mxn?: number;
+  monto_usd?: number;
   /** ADITIVO (cobros_en_cancelados, 14-oct-2026, API 0.0.77; solo cuando
       aplica): el dinero ya se devolvió completo y lo que el reparto cuenta
       es la diferencia cambiaria ⇒ chip «#215 (diferencia cambiaria)». */
@@ -229,8 +258,6 @@ const LINK_POR_CLAVE: Record<
   // PERIODO: ahí está el semáforo para irlos resolviendo uno por uno.
   gastos_sin_comprobante: (p) =>
     `/admin/expenses?facturacion=NO_FACTURADA&desde=${p.desde}&hasta=${p.hasta}`,
-  // Cuotas de aeródromo sin provisionar: Gastos → "Pistas por pagar".
-  pistas_sin_gasto: () => "/admin/expenses",
   // El honorario del piloto externo se captura como gasto del vuelo (los
   // folios del item llevan directo a cada vuelo).
   externos_sin_honorario: () => "/admin/expenses",
@@ -253,10 +280,12 @@ const LINK_POR_CLAVE: Record<
   // Factura obligatoria por cuenta de cobro (13-oct-2026): se registra en
   // Facturas emitidas (los chips llevan a la card de cobros de cada vuelo).
   [CLAVE_PRECIERRE_VUELOS_SIN_FACTURA]: hrefPrecierreVuelosSinFactura,
-  // TUA cobrada sin TUA pagada (13-oct-2026, API 0.0.75, NO bloquea): la
-  // factura del aeropuerto se corrige en Gastos → «Verificar / editar»
-  // («TUA incluida en este gasto»); los chips #folio llevan a cada vuelo.
-  tua_cobrada_sin_pagada: () => "/admin/expenses",
+  // Renglones inversos (15-oct-2026, API 0.0.81, NO bloquean): se resuelven
+  // en la cotización —«Se cobran TUAS» / extra—; la lista del periodo, y
+  // cada chip a la cotización del vuelo. Ese día se RETIRARON las pistas
+  // por tramo y la «TUA cobrada sin TUA pagada» (sus claves no se reusan).
+  [CLAVE_PRECIERRE_TUA_PAGADA_SIN_COBRAR]: hrefPrecierreTuaPagada,
+  [CLAVE_PRECIERRE_TRANSPORTE_PAGADO_SIN_COTIZAR]: hrefPrecierreTransporte,
   // Gastos en dólares con un T.C. fuera de lugar (13-oct-2026, API 0.0.75,
   // NO bloquea): se revisan en Conciliación, pestaña conciliados, del
   // periodo (cada renglón lleva además su cargo y su vuelo).
@@ -274,6 +303,21 @@ const LINK_POR_CLAVE: Record<
 /** El texto del enlace cuando no es «Resolver →» (un renglón informativo se REVISA). */
 const ETIQUETA_LINK_POR_CLAVE: Record<string, string> = {
   [CLAVE_PRECIERRE_MOVIMIENTOS_OMITIDOS]: ETIQUETA_REVISAR_OMITIDOS,
+};
+
+/**
+ * Renglones cuyos chips dicen MÁS que «#folio» y llevan a otro lado (helper
+ * PURO por clave: texto, destino y `title` con qué hacer). El resto usa el
+ * renderer genérico (`#folio` + sufijo, al detalle del vuelo).
+ * - Factura obligatoria (13-oct-2026): «#341 (HSBC Pesos · pedida)» a la
+ *   card de cobros del vuelo.
+ * - Renglones inversos (15-oct-2026): «#70 ($2,355.39 MXN · 2 facturas)» /
+ *   «#190 ($400 MXN · Transporte Chetumal a Carl's…)» a la cotización.
+ */
+const CHIP_POR_CLAVE: Record<string, (v: PreCierreVuelo) => ChipPreCierre> = {
+  [CLAVE_PRECIERRE_VUELOS_SIN_FACTURA]: chipVueloSinFactura,
+  [CLAVE_PRECIERRE_TUA_PAGADA_SIN_COBRAR]: chipVueloTuaPagada,
+  [CLAVE_PRECIERRE_TRANSPORTE_PAGADO_SIN_COTIZAR]: chipVueloTransporte,
 };
 
 /**
@@ -368,6 +412,9 @@ export async function PreCierreCard({
             const monto = textoMontoItem(item);
             const href = LINK_POR_CLAVE[item.clave]?.({ desde, hasta });
             const info = item.informativo === true;
+            // Chips con helper propio (factura obligatoria y los renglones
+            // inversos); sin entrada ⇒ renderer genérico de abajo.
+            const chipDeClave = CHIP_POR_CLAVE[item.clave];
             // Tramos con tacómetro en revisión: las líneas las arma el
             // helper PURO (no se recalcula ningún conteo del API). El «y N
             // más…» sale del `count` del item, no del largo del arreglo: el
@@ -444,23 +491,23 @@ export async function PreCierreCard({
                       {item.detalle}
                     </p>
                   )}
-                  {/* Vuelos cobrados en cuentas que exigen factura
-                      (13-oct-2026): cada chip dice la cuenta, si ya está
-                      pedida y si el vuelo se canceló, y lleva a su card de
-                      cobros (ahí está «Necesito factura» / «Registrar
-                      factura»). */}
-                  {item.clave === CLAVE_PRECIERRE_VUELOS_SIN_FACTURA &&
+                  {/* Chips con helper propio (`CHIP_POR_CLAVE`): factura
+                      obligatoria (cuenta / pedida / cancelado, a la card de
+                      cobros) y los renglones inversos del 15-oct-2026 (TUA
+                      pagada sin cobrar, transporte pagado sin cotizar: a la
+                      cotización del vuelo). Mismo tope de 8 + «y N más…». */}
+                  {chipDeClave &&
                     item.vuelos &&
                     item.vuelos.length > 0 && (
-                      <p className="text-xs mt-1 flex flex-wrap gap-1.5" data-precierre-sin-factura>
+                      <p className="text-xs mt-1 flex flex-wrap gap-1.5" data-precierre-chips={item.clave}>
                         {item.vuelos.slice(0, 8).map((v) => {
-                          const chip = chipVueloSinFactura(v);
+                          const chip = chipDeClave(v);
                           return (
                             <Link
                               key={v.id}
                               href={chip.href}
                               title={chip.title}
-                              className="underline underline-offset-2 hover:text-foreground text-muted-foreground"
+                              className="cursor-pointer underline underline-offset-2 hover:text-foreground text-muted-foreground"
                             >
                               {chip.texto}
                             </Link>
@@ -473,7 +520,7 @@ export async function PreCierreCard({
                         )}
                       </p>
                     )}
-                  {item.clave !== CLAVE_PRECIERRE_VUELOS_SIN_FACTURA &&
+                  {!chipDeClave &&
                     item.vuelos && item.vuelos.length > 0 && (
                     <p className="text-xs mt-1 flex flex-wrap gap-1.5">
                       {item.vuelos.slice(0, 8).map((v) => (

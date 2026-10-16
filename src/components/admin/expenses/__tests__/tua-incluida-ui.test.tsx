@@ -9,8 +9,10 @@
  *     ve mientras se escribe.
  *  2. Historial de gastos del vuelo (render): «TUA incluida: Lectura de la IA
  *     → $3,443.89».
- *  3. Pre-cierre (render): el renglón `tua_cobrada_sin_pagada` con sus chips,
- *     su monto y «Resolver →» a Gastos; la lectura fallida «sin verificar».
+ *  3. Pre-cierre: el renglón `tua_cobrada_sin_pagada` se RETIRÓ el 15-oct-2026
+ *     (lo sustituye `tua_pagada_sin_cobrar`, probado en
+ *     `reportes/__tests__/pre-cierre-inversos.test.tsx`); aquí solo queda la
+ *     regla de dinero de la card.
  *  4. Cableado del guardado por regex sobre el fuente (el runner no tiene DOM).
  */
 import { readFileSync } from "node:fs";
@@ -52,9 +54,6 @@ vi.mock("@/components/admin/comprobante-preview", () => ({
 vi.mock("@/components/admin/flights/historial-gasto-editar", () => ({
   HistorialGastoEditar: () => null,
 }));
-// Pre-cierre: el server component lee el API; aquí se le da la respuesta.
-const preCierre = vi.fn();
-vi.mock("@/lib/api/server", () => ({ apiServer: (...a: unknown[]) => preCierre(...a) }));
 // Diálogo abierto sin portal y selectores como testigos.
 vi.mock("@/components/ui/dialog", () => {
   const Caja = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -80,7 +79,6 @@ const { ExpenseVerifyDialog } = await import("../expense-verify-dialog");
 const { FlightGastosHistorialCard } = await import(
   "@/components/admin/flights/flight-gastos-historial-card"
 );
-const { PreCierreCard } = await import("@/components/admin/reportes/pre-cierre-card");
 
 /** El gasto #383 tal como quedó: OPERACIONES con vuelo, sin cifra de oficina. */
 function gasto(over: Partial<Gasto> = {}): Gasto {
@@ -246,49 +244,6 @@ describe("historial de gastos del vuelo (render)", () => {
   });
 });
 
-describe("pre-cierre: TUA cobrada sin TUA pagada (render)", () => {
-  const V1 = "a1b2c3d4-0000-4000-8000-000000000384";
-  const V2 = "a1b2c3d4-0000-4000-8000-000000000417";
-  const item = {
-    clave: "tua_cobrada_sin_pagada",
-    titulo: "Vuelos con TUA cobrada al cliente sin TUA pagada",
-    detalle: "Vuelos completados del periodo cuya cotización cobró TUA…",
-    count: 2,
-    monto_usd: 120.5,
-    vuelos: [
-      { id: V1, folio: 384, fecha_vuelo: "2026-10-03", matricula: "N990GG", tua_cobrada_usd: 70.5 },
-      { id: V2, folio: 417, fecha_vuelo: "2026-10-09", matricula: null, tua_cobrada_usd: 50 },
-    ],
-    lectura_fallida: false,
-  };
-
-  it("chips a cada vuelo, monto en USD y «Resolver →» a Gastos; no bloquea (listo)", async () => {
-    preCierre.mockResolvedValueOnce({
-      periodo: { desde: "2026-10-01", hasta: "2026-10-31" },
-      listo: true,
-      items: [item],
-    });
-    const html = renderToStaticMarkup(await PreCierreCard({ desde: "2026-10-01", hasta: "2026-10-31" }));
-    expect(html).toContain("Vuelos con TUA cobrada al cliente sin TUA pagada");
-    expect(html).toContain("$120.50 USD");
-    expect(html).toContain(`href="/admin/flights/${V1}"`);
-    expect(html).toContain(">#384<");
-    expect(html).toContain(`href="/admin/flights/${V2}"`);
-    expect(html).toMatch(/href="\/admin\/expenses"[^>]*>Resolver →</);
-  });
-
-  it("lectura fallida ⇒ el renglón se pinta «sin verificar» (nunca desaparece)", async () => {
-    preCierre.mockResolvedValueOnce({
-      periodo: { desde: "2026-10-01", hasta: "2026-10-31" },
-      listo: true,
-      items: [{ ...item, count: 0, monto_usd: 0, vuelos: [], lectura_fallida: true }],
-    });
-    const html = renderToStaticMarkup(await PreCierreCard({ desde: "2026-10-01", hasta: "2026-10-31" }));
-    expect(html).toContain("Vuelos con TUA cobrada al cliente sin TUA pagada");
-    expect(html).toContain("· sin verificar");
-  });
-});
-
 describe("cableado", () => {
   const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
   const verif = leer("../expense-verify-dialog.tsx");
@@ -354,7 +309,6 @@ describe("cableado", () => {
   it("historial y pre-cierre", () => {
     expect(historial).toMatch(/tua_incluida: ["']TUA incluida["']/);
     expect(historial).toContain('if (campo === "tua_incluida" && v == null) return "Lectura de la IA";');
-    expect(precierre).toContain('tua_cobrada_sin_pagada: () => "/admin/expenses"');
     // Dinero del pre-cierre con la regla de lib/format (revisión del lote 2):
     // nunca `toLocaleString("en-US")` (daba «$172.4 USD»).
     expect(precierre).not.toMatch(/toLocaleString\("en-US"\)/);

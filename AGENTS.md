@@ -4929,7 +4929,9 @@ la 000003, que ya usa la comisión del vendedor del avión).
 - **Historial de gastos del vuelo**: «TUA incluida: Lectura de la IA →
   $3,443.89» (`null` se pinta «Lectura de la IA» y la línea siempre es «antes
   → después», nunca «se agregó» / «se quitó»: `CAMPOS_NULL_CON_NOMBRE`).
-- **Pre-cierre**: renglón NO bloqueante `tua_cobrada_sin_pagada` («Vuelos con
+- **Pre-cierre**: **RETIRADO el 15-oct-2026** (ver «## Pre-cierre: fuera
+  `pistas_sin_gasto` y `tua_cobrada_sin_pagada`…» al final) — renglón NO
+  bloqueante `tua_cobrada_sin_pagada` («Vuelos con
   TUA cobrada al cliente sin TUA pagada», justo después de
   `vuelos_sin_gasto_operaciones`): renderer genérico (chips `#folio` al
   vuelo, `monto_usd` = TUA cobrada sin IVA, `lectura_fallida` ⇒ «sin
@@ -10424,3 +10426,59 @@ con el API (invariante 83, sin migración ni ruta nueva). Lógica PURA en
   `cursor-pointer`, prellenado y confirmación ANTES de la server action por
   regex, la acción con el fondo HIJO y la revalidación de la madre, filtro
   pintado y cableado, página).
+
+## Pre-cierre: fuera `pistas_sin_gasto` y `tua_cobrada_sin_pagada`; nacen `tua_pagada_sin_cobrar` y `transporte_pagado_sin_cotizar` (15-oct-2026, API 0.0.81)
+
+Pedidos 3 y 4 del cliente (capturas del pre-cierre de septiembre): el renglón
+de pistas por tramo marcaba 96 con todo capturado (contaba por `escala_id` y
+la oficina captura la cuota por `vuelo_id`) y el de «TUA cobrada sin pagada»
+no era el que importa («el que nos importa es cuando no se cotizó pero sí se
+pagó nosotros Operación los TUAS … igual con los transportes»).
+
+- `pre-cierre-card.tsx`: fuera las entradas `pistas_sin_gasto` y
+  `tua_cobrada_sin_pagada` de `LINK_POR_CLAVE` y el tipo
+  `PreCierreVuelo.tua_cobrada_usd`; nuevos tipos ADITIVOS (todos opcionales)
+  `tua_pagada_mxn/usd`, `pase_abordar`, `gastos_n`, `monto_mxn/usd` (del vuelo
+  de transporte) y `gastos[] {id, texto, monto, moneda}`
+  (`PreCierreGastoTransporte`). Mapa `CHIP_POR_CLAVE` (clave ⇒ helper PURO que
+  da `{texto, href, title}`) con `vuelos_cobrados_sin_factura` (el mismo
+  `chipVueloSinFactura` de antes) y las dos claves nuevas; el renderer
+  genérico (`#folio` + sufijos, al detalle del vuelo) solo para las claves
+  SIN entrada (`{!chipDeClave && …}`). Mismo tope de 8 chips + «y N más…»;
+  el `<p>` lleva `data-precierre-chips={item.clave}` (sustituye a
+  `data-precierre-sin-factura`) y los chips `cursor-pointer`.
+- `lib/admin/pre-cierre-tua-pagada.ts` (PURO): `CLAVE_PRECIERRE_TUA_PAGADA_SIN_COBRAR`;
+  «Resolver →» `hrefPrecierreTuaPagada` = `/admin/quotes?desde&hasta` (la
+  lista de Cotizaciones del periodo, solo la BASE); chip «#70 ($2,355.39 MXN ·
+  2 facturas)» / «#125 ($430.49 MXN)» / «#154 (pase de abordar · $756.48
+  MXN)» / dos monedas «($1,000 MXN + $50 USD)» a `/admin/quotes/<id>` con
+  `title` que dice qué hacer (encender «Se cobran TUAS» o agregar el extra;
+  con pase de abordar, revisar la factura en Gastos → «Verificar / editar»).
+  Exporta también `ChipPreCierre`, `montosPorMonedaTexto` y
+  `folioChipPrecierre` (compartidos con el de transporte).
+- `lib/admin/pre-cierre-transporte.ts` (PURO): mismo «Resolver →»
+  (`hrefPrecierreTransporte`); chip «#190 ($400 MXN · Transporte Chetumal a
+  Carl's…)» (texto del API ≤ 60, recortado a `CHIP_TEXTO_TRANSPORTE_MAX` = 28
+  + «…» en el chip); varios ⇒ «#404 ($700 MXN · 2 gastos)»; `title` con cada
+  gasto («$400 MXN · <texto>; …») y lo manual («Seguimiento de la
+  cotización»). Es una SEÑAL: el `detalle` del API lo dice.
+- El panel NO calcula dinero ni decide qué entra (fuentes únicas del API:
+  `trasladosPagadosDeGasto`, `particionIngresoVuelo`, la heurística
+  `transporte-pasajeros.util`); los montos por moneda del renglón se pintan
+  los dos con `textoMontoItem` y los del chip con `fmtMonto`, NUNCA se suman.
+- PEDIDO 2 («Resolver →» en ámbar): los dos renglones exponen sus ids en
+  `vuelos[].id` (no llevan `ids`); la marca ámbar (`CLASE_FILA_ENFOCADA`)
+  aplica a `quotes-table`, no a Vuelos.
+- Skew: con API ≤ 0.0.80 no llegan las claves nuevas y los retirados se
+  pintan con el renderer genérico (chips al vuelo) SIN «Resolver →»; con
+  panel viejo y API 0.0.81 los nuevos salen genéricos. Sin rutas ni server
+  actions nuevas. Las claves retiradas no se reusan nunca.
+- Pruebas: `lib/admin/__tests__/pre-cierre-tua-pagada.test.ts`,
+  `lib/admin/__tests__/pre-cierre-transporte.test.ts`,
+  `components/admin/reportes/__tests__/pre-cierre-inversos.test.tsx` (render
+  de los dos renglones, lectura fallida, renglón en 0, retirados sin
+  «Resolver →» y cableado por regex: `LINK_POR_CLAVE` / `CHIP_POR_CLAVE` / sin
+  `tua_cobrada_usd`); `expenses/__tests__/tua-incluida-ui.test.tsx` ya no
+  pinta el renglón retirado (conserva la regla de `fmtMonto`);
+  `lib/admin/__tests__/pre-cierre-factura.test.ts` congela el cableado nuevo
+  (`CHIP_POR_CLAVE` / `chipDeClave`).
