@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import {
   ChevronDownIcon,
@@ -407,7 +408,8 @@ export function FormularioIngreso({
         }
         if (r.code && CODES_MAS_DATOS.has(r.code)) setMasDatos(true);
         setErrorGeneral(r.error);
-        toast.error(r.error);
+        // 409 `MES_CERRADO` (API 0.0.88): el toast lleva «Ir a Reportes».
+        if (!toastMesCerradoSiAplica(r)) toast.error(r.error);
         return;
       }
       // Edición: solo lo que cambió + CAS.
@@ -434,7 +436,7 @@ export function FormularioIngreso({
       }
       if (r.code && CODES_MAS_DATOS.has(r.code)) setMasDatos(true);
       setErrorGeneral(r.error);
-      toast.error(r.error);
+      if (!toastMesCerradoSiAplica(r)) toast.error(r.error);
     } finally {
       setGuardando(false);
     }

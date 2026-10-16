@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -720,7 +721,7 @@ export function CobroFormSheet({
         onOpenChange(false);
         router.refresh();
         onRegistrado?.();
-      } else {
+      } else if (!toastMesCerradoSiAplica(res)) {
         toast.error(res.error ?? "Error al registrar cobro");
       }
     });
@@ -744,6 +745,8 @@ export function CobroFormSheet({
       }
       const mensaje = mensajeErrorEdicionCobro(res);
       setErrorGuardado(mensaje);
+      // 409 `MES_CERRADO` (API 0.0.88): toast con «Ir a Reportes».
+      if (toastMesCerradoSiAplica(res)) return;
       // Parte de un sobre de grupo (candado del API): atajo al grupo.
       const d = res.details as { grupo_id?: string } | undefined;
       toast.error(mensaje, {

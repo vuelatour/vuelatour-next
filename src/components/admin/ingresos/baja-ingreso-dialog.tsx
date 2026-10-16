@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -59,7 +60,7 @@ export function BajaIngresoDialog({
         cerrar(false);
         onHecho?.();
         router.refresh();
-      } else {
+      } else if (!toastMesCerradoSiAplica(r)) {
         toast.error(r.error ?? "No se pudo dar de baja");
       }
     });

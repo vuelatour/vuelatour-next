@@ -27,6 +27,7 @@
  */
 
 import { DIAS_FECHA_ANTIGUA, DIAS_PASADO_SOSPECHOSO } from "@/lib/admin/fecha-gasto";
+import { CODIGO_MES_CERRADO, textoMesCerradoRespaldo } from "./mes-cerrado";
 import { esDiaValido } from "@/lib/admin/url-params";
 import { MEDIOS_BANCARIOS_CONCILIACION, esCandidatoNoBancario } from "@/lib/admin/conciliacion-no-bancario";
 import {
@@ -640,6 +641,12 @@ export function resultadoCorregirFecha(r: RespuestaCorregirFecha | null | undefi
 
   if (code === "FECHA_GASTO_FUERA_DEL_MES_DEL_VUELO" || code === "FECHA_GASTO_SOLO_BANCARIOS") {
     return { tipo: "bloqueo", texto: mensajeErrorFechaGasto(r) };
+  }
+
+  // Mes cerrado (16-oct-2026, API 0.0.88): bloquea esa fecha hasta reabrir;
+  // el texto es el del API tal cual.
+  if (code === CODIGO_MES_CERRADO) {
+    return { tipo: "bloqueo", texto: (r.error ?? "").trim() || textoMesCerradoRespaldo(null) };
   }
 
   if (code === "FECHA_GASTO_CAMBIO") {

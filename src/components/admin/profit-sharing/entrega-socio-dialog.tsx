@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -336,6 +337,8 @@ export function FormularioEntrega({
         return;
       case "error":
         setErrorGeneral(paso.mensaje);
+        // 409 `MES_CERRADO` (API 0.0.88): además, toast con «Ir a Reportes».
+        toastMesCerradoSiAplica(res);
         return;
       case "comprobante":
         router.refresh();

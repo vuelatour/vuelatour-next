@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { CODIGO_MES_CERRADO } from "@/lib/admin/mes-cerrado";
 import type { z } from "zod";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
@@ -68,8 +69,14 @@ export interface ActionResult<T = unknown> {
 
 function fail<T>(err: unknown): ActionResult<T> {
   // 403 del RolesGuard («Required role: …», en inglés) → español (1-oct-2026).
+  // `code`/`details` (ADITIVOS, 16-oct-2026): el candado 409 `MES_CERRADO`
+  // (API 0.0.88) se reconoce por el código, nunca por el texto.
   if (isApiError(err))
-    return { ok: false, error: mensajeErrorAccionGasto(err.status, err.message) };
+    return {
+      ok: false,
+      error: mensajeErrorAccionGasto(err.status, err.message),
+      ...(err.code === CODIGO_MES_CERRADO ? { code: err.code, details: err.details, status: err.status } : {}),
+    };
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
@@ -453,7 +460,9 @@ export async function verifyGastoAction(id: string, raw: unknown): Promise<Actio
   // La forma de SIEMPRE (sin `status`): `{ ok: false, error }` exacto.
   if (r.ok) return { ok: true, data: r.data };
   if (r.fieldErrors) return { ok: false, fieldErrors: r.fieldErrors };
-  return { ok: false, error: r.error };
+  // `code`/`details` SOLO en el 409 `MES_CERRADO` (API 0.0.88; `fail` no los
+  // pone en ningún otro caso): la forma de siempre para todo lo demás.
+  return r.code ? { ok: false, error: r.error, code: r.code, details: r.details } : { ok: false, error: r.error };
 }
 
 // El cuerpo de `verifyGastoAction` vive en `patchVerificacion` (justo aquí
@@ -1078,7 +1087,12 @@ export async function guardarGastoConRepartoAction(
           if (i === 0) {
             return incierto
               ? resultado("GASTO_INCIERTO", { gastoIncierto: true, error: r.error })
-              : resultado("GASTO", { error: r.error, fieldErrors: r.fieldErrors });
+              : resultado("GASTO", {
+                  error: r.error,
+                  fieldErrors: r.fieldErrors,
+                  // 409 `MES_CERRADO` (API 0.0.88): el diálogo pinta el aviso con enlace.
+                  ...(r.code ? { code: r.code, details: r.details } : {}),
+                });
           }
           // El reparto ya quedó; el gasto no (o no se sabe).
           revalidarReparto();

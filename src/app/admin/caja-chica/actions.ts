@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { CODIGO_MES_CERRADO } from "@/lib/admin/mes-cerrado";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { esUuid } from "@/lib/admin/url-params";
@@ -12,10 +13,19 @@ export interface ActionResult<T = unknown> {
   data?: T;
   error?: string;
   fieldErrors?: Record<string, string[]>;
+  /** ADITIVOS (16-oct-2026, API 0.0.88): solo en el 409 `MES_CERRADO`. */
+  code?: string;
+  details?: unknown;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message };
+  if (isApiError(err)) {
+    return {
+      ok: false,
+      error: err.message,
+      ...(err.code === CODIGO_MES_CERRADO ? { code: err.code, details: err.details } : {}),
+    };
+  }
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 

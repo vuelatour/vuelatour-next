@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/datetime";
 import {
@@ -704,6 +705,9 @@ export function CobrosCard({
                         }
                       : undefined,
                   });
+                  setToDelete(null);
+                } else if (toastMesCerradoSiAplica(res)) {
+                  // 409 `MES_CERRADO` (API 0.0.88): aviso con «Ir a Reportes».
                   setToDelete(null);
                 } else {
                   toast.error(res.error);

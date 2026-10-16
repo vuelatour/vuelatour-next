@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -203,7 +204,8 @@ export function MovimientoDialog({
         toast.error(`${f}: ${result.fieldErrors[f]?.[0] ?? "Validación falló"}`);
       } else {
         setPorConfirmar(null);
-        toast.error(result.error ?? "Error desconocido");
+        // 409 `MES_CERRADO` (API 0.0.88): el toast lleva «Ir a Reportes».
+        if (!toastMesCerradoSiAplica(result)) toast.error(result.error ?? "Error desconocido");
       }
     });
   };

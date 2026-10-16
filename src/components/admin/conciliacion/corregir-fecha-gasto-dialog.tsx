@@ -20,6 +20,7 @@
  */
 
 import { useId, useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { corregirFechaGastoAction } from "@/app/admin/conciliacion/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -135,6 +136,8 @@ export function CorregirFechaGastoDialog(p: CorregirFechaGastoDialogProps) {
       }
       // confirmar | bloqueo | error
       setEstado(d);
+      // 409 `MES_CERRADO` (API 0.0.88): además, toast con «Ir a Reportes».
+      toastMesCerradoSiAplica(r);
     });
   };
 

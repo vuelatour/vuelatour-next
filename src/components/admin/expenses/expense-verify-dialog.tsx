@@ -9,6 +9,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import Link from "next/link";
 import {
   EyeIcon,
@@ -1551,6 +1552,8 @@ export function ExpenseVerifyDialog({
             setAiRaw(null);
             setTuaEditada(false);
           }
+          // 409 `MES_CERRADO` (API 0.0.88): nada se escribió; toast con «Ir a Reportes».
+          if (res.codigo === "GASTO" && toastMesCerradoSiAplica(res)) return;
           if (res.codigo === "GASTO" && esRechazoPorReparto(res.error)) {
             toast.error(res.error ?? "", { description: AYUDA_RECHAZO_POR_REPARTO });
             releerReparto(true);
@@ -1567,6 +1570,8 @@ export function ExpenseVerifyDialog({
           if (result.fieldErrors) {
             const f = Object.keys(result.fieldErrors)[0];
             toast.error(`${f}: ${result.fieldErrors[f]?.[0] ?? "Validación falló"}`);
+          } else if (toastMesCerradoSiAplica(result)) {
+            // 409 `MES_CERRADO` (API 0.0.88): el aviso con «Ir a Reportes» ya salió.
           } else if (esRechazoPorReparto(result.error)) {
             // R23: el API dice que el gasto ya está repartido (embed viejo):
             // se relee y, si aparece el reparto, se pasa a «Repartir».

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import {
   ArrowsRightLeftIcon,
@@ -100,6 +101,9 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl, rol }: Exp
       const r = await deleteGastoAction(gasto.id);
       if (r.ok) {
         toast.success("Gasto eliminado");
+        setOpenDelete(false);
+      } else if (toastMesCerradoSiAplica(r)) {
+        // 409 `MES_CERRADO` (API 0.0.88): aviso con «Ir a Reportes».
         setOpenDelete(false);
       } else {
         toast.error(r.error ?? "Error al eliminar");

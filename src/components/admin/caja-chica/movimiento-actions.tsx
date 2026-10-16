@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { toast } from "sonner";
 import { EllipsisHorizontalIcon } from "@heroicons/react/24/outline";
 import {
@@ -51,6 +52,9 @@ export function MovimientoActions({
       const res = await deleteCajaMovimientoAction(movimiento.id, fondoId);
       if (res.ok) {
         toast.success("Movimiento eliminado");
+        setDeleteOpen(false);
+      } else if (toastMesCerradoSiAplica(res)) {
+        // 409 `MES_CERRADO` (API 0.0.88): aviso con «Ir a Reportes».
         setDeleteOpen(false);
       } else {
         toast.error(res.error ?? "No se pudo eliminar");

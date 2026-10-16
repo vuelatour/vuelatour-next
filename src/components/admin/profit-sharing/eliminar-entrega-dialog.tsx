@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -136,6 +137,8 @@ export function EliminarEntregaDialog({
                 return;
               }
               setError(res.error ?? "No se pudo eliminar la entrega.");
+              // 409 `MES_CERRADO` (API 0.0.88): además, toast con «Ir a Reportes».
+              toastMesCerradoSiAplica(res);
             }}
           >
             {eliminando ? "Eliminando…" : textos?.boton}

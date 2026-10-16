@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import { ExclamationTriangleIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -185,7 +186,8 @@ function FormularioCobro({ abono, onCerrar }: { abono: AbonoPendiente; onCerrar:
       return;
     }
     setError(r.error ?? "No se pudo registrar el cobro.");
-    toast.error(r.error ?? "No se pudo registrar el cobro.");
+    // 409 `MES_CERRADO` (API 0.0.88): el toast lleva «Ir a Reportes».
+    if (!toastMesCerradoSiAplica(r)) toast.error(r.error ?? "No se pudo registrar el cobro.");
   };
 
   return (

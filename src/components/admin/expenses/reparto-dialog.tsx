@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { ArrowsRightLeftIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -211,7 +212,7 @@ export function RepartoDialog({
       if (res.ok) {
         toast.success("Reparto guardado");
         onOpenChange(false);
-      } else {
+      } else if (!toastMesCerradoSiAplica(res)) {
         toast.error(res.error ?? "No se pudo guardar el reparto");
       }
     });
@@ -227,7 +228,7 @@ export function RepartoDialog({
         toast.success(toastRepartoQuitadoDialogo(gasto.categoria));
         setOpenQuitar(false);
         onOpenChange(false);
-      } else {
+      } else if (!toastMesCerradoSiAplica(res)) {
         toast.error(res.error ?? "No se pudo quitar el reparto");
       }
     });

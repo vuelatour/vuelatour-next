@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type SyntheticEvent,
 } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import { useForm, type PathValue } from "react-hook-form";
 import { toast } from "sonner";
@@ -2154,6 +2155,15 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
         verPdfTrasGuardarRef.current = false;
         setErrorTaller({ mensaje: decision.mensaje, matricula: decision.matricula });
         toast.warning(decision.mensaje);
+        return;
+      }
+      if (decision.tipo === "mes_cerrado") {
+        // 409 `MES_CERRADO` (API 0.0.88): el intento terminó; los cambios se
+        // quedan en pantalla. Toast con el texto del API y «Ir a Reportes».
+        setGuardarOpen(false);
+        saveRequestIdRef.current = null;
+        verPdfTrasGuardarRef.current = false;
+        if (!toastMesCerradoSiAplica(res)) toast.error(decision.mensaje);
         return;
       }
       if (decision.tipo === "version") {

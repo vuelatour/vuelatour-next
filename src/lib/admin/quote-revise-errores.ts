@@ -1,4 +1,5 @@
 import { squawkAltaDe, type ResultadoFallido } from "./squawk-alta";
+import { CODIGO_MES_CERRADO } from "./mes-cerrado";
 
 /**
  * QUÉ HACER CON UN `revise` RECHAZADO (11-sep-2026, invariante 14 del API).
@@ -18,6 +19,9 @@ import { squawkAltaDe, type ResultadoFallido } from "./squawk-alta";
  *                oficina acepta, reintento con `aceptar_discrepancia_alta`
  *                CONSERVANDO el `client_request_id` del intento. Este SÍ
  *                sigue siendo candado (no cambió).
+ * - `mes_cerrado` → 409 `MES_CERRADO` (16-oct-2026, API 0.0.88): el mes
+ *                contable del vuelo ya se cerró; toast con el texto del API y
+ *                «Ir a Reportes» (NO es un conflicto de versión).
  * - `version`  → 409 optimista: «alguien guardó la vN mientras editabas».
  * - `otro`     → toast con el mensaje del API.
  *
@@ -39,6 +43,7 @@ export type DecisionErrorRevise =
   | { tipo: "cobrada"; mensaje: string }
   | { tipo: "taller"; mensaje: string; matricula: string | null }
   | { tipo: "squawk"; discrepancias: string[] }
+  | { tipo: "mes_cerrado"; mensaje: string }
   | { tipo: "version"; mensaje: string }
   | { tipo: "otro"; mensaje: string };
 
@@ -52,6 +57,7 @@ const MSG_COBRADA =
 const MSG_TALLER = "El API rechazó el avión en taller; actualiza el API.";
 const MSG_VERSION = "La cotización cambió mientras editabas";
 const MSG_OTRO = "Error al guardar la versión";
+const MSG_MES_CERRADO = "El mes de este vuelo ya está cerrado. Reábrelo en Reportes para corregir.";
 
 /**
  * ¿El rechazo es «este API todavía no conoce `tramos_base`»? (22-sep-2026,
@@ -119,6 +125,10 @@ export function decidirErrorRevise(
   const discrepancias = opts.yaAceptoSquawk ? null : squawkAltaDe(res);
   if (discrepancias && discrepancias.length > 0) {
     return { tipo: "squawk", discrepancias };
+  }
+  // Mes cerrado (API 0.0.88): también es 409, ANTES del de versión.
+  if (res.code === CODIGO_MES_CERRADO) {
+    return { tipo: "mes_cerrado", mensaje: mensaje || MSG_MES_CERRADO };
   }
   // Cualquier otro 409 = candado optimista de versión.
   if (res.status === 409) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -511,6 +512,9 @@ export function QuoteCobrosCard({
                           : undefined,
                       },
                     );
+                    setToDelete(null);
+                  } else if (toastMesCerradoSiAplica(res)) {
+                    // 409 `MES_CERRADO` (API 0.0.88): aviso con «Ir a Reportes».
                     setToDelete(null);
                   } else {
                     toast.error(res.error ?? "No se pudo eliminar el cobro");

@@ -113,6 +113,10 @@ export interface ResultadoGastoConReparto {
   error?: string;
   fieldErrors?: Record<string, string[]>;
   avisos: string[];
+  /** ADITIVOS (16-oct-2026, API 0.0.88): código y detalle del API cuando el
+   *  PATCH del gasto rebota con un código que la UI reconoce (`MES_CERRADO`). */
+  code?: string;
+  details?: unknown;
 }
 
 // ===================== Dinero y datos =====================

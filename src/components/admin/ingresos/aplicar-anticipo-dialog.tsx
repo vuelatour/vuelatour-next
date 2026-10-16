@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import { CheckCircleIcon, ExclamationTriangleIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -262,7 +263,8 @@ function FormularioAplicar({
       return;
     }
     setError(r.error ?? "No se pudo aplicar el anticipo.");
-    toast.error(r.error ?? "No se pudo aplicar el anticipo.");
+    // 409 `MES_CERRADO` (API 0.0.88): el toast lleva «Ir a Reportes».
+    if (!toastMesCerradoSiAplica(r)) toast.error(r.error ?? "No se pudo aplicar el anticipo.");
   };
 
   if (ultimo) {

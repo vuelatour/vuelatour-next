@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useForm } from "react-hook-form";
 import {
   ArrowsRightLeftIcon,
@@ -1010,6 +1011,8 @@ export function ExpenseCreateDialog({
         // pago"): sin el nombre técnico del campo como prefijo.
         const f = Object.keys(result.fieldErrors)[0];
         toast.error(result.fieldErrors[f]?.[0] ?? `Validación falló (${f})`);
+      } else if (toastMesCerradoSiAplica(result)) {
+        // 409 `MES_CERRADO` (API 0.0.88): el aviso con «Ir a Reportes» ya salió.
       } else if (conCargos) {
         // «Créalo por la suma»: el alta sigue abierta con el texto del API
         // («No se registró el gasto: …») o «No se pudo confirmar…».
