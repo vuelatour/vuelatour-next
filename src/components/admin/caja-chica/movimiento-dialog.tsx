@@ -45,6 +45,7 @@ import {
 import { todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { avisarReposicionYDescargar } from "./excel-caja-buttons";
+import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
 
 const TIPOS = [
   { value: "REPOSICION", label: "Reposición (entra dinero al fondo)" },
@@ -333,6 +334,7 @@ export function MovimientoDialog({
               </Field>
               <Field label="Fecha">
                 <Input type="date" {...register("fecha")} />
+                <AvisoCapturaAntesDelInicio fecha={watch("fecha")} />
               </Field>
             </div>
 

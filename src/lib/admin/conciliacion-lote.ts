@@ -1516,6 +1516,9 @@ export interface LineaGastoLote {
   principal: string;
   /** proveedor ?? lugar ?? nota · fecha. */
   secundaria: string;
+  /** `fecha_gasto` del gasto (16-oct-2026): la tabla pinta el chip «De antes
+      del inicio oficial» si cae antes. null = sin fecha. */
+  fecha?: string | null;
   /** «Factura FEACZM-72128» (5-oct-2026, `folio_comprobante` del API 0.0.57);
       null = sin folio o API previo (no se pinta nada). */
   factura: string | null;
@@ -1582,6 +1585,7 @@ export function lineaGastoLote(g: MovimientoGasto, i = 0, notasCargo?: string | 
     href: hrefGastoConciliado(g),
     principal,
     secundaria,
+    fecha: g.fecha_gasto ?? null,
     factura: etiquetaFolioComprobante(g.folio_comprobante),
     facturaTitulo: tituloFolioComprobante(g.folio_comprobante),
     medio: badgeVinculoNoBancario(g, notasCargo),

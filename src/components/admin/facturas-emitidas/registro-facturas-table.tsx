@@ -25,6 +25,7 @@ import {
 import { FacturaAccionesMenu, verArchivoFactura } from "./factura-acciones-menu";
 import type { ClienteOpcion, EmisoraOpcion } from "./registrar-factura-dialog";
 import type { FacturaEmitida } from "@/types/facturas-emitidas";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 
 /** Razón social corta para la columna Emisor («Aero Charter Cancun»). */
 function razonCorta(r: string): string {
@@ -153,6 +154,9 @@ export function RegistroFacturasTable({
                       cancelado
                     </span>
                   )}
+                  {/* Inicio oficial (16-oct-2026): factura de septiembre que
+                      cubre un vuelo de agosto. */}
+                  <ChipInicioOficial fecha={v.fecha_vuelo} className="ml-1 font-sans" />
                   {/* FACTURAS POR COBRO (API 0.0.82): cuántos cobros de este
                       vuelo ampara y cuántos siguen sin factura (ámbar solo
                       cuando importa cuál factura ampara qué; gris con una

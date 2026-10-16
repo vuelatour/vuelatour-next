@@ -248,6 +248,7 @@ import {
   nombreCorto,
   valorIaConHojas,
 } from "@/lib/admin/comprobante-hojas";
+import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
 
 // Opciones desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto): orden de
 // captura + ATERRIZAJE (solo se reclasifica aquí, tras GAS), etiqueta y
@@ -2250,6 +2251,7 @@ export function ExpenseVerifyDialog({
                   todos los cortes. Corrígela si no es real.
                 </p>
               )}
+              <AvisoCapturaAntesDelInicio fecha={watch("fecha_gasto")} />
             </Field>
           </div>
           {/* R16: los montos del reparto guardado están en su moneda. */}

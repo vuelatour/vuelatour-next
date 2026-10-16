@@ -54,6 +54,7 @@ import { textoResumenCargo } from "@/lib/admin/gasto-desde-cargo";
 import { todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { CambioFechaGasto, GastoCandidato, MovimientoBancario } from "@/types/conciliacion";
+import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
 
 export type EstadoCorregirFecha =
   | { tipo: "editando" }
@@ -265,6 +266,7 @@ export function CuerpoCorregirFecha({
             {botonUsarFechaCargo(fechaCargo)}
           </button>
         )}
+        <AvisoCapturaAntesDelInicio fecha={fecha} className="mt-0" />
         {bloqueoLocal &&
           (sinCambio ? (
             <p data-sin-cambio-fecha="" className="text-xs text-muted-foreground">

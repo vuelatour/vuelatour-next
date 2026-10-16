@@ -102,6 +102,7 @@ import type {
   MetodoIngreso,
   MonedaIngreso,
 } from "@/types/ingresos";
+import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
 
 export interface CatalogosIngreso {
   cuentas: CuentaIngresoOpcion[];
@@ -554,6 +555,7 @@ export function FormularioIngreso({
               disabled={guardando}
               className="cursor-pointer"
             />
+            <AvisoCapturaAntesDelInicio fecha={form.fecha} />
           </Field>
           <Field
             label="¿Dónde entró el dinero?"

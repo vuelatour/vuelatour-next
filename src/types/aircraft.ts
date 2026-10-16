@@ -411,6 +411,12 @@ export interface AircraftMetrics {
     gastos: number;
     utilidad: number;
   }[];
+  /**
+   * ADITIVO (16-oct-2026, API 0.0.84): desde qué día cuenta `finanzas` (el
+   * inicio oficial) o null = de por vida. Ausente = API previo (de por vida).
+   * Horas y vuelos NO se recortan.
+   */
+  finanzas_desde?: string | null;
 }
 
 export interface ListResponse<T> {

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import type { AircraftMetricsDetalle } from "@/lib/api/aircraft";
+import { rotuloAcumuladoFinanzas } from "@/lib/admin/inicio-oficial";
 
 /** Monto en la moneda del renglón vía los formateadores únicos de @/lib/format. */
 function monto(n: number, moneda: string): string {
@@ -98,7 +99,7 @@ export function AircraftMetricsCard({
         <div>
           <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-2">
             <BanknotesIcon className="h-3.5 w-3.5" />
-            Cobrado vs gastos (acumulado)
+            Cobrado vs gastos ({rotuloAcumuladoFinanzas(metrics.finanzas_desde)})
           </p>
           {finanzas.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin movimientos registrados.</p>

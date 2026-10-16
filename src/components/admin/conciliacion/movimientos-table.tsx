@@ -99,6 +99,7 @@ import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 import type { MovimientoBancario } from "@/types/conciliacion";
 import type { AbonosConciliacion } from "@/lib/admin/conciliacion-abonos";
 import type { CatalogosGastoDesdeCargo } from "@/lib/admin/gasto-desde-cargo";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 
 const fmtMoney = (monto: string) =>
   Number(monto).toLocaleString("es-MX", { minimumFractionDigits: 2 });
@@ -196,6 +197,8 @@ function LigaCobroDeVuelo({ m }: { m: MovimientoBancario }) {
           .filter(Boolean)
           .join(" · ") || "Ver vuelo"}
       </span>
+      {/* Inicio oficial (16-oct-2026): el cobro ligado es de antes. */}
+      <ChipInicioOficial fecha={m.cobro.fecha_cobro} className="mt-0.5" />
       {estado && (
         <span
           data-estado-cobro={estado.tono}
@@ -569,6 +572,8 @@ export function MovimientosTable({
                       <span className="block max-w-[240px] truncate text-[10px] text-muted-foreground">
                         {l.secundaria}
                       </span>
+                      {/* Inicio oficial (16-oct-2026): gasto de agosto en un cargo de septiembre. */}
+                      <ChipInicioOficial fecha={l.fecha} className="mt-0.5" />
                       {/* Número de factura de ESE gasto (5-oct-2026, API 0.0.57). */}
                       {l.factura && (
                         <span
@@ -702,6 +707,8 @@ export function MovimientosTable({
                     .filter(Boolean)
                     .join(" · ") || "Gasto conciliado"}
                 </span>
+                {/* Inicio oficial (16-oct-2026): el gasto ligado es de antes. */}
+                <ChipInicioOficial fecha={gasto.fecha_gasto} className="mt-0.5" />
                 {marcaTc && (
                   <span
                     data-tc-cruce={marcaTc.tono}

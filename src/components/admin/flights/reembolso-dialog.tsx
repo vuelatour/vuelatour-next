@@ -38,6 +38,7 @@ import { registerReembolsoAction } from "@/app/admin/flights/actions";
 // en los métodos bancarios/pasarela se pregunta de qué cuenta salió).
 import { METODOS_CON_CUENTA, METODOS_PAGO } from "@/lib/admin/metodos-pago";
 import type { MetodoPago } from "@/types/quote";
+import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
 
 /** Hoy en hora Cancún (UTC−5 fija) para el default del formulario. */
 function hoyCancun(): string {
@@ -250,6 +251,7 @@ export function ReembolsoButton({
                   value={form.fecha}
                   onChange={(e) => set("fecha", e.target.value)}
                 />
+                <AvisoCapturaAntesDelInicio fecha={form.fecha} />
               </Field>
             </div>
 

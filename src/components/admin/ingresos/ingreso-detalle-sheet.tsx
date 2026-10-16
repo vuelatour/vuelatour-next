@@ -71,6 +71,7 @@ import {
 import { fmtMonto, fmtTc } from "@/lib/format";
 import { fmtDate, fmtDateOnly, fmtDateTime, todayCancun } from "@/lib/datetime";
 import type { IngresoAplicacion, IngresoDetalle } from "@/types/ingresos";
+import { FranjaInicioOficial } from "@/components/admin/chip-inicio-oficial";
 
 /** La server action ni siquiera respondió (sin red, un deploy de Vercel): nunca lanza. */
 const sinConexion = (): ActionResult<never> => ({ ok: false, code: "SIN_CONEXION", error: MSG_SIN_CONEXION });
@@ -192,6 +193,8 @@ export function IngresoDetalleSheet({
                   </span>
                 </SheetDescription>
               </SheetHeader>
+              {/* Inicio oficial (16-oct-2026): un ingreso de antes se abre por id con su franja. */}
+              <FranjaInicioOficial fecha={i.fecha} />
 
               {vivo && (
                 <div className="flex flex-wrap gap-2">

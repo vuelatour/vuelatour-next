@@ -20,6 +20,7 @@ import { fmtMonto } from "@/lib/format";
 import { fmtDateOnly } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { Ingreso } from "@/types/ingresos";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 
 /**
  * «Anticipos sin vuelo» (24-sep-2026): dinero de un cliente que llegó ANTES de
@@ -72,7 +73,19 @@ export function AnticiposTable({
           </span>
         ),
       },
-      { key: "fecha", header: "Fecha", cellClassName: "whitespace-nowrap", cell: (i) => fmtDateOnly(i.fecha) },
+      {
+        key: "fecha",
+        header: "Fecha",
+        cellClassName: "whitespace-nowrap",
+        // Inicio oficial (16-oct-2026): un anticipo con saldo de antes sigue
+        // aquí (es saldo vivo) y lleva su chip.
+        cell: (i) => (
+          <span className="inline-flex flex-col items-start gap-0.5">
+            {fmtDateOnly(i.fecha)}
+            <ChipInicioOficial fecha={i.fecha} />
+          </span>
+        ),
+      },
       {
         key: "cliente",
         header: "Cliente",

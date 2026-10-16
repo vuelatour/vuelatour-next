@@ -85,6 +85,7 @@ import type { MetodoPago } from "@/types/quote";
 import type { FlightCobro } from "@/types/flights";
 import type { FacturaEmitidaMini } from "@/types/facturas-emitidas";
 import { Field } from "@/components/admin/form-field";
+import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
 
 type Moneda = "USD" | "MXN";
 
@@ -1141,6 +1142,7 @@ export function CobroFormSheet({
 
           <Field label="Fecha del cobro" error={errors.fecha_cobro?.message}>
             <Input type="date" {...register("fecha_cobro")} />
+            <AvisoCapturaAntesDelInicio fecha={watch("fecha_cobro")} />
           </Field>
 
           <Field label="Notas" error={errors.notas?.message}>

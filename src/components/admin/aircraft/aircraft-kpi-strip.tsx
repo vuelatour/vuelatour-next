@@ -13,6 +13,7 @@ import {
   estadoOrdenServicio,
   type EstadoServicioUi,
 } from "@/lib/admin/proximo-servicio";
+import { rotuloAcumuladoFinanzas } from "@/lib/admin/inicio-oficial";
 
 /**
  * Strip de KPIs del expediente del avión (patrón de profit-sharing/kpi-strip):
@@ -114,7 +115,11 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
       />
       <Kpi
         icon={BanknotesIcon}
-        label="Utilidad (acumulada)"
+        label={
+          metrics.finanzas_desde
+            ? `Utilidad (${rotuloAcumuladoFinanzas(metrics.finanzas_desde)})`
+            : "Utilidad (acumulada)"
+        }
         value={montoFin}
         hint={fin ? "Cobrado − gastos · detalle en Resumen operativo" : undefined}
         valueClass={

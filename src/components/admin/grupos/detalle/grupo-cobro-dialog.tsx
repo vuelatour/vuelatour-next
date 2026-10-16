@@ -67,6 +67,7 @@ import type {
   MonedaGrupo,
   PrevisualizacionCobro,
 } from "@/types/grupos";
+import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
 
 /**
  * Diálogo en DOS pasos para el SOBRE de cobro del grupo (Fase 2):
@@ -739,6 +740,7 @@ export function GrupoCobroDialog({
               error={errors.fecha_cobro?.message}
             >
               <Input type="date" {...register("fecha_cobro")} />
+              <AvisoCapturaAntesDelInicio fecha={watch("fecha_cobro")} />
             </Field>
           </div>
 

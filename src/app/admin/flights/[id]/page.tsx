@@ -84,6 +84,8 @@ import {
 } from "@/lib/admin/seguimiento";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
+import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { FranjaAntesDelInicio } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +100,7 @@ export const metadata: Metadata = { title: TITULOS_DETALLE.vuelo };
 
 export default async function FlightDetailPage({ params }: FlightDetailPageProps) {
   const me = await getMe().catch(() => null);
+  const inicio = await getInicioOficial();
   const { id } = await params;
   // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
   // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
@@ -121,6 +124,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
         {/* SOLICITUD no lee el cliente: el título tampoco lo nombra. */}
         <TituloPestana titulo={tituloVuelo(snapshot.folio)} />
         <BackLink href="/admin/flights">Vuelos</BackLink>
+        <FranjaAntesDelInicio fecha={snapshot.fecha_vuelo} inicio={inicio} />
         <Card>
           <CardHeader>
             <CardTitle>Cotización en proceso</CardTitle>
@@ -393,6 +397,8 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       <TituloPestana titulo={tituloVuelo(snapshot.folio, client?.nombre)} />
       {/* Catálogos de los diálogos que no cargaron: se dice, no se finge. */}
       <AvisoDegradado faltantes={degradado.faltantes} />
+      {/* Inicio oficial (16-oct-2026): un vuelo de antes se abre por id con su franja. */}
+      <FranjaAntesDelInicio fecha={snapshot.fecha_vuelo} inicio={inicio} />
       <FechaOperativaBanda
         decision={bandaFechaOperativa}
         vueloId={snapshot.id}

@@ -75,6 +75,7 @@ import type {
   ParticipacionAvion,
   ParticipacionFuente,
 } from "@/types/quotes-persisted";
+import { ChipInicioOficial } from "@/components/admin/chip-inicio-oficial";
 
 /**
  * COBRO del vuelo: UNA sola card (11-sep-2026). Antes había dos que decían
@@ -573,6 +574,9 @@ export function CobrosCard({
                     <p className="text-[11px] text-muted-foreground font-mono">
                       {fmtDate(c.fecha_cobro)}
                     </p>
+                    {/* Inicio oficial (16-oct-2026): cobro del 31-ago de un
+                        vuelo de septiembre — se ve aquí, con su chip. */}
+                    <ChipInicioOficial fecha={c.fecha_cobro} />
                     {/* Recibo para el cliente: solo cobros reales (un
                         reembolso no tiene recibo de pago). */}
                     {Number(c.monto) > 0 && (

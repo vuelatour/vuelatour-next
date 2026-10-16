@@ -150,6 +150,7 @@ import {
   pasoPrellenadoCombustible,
   type AvionCatalogoGasto,
 } from "@/lib/admin/combustibles";
+import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
 
 // Tipos y tope de archivos del comprobante: `aceptarArchivosComprobante`
 // (lib/admin/comprobante-hojas, espejo de los tipos del bucket).
@@ -1409,6 +1410,7 @@ export function ExpenseCreateDialog({
                     cortes. Corrígela si no es real.
                   </p>
                 )}
+                <AvisoCapturaAntesDelInicio fecha={fechaGasto} />
               </Field>
             </div>
 
