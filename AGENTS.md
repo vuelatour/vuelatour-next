@@ -11050,7 +11050,10 @@ Mary terminó metiendo los 5 PDF como hojas. Contrato: invariante 87 del API
 `gasto.factura_recibida_id` sigue siendo la PRINCIPAL — folio de
 Conciliación/Excel, trigger FACTURADA). Fuente única del panel:
 `lib/admin/facturas-gasto.ts` (PURA; prueba
-`lib/admin/__tests__/facturas-gasto.test.ts`).
+`lib/admin/__tests__/facturas-gasto.test.ts`). El contrato FINAL salió en el
+API **0.0.87** (mismas llaves; además `DELETE …/gastos/:gastoId` responde
+`{ok, principal, estatus_facturacion, facturas, avisos, facturas_multiples}`
+y con la migración el shape viejo también AGREGA).
 
 - **Lo que viaja**: `POST /v1/invoices/recibidas/de-gasto` con `archivos[]`
   (una entrada POR FACTURA: `{xml_b64?, pdf_b64?, nombre?}`, 1–10) por
@@ -11069,27 +11072,49 @@ Conciliación/Excel, trigger FACTURADA). Fuente única del panel:
   `emparejarArchivosFactura`: (1) mismo nombre base
   (`ACC…_FCUN_1299718.pdf` ↔ `.xml`); (2) si no, por las pistas del XML
   (`pistasDeXmlCfdi`: UUID del timbre o serie+folio/folio ≥ 4 dígitos dentro
-  del nombre del PDF), solo con candidato ÚNICO; (3) si queda UN PDF suelto
-  y UN XML suelto, son la misma (el caso de siempre: XML del SAT con su
-  PDF) y se DICE en ámbar («se emparejaron aunque los nombres no
-  coinciden…»). Lo demás va suelto («solo PDF» / «solo XML»). Rechaza
-  —diciéndolo— tipos ajenos, vacíos, > 8 MB, repetidos y lo que pase de 10
-  facturas. Lista previa «Factura 1…N» con ✕ por factura.
-- **Lotes que caben en Vercel**: `partirEnLotes` (≤ 3.5 M caracteres de
-  base64 y ≤ 10 facturas por llamada; un PDF nunca se separa de su XML; una
-  factura que sola pasa del tope va sola). Un lote que falla NO detiene los
-  demás: sus archivos SIGUEN en la lista con el motivo
-  (`textoFalloLotes`); los subidos salen de la lista. Al terminar se
-  recarga la lista y el toast dice cuántas se agregaron
-  (`textoResultadoSubida`).
+  del nombre del PDF), solo con candidato ÚNICO; (3) 1 PDF + 1 XML de
+  nombres distintos son la misma SOLO si la selección son exactamente esos
+  2 archivos (el caso de siempre: XML del SAT con su PDF). Lo emparejado sin
+  coincidir el nombre se DICE en ámbar y tiene «Separar» (el XML queda en
+  `separados` y ya no se pega). Revisión adversaria: con más archivos el 1↔1
+  a ciegas pegaba el PDF de una factura al XML de otra y el API guardaba la
+  huella del PDF en la fila equivocada (después, esa factura subida sola se
+  «deduplicaba» contra la otra). Lo demás va suelto («solo PDF» / «solo
+  XML»). Rechaza —diciéndolo— tipos ajenos, vacíos, > 3 MB, repetidos, una
+  factura cuyo PDF + XML no cabe en una llamada y lo que pase de 10.
+  Lista previa «Factura 1…N» con ✕ por factura. La selección asíncrona
+  (leer los XML) parte de espejos en ref (`archivosRef`, `fijarArchivos`),
+  no del cierre: dos selecciones seguidas o una ✕ durante la lectura se
+  perdían; «Subir» se apaga mientras se leen («Leyendo archivos…»).
+- **3 MB por archivo, no 8**: el archivo viaja en base64 (+33 %) por una
+  server action y Vercel corta en 4.5 MB (413): un PDF de 4 MB fallaba
+  SIEMPRE como «el servidor no respondió» (el botón viejo prometía 8 MB).
+  El API acepta 25 MB, pero el cuello es Vercel. Para más, el camino sería
+  `apiBrowser` directo al API.
+- **Lotes**: `partirEnLotes` (≤ 4.3 M caracteres de base64 y ≤ 3 facturas
+  por llamada — el API procesa en fila y 10 en una llamada podían pasar
+  del tiempo de la función; `maxDuration = 60` en `/admin/expenses`,
+  `/admin/flights/[id]` y `/admin/nomina`, donde vive la action). Un PDF
+  nunca se separa de su XML. Un lote que falla NO detiene los demás: sus
+  archivos SIGUEN en la lista con el motivo (`textoFalloLotes`). Si el
+  fallo fue de red/5xx (el API no es atómico por lote) se recarga la lista
+  igual, se marca el cambio (refresh al cerrar) y se pide revisarla
+  (`TEXTO_REVISA_LISTA`); reintentar no duplica (dedupe por UUID y huella).
+  El toast dice cuántas se agregaron (`textoResultadoSubida`; con el API
+  previo y factura previa, «Se reemplazó la factura…»).
 - **Las actions NO revalidan** (el diálogo sigue abierto con la lista y los
   avisos): al CERRAR con cambios, `router.refresh()` (convención «Red /
   API»). En «Verificar / editar» el refresh trae un `gasto` nuevo y el
   diálogo ya lo tolera (BASE de la sesión).
 - **SKEW (obligatorio)**:
+  - **«Subir» solo con la lista CARGADA** (`puedeSubir`): mientras carga o
+    si falló, no se sabe si el API agrega o reemplaza (revisión adversaria:
+    subir antes reemplazaba sin preguntar con el API previo). Al reabrir,
+    el hook vuelve a «cargando» (la lista vieja no cuenta).
   - API 0.0.85 (sin `archivos` ⇒ 400 «property archivos should not
     exist»): la action reintenta con el shape de SIEMPRE `{xml_b64,
-    pdf_b64, pdf_nombre}` SOLO si es UNA factura (modo `LEGADO`); con varias
+    pdf_b64, pdf_nombre}` SOLO si es UNA factura Y `permitirLegado` (el
+    gasto no tiene factura o el operador CONFIRMÓ el reemplazo); con varias
     no sube NADA y responde `CODIGO_API_SIN_VARIAS` ⇒ el diálogo deja todo
     en la lista y lo dice (`TEXTO_API_SIN_VARIAS`). Si un lote de una sola
     factura entró en modo `LEGADO` y quedan más, SE DETIENE
@@ -11098,7 +11123,10 @@ Conciliación/Excel, trigger FACTURADA). Fuente única del panel:
     `FACTURAS_GASTO_NO_DISPONIBLE` (no escribe nada) ⇒ el mismo código; una
     sola ⇒ `facturas_multiples: false` ⇒ modo `LEGADO`.
   - `facturasDeGastoAction`: con `facturas` en el detalle, `varias =
-    facturas_multiples ?? true`; sin la llave (0.0.85) arma la lista con la
+    facturas_multiples ?? true`; `facturas_multiples` SIN `facturas` (o
+    `facturas_error: true`) = fallo de lectura ⇒ error con «Reintentar»,
+    nunca «API previo» (hoy el API omite las tres llaves si la lectura
+    falla: pendiente pedirle la bandera); sin la llave (0.0.85) arma la lista con la
     ÚNICA factura (`GET /v1/invoices/recibidas/:id`) y `varias: false`. Con
     `varias: false` el selector admite UNA factura (`decidirSubida`,
     `TEXTO_SOLO_UNA_FACTURA`) y, si ya hay una, el aviso ámbar
@@ -11124,7 +11152,9 @@ Conciliación/Excel, trigger FACTURADA). Fuente única del panel:
 - **«Verificar / editar»** (`expense-verify-dialog.tsx`): bloque «Facturas
   del gasto (N)» (`FacturasDelGastoSeccion`: la lista con «Ver aquí» y el
   botón «Subir facturas», que abre el MISMO diálogo anidado; fuera del
-  `<form>`). En «Hojas del comprobante» cada PDF (principal o guardada)
+  `<form>`; su select «Facturación (oficina)» NO se resincroniza tras subir
+  —el trigger pone FACTURADA y el campo solo viaja si se tocó—: pendiente
+  conocido). En «Hojas del comprobante» cada PDF (principal o guardada)
   tiene «Ver aquí» ⇒ visor incrustado debajo de la lista (uno a la vez; se
   cierra al reabrir el diálogo o al quitar esa hoja). Una hoja sin firma ya
   NO es texto sin enlace: «Abrir» pide la firma en el clic; la principal sin
@@ -11141,8 +11171,12 @@ Conciliación/Excel, trigger FACTURADA). Fuente única del panel:
   `InvalidJWT` y no hay `onError` que lo detecte. «Volver a cargar» siempre
   re-firma; «Abrir en pestaña nueva» (`BotonAbrirFirmado`) usa la fresca o
   la pide en el MISMO clic (`abrirArchivoFirmado`, Safari). Facturas =
-  bucket `facturas` (firmable para ADMIN/COORDINADOR/FACTURACION en
-  `/v1/storage/firmar`); hojas = `gasto-fotos`. En el celular el iframe
+  bucket `facturas` por `/v1/storage/firmar` (lista blanca, ADMIN/
+  COORDINADOR/FACTURACION; equivale a `POST /recibidas/file-urls`, que desde
+  0.0.87 también admite COORDINADOR) con el lote de `pedirUrlFirmada`;
+  hojas = `gasto-fotos`. Las confirmaciones «¿Reemplazar?» y «¿Quitar?» van
+  DENTRO del popup del diálogo con `backdropForceRender` (anidado de Base
+  UI); si el diálogo ya se cerró al terminar algo, se refresca igual. En el celular el iframe
   puede mostrar solo la primera página: el texto lo dice y ofrece la
   pestaña nueva.
 - `fileToBase64` se importa DIFERIDO en el diálogo (su módulo carga el
