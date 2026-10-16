@@ -10714,3 +10714,135 @@ pre-cierre = fase 2, decide el cliente).
   card que congelaban el href de «Resolver →» esperan ahora `…&pc=<clave>…`,
   y `conciliacion/__tests__/enfoque.test.tsx` / `seleccion.test.tsx` la línea
   nueva de `rowClassName` de `movimientos-table`.
+
+## Facturas por cobro: un vuelo, varias facturas; cada cobro con la suya (16-oct-2026, API 0.0.82)
+
+Pedido del cliente (captura de la card «Cobro» del vuelo #332: 4 cobros
+conciliados y UNA «Factura A-0420»): «necesitamos poder cargar en un vuelo
+varias facturas y poder vincularlas, porque a veces pasa que unos pagos de
+los cobros hechos son con una factura y a lo mejor otro con otra factura».
+Contrato: invariante 84 del API (migración `20261016000001`:
+`cobro_vuelo.factura_emitida_id`, triggers de coherencia y backfill
+determinista). Fuente única del panel: `lib/admin/cobro-factura.ts`
+(PURA; prueba `lib/admin/__tests__/cobro-factura.test.ts`).
+
+- **La liga cobro ↔ factura es CLASIFICACIÓN, no dinero.** No toca el
+  cobrado, el reparto, el balance ni el candado de conciliación: un cobro
+  conciliado (parcial o completo) o de anticipo SÍ cambia de factura desde
+  «Editar» (`cambiosDeCobro` calcula ese diff FUERA de `dineroBloqueado`;
+  la línea de la confirmación dice «Factura: — → A-0420» / «A-0420 → sin
+  factura» y `tocaDinero` queda en false). Lo único que el panel suma son
+  los cobros que el operador MARCA (para decir si cuadran con el total
+  tecleado) y lo que una factura ya ampara (para no preseleccionar una ya
+  completa), con la MISMA tolerancia de $1.00 del backfill del API.
+- **Todo cuelga de la sonda del API**: el bloque `factura_servicio` trae
+  `asignacion_disponible` (= migración aplicada), `cobros_sin_factura`,
+  `cobros_sin_factura_exigen`; cada mini de `facturas[]` trae `es_parcial`,
+  `cobros_n`, `cobros_monto`; cada cobro trae `factura_emitida {id,
+  etiqueta} | null`. Son ADITIVOS y opcionales en `types/`: con un API
+  previo no hay selector, casillas ni chips, y **JAMÁS viajan
+  `factura_emitida_id` ni `cobro_ids`** (un API ≤ 0.0.81 responde 400
+  `forbidNonWhitelisted`). Con API 0.0.82 sin migración
+  (`asignacion_disponible: false`) ídem; una pestaña vieja que mande el
+  campo recibe 503 `COBRO_FACTURA_NO_DISPONIBLE` con texto claro.
+- **Card de cobros (vuelo y cotización, `flights/cobro-factura-chip.tsx`)**:
+  bajo «método · → cuenta · referencia», SOLO si el cobro trae la llave y es
+  asignable (positivo, sin sobre): chip verde «Factura A-0420»
+  (`data-cobro-factura`, clic ⇒ PDF si la mini dice `tiene_pdf` y el rol
+  puede) o, con ≥ 1 vigente y `asignacion_disponible`, chip «Sin factura
+  asignada» (`data-cobro-sin-factura="ambar|gris"`) + «Asignar factura»
+  (`data-accion="asignar-factura"`, solo ADMIN/FACTURACION: abre el MISMO
+  `CobroFormSheet` en edición con `enfocarFactura` ⇒ foco en el selector).
+  Sin vigentes, nada (la burbuja ya dice «Sin factura»). Reembolsos y
+  partes de sobre, nada. «Eliminar» un cobro amparado lo dice en la
+  confirmación (`textoEliminarCobroConFactura`).
+- **Tono de «sin factura asignada» (`tonoSinFactura`)**: ÁMBAR solo cuando
+  importa cuál factura ampara qué (≥ 2 vigentes, una vigente que ya
+  clasificó algún cobro, o cobros que EXIGEN factura sin ninguna: #332 tras
+  el backfill); GRIS con una sola vigente «global» sin clasificar y cobros
+  que no exigen (A-0430 ×6, FA-A-0433 ×12, FA-A-0449 ×11): no es un
+  problema, es trabajo pendiente opcional. Sin esto ~30 cards amanecían en
+  ámbar sin que nada estuviera mal.
+- **Burbuja**: cada chip «Factura A-0420» suma «· 1 cobro» / «· 3 cobros» /
+  «· sin cobro asignado» (title «Ampara 1 cobro de este vuelo: $68,208
+  MXN»); tras los chips, «3 cobros sin factura asignada»
+  (`data-cobros-sin-factura`, mismo tono). «Registrar factura» sigue en
+  TODOS los estados con el title «Un vuelo puede llevar varias: cada una
+  ampara sus cobros». «Necesito factura» y «Factura obligatoria» siguen
+  escondidos con una vigente (la exigencia sigue siendo por vuelo).
+- **Formulario del cobro (`cobro-form-sheet.tsx`)**: props
+  `facturasVigentes`, `asignacionFactura`, `rol`, `enfocarFactura` (las
+  pasan `cobros-card` ×2, `quote-cobros-card` y `quote-workspace`; el
+  montaje de Paywise NO: no tiene rol ni bloque). Campo «Factura» entre
+  «Referencia» y «Fecha del cobro» SOLO con `asignacionFactura &&
+  vigentes.length > 0 && !reembolso && puedeRegistrarFactura(rol)`
+  (COORDINADOR ve el formulario de siempre: el API le descarta el campo).
+  Opciones «Sin factura todavía» + «A-0420 · $68,208 MXN · 21 sep 2026» con
+  «Ampara $68,208 MXN» / «No ampara ningún cobro todavía» debajo.
+  **Preselección del alta solo con cupo** (`facturaPreseleccionada`: UNA
+  vigente que todavía no ampara su total ⇒ esa; ya completa —A-0420 tras el
+  backfill, FA-A-0434— o 2+ ⇒ vacío): preseleccionar una ya completa ligaba
+  en silencio la camioneta de $1,700 de #364 y el pre-cierre dejaba de
+  verla; una liga de menos se ve (chip ámbar), una de más no. Alta: la
+  llave viaja solo si se eligió una; toast «Cobro registrado · amparado por
+  A-0420». Edición: `valoresParaEdicion(values, mostrarSelectorFactura)`
+  mete `factura_emitida_id` al diff solo si el selector se pintó.
+- **Diálogo «Registrar factura» / «Editar factura»**: bajo los vuelos, por
+  cada vuelo elegido cuyo candidato trae `cobros` (hidratación por `ids`
+  del selector —que ahora también hidrata un vuelo con grupo pero sin
+  cobros— o resultado de búsqueda), bloque «¿Qué cobros cubre esta
+  factura? — Vuelo #332» con casillas «21 sep 2026 · $68,208 MXN ·
+  Transferencia → Scotiabank Pesos»; «· ya tiene A-0420» deshabilitada si
+  la ampara OTRA factura; «Este vuelo no tiene cobros registrados todavía…»
+  si no hay; nota del sobre de grupo en vuelos de grupo. **Prefill del alta
+  = la MISMA regla del backfill** (`prefillCobrosDeFactura` sobre los
+  libres de la misma moneda que el total tecleado: Σ ≈ total ⇒ todos; si
+  no, EXACTAMENTE UN cobro ≈ total ⇒ ese; si no ⇒ todos los libres y el
+  resumen sale ámbar; sin total ⇒ todos los libres); se re-prellena
+  mientras no se toque una casilla; en edición, los que ya ampara. Pie
+  `resumenMarcados` («Marcados: $4,377.45 MXN · Factura: $4,377.45 MXN»
+  ok / «… (difieren $122.55 MXN)» ámbar, NO bloquea: el API avisa
+  `TOTAL_DISTINTO_COBROS`). **`cobro_ids` viaja SOLO con TODOS los vuelos
+  hidratados** (`cobrosHidratados`): el PATCH REEMPLAZA el conjunto y
+  mandar las casillas de los que sí cargaron desligaría en silencio los
+  del que no cargó; con un vuelo sin `cobros` todas las casillas se apagan
+  con «No se pudieron cargar los cobros: guarda la factura y asígnala desde
+  cada cobro». En el alta viaja también `[]` (el API evalúa «quedan cobros
+  sin factura»); ausente ≠ `[]`. En edición `cambiosDeEdicion` lo compara
+  como conjunto contra `factura.cobros` y solo lo manda si cambió.
+  Avisos nuevos del API (`TOTAL_DISTINTO_COBROS`, `COBROS_DESLIGADOS`,
+  `COBROS_SIN_FACTURA`) salen como `toast.warning` de 10 s; el 409
+  `COBRO_CON_OTRA_FACTURA` va al banner rojo con `mensajeErrorCobroFactura`.
+  El switch «Factura parcial» se conserva con la ayuda nueva («Para
+  registrar varias facturas ya no hace falta: a cada una se le marcan sus
+  cobros»).
+- **Selector de vuelos**: chip «Tiene A-0420» (antes «Ya tiene»), gris e
+  informativo (title «puedes agregarle otra si ampara otros cobros»); no
+  deshabilita nada. `VueloSeleccionado.cobros`: `undefined` = sin hidratar
+  (o falló), `null` = hidratado por un API sin la llave.
+- **Registro**: la alerta `DUPLICADO_VUELO` se rotula «Facturas que no
+  cuadran» (filtro `duplicado_vuelo` conserva su valor; chip del resumen
+  «Vuelos con facturas que no cuadran»; mismo rótulo en el Excel del API) y
+  su tooltip son los `alertas_detalle[].mensaje` unidos por « · » (sin
+  detalle, la ayuda general). Un vuelo con 2 facturas que cuadran ya no es
+  alerta. Bajo cada folio de «Vuelo(s)»: «· 1 cobro» / «· 3 cobros» y «· 3
+  sin factura» en ámbar.
+- **Pre-cierre** (`lib/admin/pre-cierre-factura.ts`): el renglón
+  `vuelos_cobrados_sin_factura` acepta vuelos que YA tienen factura cuando
+  el API manda `registrada` + `cobros_sin_factura` ⇒ chip «#332 (A-0420 · 3
+  cobros sin factura · Scotiabank Pesos)» con title «Ya tiene factura, pero
+  3 de sus cobros que exigen factura no están amparados por ninguna.
+  Asígnala desde cada cobro o registra la que falta.» (misma card de
+  cobros). Sin `registrada`, el chip de siempre. «Por facturar», la columna
+  «FACTURA VUELATOUR» y la solicitud automática siguen por vuelo.
+- **Skew**: panel viejo + API 0.0.82 ⇒ ignora las llaves nuevas; panel
+  nuevo + API ≤ 0.0.81 ⇒ sin controles nuevos y sin mandar nada; panel
+  nuevo + 0.0.82 sin migración ⇒ ídem (`asignacion_disponible: false`).
+- Pruebas: `lib/admin/__tests__/cobro-factura.test.ts` (regla y textos),
+  `cobro-edicion.test.ts` (diff de la factura fuera del candado),
+  `facturas-emitidas.test.ts` (`cobro_ids` ausente ≠ `[]`, conjunto en
+  edición, rótulo), `pre-cierre-factura.test.ts` (chip con `registrada`),
+  `flights/__tests__/cobros-card-facturas-emitidas.test.tsx` (describe
+  «FACTURAS POR COBRO»), `cobros-card-editar.test.tsx` (cableado del
+  selector) y `facturas-emitidas/__tests__/registrar-factura-dialog.test.tsx`
+  (cableado de las casillas; el diálogo es un portal).

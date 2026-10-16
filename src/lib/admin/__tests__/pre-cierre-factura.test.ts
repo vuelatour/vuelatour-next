@@ -82,3 +82,37 @@ describe("cableado en la card del pre-cierre", () => {
     expect(fuente).toMatch(/\{!chipDeClave &&\s*item\.vuelos && item\.vuelos\.length > 0 &&/);
   });
 });
+
+describe("FACTURAS POR COBRO (16-oct-2026, API 0.0.82): el vuelo YA tiene factura pero no ampara todos sus cobros", () => {
+  it("#332 tras el backfill: «#332 (A-0420 · 3 cobros sin factura · Scotiabank Pesos)» a la card de cobros", () => {
+    const c = chipVueloSinFactura({
+      id: V,
+      folio: 332,
+      matricula: "XA-VGV",
+      solicitada: false,
+      cuentas: ["Scotiabank Pesos"],
+      registrada: "A-0420",
+      cobros_sin_factura: 3,
+    });
+    expect(c).toEqual({
+      texto: "#332 (A-0420 · 3 cobros sin factura · Scotiabank Pesos)",
+      href: `/admin/flights/${V}#cobros`,
+      title:
+        "Ya tiene factura, pero 3 de sus cobros que exigen factura no están amparados por ninguna · XA-VGV. Asígnala desde cada cobro o registra la que falta.",
+    });
+    // Singular.
+    expect(chipVueloSinFactura({ id: V, folio: 364, registrada: "FA-A-0434", cobros_sin_factura: 1 }).texto).toBe(
+      "#364 (FA-A-0434 · 1 cobro sin factura)",
+    );
+    // «pedida» no aplica (ya tiene factura); un cancelado se dice primero.
+    expect(chipVueloSinFactura({ id: V, folio: 1, registrada: "A-1", cobros_sin_factura: 2, solicitada: true, estado: "CANCELADO" }).texto).toBe(
+      "#1 (CANCELADO · A-1 · 2 cobros sin factura)",
+    );
+  });
+
+  it("sin `registrada` (API previo o vuelo sin factura): el chip de siempre", () => {
+    expect(chipVueloSinFactura({ id: V, folio: 376, cuentas: ["HSBC Pesos"], registrada: null, cobros_sin_factura: 0 }).texto).toBe(
+      "#376 (HSBC Pesos)",
+    );
+  });
+});

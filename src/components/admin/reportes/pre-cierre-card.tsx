@@ -113,6 +113,12 @@ interface PreCierreVuelo {
   solicitada?: boolean;
   matricula?: string | null;
   fecha_vuelo?: string | null;
+  /** ADITIVOS (vuelos_cobrados_sin_factura, 16-oct-2026, API 0.0.82): el
+      vuelo YA tiene factura («A-0420») pero N de sus cobros que exigen
+      factura no están amparados por ninguna ⇒ chip
+      «#332 (A-0420 · 3 cobros sin factura · Scotiabank Pesos)». */
+  registrada?: string | null;
+  cobros_sin_factura?: number | null;
   /** ADITIVOS (tua_pagada_sin_cobrar, 15-oct-2026, API 0.0.81, NO bloquea):
       TUA pagada por Operación (IVA incluido) en la moneda de cada gasto
       —nunca sumadas entre sí—, si el pasajero compró su pase de abordar y
