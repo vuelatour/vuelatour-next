@@ -319,7 +319,8 @@ export default async function CajaFondoPage({
             {/* Pedido del cliente (15-oct-2026): «filtro de fecha de desde hasta». */}
             {fondo.historial.length > 0 && <HistorialPeriodoFiltro />}
           </div>
-          {periodoVisto && (
+          {/* Solo con filas: sin libro no hay control para quitar el filtro. */}
+          {periodoVisto && fondo.historial.length > 0 && (
             <p className="text-xs text-muted-foreground">
               {periodoVisto}. {NOTA_SALDO_LIBRO_COMPLETO}
             </p>

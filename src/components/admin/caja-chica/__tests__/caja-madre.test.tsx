@@ -257,9 +257,11 @@ describe("«Registrar movimiento» de una caja MADRE", () => {
     expect(registrar.indexOf("setError(\"monto\"")).toBeLessThan(iConfirmar);
   });
 
-  it("la confirmación dice monto, caja hija y caja madre", () => {
+  it("la confirmación dice monto, fecha, caja hija y caja madre", () => {
     const src = leer("../movimiento-dialog.tsx");
-    expect(src).toMatch(/textoConfirmarReposicionHija\(\{\s*monto: confirmacion\.monto,\s*hija,\s*madre: persona,\s*\}\)/);
+    expect(src).toMatch(
+      /textoConfirmarReposicionHija\(\{\s*monto: confirmacion\.monto,\s*hija,\s*madre: persona,\s*fecha: confirmacion\.fecha,\s*\}\)/,
+    );
     expect(src).toContain(": BOTON_CONFIRMAR_REPOSICION_HIJA}");
     expect(src).toContain("{BOTON_VOLVER}");
   });
@@ -310,6 +312,10 @@ describe("filtro Desde/Hasta del historial", () => {
     expect(page).toContain("const porReponer = porReponerDeFondo(fondo);");
     expect(page).toContain("{TEXTO_SIN_MOVIMIENTOS_PERIODO}");
     expect(page).toContain("conRango && historial.length === 0 ?");
+    // La línea del filtro activo solo con libro: sin filas no hay control
+    // Desde/Hasta ni «Limpiar» para quitarla.
+    expect(page).toContain("{fondo.historial.length > 0 && <HistorialPeriodoFiltro />}");
+    expect(page).toContain("{periodoVisto && fondo.historial.length > 0 && (");
     // Espejo y caja madre.
     expect(page).toContain("repuestoA: repuestoADeEntrada(e, movimiento),");
     expect(page).toContain("const cajasFondeadas = cajasParaReponer(fondo);");

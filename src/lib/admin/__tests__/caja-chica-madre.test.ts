@@ -146,10 +146,22 @@ describe("reponer a una caja hija desde la madre", () => {
     );
   });
 
-  it("confirmación ANTES de registrar con monto, caja hija y caja madre", () => {
-    expect(textoConfirmarReposicionHija({ monto: "5000", hija: caja(), madre: "Mary Cruz" })).toBe(
-      "Se registrará una reposición de $5,000.00 en la caja de Gregorio Jurado y su reintegro en la caja de Mary Cruz.",
+  it("confirmación ANTES de registrar con monto, fecha, caja hija y caja madre", () => {
+    expect(
+      textoConfirmarReposicionHija({ monto: "5000", hija: caja(), madre: "Mary Cruz", fecha: "2026-10-15" }),
+    ).toBe(
+      "Se registrará una reposición de $5,000.00 con fecha 15 oct 2026 en la caja de Gregorio Jurado y su reintegro en la caja de Mary Cruz.",
     );
+    // La fecha decide qué gastos quedan repuestos: una fecha cambiada se VE.
+    expect(
+      textoConfirmarReposicionHija({ monto: "5000", hija: caja(), madre: "Mary Cruz", fecha: "2026-10-01" }),
+    ).toContain("con fecha 01 oct 2026 ");
+    // Sin fecha (o inválida) el registro usa la de hoy.
+    for (const fecha of ["", null, undefined, "2026-13-45"]) {
+      expect(textoConfirmarReposicionHija({ monto: "5000", hija: caja(), madre: "Mary Cruz", fecha })).toBe(
+        "Se registrará una reposición de $5,000.00 con fecha de hoy en la caja de Gregorio Jurado y su reintegro en la caja de Mary Cruz.",
+      );
+    }
     expect(pasoAlRegistrar({ hija: caja(), confirmado: false })).toBe("confirmar");
     expect(pasoAlRegistrar({ hija: caja(), confirmado: true })).toBe("registrar");
     // El movimiento de la propia caja: como siempre, sin paso extra.

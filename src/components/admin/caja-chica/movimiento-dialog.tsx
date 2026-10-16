@@ -235,6 +235,7 @@ export function MovimientoDialog({
                   monto: confirmacion.monto,
                   hija,
                   madre: persona,
+                  fecha: confirmacion.fecha,
                 })}
               </p>
               <p className="mt-1 text-xs opacity-80">{NOTA_CONFIRMAR_REPOSICION_HIJA}</p>

@@ -183,17 +183,25 @@ export function pistaMontoReponerA(c: CajaFondeada): string {
 
 /**
  * Confirmación ANTES de registrar (regla del cliente: toda acción con dinero
- * se confirma): «Se registrará una reposición de $5,000.00 en la caja de
- * Gregorio Jurado y su reintegro en la caja de Mary Cruz.»
+ * se confirma): «Se registrará una reposición de $5,000.00 con fecha 15 oct
+ * 2026 en la caja de Gregorio Jurado y su reintegro en la caja de Mary Cruz.»
+ *
+ * La FECHA va en la confirmación porque decide qué gastos quedan repuestos
+ * (la reposición del día D salda lo de ese día y el candado del API bloquea
+ * gastos con fecha ≤ la última reposición): una fecha equivocada deja gastos
+ * «por reponer» ya pagados. Día de pared (fmtDateOnly); sin fecha válida, el
+ * formulario usa la de hoy → «con fecha de hoy».
  */
 export function textoConfirmarReposicionHija(p: {
   monto: string | number;
   hija: CajaFondeada;
   madre: string;
+  fecha?: string | null;
 }): string {
   const n = Number(p.monto);
   const monto = Number.isFinite(n) ? montoCaja(n, p.hija.moneda) : String(p.monto);
-  return `Se registrará una reposición de ${monto} en la caja de ${nombreCajaFondeada(
+  const fecha = esDiaValido(p.fecha) ? `con fecha ${fmtDateOnly(p.fecha)}` : "con fecha de hoy";
+  return `Se registrará una reposición de ${monto} ${fecha} en la caja de ${nombreCajaFondeada(
     p.hija,
   )} y su reintegro en la caja de ${p.madre.trim() || "este fondo"}.`;
 }
