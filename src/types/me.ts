@@ -40,6 +40,20 @@ export interface MeResponse {
    * comporta como hoy (nadie edita una cotización cobrada).
    */
   permisos?: PermisosMe;
+  /**
+   * Configuración que el API manda junto al usuario. ADITIVA: ausente = API
+   * previo. `inicio_oficial` (16-oct-2026, API 0.0.84): «AAAA-MM-DD» del
+   * inicio oficial del sistema o `null` (= sin piso, como siempre). Se lee
+   * SOLO con `getInicioOficial` / `useInicioOficial`.
+   */
+  config?: ConfigMe | null;
+}
+
+export interface ConfigMe {
+  inicio_oficial?: string | null;
+  captura_taco_foto_ia?: boolean;
+  dias_gracia_gastos_semana?: number;
+  gastos_sin_limite_hasta?: string | null;
 }
 
 export interface PermisosMe {
