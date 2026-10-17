@@ -13,6 +13,8 @@ import {
 } from "@/lib/admin/categorias-gasto";
 import {
   DESTINO_VUELATOUR_REPARTIBLE_TABLA,
+  DETALLE_PAGO_AFAC,
+  TITULO_PAGO_AFAC_AVION,
   ETIQUETA_AVION_PERSONAL,
   ETIQUETA_AVION_VUELATOUR,
   ETIQUETA_FALTA_AVION,
@@ -228,5 +230,43 @@ describe("textos de «Avión · vuelo»", () => {
       [{ tipo: "FALTA" }, "Falta avión"],
     ];
     for (const [e, txt] of casos) expect(etiquetaAvionGasto(e)).toBe(txt);
+  });
+});
+
+describe("estadoAvionGasto · PERMISO marcado «Pago de AFAC» (16-oct-2026, API 0.0.89, invariante 90)", () => {
+  // Prod 1-sep-2026: «Permisos Vuelos Privados VGV» $5,000 de XA-VGV (Yousefh Pineda Bedolla).
+  it("marcado ⇒ «VuelaTour · pago de AFAC» con la matrícula de REFERENCIA (no se le carga al avión)", () => {
+    const e = estadoAvionGasto(
+      gasto({ categoria: "PERMISO", aeronave_id: "av-vgv", aeronave: { matricula: "XA-VGV" }, es_pago_afac: true }),
+    );
+    expect(e).toEqual({
+      tipo: "FUERA_DEL_AVION",
+      etiqueta: "VuelaTour",
+      referencia: "XA-VGV",
+      titulo: TITULO_PAGO_AFAC_AVION,
+      detalle: DETALLE_PAGO_AFAC,
+    });
+    expect(etiquetaAvionGasto(e)).toBe("VuelaTour · pago de AFAC");
+    expect(TITULO_PAGO_AFAC_AVION).toBe(
+      "Va a: Balance general VuelaTour · otros movimientos (AFAC por vuelo). Lo paga VuelaTour: no le resta al avión.",
+    );
+  });
+
+  it("marcado sin avión (el de $670 de «Pago de derechos») ⇒ «VuelaTour · pago de AFAC», no «Falta avión»", () => {
+    const e = estadoAvionGasto(gasto({ categoria: "PERMISO", es_pago_afac: true }));
+    expect(e).toMatchObject({ tipo: "FUERA_DEL_AVION", etiqueta: "VuelaTour", referencia: null, detalle: DETALLE_PAGO_AFAC });
+  });
+
+  it("sin marcar (o sin la llave del API) ⇒ como siempre: su matrícula o «Falta avión»", () => {
+    expect(estadoAvionGasto(gasto({ categoria: "PERMISO", aeronave_id: "av-vgv", aeronave: { matricula: "XA-VGV" } }))).toEqual({
+      tipo: "AVION",
+      aeronaveId: "av-vgv",
+      matricula: "XA-VGV",
+    });
+    expect(estadoAvionGasto(gasto({ categoria: "PERMISO", es_pago_afac: false }))).toEqual({ tipo: "FALTA" });
+    // La marca SOLO vale en Permiso (defensa: el trigger del API ya la quita).
+    expect(estadoAvionGasto(gasto({ categoria: "OPERACIONES", aeronave_id: "a", es_pago_afac: true }))).toMatchObject({
+      tipo: "AVION",
+    });
   });
 });

@@ -79,6 +79,13 @@ export interface Gasto {
    *  LECTURA de la IA (ignora la cifra de oficina); informativo. El panel no
    *  la recalcula. */
   tua_detectada_ia?: number | null;
+  /** ADITIVO (16-oct-2026, API 0.0.89 + migración 20261016000005,
+   *  invariante 90): «Pago de AFAC» — lo paga VuelaTour y NO le resta a
+   *  ningún avión (es el comprobante bancario de los costos reales AFAC que
+   *  se capturan por vuelo en el Balance general). Solo en categoría
+   *  PERMISO (trigger en la BD). undefined = API sin la columna ⇒ el panel no
+   *  pinta ni manda la casilla. Leerlo SIEMPRE vía `@/lib/admin/pago-afac`. */
+  es_pago_afac?: boolean;
   /** ADITIVO, solo en la respuesta del alta con `inventario` (ver el tipo). */
   inventario?: GastoInventarioResultado | null;
   /** ADITIVO (API 0.0.77), solo en la respuesta del alta con

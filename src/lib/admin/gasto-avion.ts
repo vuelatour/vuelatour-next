@@ -7,6 +7,7 @@ import {
   esCategoriaPagoVendedor,
   hojaDestinoGasto,
 } from "@/lib/admin/categorias-gasto";
+import { esPagoAfac } from "@/lib/admin/pago-afac";
 import type { Gasto } from "@/types/expenses";
 
 /**
@@ -29,6 +30,11 @@ import type { Gasto } from "@/types/expenses";
  *  3. Empresa o «Comisión del vendedor (VuelaTour)» ⇒ «VuelaTour» SIEMPRE,
  *     aunque traiga avión sellado (queda de «ref.»: la categoría de empresa
  *     manda sobre el vuelo, regla del 11-sep-2026).
+ *  3b. PERMISO marcado «Pago de AFAC» (16-oct-2026, API 0.0.89, invariante
+ *     90) ⇒ «VuelaTour · pago de AFAC» aunque traiga avión o vuelo (quedan de
+ *     «ref.»): lo paga VuelaTour y no le resta al avión; vive en el Balance
+ *     general, hoja «otros movimientos». Espejo del API
+ *     (`expenses/gasto-avion.util.ts`).
  *  4. Con avión ⇒ su matrícula.
  *  5. Categoría que no lleva avión (hoy solo INDIRECTO) ⇒ «VuelaTour».
  *  6. Lo demás ⇒ «Falta avión».
@@ -47,6 +53,8 @@ export type EstadoAvionGasto =
       referencia: string | null;
       /** «Va a: …» (hoja destino con lo elegido). */
       titulo: string;
+      /** «pago de AFAC» (16-oct-2026): segunda línea bajo «VuelaTour». */
+      detalle?: string;
     }
   | { tipo: "AVION"; aeronaveId: string; matricula: string | null }
   | { tipo: "FALTA" };
@@ -63,6 +71,10 @@ export const TITULO_FALTA_AVION_FUERA_DE_GASTOS =
   "Este gasto necesita avión y no lo tiene. Asígnalo en «Verificar / editar» (menú ⋯).";
 export const ETIQUETA_AVION_VUELATOUR = "VuelaTour";
 export const ETIQUETA_AVION_PERSONAL = "Personal";
+/** Segunda línea de un PERMISO marcado «Pago de AFAC» (16-oct-2026). */
+export const DETALLE_PAGO_AFAC = "pago de AFAC";
+export const TITULO_PAGO_AFAC_AVION =
+  "Va a: Balance general VuelaTour · otros movimientos (AFAC por vuelo). Lo paga VuelaTour: no le resta al avión.";
 export const ETIQUETA_REPARTIDO = "Repartido:";
 export const TITULO_REFERENCIA_AVION =
   "El avión queda solo como referencia: este gasto no se carga a ese avión.";
@@ -125,7 +137,7 @@ export function etiquetaAvionGasto(e: EstadoAvionGasto): string {
     case "REPARTIDO":
       return "Repartido";
     case "FUERA_DEL_AVION":
-      return e.etiqueta;
+      return e.detalle ? `${e.etiqueta} · ${e.detalle}` : e.etiqueta;
     case "AVION":
       return e.matricula ?? "Avión asignado";
     case "FALTA":
@@ -137,7 +149,8 @@ export function etiquetaAvionGasto(e: EstadoAvionGasto): string {
 const centavos = (v: string | number | null | undefined): number => Math.round(Number(v) * 100);
 
 export function estadoAvionGasto(
-  g: Pick<Gasto, "categoria" | "aeronave_id" | "aeronave" | "repartos" | "vuelo_id" | "monto">,
+  g: Pick<Gasto, "categoria" | "aeronave_id" | "aeronave" | "repartos" | "vuelo_id" | "monto"> &
+    Partial<Pick<Gasto, "es_pago_afac">>,
 ): EstadoAvionGasto {
   const repartos = g.repartos ?? [];
   if (repartos.length > 0) {
@@ -164,6 +177,15 @@ export function estadoAvionGasto(
   if (g.categoria === "PERSONAL_DUENO") return fuera(ETIQUETA_AVION_PERSONAL);
   if (CATEGORIAS_EMPRESA.has(g.categoria) || g.categoria === CATEGORIA_PAGO_VENDEDOR) {
     return fuera(ETIQUETA_AVION_VUELATOUR);
+  }
+  if (esPagoAfac(g)) {
+    return {
+      tipo: "FUERA_DEL_AVION",
+      etiqueta: ETIQUETA_AVION_VUELATOUR,
+      referencia,
+      titulo: TITULO_PAGO_AFAC_AVION,
+      detalle: DETALLE_PAGO_AFAC,
+    };
   }
   if (g.aeronave_id) {
     return { tipo: "AVION", aeronaveId: g.aeronave_id, matricula: g.aeronave?.matricula ?? null };

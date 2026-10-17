@@ -194,6 +194,12 @@ export const GastoVerifySchema = z.object({
       .nullable()
       .optional(),
   ),
+  /** «Es pago de AFAC» (16-oct-2026, API 0.0.89 + migración
+   *  20261016000005, invariante 90): solo en Permiso. Viaja SOLO si la casilla
+   *  se ve y cambió (`pagoAfacParaPatch`, lib/admin/pago-afac.ts): sin
+   *  declararla aquí, el z.object la TIRA; con un API viejo, mandarla daría
+   *  400 (`forbidNonWhitelisted`). `false` sobrevive a stripEmpty. */
+  es_pago_afac: z.boolean().optional(),
   /** Candado de fecha antigua (> 365 días atrás): el usuario CONFIRMÓ la
    *  fecha corregida en el diálogo. Solo se manda cuando es true. */
   permitir_fecha_antigua: z.boolean().optional(),
@@ -254,6 +260,10 @@ export const GastoCreateSchema = z.object({
   /** Backfill de oficina: registrar el gasto COMO SI lo subiera el piloto del
    *  vuelo (usuario_captura + origen = PILOTO). Requiere vuelo_id con piloto. */
   capturar_como_piloto: z.boolean().optional(),
+  /** «Es pago de AFAC» (16-oct-2026, API 0.0.89, invariante 90): SOLO `true`
+   *  y SOLO con la casilla visible (Permiso + `config.afac_real` + rol de
+   *  oficina; `pagoAfacParaAlta`). El default del API es false. */
+  es_pago_afac: z.boolean().optional(),
   /** Candado de fecha antigua (> 365 días atrás): el usuario CONFIRMÓ la
    *  fecha en el diálogo — sin esto el API rechaza fechas de otro año
    *  (auditoría 29-ago: gastos con año 2025 fuera de todos los cortes).

@@ -65,7 +65,10 @@ export type HojaBalanceGeneral =
   | "combustible"
   | "otros_gastos"
   | "repartidos"
-  | "inventario";
+  | "inventario"
+  // PERMISO marcado «Pago de AFAC» (16-oct-2026, API 0.0.89, invariante 90,
+  // regla R2b de la ubicación): vive en el bloque «AFAC DEL PERIODO».
+  | "otros_movimientos";
 
 /**
  * «¿En qué libro y en qué mes vive este gasto?» (13-oct-2026, API 0.0.75,

@@ -10,6 +10,16 @@ import {
   useTransition,
 } from "react";
 import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
+import { usePuedeMarcarPagoAfac } from "@/components/admin/afac-real-provider";
+import { CasillaPagoAfac } from "@/components/admin/expenses/casilla-pago-afac";
+import {
+  CATEGORIA_PAGO_AFAC,
+  NOTA_PAGO_AFAC_SE_QUITA,
+  apiConPagoAfac,
+  casillaPagoAfacVisible,
+  pagoAfacParaPatch,
+  pagoAfacSeQuita,
+} from "@/lib/admin/pago-afac";
 import Link from "next/link";
 import {
   EyeIcon,
@@ -343,6 +353,12 @@ export function ExpenseVerifyDialog({
   // (reclasificar fuera de Operaciones/Aterrizaje/FBO o cambiar la moneda sin
   // reescribirla: el API la limpia; regla del cliente, lo destructivo confirma).
   const [tuaEditada, setTuaEditada] = useState(false);
+  // «Es pago de AFAC» (16-oct-2026, API 0.0.89, invariante 90): se ofrece en
+  // Permiso, a quien puede marcarlo (rol de oficina + `config.afac_real`) y
+  // SOLO si el gasto trae la llave (API con la columna). Viaja solo si
+  // cambió contra la BASE de la sesión (`pagoAfacParaPatch`).
+  const puedeMarcarPagoAfac = usePuedeMarcarPagoAfac() && apiConPagoAfac(gasto);
+  const [pagoAfac, setPagoAfac] = useState(() => gasto.es_pago_afac === true);
   const [confirmarTua, setConfirmarTua] = useState<{
     values: GastoVerifyValues;
     texto: string;
@@ -541,6 +557,7 @@ export function ExpenseVerifyDialog({
       setAiRaw(null);
       setSelloRetirado(false);
       setTuaEditada(false);
+      setPagoAfac(gasto.es_pago_afac === true);
       // Hojas del comprobante: las guardadas de ESTE gasto, sin pendientes.
       setHojas(hojasDe(gasto));
       setHojasNuevas([]);
@@ -1357,6 +1374,15 @@ export function ExpenseVerifyDialog({
         editada: tuaEditada,
       });
       if (tuaPatch !== undefined) payload.tua_incluida = tuaPatch;
+      // «Es pago de AFAC»: viaja SOLO con la casilla visible y si cambió. Con
+      // la categoría fuera de Permiso no viaja: el trigger del API quita la
+      // marca en la misma escritura (la nota bajo la casilla lo avisa).
+      const pagoAfacPatch = pagoAfacParaPatch({
+        visible: casillaPagoAfacVisible({ categoria: values.categoria, puedeMarcar: puedeMarcarPagoAfac }),
+        marcado: pagoAfac,
+        actual: baseForm.es_pago_afac === true,
+      });
+      if (pagoAfacPatch !== undefined) payload.es_pago_afac = pagoAfacPatch;
       // Litros solo aplican a GAS; vacío = no tocar (el zod los descarta).
       if (values.categoria !== "GAS" || values.litros === "") {
         delete (payload as { litros?: unknown }).litros;
@@ -2769,6 +2795,9 @@ export function ExpenseVerifyDialog({
                   if (v === "INDIRECTO" || v === "NOMINA" || v === "SERVICIOS") {
                     setVueloSel("");
                   }
+                  // «Es pago de AFAC» solo existe en Permiso: cambiar la
+                  // categoría la desmarca (el API también la quita).
+                  if (v !== CATEGORIA_PAGO_AFAC) setPagoAfac(false);
                 }}
                 placeholder="Categoría"
               />
@@ -2786,19 +2815,38 @@ export function ExpenseVerifyDialog({
             </Field>
           </div>
 
-          {/* Las dos comisiones del vendedor (28-sep-2026 y 13-oct-2026): el
-              cuadro de SU categoría dice quién la paga (VuelaTour o el avión)
-              y, debajo, cómo cambiarlo reclasificando entre las dos (aun
-              conciliado). Reclasificar aquí un «Otros gastos VuelaTour» CON
-              vuelo también es el camino para corregir capturas previas (sale
-              de «otros gastos»). */}
-          {ayudaComision && (
-            <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium">{ayudaComision.titulo}.</span>{" "}
-              {ayudaComision.texto}
-              <span className="mt-1 block">{AYUDA_RECLASIFICAR_COMISION}</span>
-            </p>
-          )}
+          {/* «Es pago de AFAC» + ayuda de la comisión en UN Fragment
+              (16-oct-2026): un hijo nuevo aquí correría los ids de `useId`
+              de los campos de abajo. */}
+          <>
+            {/* «Es pago de AFAC» (16-oct-2026, API 0.0.89, invariante 90): en
+                Permiso, para oficina y con el API que trae la llave. Si estaba
+                marcado y la categoría ya no es Permiso, se avisa que al
+                guardar se quita la marca (vuelve a restarle a su avión). */}
+            {casillaPagoAfacVisible({ categoria: watch("categoria"), puedeMarcar: puedeMarcarPagoAfac }) && (
+              <CasillaPagoAfac marcado={pagoAfac} onCambio={setPagoAfac} disabled={pending} />
+            )}
+            {puedeMarcarPagoAfac &&
+              pagoAfacSeQuita({ actual: gasto.es_pago_afac === true, categoria: watch("categoria") }) && (
+                <p className="text-xs text-amber-700 dark:text-amber-400" data-pago-afac-se-quita="">
+                  {NOTA_PAGO_AFAC_SE_QUITA}
+                </p>
+              )}
+
+            {/* Las dos comisiones del vendedor (28-sep-2026 y 13-oct-2026): el
+                cuadro de SU categoría dice quién la paga (VuelaTour o el avión)
+                y, debajo, cómo cambiarlo reclasificando entre las dos (aun
+                conciliado). Reclasificar aquí un «Otros gastos VuelaTour» CON
+                vuelo también es el camino para corregir capturas previas (sale
+                de «otros gastos»). */}
+            {ayudaComision && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium">{ayudaComision.titulo}.</span>{" "}
+                {ayudaComision.texto}
+                <span className="mt-1 block">{AYUDA_RECLASIFICAR_COMISION}</span>
+              </p>
+            )}
+          </>
           {/* TUA de oficina que se borraría al reclasificar fuera de
               Operaciones/Aterrizaje/FBO (revisión del lote 2): se dice aquí,
               bajo el selector, y el guardado pide confirmación. */}

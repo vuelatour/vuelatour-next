@@ -57,6 +57,8 @@ function AvionEnLinea({ e, moneda }: { e: EstadoAvionGasto; moneda: string }) {
       <span>
         <span title={e.titulo}>
           {e.etiqueta}
+          {/* «pago de AFAC» (16-oct-2026, invariante 90): lo paga VuelaTour. */}
+          {e.detalle ? ` · ${e.detalle}` : null}
           <span className="sr-only"> · {e.titulo}</span>
         </span>
         {e.referencia && (

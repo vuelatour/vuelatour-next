@@ -236,6 +236,8 @@ describe("en qué hoja del Excel del balance está (pedido del cliente, 15-oct-2
       otros_gastos: "otros gastos",
       repartidos: "repartidos a aviones",
       inventario: "inventario",
+      // PERMISO marcado «Pago de AFAC» (16-oct-2026, API 0.0.89, R2b).
+      otros_movimientos: "otros movimientos",
     });
     // Cada valor de los tipos del panel tiene nombre: un valor nuevo sin
     // nombre truena aquí (y en tsc, por el Record).
@@ -409,7 +411,7 @@ describe("paridad con pyservices (lectura del repo hermano)", () => {
     for (const nombre of ["Gastos Indirectos", "permisos"]) {
       expect(general, nombre).not.toContain(`create_sheet("${nombre}")`);
     }
-    for (const nombre of ["otros gastos", "repartidos a aviones", "inventario"]) {
+    for (const nombre of ["otros gastos", "repartidos a aviones", "inventario", "otros movimientos"]) {
       expect(individual, nombre).not.toContain(`create_sheet("${nombre}")`);
     }
   });

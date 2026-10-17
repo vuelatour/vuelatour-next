@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
+import { usePuedeMarcarPagoAfac } from "@/components/admin/afac-real-provider";
+import { CasillaPagoAfac } from "@/components/admin/expenses/casilla-pago-afac";
+import {
+  CATEGORIA_PAGO_AFAC,
+  casillaPagoAfacVisible,
+  pagoAfacParaAlta,
+} from "@/lib/admin/pago-afac";
 import { useForm } from "react-hook-form";
 import {
   ArrowsRightLeftIcon,
@@ -320,6 +327,11 @@ export function ExpenseCreateDialog({
   // Backfill de oficina: guardar el gasto COMO SI lo subiera el piloto del
   // vuelo (mismo switch que la app). Solo con un vuelo LIGADO.
   const [comoPiloto, setComoPiloto] = useState(false);
+  // «Es pago de AFAC» (16-oct-2026, API 0.0.89, invariante 90): solo en
+  // Permiso y solo para quien puede marcarlo (rol de oficina + la base ya con
+  // la migración: `config.afac_real`). Cambiar la categoría la desmarca.
+  const puedeMarcarPagoAfac = usePuedeMarcarPagoAfac();
+  const [pagoAfac, setPagoAfac] = useState(false);
   // Comprobante adjunto (12-oct-2026: VARIOS archivos — «un proveedor de
   // gasolina nos emite como 5 comprobantes en PDF»). El PRIMERO es la hoja
   // principal (`foto_url`, la que lee la IA); las demás se guardan como hojas
@@ -427,6 +439,7 @@ export function ExpenseCreateDialog({
   // con cualquier camino que cambie categoría/avión (selector, vuelo, IA,
   // «Usar este avión», avión prefijado). Lee getValues(): fresco tras reset.
   const categoriaSel = watch("categoria");
+  const pagoAfacVisible = casillaPagoAfacVisible({ categoria: categoriaSel, puedeMarcar: puedeMarcarPagoAfac });
   const avionSel = watch("aeronave_id");
   const tipoSel = watch("tipo_combustible");
   const tipoIa = aiRaw?.tipo_combustible ?? null;
@@ -935,6 +948,14 @@ export function ExpenseCreateDialog({
             hojasPaths,
           ),
           capturar_como_piloto: aplicarComoPiloto,
+          // «Es pago de AFAC»: SOLO marcada y con la casilla visible (un API
+          // sin la columna rechazaría la llave). El default del API es false.
+          ...(pagoAfacParaAlta({
+            visible: casillaPagoAfacVisible({ categoria: values.categoria, puedeMarcar: puedeMarcarPagoAfac }),
+            marcado: pagoAfac,
+          })
+            ? { es_pago_afac: true }
+            : {}),
           // Refacción a Inventario/Tienda (solo al crear; el API quita el
           // avión del gasto de compra: el avión paga por la salida).
           ...(inventarioPayload ? { inventario: inventarioPayload } : {}),
@@ -994,6 +1015,7 @@ export function ExpenseCreateDialog({
         setArchivos([]);
         setAiRaw(null);
         setComoPiloto(false);
+        setPagoAfac(false);
         // reset(emptyValues) NO limpia estos: a mano, o el siguiente alta
         // hereda el veto a la IA y un reparto armado.
         avionLimpiado.current = false;
@@ -1093,6 +1115,7 @@ export function ExpenseCreateDialog({
           setOpen(o);
           if (!o) {
             setComoPiloto(false);
+            setPagoAfac(false);
             avionLimpiado.current = false;
             setRepartirActivo(false);
             setRepartoSel({});
@@ -1496,6 +1519,8 @@ export function ExpenseCreateDialog({
                     // Comisión del vendedor: la paga la oficina — "simular
                     // como piloto" no aplica (el switch se oculta).
                     if (categoriaExigeVueloSiempre(v)) setComoPiloto(false);
+                    // «Es pago de AFAC» solo existe en Permiso.
+                    if (v !== CATEGORIA_PAGO_AFAC) setPagoAfac(false);
                   }}
                   placeholder="Categoría"
                 />
@@ -1518,17 +1543,26 @@ export function ExpenseCreateDialog({
               </Field>
             </div>
 
-            {/* Las dos comisiones del vendedor (28-sep-2026 y 13-oct-2026):
-                con o sin vuelo prefijado — el cuadro de SU categoría dice
-                quién la paga (VuelaTour o el avión), cuándo usar la otra y
-                la regla «un gasto por vuelo» (la única defensa contra el
-                doble conteo de un pago agregado). */}
-            {ayudaComision && (
-              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                <span className="font-medium">{ayudaComision.titulo}.</span>{" "}
-                {ayudaComision.texto}
-              </p>
-            )}
+            {/* «Es pago de AFAC» (16-oct-2026, API 0.0.89): Permiso + oficina.
+                Comparte el hueco de la ayuda de la comisión (un Fragment): un
+                hijo NUEVO aquí correría los ids de `useId` de los campos de
+                abajo y el alta de siempre dejaría de salir byte a byte. */}
+            <>
+              {pagoAfacVisible && (
+                <CasillaPagoAfac marcado={pagoAfac} onCambio={setPagoAfac} disabled={pending} />
+              )}
+              {/* Las dos comisiones del vendedor (28-sep-2026 y 13-oct-2026):
+                  con o sin vuelo prefijado — el cuadro de SU categoría dice
+                  quién la paga (VuelaTour o el avión), cuándo usar la otra y
+                  la regla «un gasto por vuelo» (la única defensa contra el
+                  doble conteo de un pago agregado). */}
+              {ayudaComision && (
+                <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  <span className="font-medium">{ayudaComision.titulo}.</span>{" "}
+                  {ayudaComision.texto}
+                </p>
+              )}
+            </>
             {/* Comisariato (13-oct-2026): para los PASAJEROS, columna OTROS
                 del balance del avión; la comida de la tripulación es
                 «Comida». Sin candado nuevo: la oficina la puede dejar sin

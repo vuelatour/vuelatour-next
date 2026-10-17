@@ -73,6 +73,8 @@ export const NOMBRE_HOJA_BALANCE_GENERAL: Readonly<Record<HojaBalanceGeneral, st
   otros_gastos: "otros gastos",
   repartidos: "repartidos a aviones",
   inventario: "inventario",
+  // Pago de AFAC (16-oct-2026, API 0.0.89): bloque «AFAC DEL PERIODO».
+  otros_movimientos: "otros movimientos",
 };
 
 /** Espejo de `sheet_title` de pyservices (`tabla_xlsx.py`): ilegales → «-», recorte y máx. 31. */

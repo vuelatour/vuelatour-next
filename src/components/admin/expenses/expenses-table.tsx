@@ -38,6 +38,7 @@ import { CapturadoCompacto } from "@/components/admin/expenses/capturado-linea";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMonto } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { CHIP_PAGO_AFAC, TITULO_CHIP_PAGO_AFAC, esPagoAfac } from "@/lib/admin/pago-afac";
 import { lineaCapturaCompacta } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS, textoPagoCorto } from "@/lib/admin/medios-pago";
 import {
@@ -336,6 +337,19 @@ export function ExpensesTable({
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                 <span className="font-medium">{categoriaGastoLabel(g.categoria)}</span>
                 {g.compra_rol && <CompraRolBadge rol={g.compra_rol} />}
+                {/* «Pago de AFAC» (16-oct-2026, API 0.0.89, invariante 90): lo
+                    paga VuelaTour y no le resta al avión. */}
+                {esPagoAfac(g) && (
+                  <Badge
+                    variant="outline"
+                    className="border-violet-500/50 text-violet-600 dark:text-violet-400"
+                    title={TITULO_CHIP_PAGO_AFAC}
+                    data-pago-afac=""
+                  >
+                    {CHIP_PAGO_AFAC}
+                    <span className="sr-only"> · {TITULO_CHIP_PAGO_AFAC}</span>
+                  </Badge>
+                )}
                 {g.duplicado_sospechado && (
                   <Badge
                     variant="outline"
@@ -481,6 +495,12 @@ export function ExpensesTable({
                   {e.etiqueta}
                   <span className="sr-only"> · {e.titulo}</span>
                 </Badge>
+                {/* PERMISO marcado «Pago de AFAC» (16-oct-2026, invariante 90). */}
+                {e.detalle && (
+                  <span className="block text-[10px] text-muted-foreground" title={e.titulo}>
+                    {e.detalle}
+                  </span>
+                )}
                 {e.referencia && (
                   <span
                     className="block text-[10px] text-muted-foreground"

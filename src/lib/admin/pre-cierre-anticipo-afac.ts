@@ -9,7 +9,10 @@
  *    Trae `monto_mxn` y, solo si hay, `monto_usd` (jamás suma monedas: la
  *    card pinta los dos). «Resolver →» lleva a Gastos con los PERMISOS del
  *    periodo (mismo eje del API: `fecha_gasto`), donde el que no tiene avión
- *    dice «Falta avión».
+ *    dice «Falta avión». Desde el 16-oct-2026 (API 0.0.89, invariante 90) un
+ *    PERMISO marcado «Pago de AFAC» NO cuenta aquí (lo paga VuelaTour: no le
+ *    falta avión) y la tabla de Gastos lo rotula «VuelaTour · pago de AFAC»
+ *    (`lib/admin/pago-afac.ts`); el detalle del API lo explica.
  *  - `cobros_en_cancelados` (informativo; decisión 2: «¿Un anticipo devuelto
  *    lleva CFDI?» ⇒ «eso no»): desde el 0.0.77 el API lista SOLO los
  *    cancelados que el reparto cuenta y marca `diferencia_cambiaria: true`
