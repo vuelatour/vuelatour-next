@@ -241,6 +241,13 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   `lib/admin/entrada-banco.ts` (lo común con la de Gastos, en
   `lib/admin/hoja-banco.ts`). Ver «Cobros: un cobro con varios abonos…» e
   «Ingresos: «Conciliado» abre su conciliación con el banco» al final.
+- AFAC por vuelo (16-oct-2026, API 0.0.89, invariante 90 del API): la celda
+  EDITABLE del costo real en el libro en pantalla sale SOLO de
+  `lib/admin/libro-afac.ts` (vínculo, teclado, qué se guarda, valor
+  optimista, textos) y sus piezas con estado de
+  `components/admin/reportes/libro-afac-edicion.tsx`; la marca «Pago de
+  AFAC» del gasto, SOLO de `lib/admin/pago-afac.ts` (+ `CasillaPagoAfac` y
+  `AfacRealProvider`). Ver «AFAC por vuelo (16-oct-2026, API 0.0.89)» al final.
 - Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
   `fmtPercent`, `fmtInt` y **`fmtTc`** (tipo de cambio: hasta 6 decimales sin
   ceros de cola; ver la sección «Tipo de cambio» más abajo). Un T.C. NUNCA se
@@ -6890,7 +6897,9 @@ Fase 2 (pendiente): editar una celda y que el registro ligado cambie.
   el libro. (Desde el 13-oct-2026 las celdas de costos traen además
   `vinculos`, una LISTA de solo lectura para llegar a la celda de un gasto
   desde Conciliación: ver «Desde Conciliación: el libro abre en la celda del
-  gasto». No es el `vinculo` de edición.)
+  gasto». No es el `vinculo` de edición.) **16-oct-2026: la PRIMERA celda
+  editable es el costo real AFAC por vuelo** (`vinculo` `afac_real`): ver
+  «AFAC por vuelo (16-oct-2026, API 0.0.89)» al final.
 
 ### Vista compacta (12-oct-2026, tarde)
 
@@ -11303,3 +11312,125 @@ ni decide qué vuelo pasa**: copia montos, leyendas (`leyenda`,
   - Pruebas: `app/admin/reportes/__tests__/cierre-actions.test.ts` (cuerpo
     exacto, nada inválido sale a la red, solo el éxito revalida, el
     rechazo conserva code/details/status, skew de la previa).
+
+## AFAC por vuelo (16-oct-2026, API 0.0.89)
+
+Pedido del cliente (URGENTE): «lo del AFAC … debe aparecer en balance general
+en la hoja de Otros movimientos para poder confirmar el monto, estaría bien que
+estuvieran 2 columnas juntas, una que sea lo reservado de afac o cotizado y
+otra de lo que realmente costó y que en esa celda poder poner el monto y se
+registre sin tenerte que ir a otro lado» y, después, «la columna nueva que te
+pedí mejor que sea en la columna de egreso». Decisiones del cliente (16-oct):
+una fila POR VUELO; el costo real es EGRESO DE VUELATOUR (el avión sigue
+pagando lo RESERVADO, su columna PERMISO AFAC (PROVISIÓN)); se escribe SOLO el
+monto del vuelo (no crea gasto); los pagos al gestor se MARCAN «Pago de AFAC» y
+dejan de restarle al avión. Contrato del API: invariante 90 (migración
+`20261016000005`: tabla `afac_vuelo` + `gasto.es_pago_afac`), `PUT` / `DELETE
+/v1/flights/:id/afac-real`, `config.afac_real` en `/v1/me`. pyservices pinta
+cada vuelo como fila NORMAL de «otros movimientos» (RESERVADO en INGRESO,
+COSTO REAL en EGRESO, remanente = ingreso − egreso) y marca la celda EGRESO con
+`vinculo` `afac_real`. **El panel no calcula dinero**: el reservado, el
+remanente, los totales y el bloque VUELATOUR llegan en el libro.
+
+- **Quién captura** (`lib/admin/libro-afac.ts`): `ROLES_AFAC_REAL` = ADMIN,
+  FACTURACION, COORDINADOR (espejo del API; ANALISTA ve el libro sin editar) Y
+  `config.afac_real === true` (la base ya tiene la migración):
+  `puedeEditarAfacReal(me)`. La página del balance lo lee de `getMe()`
+  (cacheado por el layout; si falla, nadie edita) y pasa `edicionAfac` a
+  `LibroExcel`; solo cuenta con `pantalla`. `AdminShell` monta
+  `AfacRealProvider` con el mismo valor para los formularios de gasto.
+- **La celda** (`leerVinculoAfacReal`): vínculo `{tipo:'afac_real',
+  campo:'costo_real_mxn', vuelo_id, clave, matricula, valor, reservado_mxn,
+  editable, motivo, mes, capturado_por, capturado_at}` (tipo
+  `VinculoAfacReal` en `types/libro-excel.ts`); cualquier otra forma ⇒ solo
+  lectura. `prepararHojaAfac` (puro, en un `useMemo` sobre la hoja del libro)
+  pone en cada celda `afac_real` su `edicion` (SOLO del panel: `editable` /
+  `bloqueada` / `guardando` + tooltip) y, si hay un cambio local, el número
+  tecleado con el formato de la celda; sin celdas `afac_real` devuelve la
+  MISMA hoja (marcado byte a byte). Tooltip: «Costo real AFAC de este vuelo
+  (lo paga VuelaTour): doble clic, Enter o empieza a escribir para
+  capturarlo; Supr para quitarlo.»; bloqueada: el `motivo` del API (mes
+  cerrado con `textoMesCerrado`, fila de otro avión, migración pendiente) o
+  «Solo administración, facturación o coordinación captura el costo real.».
+  CSS (`styles/libro-excel.css`): `xl-edicion-editable` (cursor de texto y
+  raya verde abajo), `xl-edicion-guardando` (gris en cursiva),
+  `xl-edicion-bloqueada` (`not-allowed`); ninguna toca el `position`.
+- **Editar** (`libro-excel.tsx` + `libro-afac-edicion.tsx`): doble clic (el
+  2.º clic del `<tbody>` delegado, `e.detail === 2`), Enter o F2 abren el
+  cuadro con el valor («4427.80», todo seleccionado); un dígito o el punto lo
+  abren REEMPLAZANDO; Supr/Retroceso sobre una celda con valor piden quitar.
+  El cuadro (`EditorCeldaAfac`, `.xl-editor-afac`) es un `<input>` HIJO
+  ABSOLUTO del marco (`.xl-marco` ganó `position: relative`) con el
+  rectángulo REAL del `<td>` medido en el manejador (`cajaEditorAfac`: el alto
+  de fila del libro es nominal), z-index 1 (por debajo de lo inmovilizado);
+  así las filas memo NO cambian de props. Ninguna tecla sube al marco
+  (`stopPropagation`); Enter guarda y baja (Mayús+Enter sube), Tab guarda y
+  avanza, Esc cancela; salir con clic guarda; cambiar de ventana NO (el
+  cuadro sigue abierto). La barra de fórmulas enseña lo que se teclea.
+  `decidirGuardadoAfac`: lo mismo ⇒ nada; vacío sobre un valor ⇒
+  «¿Quitar el costo real AFAC?» («… de #236 · Ambulancia Internacional? El
+  vuelo vuelve a «sin capturar» y deja de contar como egreso de VuelaTour. Hoy
+  tiene $4,500.00.», regla del cliente: lo destructivo confirma) ⇒ `DELETE`;
+  un monto ⇒ `PUT`; lo ilegible ⇒ «Escribe el monto en pesos, por ejemplo
+  4427.80» (negativo: «… Escribe 0 si AFAC no cobró.»; 0 es válido y distinto
+  de vacío). Se acepta «4,427.80», «4427.8», «$4,427.80», «4427.80 MXN»; NO
+  «4427,80».
+- **Guardar** (`app/admin/reportes/actions.ts`: `guardarCostoRealAfacAction`
+  manda EXACTO `{costo_real_mxn}` —las notas no viajan: el API las conserva— y
+  `quitarCostoRealAfacAction` el DELETE; validan antes de la red y **NO
+  revalidan**: decisión D10, el general tarda decenas de segundos). La celda
+  enseña lo tecleado en gris («guardando», no editable) y, con el OK, normal +
+  toast «Costo real AFAC guardado · #236» y, a la derecha de la barra de
+  fórmulas, «1 cambio guardado · los totales se actualizan en unos segundos»
+  (`EstadoAfacBarra`; también «Guardando…», cómo terminar y el último error,
+  porque a pantalla completa los toasts NO se ven). `RefrescoDiferidoAfac`:
+  UN `router.refresh()` 15 s después del ÚLTIMO guardado (cada guardado lo
+  reprograma; desmontar lo cancela) + «Actualizar datos» de siempre. Los
+  cambios locales se descartan al llegar un libro que ya los trae
+  (`depurarCambiosAfac`, ajuste de estado en el render, sin efecto): mismo
+  monto, el vuelo ya sin celda editable, o un libro generado más de un minuto
+  después del guardado (manda el servidor). Un rechazo devuelve la celda a lo
+  de antes: 409 `MES_CERRADO` con su texto y «Ir a Reportes»
+  (`toastMesCerradoSiAplica`), 400/503 del API tal cual, 403 «Solo
+  administración…», 404 «Cannot PUT» ⇒ «necesita la actualización del
+  servidor», sin respuesta ⇒ «Pulsa «Actualizar datos» para ver si se guardó…»
+  y el libro se vuelve a leer (el PUT es idempotente). La confirmación se monta
+  DENTRO del libro a pantalla completa (`AlertDialogContent` ganó la prop
+  ADITIVA `portalContainer`).
+- **«Es pago de AFAC» en Gastos** (`lib/admin/pago-afac.ts`): casilla
+  `CasillaPagoAfac` «Es pago de AFAC (lo paga VuelaTour; no le resta al
+  avión)» + «Márcalo en los pagos al gestor de AFAC. El costo de cada vuelo se
+  captura en el Balance general (otros movimientos).» SOLO en Permiso y para
+  quien puede marcar (`usePuedeMarcarPagoAfac`); en «Verificar / editar»,
+  además, solo si el gasto trae la llave `es_pago_afac` (`apiConPagoAfac`).
+  Cambiar la categoría la desmarca. Alta: viaja SOLO `true` y visible
+  (`pagoAfacParaAlta`); PATCH: SOLO visible y si cambió contra la BASE de la
+  sesión (`pagoAfacParaPatch`); marcado y reclasificado fuera de Permiso ⇒
+  aviso «Al guardar se quitará la marca…» (el trigger del API la quita). En
+  los dos diálogos la casilla comparte un Fragment con la ayuda de la comisión:
+  un hijo NUEVO corre los ids de `useId` de los campos de abajo y el golden
+  del alta (`alta-gasto.golden.json`) dejaba de salir byte a byte. Tabla de
+  Gastos: chip «AFAC» junto a la categoría y, en «Avión · vuelo», «VuelaTour»
+  + «pago de AFAC» (+ «ref. XA-VGV»; `estadoAvionGasto` regla 3b, texto plano
+  «VuelaTour · pago de AFAC», paridad con `ETIQUETA_AVION_PAGO_AFAC` del API;
+  también en Caja chica). Historial: «Pago de AFAC: No → Sí». Conciliación:
+  `hoja_general` `otros_movimientos` ⇒ pestaña «otros movimientos».
+- **Skew**: panel nuevo + API 0.0.88 (o sin la migración) ⇒ sin `vinculo`
+  `afac_real` y sin `config.afac_real`: nada editable, sin casilla, nada se
+  manda (libro byte a byte). Panel viejo + API 0.0.89 ⇒ el libro nuevo en
+  solo lectura y sin casilla. Orden: migración ⇒ pyservices ⇒ API ⇒ panel.
+- **Pruebas**: `lib/admin/__tests__/libro-afac.test.ts`,
+  `lib/admin/__tests__/pago-afac.test.ts`, `gasto-avion.test.ts` (regla 3b),
+  `conciliacion-balance.test.ts` (pestaña), `app/admin/reportes/__tests__/
+  afac-real-actions.test.ts` (cuerpo exacto, sin revalidar, 409 con
+  code/details/status), `components/admin/reportes/__tests__/
+  libro-afac-ui.test.tsx` (marcado editable/bloqueada/sin rol, skew byte a
+  byte, cableado) y `components/admin/expenses/__tests__/pago-afac-ui.test.tsx`
+  (alta, verificar, tabla, historial, qué viaja). `libro-excel.test.tsx` gana
+  el mock de las actions (sin servidor).
+- **Pendientes**: sin QA en navegador (vitest sin DOM): doble clic, Enter/Tab
+  y el cuadro encima de la celda con zoom y a pantalla completa; las notas
+  del costo real no se capturan en pantalla (el API las acepta); un vuelo sin
+  reservado no tiene celda (contrato §8). Avisar al cliente: capturar los
+  costos reales de septiembre ANTES de cerrarlo (cerrado, la celda queda
+  bloqueada hasta reabrir).
