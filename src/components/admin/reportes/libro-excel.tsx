@@ -239,6 +239,7 @@ const TramoFila = memo(
           data-ref={referenciaCelda(cv.r, cv.c)}
           data-formula={cv.celda?.f}
           data-edicion={cv.celda?.edicion?.estado}
+          data-recalculada={cv.celda?.recalculada ? "" : undefined}
         >
           {cv.altoRecortePx === null ? (
             texto

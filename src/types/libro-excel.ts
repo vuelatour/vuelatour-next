@@ -60,6 +60,13 @@ export interface LibroExcelCelda {
    *  `afac_real` (si se puede capturar ahí, por qué no, o «guardando»).
    *  pyservices y el API JAMÁS lo mandan. */
   edicion?: EdicionCeldaLibro;
+  /** SOLO DEL PANEL (16-oct-2026, AFAC por vuelo): la celda se RECALCULÓ en
+   *  pantalla con su propia fórmula porque cambió una celda de la que depende
+   *  (el costo real tecleado): `lib/admin/libro-recalculo.ts`. `negativo`
+   *  decide el rojo de los negativos (el formato condicional del libro llega
+   *  ya resuelto en el estilo). El libro nuevo del servidor la reemplaza.
+   *  pyservices y el API JAMÁS lo mandan. */
+  recalculada?: { negativo: boolean };
 }
 
 /** Estado de edición de una celda del libro en pantalla (solo del panel). */

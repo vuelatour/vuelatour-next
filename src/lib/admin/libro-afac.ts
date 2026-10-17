@@ -16,15 +16,20 @@
  *  - leer lo tecleado (`parsearMontoAfac`) y qué hacer con ello
  *    (`decidirGuardadoAfac`: nada, guardar, quitar —con confirmación— o error);
  *  - el valor «optimista» que se enseña tras guardar (`prepararHojaAfac`:
- *    SOLO el número tecleado con el formato de la celda; REMANENTE y TOTALES
- *    no se tocan: los recalcula el servidor) y cuándo se descarta
+ *    el número tecleado con el formato de la celda, el concepto de su fila
+ *    y, como en Excel, las fórmulas visibles de la hoja que dependen de esa
+ *    celda —remanente, TOTALES, «AFAC DEL PERIODO»— recalculadas con
+ *    `lib/admin/libro-recalculo.ts`) y cuándo se descarta
  *    (`depurarCambiosAfac`);
  *  - los textos (tooltips, barra, toasts, confirmación, errores).
  *
- * El panel NO calcula dinero: el reservado, el remanente y los totales llegan
- * en el libro. Tras guardar se pide UN refresco del libro 15 s después del
- * último guardado (`RETRASO_REFRESCO_AFAC_MS`, decisión D10 del contrato: el
- * general tarda decenas de segundos y 75 celdas = 75 regeneraciones).
+ * El panel NO decide dinero: el reservado y cada número del libro llegan del
+ * servidor; lo único que hace al teclear es evaluar las fórmulas que el libro
+ * ya trae (16-oct-2026: «falta que el remanente se ajuste…»). Tras guardar se
+ * pide UN refresco del libro 15 s después del último guardado
+ * (`RETRASO_REFRESCO_AFAC_MS`, decisión D10 del contrato: el general tarda
+ * decenas de segundos y 75 celdas = 75 regeneraciones) y ese libro reemplaza
+ * lo recalculado (incluido el bloque VUELATOUR de 'balance', otra hoja).
  */
 import { fmtDecimal } from "@/lib/format";
 import { esUuid } from "@/lib/admin/url-params";
@@ -40,6 +45,7 @@ import type {
   VinculoAfacReal,
 } from "@/types/libro-excel";
 import type { Rol } from "@/types/me";
+import { llaveCelda, recalcularDependientes } from "@/lib/admin/libro-recalculo";
 
 // =============================================================================
 // Quién captura
@@ -336,20 +342,48 @@ export function tituloEdicionAfac(
   return opciones.puedeEditar ? TITULO_CELDA_AFAC_EDITABLE : TITULO_CELDA_AFAC_SIN_ROL;
 }
 
+/** Concepto del EGRESO de una fila AFAC por capturar: COPIA EXACTA de
+ *  `CONCEPTO_AFAC_REAL_POR_CAPTURAR` del API (`common/afac-real.util.ts`). */
+export const CONCEPTO_AFAC_REAL_POR_CAPTURAR = "AFAC costo real · por capturar";
+/** El concepto de la fila mientras el PUT/DELETE no contesta. */
+export const CONCEPTO_AFAC_REAL_GUARDANDO = "AFAC costo real · guardando…";
+/** El concepto de la fila con el monto ya guardado y el libro nuevo en camino
+ *  (el servidor lo reemplaza por «AFAC costo real · capturó Ale el 16/10/2026»). */
+export const CONCEPTO_AFAC_REAL_CAPTURADO_AHORA = "AFAC costo real · capturado ahora";
+/** Cómo empieza el concepto del egreso de una fila AFAC (lo arma el API). */
+const PREFIJO_CONCEPTO_AFAC_REAL = "AFAC costo real ·";
+
+/** El concepto que enseña la fila con un cambio local (ver arriba). */
+export function conceptoAfacLocal(cambio: Pick<CambioAfacLocal, "valor" | "estado">): string {
+  if (cambio.estado === "guardando") return CONCEPTO_AFAC_REAL_GUARDANDO;
+  return cambio.valor === null ? CONCEPTO_AFAC_REAL_POR_CAPTURAR : CONCEPTO_AFAC_REAL_CAPTURADO_AHORA;
+}
+
 /**
  * La hoja tal como se PINTA: cada celda `afac_real` gana su `edicion`
  * (editable / bloqueada / guardando + tooltip) y, si hay un cambio local de
  * ese vuelo, el número tecleado (`v`, `t` con el formato de la celda y
  * `vinculo.valor`). Solo la celda EDITABLE de un vuelo recibe el cambio (en
- * un vuelo de varios aviones las demás filas no llevan el real). Nada más se
- * toca: el REMANENTE y los TOTALES esperan al libro nuevo. Sin celdas
- * `afac_real` devuelve la MISMA hoja (el marcado de siempre, byte a byte).
+ * un vuelo de varios aviones las demás filas no llevan el real).
+ *
+ * Con un cambio local la hoja además se ve COMO EN EXCEL al escribir en una
+ * celda (pedido del 16-oct-2026: «falta que el remanente se ajuste cuando se
+ * agregue el costo real del egreso»): el concepto del egreso de esa fila
+ * (`conceptoAfacLocal`, solo si es el «AFAC costo real · …» del API, a su
+ * izquierda) y las FÓRMULAS VISIBLES de la hoja que dependen de la celda
+ * —remanente de la fila, TOTALES, bloque «AFAC DEL PERIODO»— se recalculan
+ * con `recalcularDependientes` (`lib/admin/libro-recalculo.ts`). El libro
+ * nuevo del servidor reemplaza todo al llegar. Sin celdas `afac_real`
+ * devuelve la MISMA hoja (el marcado de siempre, byte a byte).
  */
 export function prepararHojaAfac(
   hoja: LibroExcelHoja,
   opciones: { cambios: CambiosAfac; puedeEditar: boolean; estilos: readonly LibroExcelEstilo[] },
 ): LibroExcelHoja {
   let toco = false;
+  const cambiadas = new Set<string>();
+  /** Fila ⇒ columna de la celda AFAC con cambio local y el concepto que lleva. */
+  const conceptos = new Map<number, { c: number; texto: string }>();
   const celdas = hoja.celdas.map((celda) => {
     const v = leerVinculoAfacReal(celda);
     if (!v) return celda;
@@ -371,9 +405,38 @@ export function prepararHojaAfac(
     };
     // Lo tecleado reemplaza a lo que hubiera (como en Excel): sin fórmula.
     delete conValor.f;
+    if (!mismoMontoAfac(typeof celda.v === "number" ? celda.v : null, cambio.valor)) {
+      cambiadas.add(llaveCelda(celda.r, celda.c));
+    }
+    conceptos.set(celda.r, { c: celda.c, texto: conceptoAfacLocal(cambio) });
     return conValor;
   });
-  return toco ? { ...hoja, celdas } : hoja;
+  if (!toco) return hoja;
+  const conConcepto = conceptos.size ? conConceptoAfacLocal(celdas, conceptos) : celdas;
+  return { ...hoja, celdas: recalcularDependientes(conConcepto, cambiadas, opciones.estilos) };
+}
+
+/** El concepto del egreso de las filas con cambio local: la celda de texto
+ *  «AFAC costo real · …» más cercana a la IZQUIERDA de la celda tecleada, en
+ *  su misma fila. Cualquier otra celda se queda como vino. */
+function conConceptoAfacLocal(
+  celdas: LibroExcelCelda[],
+  conceptos: ReadonlyMap<number, { c: number; texto: string }>,
+): LibroExcelCelda[] {
+  const destino = new Map<number, number>();
+  for (const celda of celdas) {
+    const x = conceptos.get(celda.r);
+    if (!x || celda.c >= x.c) continue;
+    if (typeof celda.v !== "string" || !celda.v.startsWith(PREFIJO_CONCEPTO_AFAC_REAL)) continue;
+    destino.set(celda.r, Math.max(destino.get(celda.r) ?? 0, celda.c));
+  }
+  if (destino.size === 0) return celdas;
+  return celdas.map((celda) => {
+    if (destino.get(celda.r) !== celda.c) return celda;
+    const texto = conceptos.get(celda.r)?.texto;
+    if (!texto || celda.v === texto) return celda;
+    return { ...celda, v: texto, t: texto };
+  });
 }
 
 /**
@@ -456,7 +519,7 @@ export const TEXTO_BARRA_AFAC_EDITANDO = "Enter guarda · Esc cancela";
 export const TEXTO_BARRA_AFAC_AYUDA = "Costo real AFAC: doble clic o Enter para capturarlo";
 
 export function textoCambiosGuardadosAfac(n: number): string {
-  return `${n === 1 ? "1 cambio guardado" : `${n} cambios guardados`} · los totales se actualizan en unos segundos`;
+  return `${n === 1 ? "1 cambio guardado" : `${n} cambios guardados`} · el resto del libro se actualiza en unos segundos`;
 }
 
 /**

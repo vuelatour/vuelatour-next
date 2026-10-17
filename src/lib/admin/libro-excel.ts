@@ -20,6 +20,7 @@ import type {
   LibroExcelHoja,
 } from "@/types/libro-excel";
 import { desplazamientoParaVer } from "./desplazamiento-visible";
+import { FONDO_NEGATIVO, TEXTO_NEGATIVO, TITULO_CELDA_RECALCULADA } from "./libro-recalculo";
 
 /** Ancho de columna de Excel (caracteres de Calibri 11) → px: 7 px por carácter + 5 de margen. 8.43 ⇒ 64 px, como Excel. */
 export const PX_POR_CARACTER = 7;
@@ -354,7 +355,7 @@ export function estiloCeldaCss(
     whiteSpace: estilo?.wr ? "pre-wrap" : "pre",
     overflow: opts.desborda ? "visible" : "hidden",
   };
-  if (!estilo) return css;
+  if (!estilo) return conNegativoRecalculado(css, celda, null);
   if (estilo.bg) css.backgroundColor = `#${estilo.bg}`;
   if (estilo.co) css.color = `#${estilo.co}`;
   if (estilo.b) css.fontWeight = 700;
@@ -370,6 +371,27 @@ export function estiloCeldaCss(
     if (estilo.bd.includes("t")) css.borderTop = BORDE_CELDA;
     if (estilo.bd.includes("b")) css.borderBottom = BORDE_CELDA;
   }
+  return conNegativoRecalculado(css, celda, estilo);
+}
+
+/** Rojo de los negativos en una celda recalculada en pantalla
+ *  (`recalculada`, AFAC por vuelo 16-oct-2026): el formato condicional del
+ *  libro («Relleno rojo claro con texto rojo oscuro») llega YA resuelto en el
+ *  estilo con el número de antes, así que se pone si el número nuevo es
+ *  negativo y se quita si dejó de serlo. Sin la marca, el CSS de siempre. */
+function conNegativoRecalculado(
+  css: CSSProperties,
+  celda: LibroExcelCelda | null,
+  estilo: LibroExcelEstilo | null,
+): CSSProperties {
+  if (!celda?.recalculada) return css;
+  if (celda.recalculada.negativo) {
+    css.backgroundColor = `#${FONDO_NEGATIVO}`;
+    css.color = `#${TEXTO_NEGATIVO}`;
+    return css;
+  }
+  if (estilo?.bg?.toUpperCase() === FONDO_NEGATIVO) delete css.backgroundColor;
+  if (estilo?.co?.toUpperCase() === TEXTO_NEGATIVO) delete css.color;
   return css;
 }
 
@@ -402,10 +424,16 @@ export function contenidoBarraFormulas(celda: LibroExcelCelda | null | undefined
 
 /** Tooltip de la celda: la nota (como en Excel), debajo la fórmula y, en
  *  una celda editable del panel (AFAC por vuelo, 16-oct-2026), cómo
- *  capturarla o por qué no se puede (`edicion`, `lib/admin/libro-afac.ts`). */
+ *  capturarla o por qué no se puede (`edicion`, `lib/admin/libro-afac.ts`);
+ *  en una celda recalculada en pantalla, que el servidor la confirma. */
 export function tituloCelda(celda: LibroExcelCelda | null | undefined): string | undefined {
   if (!celda) return undefined;
-  const partes = [celda.n, celda.f, celda.edicion?.titulo].filter((x): x is string => Boolean(x));
+  const partes = [
+    celda.n,
+    celda.f,
+    celda.edicion?.titulo,
+    celda.recalculada ? TITULO_CELDA_RECALCULADA : undefined,
+  ].filter((x): x is string => Boolean(x));
   return partes.length ? partes.join("\n") : undefined;
 }
 

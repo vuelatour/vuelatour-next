@@ -295,7 +295,7 @@ describe("teclado y texto inicial del cuadro (como en Excel)", () => {
   });
 });
 
-describe("prepararHojaAfac: la hoja que se PINTA (estado de edición y lo tecleado; nada más)", () => {
+describe("prepararHojaAfac: la hoja que se PINTA (estado de edición y lo tecleado)", () => {
   it("sin celdas `afac_real` devuelve la MISMA hoja (marcado byte a byte)", () => {
     const h = hoja([{ r: 1, c: 1, v: "x", t: "x" }]);
     expect(prepararHojaAfac(h, { cambios: SIN_CAMBIOS_AFAC, puedeEditar: true, estilos: [] })).toBe(h);
@@ -492,14 +492,14 @@ describe("textos EXACTOS (barra, toasts, confirmación)", () => {
     });
     expect(estadoBarraAfac({ cambios: guardado, error: null, editando: false, celdaEditable: true })).toEqual({
       tono: "guardado",
-      texto: "1 cambio guardado · los totales se actualizan en unos segundos",
+      texto: "1 cambio guardado · el resto del libro se actualiza en unos segundos",
     });
     expect(estadoBarraAfac({ cambios: SIN_CAMBIOS_AFAC, error: null, editando: false, celdaEditable: true })).toEqual({
       tono: "ayuda",
       texto: TEXTO_BARRA_AFAC_AYUDA,
     });
     expect(estadoBarraAfac({ cambios: SIN_CAMBIOS_AFAC, error: null, editando: false, celdaEditable: false })).toBeNull();
-    expect(textoCambiosGuardadosAfac(3)).toBe("3 cambios guardados · los totales se actualizan en unos segundos");
+    expect(textoCambiosGuardadosAfac(3)).toBe("3 cambios guardados · el resto del libro se actualiza en unos segundos");
   });
 
   it("la barra dice POR QUÉ no se captura la celda AFAC seleccionada (revisión 16-oct-2026: el doble clic no hacía nada)", () => {

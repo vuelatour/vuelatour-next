@@ -368,8 +368,17 @@ describe("paridad del contrato `vinculos` con pyservices y el API (repos hermano
     "API: LibroVistaVinculo / LibroVistaCelda / LibroVista = las copias del panel (se omite hasta el punto 5 del API)",
     () => {
       expect(llavesDeInterfaz(tiposApi!, "LibroVistaVinculo")).toEqual(llavesDeInterfaz(TIPOS_PANEL, "LibroExcelVinculo"));
-      expect(llavesDeInterfaz(tiposApi!, "LibroVistaCelda")).toEqual(llavesDeInterfaz(TIPOS_PANEL, "LibroExcelCelda"));
-      expect(llavesDeInterfaz(tiposApi!, "LibroVista")).toEqual(llavesDeInterfaz(TIPOS_PANEL, "LibroExcel"));
+      // `edicion` y `recalculada` son SOLO del panel (AFAC por vuelo,
+      // 16-oct-2026): el API y pyservices jamás los mandan.
+      const soloPanel = new Set(["edicion", "recalculada"]);
+      expect(llavesDeInterfaz(tiposApi!, "LibroVistaCelda")).toEqual(
+        llavesDeInterfaz(TIPOS_PANEL, "LibroExcelCelda").filter((k) => !soloPanel.has(k)),
+      );
+      // `cierre` (cierre de mes, API 0.0.88) lo copia pyservices a la raíz del
+      // libro y el API lo TRANSPORTA sin declararlo en `LibroVista`.
+      expect(llavesDeInterfaz(tiposApi!, "LibroVista")).toEqual(
+        llavesDeInterfaz(TIPOS_PANEL, "LibroExcel").filter((k) => k !== "cierre"),
+      );
       for (const rol of ROLES) expect(tiposApi).toContain(`'${rol}'`);
     },
   );

@@ -11381,9 +11381,31 @@ remanente, los totales y el bloque VUELATOUR llegan en el libro.
   revalidan**: decisión D10, el general tarda decenas de segundos). La celda
   enseña lo tecleado en gris («guardando», no editable) y, con el OK, normal +
   toast «Costo real AFAC guardado · #236» y, a la derecha de la barra de
-  fórmulas, «1 cambio guardado · los totales se actualizan en unos segundos»
-  (`EstadoAfacBarra`; también «Guardando…», cómo terminar y el último error,
-  porque a pantalla completa los toasts NO se ven). `RefrescoDiferidoAfac`:
+  fórmulas, «1 cambio guardado · el resto del libro se actualiza en unos
+  segundos» (`EstadoAfacBarra`; también «Guardando…», cómo terminar y el
+  último error, porque a pantalla completa los toasts NO se ven).
+  **Recálculo en pantalla, como Excel** (pedido del cliente el mismo día:
+  «falta que el remanente se ajuste cuando se agregue el costo real del
+  egreso, no?»; el #364 enseñaba $3,000.00 de costo real y el remanente
+  todavía en $3,619.98): con el número tecleado, `prepararHojaAfac` cambia el
+  concepto de esa fila («AFAC costo real · guardando…» / «· capturado ahora»
+  / «· por capturar», `conceptoAfacLocal`; solo si la celda de su izquierda
+  es el «AFAC costo real · …» del API) y RECALCULA las fórmulas visibles de
+  la MISMA hoja que dependen de la celda —remanente `=ROUND(G21-D21,2)`,
+  TOTALES y el bloque «AFAC DEL PERIODO»— con `lib/admin/libro-recalculo.ts`
+  (PURO: solo `ROUND`, `SUM`, + − × ÷ y referencias de la misma hoja; ROUND
+  medio-hacia-afuera a 15 cifras como Excel; texto con el `formatear` de
+  pyservices para `#,##0.00` / `"$"#,##0.00`). No es regla de negocio:
+  pyservices solo deja viva una fórmula que reproduce al API, así que
+  evaluarla da lo que el servidor va a mandar. Lo que no sabe evaluar (otra
+  hoja, otra función, otro formato) se queda como vino y lo que depende de
+  ello también (nunca un número nuevo junto a uno viejo); el bloque
+  VUELATOUR de 'balance' (otra hoja) espera al libro nuevo. La celda
+  recalculada lleva la marca SOLO del panel `recalculada {negativo}`
+  (`data-recalculada`, tooltip `TITULO_CELDA_RECALCULADA`) y
+  `estiloCeldaCss` le pone o le quita el rojo de los negativos (el formato
+  condicional del libro llega ya resuelto con el número de antes). Pruebas:
+  `lib/admin/__tests__/libro-recalculo.test.ts`. `RefrescoDiferidoAfac`:
   UN `router.refresh()` 15 s después del ÚLTIMO guardado (cada guardado lo
   reprograma; desmontar lo cancela) + «Actualizar datos» de siempre. Los
   cambios locales se descartan al llegar un libro que ya los trae

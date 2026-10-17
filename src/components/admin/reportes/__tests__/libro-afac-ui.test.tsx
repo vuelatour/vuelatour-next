@@ -134,7 +134,7 @@ describe("marcado: qué celda se captura (render estático)", () => {
     expect(d5).toContain(`title="${esc(TITULO_CELDA_AFAC_EDITABLE)}"`);
     expect(td(html, "G5")).not.toContain("data-edicion");
     expect(td(html, "G5")).not.toContain("xl-edicion");
-    // El remanente sigue siendo lo que manda el libro (el panel no calcula).
+    // Sin cambios locales el remanente es el que manda el libro.
     expect(td(html, "I5")).toContain(">4,427.80</td>");
   });
 
@@ -187,6 +187,11 @@ describe("cableado del libro (lectura del fuente)", () => {
     );
     expect(src).toContain("const puedeEditarAfac = pantalla && edicionAfac;");
     expect(src).toMatch(/^ {2}edicionAfac = false,$/m);
+  });
+
+  it("una celda recalculada en pantalla (remanente, TOTALES) se marca en el <td> y su estilo sale de `estiloCeldaCss`", () => {
+    expect(src).toContain('data-recalculada={cv.celda?.recalculada ? "" : undefined}');
+    expect(src).toContain("...estiloCeldaCss(cv.celda, cv.estilo, { desborda: cv.desborda }),");
   });
 
   it("doble clic (2.º clic del delegado), Enter/F2/un dígito y Supr abren o piden quitar SOLO en una celda «editable»", () => {
