@@ -4553,7 +4553,9 @@ PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
   los flujos confusos se corrigen — justo esa pista engañó al cliente). Orden:
   PERSONAL_DUENO → **COMISION_VENDEDOR** («Balance general VuelaTour · Otros
   movimientos (el pago al vendedor, apareado con la comisión cobrada; sin él
-  esa fila no lleva egreso)») → **empresa**
+  esa fila no lleva egreso)») → **NOMINA** (desde el 16-oct-2026, API
+  0.0.90: `HOJA_NOMINA_SIN_REPARTIR`, «Nómina (módulo Nómina): no entra a
+  ningún balance hasta repartirla entre aviones desde Nómina») → **empresa**
   (`CATEGORIAS_EMPRESA` = OTRO/NOMINA/GASOLINA/FIJO/VISITA, sincronizada con
   `CATEGORIAS_GASTO_EMPRESA` del API y congelada en el test contra
   `DESTINO_POR_DEFECTO`: con vuelo «… · Otros gastos (el vuelo queda solo como
@@ -4565,9 +4567,10 @@ PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
   es referencia)», **PERMISO** «Balance del avión · Permisos», lo demás «hoja
   del vuelo» → sin avión → GAS/PERMISO con avión → Gastos Indirectos. Antes
   todo gasto con vuelo decía «hoja del vuelo» aunque desde el 11-sep las de
-  empresa van SIEMPRE a «otros gastos». (El cuadro de NÓMINA del alta ya dice
-  lo mismo desde el 15-oct-2026: `AYUDA_ALTA_NOMINA` en `lib/admin/nomina.ts`,
-  ver «Nómina: un espacio propio».)
+  empresa van SIEMPRE a «otros gastos». (La NÓMINA ya no: desde el
+  16-oct-2026 sin reparto no entra a ningún balance; su cuadro del alta es
+  `AYUDA_ALTA_NOMINA` en `lib/admin/nomina.ts`, ver «Nómina: fuera de Gastos y
+  reparto en partes iguales».)
 - **Pruebas**: `lib/admin/__tests__/categorias-gasto.test.ts` (tabla
   canónica == API, orden en el selector, no repartible, vuelo obligatorio y su
   mensaje, ventanas, `iaPuedeCambiarCategoria`, ayuda, `hojaDestinoGasto` por
@@ -9320,8 +9323,10 @@ DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
   que `CATEGORIAS_GASTO_SIN_AVION` de `common/categoria-gasto.util.ts`; la
   prueba de paridad lee el repo del API). `estadoAvionGasto`: reparto ⇒
   «Repartido:» + insignias (remanente en centavos ⇒ «VuelaTour»);
-  PERSONAL_DUENO ⇒ «Personal»; empresa o comisión (VuelaTour) ⇒ «VuelaTour»
-  SIEMPRE (con «ref. N4142R» si trae avión sellado: no se le carga); con avión
+  PERSONAL_DUENO ⇒ «Personal»; NOMINA sin reparto ⇒ «Sin repartir» (regla 2b,
+  16-oct-2026; con «ref. N4142R» si trae avión); empresa o comisión
+  (VuelaTour) ⇒ «VuelaTour» SIEMPRE (con «ref. N4142R» si trae avión
+  sellado: no se le carga); con avión
   ⇒ la matrícula; INDIRECTO sin avión ⇒ «VuelaTour»; lo demás ⇒ «Falta
   avión» (title y sr-only dicen qué hacer). Así el ámbar de la tabla suma lo
   mismo que la pestaña «Pendientes». El vuelo va debajo («Vuelo #437»).
@@ -9361,11 +9366,15 @@ DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
   (256 px desde `lg`) y `container-type` haría de la tabla el contenedor de
   los `position: fixed` descendientes: el visor de `ImagePreview` (`fixed
   inset-0`, sin portal) quedaría atrapado dentro de la tabla.
-- **Filtro de SERVIDOR «Categoría»** (`?categoria=`, las 22 de
-  `CATEGORIAS_FILTRO_GASTO` con su destino en verde; desconocida o en
-  minúsculas se ignora): lo heredan los contadores de las pestañas, el Excel
-  y `FILTROS_URL` (al final). Gastos personales enlaza
-  `/admin/expenses?categoria=PERSONAL_DUENO`.
+- **Filtro de SERVIDOR «Categoría»** (`?categoria=`, las 21 de
+  `CATEGORIAS_FILTRO_GASTOS_VISTA` —las 22 de `CATEGORIAS_FILTRO_GASTO` sin
+  «Nómina», desde el 16-oct-2026— con su destino en verde; desconocida o en
+  minúsculas se ignora; `?categoria=NOMINA` también se ignora y pinta la
+  franja «La nómina se lleva en su propio módulo»): lo heredan los contadores
+  de las pestañas, el Excel y `FILTROS_URL` (al final). Gastos personales
+  enlaza `/admin/expenses?categoria=PERSONAL_DUENO`. La lista, los contadores
+  y el Excel mandan SIEMPRE `excluir_categoria=NOMINA` (ver «Nómina: fuera de
+  Gastos y reparto en partes iguales»).
 - **Barra** (`expenses-filter-bar.tsx`, reescrita): `<Label htmlFor>` +
   `id` en cada control, «Todos/Todas» para quitar un filtro suelto, «Avión»
   (activos, dados de baja, «Avión desconocido»), «Fecha del gasto» y «Fecha
@@ -10149,15 +10158,14 @@ sin vuelo, avión ni proveedor: sueldos quincenales del personal y de los
 pilotos (la persona va en las NOTAS), una cuota IMSS/INFONAVIT y la asesoría
 de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
 
-- **Las reglas del dinero NO cambian (son del API, invariante 10 y
-  «Pendientes» de su CLAUDE.md)**: «Nómina» (`NOMINA`) es categoría de
-  EMPRESA (`CATEGORIAS_GASTO_EMPRESA` = OTRO, NOMINA, GASOLINA, FIJO,
-  VISITA): va a la hoja «otros gastos» del Balance general VuelaTour aunque
-  traiga avión o vuelo; no resta en ningún avión ni en el reparto salvo que
-  se REPARTA a mano (`gasto_reparto`, desde «Verificar / editar» o desde
-  «Otros gastos»); no pide avión (no es pendiente de la bandeja: la columna
-  «Avión · vuelo» dice «VuelaTour»). La fecha del gasto es la del PAGO
-  (decisión del 13-oct-2026).
+- **Las reglas del dinero son del API** (SUPERSEDIDO en parte el
+  16-oct-2026, invariante 91 del API — ver «Nómina: fuera de Gastos y
+  reparto en partes iguales» justo abajo): «Nómina» (`NOMINA`) sigue en
+  `CATEGORIAS_GASTO_EMPRESA` pero SIN reparto ya no va a la hoja «otros
+  gastos» del Balance general ni a ningún libro: solo REPARTIDA entra al
+  balance de cada avión y a su reparto; no pide avión (no es pendiente de la
+  bandeja: la columna «Avión · vuelo» dice «Sin repartir»). La fecha del
+  gasto es la del PAGO (decisión del 13-oct-2026).
 - **Menú** (`lib/admin/nav-items.ts`): «Nómina» (`/admin/nomina`,
   `UserGroupIcon`) JUSTO después de «Otros gastos» y antes de «Gastos
   personales», con los MISMOS roles de «Gastos» y «Otros gastos» (ADMIN,
@@ -10182,8 +10190,9 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   quincena · 1–15 oct» / «2ª quincena · 16–31 oct»); el dinero
   (`centavosDeMonto`, `resumenNomina`, `montoNomina` con `fmtMonto`,
   `etiquetaMedioNomina` con `medios-pago`); enlaces y Excel
-  (`hrefGastosNomina`, `hrefMesNomina`, `queryExcelNomina`,
-  `nombreExcelNomina` = «nomina-2026-10.xlsx») y TODOS los textos de la
+  (`hrefMesNomina`, `queryExcelNomina`, `nombreExcelNomina` =
+  «nomina-2026-10.xlsx»; `hrefGastosNomina` se retiró el 16-oct-2026) y
+  TODOS los textos de la
   pantalla. Ningún componente los redacta.
 - **El panel solo SUMA lo ya registrado**: `resumenNomina` suma en
   CENTAVOS enteros (el texto de PostgREST se lee dígito a dígito: 0.1 + 0.2
@@ -10218,8 +10227,8 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
     título y la ayuda de captura en `contexto` (se pinta también sin el modo
     controlado); «Exportar Excel» = el Excel de Gastos
     (`/v1/expenses/export`) con `queryExcelNomina(mes)` y el `title` de
-    `tituloExcelGastos(rol)`; «Ver en Gastos» (`hrefGastosNomina`: la
-    categoría y las fechas del mes, que Gastos lee con `leerFiltrosGastos`).
+    `tituloExcelGastos(rol)`. «Ver en Gastos» SE RETIRÓ el 16-oct-2026 (la
+    nómina ya no sale en Gastos); en su lugar «Repartir entre aviones».
   - **Periodo** (`components/admin/nomina/nomina-nav-meses.tsx`, de
     CLIENTE): el selector de MES de Gastos personales
     (`GastosPersonalesFilterBar`, genérico: `usePathname` + `?mes=`; su
@@ -10268,12 +10277,12 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   string` (sin ella, «Nuevo gasto» / «Registrar gasto» byte a byte: el
   golden `alta-gasto.golden.json` no se regeneró) y el cuadro de NÓMINA
   (`data-ayuda-nomina`) es «Nómina: » + `AYUDA_ALTA_NOMINA` de la fuente
-  única: gasto de VuelaTour («otros gastos» del Balance general) AUNQUE
-  elijas un avión, que queda solo como referencia y no le resta nada (lo
-  mismo que el hint «Con lo elegido cae en: …» de `hojaDestinoGasto`); a
-  uno o varios aviones solo llega con «Repartir entre aviones» (en el alta
-  si no hay avión; después desde el menú ⋯ o «Verificar / editar»); y «Su
-  seguimiento vive en la pantalla «Nómina»». Antes decía «el avión es
+  única (texto del 16-oct-2026): «sin vuelo. No sale en Gastos ni entra a
+  ningún balance hasta que se reparte entre aviones: si eliges un avión,
+  queda solo como referencia y no le resta nada. Repártela en la pantalla
+  «Nómina» con «Repartir entre aviones» (todo el mes o por quincena), o
+  aquí al guardar si no eliges avión.» (lo mismo que el hint «Con lo elegido
+  cae en: …» de `hojaDestinoGasto`, `HOJA_NOMINA_SIN_REPARTIR`). Antes decía «el avión es
   opcional (p. ej. piloto de un solo avión)», que invitaba a ligar el
   sueldo al avión del piloto como si con eso se lo cargara (revisión
   15-oct-2026). El comentario de `NOMINA` en `categorias-gasto.ts` dice lo
@@ -10307,11 +10316,155 @@ de la nómina; medios TRANSFERENCIA, PAYWISE y EFECTIVO.
   COORDINADOR y FACTURACION (SOCIO ⇒ 404), octubre y septiembre con sus
   totales, «‹ septiembre» / «noviembre ›» (este último no sale en el mes
   en curso), el alta con «Registrar pago de nómina», «Exportar Excel» y
-  «Ver en Gastos», teléfono a 390 px (el año completo en el campo «Mes» de
+  «Repartir entre aviones», teléfono a 390 px (el año completo en el campo «Mes» de
   septiembre/noviembre/diciembre), las tarjetas del resumen a 640–720 px y
   buscar «luis» y cambiar de mes con el campo y con «‹ mes» (la búsqueda se
   queda las dos veces).
 - **Deploy: solo panel.**
+
+## Nómina: fuera de Gastos y reparto en partes iguales (16-oct-2026, API 0.0.90)
+
+Pedido del cliente (textual): «todo lo de nómina no se sume o agregue al
+gasto… sumar todo lo de la nómina y repartir en partes iguales a los aviones
+que yo elija… por lotes o todos de un jalón… y ya solo así repartido y
+asignado se vaya al balance del avión y al general». Contrato: invariante 91
+del API (SIN migración). **El panel no calcula dinero**: el reparto en partes
+iguales, el residuo de centavos (rotado entre los aviones, Σ == monto
+exacto), los totales por moneda, los errores por pago y lo aplicado vienen
+del API; aquí solo se pinta y se suman las partes YA guardadas (centavos, por
+moneda) para el resumen.
+
+- **Reglas del dinero (del API)**: la NÓMINA vive SOLO en el módulo Nómina;
+  cada pago se reparte POR SEPARADO (conserva su `gasto_reparto`, su mes y su
+  trazabilidad); **sin reparto no entra a ningún balance** (ni «otros
+  gastos» del general: el consolidado lo avisa) y el pre-cierre la BLOQUEA
+  (`nomina_sin_repartir` en `bloqueantes`: `listo` y la previa del cierre de
+  mes). Repartida, como cualquier reparto: parciales a «Gastos Indirectos» de
+  cada avión y al reparto a socios. NO cambian Libro Dinero (la nómina pagada
+  sigue en su «otros gastos»: es caja), tablero de gastos ni la app.
+- **Fuente única PURA** `lib/admin/nomina-reparto.ts` (prueba
+  `__tests__/nomina-reparto.test.ts`): roles `ROLES_REPARTO_NOMINA` = ADMIN,
+  COORDINADOR, FACTURACION (espejo del `@Roles` del API; sin rol se ofrece:
+  el API es el candado), `validarCuerpoRepartoIguales` (1–200 pagos, 0–20
+  aviones, uuid sin repetir, `simular` solo `true`; `[]` de aviones = quitar),
+  `pagoNominaDeGasto` (primera línea de las notas, repartible solo SIN
+  vuelo —el API responde `GASTO_CON_VUELO`—, matrículas guardadas), chips
+  «Todo el mes · 1ª quincena · 2ª quincena · Solo sin repartir»
+  (`idsDeChip`, `chipInicialNomina`, `chipDeSeleccion`), la clave de la
+  vista previa (`claveVistaPreviaNomina` / `idsDeClaveVistaPrevia`,
+  `ESPERA_VISTA_PREVIA_MS` = 400), `resultadoEsIncierto` (red o 5xx: pudo
+  escribirse), `erroresDeRespuestaReparto` (por pago, MES_CERRADO con el
+  texto del API), `pagosYaRepartidos`, `toastResultadoRepartoNomina`,
+  `resumenRepartoNomina` y TODOS los textos. Tipos 1:1 con el API en
+  `types/reparto-iguales.ts`.
+- **Server action** `repartoIgualesAction` (`app/admin/nomina/actions.ts`):
+  valida ANTES de la red (`ENTRADA_INVALIDA`, 400, sin llamar al API), `POST
+  /v1/expenses/reparto-iguales` con el cuerpo como OBJETO (`apiFetch`
+  serializa) y `cache: no-store`, NUNCA lanza y **NO revalida** (la llama un
+  diálogo que sigue montado: la página se pone al día con UN
+  `router.refresh()` al CERRAR si algo cambió). 404 «Cannot POST» (API ≤
+  0.0.89) ⇒ `RUTA_NO_DISPONIBLE` con «Falta actualizar el servidor: el
+  reparto de la nómina todavía no está disponible.»; un fallo que no es del
+  API (red) ⇒ `SIN_CONEXION` (incierto); texto técnico ⇒
+  `MSG_SERVIDOR_NO_RESPONDIO`; un 400 de negocio (p. ej.
+  `AERONAVE_INACTIVA`) conserva code, status y details.
+- **La pantalla Nómina** (`app/admin/nomina/page.tsx`, **`maxDuration =
+  120`**: hasta 200 pagos por llamada, uno por uno en el API): botón primario
+  «Repartir entre aviones» (`NominaRepartoBoton`, `cursor-pointer`,
+  `aria-haspopup="dialog"`) SOLO con la lista cargada, con pagos y para quien
+  reparte (`ofrecerReparto`; con él, «Registrar pago de nómina» pasa a
+  `outline`); el diálogo se MONTA solo al abrirse (sus lecturas no corren en
+  reposo) y se desmonta al cerrar. Bajo el resumen del mes,
+  `NominaRepartoResumen` (presentacional, sin hooks): tres tarjetas
+  «Repartido» · «Sin repartir» (ámbar con pagos) · «Por avión» (A–Z, «¿?»
+  al final), «Sin asignar de repartos manuales» si un reparto manual dejó
+  remanente y la nota ámbar `NOTA_SIN_REPARTIR`; MXN y USD jamás se suman.
+  La tabla recibe `resaltados={foco?.ids}`. «Ver en Gastos» se retiró.
+- **El diálogo** (`components/admin/nomina/nomina-reparto-dialog.tsx`, Base
+  UI): 1) «¿Qué pagos?» — chips + lista con casillas (un pago con vuelo va
+  atenuado, con la casilla deshabilitada y «Ligado a un vuelo: no se
+  reparte»; un pago sin repartir dice «Sin repartir» en ámbar),
+  «Seleccionar todos / Ninguno»; 2) «¿Entre qué
+  aviones?» — los ACTIVOS (`listAvionesActivosAction`, con turno y `.catch`;
+  si no cargan, «Reintentar», jamás «no hay aviones») con «Todos»; 3) «Así
+  quedaría» — vista previa AUTOMÁTICA con `simular: true` (debounce 400 ms +
+  turno: una respuesta vieja no pisa a la nueva; nunca un `await` desnudo,
+  `.catch(sinConexion)`) con el total por moneda y la parte de cada avión
+  TAL CUAL del API; 4) «Repartir N pagos entre M aviones»: si algún pago ya
+  estaba repartido, confirma el REEMPLAZO (AlertDialog anidado con
+  `backdropForceRender` y `preventDefault`); si no, el resumen y el botón son
+  la confirmación; 5) «Quitar el reparto» SIEMPRE confirma (`aeronave_ids:
+  []`); 6) resultado: toast y, si hubo errores por pago, se listan en el
+  diálogo (que sigue abierto). Sin respuesta (incierto): `MSG_REPARTO_INCIERTO`
+  y refresh al cerrar. Todo lo que se pulsa lleva `cursor-pointer`.
+- **Gastos sin nómina** (`lib/admin/gastos-vista.ts`): la lista, los dos
+  contadores y el Excel mandan SIEMPRE `excluir_categoria=NOMINA`
+  (`queryBaseGastos`); el filtro «Categoría» ofrece
+  `CATEGORIAS_FILTRO_GASTOS_VISTA` (21, sin «Nómina»); `?categoria=NOMINA`
+  (enlace viejo) se IGNORA (`nominaIgnorada`) y la página pinta la franja
+  azul «La nómina se lleva en su propio módulo» con «Ir a Nómina»
+  (`hrefNominaDesdeGastos`: el mes del `desde`/`hasta`, o el módulo). «Otros
+  gastos» ya no la lista (su vacío lo dice).
+- **SKEW con un API ≤ 0.0.89** (el `forbidNonWhitelisted` del DTO):
+  - lista y contadores: el 400 «property excluir_categoria should not exist»
+    lo resuelve `pedirGastosTolerante` (`lib/api/expenses-server.ts`):
+    RELEE sin el campo (los demás filtros intactos) y las páginas
+    siguientes del anti-cap repiten la consulta que funcionó; un 400 de otro
+    campo o un 5xx suben como siempre. Regla única
+    `esCampoDesconocidoParaApi` / `sinCampos` en `lib/api/campo-opcional.ts`
+    (espejo de `esApiSinRangoFechas`; `esApiSinExcluirCategoria` /
+    `sinExcluirCategoria` en `gastos-vista.ts`);
+  - Excel: `ExcelExportButton` → `descargarDelApi(…, { camposOpcionales:
+    CAMPOS_OPCIONALES_GASTOS })` pide UNA vez más sin el campo ante ese 400;
+  - el reparto: 404 ⇒ «Falta actualizar el servidor…» (nada se escribe).
+  Con el API previo Gastos sigue enseñando la nómina (como antes) y su
+  franja no se pinta.
+- **Celda «Avión · vuelo»** (`lib/admin/gasto-avion.ts`, regla 2b después
+  del reparto y de PERSONAL_DUENO, antes de empresa): NOMINA sin reparto ⇒
+  «Sin repartir» (+ « (ref. N4142R)» con avión sellado), title «Nómina sin
+  repartir: no entra a ningún balance hasta repartirla entre aviones en el
+  módulo Nómina.»; repartida dice «Repartido: …». Texto IDÉNTICO al de
+  `celdaAvionGasto` del API (paridad `gasto-avion.paridad.spec`).
+- **Textos de NÓMINA en «Verificar / editar»** (`lib/admin/reparto-gasto.ts`):
+  `TITULO_MODO_UNO_NOMINA`, `AYUDA_MODO_UNO_NOMINA`, `DESTINO_NOMINA_SIN_REPARTIR`
+  y `DESCRIPCION_VERIFICAR_NOMINA` dicen «sin repartir, el pago de nómina no
+  entra a ningún balance» (ya no «lo absorbe VuelaTour») y la opción vacía
+  del selector «Un avión» es `opcionSinAvionRepartible("NOMINA")` = «Sin
+  avión (queda sin repartir)» (las demás repartibles: «Sin avión (gasto de
+  VuelaTour)»). El alta: si su
+  reparto falla, `avisoNominaSinRepartir`; desde OTRA pantalla, el toast
+  ofrece «Ver en Nómina» (`accionVerEnNomina`, el mes del pago).
+- **Pre-cierre**: renglón BLOQUEANTE `nomina_sin_repartir` («Nómina sin
+  repartir entre aviones») con «Resolver →» `hrefPrecierreNominaSinRepartir`
+  = la nómina del MES del periodo + el foco ámbar (`pc`/`ids`, «Resolver →»
+  marca en ámbar): la página Nómina lee `leerFocoPreCierre`, pinta
+  `FranjaPreCierre` (`NOTA_VISTA_MES`) y pone esos pagos PRIMERO y en ámbar.
+- **PENDIENTE (paridad con el API)**: `DESTINO_POR_DEFECTO.NOMINA` (la línea
+  verde del selector de categoría en el alta) sigue diciendo «Otros gastos
+  (Balance general VuelaTour)»: es COPIA de la tabla canónica del API
+  (`CATEGORIA_GASTO_DESTINO`) y su test de paridad la congela. Cambiarla es
+  un lote coordinado API + panel + app (el hint «Con lo elegido cae en:» ya
+  dice la regla nueva).
+- **Pruebas**: `lib/admin/__tests__/nomina-reparto.test.ts`,
+  `app/admin/nomina/__tests__/reparto-iguales-action.test.ts`,
+  `components/admin/nomina/__tests__/nomina-reparto-ui.test.tsx` (resumen y
+  botón renderizados, cableado del diálogo, «Resolver →» del pre-cierre),
+  `lib/admin/__tests__/gastos-vista-nomina.test.ts`,
+  `lib/api/__tests__/expenses-server-excluir.test.ts`,
+  `lib/api/__tests__/campo-opcional.test.ts`,
+  `lib/__tests__/download-campos-opcionales.test.ts` y las ampliadas
+  `nomina.test.ts`, `nomina-pagina.test.tsx`, `gastos-vista.test.ts`,
+  `reparto-gasto.test.ts`, `gasto-avion.test.ts` y
+  `categorias-gasto.test.ts`.
+- **Orden de deploy**: API 0.0.90 → panel. Con el panel antes, Gastos relee
+  sin el campo (sigue mostrando la nómina) y «Repartir entre aviones» dice
+  que falta actualizar el servidor; con el API antes, el panel viejo no
+  manda `excluir_categoria` y el pre-cierre ya bloquea (el reparto por gasto
+  de siempre sigue disponible). **QA manual** (sin DOM): `/admin/nomina` de
+  octubre (12 pagos, $109,921.46) repartida entre 4 aviones ⇒ dos con
+  $27,480.37 y dos con $27,480.36; «Quitar el reparto» confirma; Gastos sin
+  nómina y `?categoria=NOMINA` con la franja; pre-cierre de septiembre
+  bloqueado hasta repartir.
 
 ## Caja chica: el gasto con más datos y «Ver en balance» (15-oct-2026)
 

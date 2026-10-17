@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { TITULOS_SECCION } from "@/lib/admin/titulos-pestana";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ExclamationTriangleIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import {
@@ -10,8 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { ExpensesTable } from "@/components/admin/expenses/expenses-table";
 import { ExpenseCreateDialog } from "@/components/admin/expenses/expense-create-dialog";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
@@ -20,6 +17,9 @@ import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { NominaResumen } from "@/components/admin/nomina/nomina-resumen";
 import { NominaNavMeses } from "@/components/admin/nomina/nomina-nav-meses";
+import { NominaRepartoBoton } from "@/components/admin/nomina/nomina-reparto-boton";
+import { NominaRepartoResumen } from "@/components/admin/nomina/nomina-reparto-resumen";
+import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
 import { listGastosAll, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
@@ -37,14 +37,13 @@ import {
   DESCRIPCION_VACIO_NOMINA,
   ETIQUETA_LISTA_NOMINA,
   ETIQUETA_REGISTRAR_NOMINA,
-  ETIQUETA_VER_EN_GASTOS,
   TITULO_ERROR_NOMINA,
   TITULO_NOMINA,
   avisoResumenIncompleto,
   descripcionListaNomina,
   esMesFuturoNomina,
   esMesNomina,
-  hrefGastosNomina,
+  etiquetaMesNomina,
   mesNominaDeUrl,
   mesesVecinos,
   nombreExcelNomina,
@@ -54,8 +53,19 @@ import {
   resumenNomina,
   tituloListaNomina,
   tituloVacioNomina,
-  tituloVerEnGastos,
 } from "@/lib/admin/nomina";
+import {
+  pagoNominaDeGasto,
+  puedeRepartirNomina,
+  resumenRepartoNomina,
+} from "@/lib/admin/nomina-reparto";
+import {
+  NOTA_VISTA_MES,
+  filasResaltadasPrimero,
+  hrefQuitarResaltado,
+  hrefVolverPreCierre,
+  leerFocoPreCierre,
+} from "@/lib/admin/pre-cierre-resolver";
 import { getInicioOficial } from "@/lib/api/inicio-oficial";
 import {
   ajustarMesAlInicio,
@@ -65,10 +75,11 @@ import {
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
-// «Subir facturas» del gasto (16-oct-2026): la server action vive en esta
-// página y el API procesa cada factura en fila (lee el XML, sube los
-// archivos); sin esto Vercel podía cortar un lote a medias.
-export const maxDuration = 60;
+// Las server actions de esta página heredan el límite: «Subir facturas» del
+// gasto (16-oct-2026; el API procesa cada factura en fila) y «Repartir entre
+// aviones» (16-oct-2026, API 0.0.90: hasta 200 pagos por llamada, uno por uno
+// en el API). Sin esto Vercel podía cortar un lote a medias.
+export const maxDuration = 120;
 
 export const metadata: Metadata = { title: TITULOS_SECCION.nomina };
 
@@ -76,6 +87,12 @@ export const metadata: Metadata = { title: TITULOS_SECCION.nomina };
  * Nómina: un espacio propio (15-oct-2026). Pedido del cliente: «Necesitamos un
  * nuevo espacio debajo de Gastos y Otros Gastos que se llame Nomina para tener
  * en ese apartado todo lo de nomina».
+ *
+ * Desde el 16-oct-2026 (API 0.0.90) la nómina YA NO sale en Gastos: vive solo
+ * aquí. «Repartir entre aviones» la reparte en PARTES IGUALES entre los
+ * aviones elegidos (por lotes o todo el mes) y el resumen dice qué está
+ * repartido y qué no (solo lo repartido entra a los balances; el pre-cierre
+ * BLOQUEA con nómina sin repartir y su «Resolver →» llega aquí con el foco).
  *
  * Fase 1, solo panel: TODOS los gastos de categoría «Nómina» del mes (eje
  * `fecha_gasto` = la fecha del PAGO), su resumen por quincena y por medio de
@@ -88,7 +105,7 @@ export const metadata: Metadata = { title: TITULOS_SECCION.nomina };
 export default async function NominaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string | string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   // Sueldos = dato sensible: sin `/me` (o con otro rol) la pantalla no existe.
   // Falla CERRADO, como Gastos personales.
@@ -123,9 +140,19 @@ export default async function NominaPage({
   const aircraft = aircraftRes.data.map(avionCatalogoGasto);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
 
-  const gastos = lista.ok ? lista.datos.data : [];
+  const gastosLista = lista.ok ? lista.datos.data : [];
+  // «Resolver →» del pre-cierre (`nomina_sin_repartir`, 16-oct-2026): los pagos
+  // sin repartir que manda resolver van PRIMERO y en ámbar.
+  const foco = leerFocoPreCierre(sp);
+  const conFoco = foco
+    ? filasResaltadasPrimero(gastosLista, foco.ids, (g) => g.id)
+    : { filas: gastosLista, encontrados: 0 };
+  const gastos = conFoco.filas;
   // Corte defensivo del anti-cap (count cambió a media carga): se avisa.
   const huboCorte = lista.ok && gastos.length < lista.datos.count;
+  // «Repartir entre aviones»: solo con la lista cargada y con pagos (con la
+  // lista caída el diálogo no sabría qué pagos hay: jamás «sin pagos»).
+  const ofrecerReparto = lista.ok && gastos.length > 0 && puedeRepartirNomina(me?.rol ?? null);
 
   // Comprobantes en bucket privado: si la firma falla se DICE (aviso y «Sin
   // vista previa» en la fila), nunca celdas vacías que parecen «sin papel».
@@ -147,11 +174,17 @@ export default async function NominaPage({
           <p className="text-sm text-muted-foreground mt-1">{DESCRIPCION_NOMINA}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {ofrecerReparto && (
+            <NominaRepartoBoton
+              pagos={gastos.map(pagoNominaDeGasto)}
+              etiquetaMes={etiquetaMesNomina(mes)}
+            />
+          )}
           <ExpenseCreateDialog
             aircraft={aircraft}
             providers={providers}
             defaultCategoria={CATEGORIA_NOMINA}
-            varianteBoton="default"
+            varianteBoton={ofrecerReparto ? "outline" : "default"}
             etiquetaBoton={ETIQUETA_REGISTRAR_NOMINA}
             titulo={ETIQUETA_REGISTRAR_NOMINA}
             contexto={AYUDA_CAPTURA_NOMINA}
@@ -167,14 +200,6 @@ export default async function NominaPage({
             // El Excel de Gastos con la categoría y el mes de la pantalla.
             query={queryExcelNomina(mes)}
           />
-          <Link
-            href={hrefGastosNomina(mes)}
-            prefetch={false}
-            title={tituloVerEnGastos(mes)}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-8 cursor-pointer")}
-          >
-            {ETIQUETA_VER_EN_GASTOS}
-          </Link>
         </div>
       </div>
 
@@ -192,6 +217,17 @@ export default async function NominaPage({
 
       {/* Catálogos o fotos que no cargaron: se dice en vez de pintar vacío. */}
       <AvisoDegradado faltantes={degradado.faltantes} />
+
+      {foco && (
+        <FranjaPreCierre
+          foco={foco}
+          // Lista caída ⇒ no se sabe qué hay «en esta vista».
+          encontrados={lista.ok ? conFoco.encontrados : null}
+          hrefQuitar={hrefQuitarResaltado("/admin/nomina", sp)}
+          hrefVolver={hrefVolverPreCierre(foco, hoy)}
+          notaVista={NOTA_VISTA_MES}
+        />
+      )}
 
       {huboCorte && lista.ok && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
@@ -217,6 +253,9 @@ export default async function NominaPage({
             resumen={resumenNomina(gastos)}
             aviso={huboCorte ? avisoResumenIncompleto(gastos.length, lista.datos.count) : null}
           />
+          {/* Repartido / Sin repartir / Por avión: suma las partes GUARDADAS
+              (centavos, por moneda); el reparto lo calcula el API. */}
+          <NominaRepartoResumen resumen={resumenRepartoNomina(gastos)} />
           <Card role="region" aria-label={ETIQUETA_LISTA_NOMINA} className="gap-3 pb-0">
             <CardHeader>
               <CardTitle>
@@ -242,6 +281,7 @@ export default async function NominaPage({
                 fotoUrls={fotoUrls}
                 huboCorte={huboCorte}
                 rol={me?.rol ?? null}
+                resaltados={foco?.ids}
               />
             </CardContent>
           </Card>

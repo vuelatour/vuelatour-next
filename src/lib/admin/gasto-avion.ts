@@ -11,6 +11,13 @@ import { esPagoAfac } from "@/lib/admin/pago-afac";
 import type { Gasto } from "@/types/expenses";
 
 /**
+ * Código de la categoría «Nómina» (literal aquí y no importado de
+ * `lib/admin/nomina.ts`: la paridad del API transpila este archivo y sus
+ * imports; `nomina.ts` arrastraría más módulos sin necesidad).
+ */
+const CATEGORIA_NOMINA_AVION = "NOMINA";
+
+/**
  * «¿A dónde va el dinero de este gasto?» — columna «Avión · vuelo» de la
  * tabla única de Gastos (14-oct-2026). PURO: fuente única de la celda, de la
  * línea de estado del teléfono y de la búsqueda rápida.
@@ -27,6 +34,11 @@ import type { Gasto } from "@/types/expenses";
  *  1. Con reparto ⇒ REPARTIDO (las partes y el remanente en CENTAVOS: lo que
  *     absorbe VuelaTour; el API decide el dinero, aquí solo se pinta).
  *  2. PERSONAL_DUENO ⇒ «Personal» (fuera de balances).
+ *  2b. NÓMINA sin reparto (16-oct-2026, API 0.0.90, invariante 91) ⇒ «Sin
+ *     repartir» (con «ref. N4142R» si trae avión sellado): no entra a ningún
+ *     balance hasta repartirla entre aviones desde el módulo Nómina. Espejo
+ *     EXACTO del API (`expenses/gasto-avion.util.ts#celdaAvionGasto`): texto
+ *     plano «Sin repartir» / «Sin repartir (ref. N4142R)».
  *  3. Empresa o «Comisión del vendedor (VuelaTour)» ⇒ «VuelaTour» SIEMPRE,
  *     aunque traiga avión sellado (queda de «ref.»: la categoría de empresa
  *     manda sobre el vuelo, regla del 11-sep-2026).
@@ -48,7 +60,7 @@ export type EstadoAvionGasto =
     }
   | {
       tipo: "FUERA_DEL_AVION";
-      etiqueta: "VuelaTour" | "Personal";
+      etiqueta: "VuelaTour" | "Personal" | "Sin repartir";
       /** Matrícula sellada que NO se carga (solo referencia) o null. */
       referencia: string | null;
       /** «Va a: …» (hoja destino con lo elegido). */
@@ -71,6 +83,14 @@ export const TITULO_FALTA_AVION_FUERA_DE_GASTOS =
   "Este gasto necesita avión y no lo tiene. Asígnalo en «Verificar / editar» (menú ⋯).";
 export const ETIQUETA_AVION_VUELATOUR = "VuelaTour";
 export const ETIQUETA_AVION_PERSONAL = "Personal";
+/**
+ * NÓMINA sin reparto (16-oct-2026, API 0.0.90): la nómina vive en su módulo
+ * y solo cuenta en los libros REPARTIDA entre aviones. Mismo texto que la
+ * celda «Avión» del Excel de gastos (paridad con el API).
+ */
+export const ETIQUETA_AVION_SIN_REPARTIR = "Sin repartir";
+export const TITULO_NOMINA_SIN_REPARTIR =
+  "Nómina sin repartir: no entra a ningún balance hasta repartirla entre aviones en el módulo Nómina.";
 /** Segunda línea de un PERMISO marcado «Pago de AFAC» (16-oct-2026). */
 export const DETALLE_PAGO_AFAC = "pago de AFAC";
 export const TITULO_PAGO_AFAC_AVION =
@@ -168,13 +188,20 @@ export function estadoAvionGasto(
   }
   const tieneAvion = !!g.aeronave_id;
   const referencia = tieneAvion ? (g.aeronave?.matricula ?? null) : null;
-  const fuera = (etiqueta: "VuelaTour" | "Personal"): EstadoAvionGasto => ({
+  const fuera = (
+    etiqueta: "VuelaTour" | "Personal" | "Sin repartir",
+    titulo: string = tituloFueraDelAvion(g.categoria, !!g.vuelo_id, tieneAvion),
+  ): EstadoAvionGasto => ({
     tipo: "FUERA_DEL_AVION",
     etiqueta,
     referencia,
-    titulo: tituloFueraDelAvion(g.categoria, !!g.vuelo_id, tieneAvion),
+    titulo,
   });
   if (g.categoria === "PERSONAL_DUENO") return fuera(ETIQUETA_AVION_PERSONAL);
+  // 2b. NÓMINA sin reparto (invariante 91 del API): misma posición que en el API.
+  if (g.categoria === CATEGORIA_NOMINA_AVION) {
+    return fuera(ETIQUETA_AVION_SIN_REPARTIR, TITULO_NOMINA_SIN_REPARTIR);
+  }
   if (CATEGORIAS_EMPRESA.has(g.categoria) || g.categoria === CATEGORIA_PAGO_VENDEDOR) {
     return fuera(ETIQUETA_AVION_VUELATOUR);
   }

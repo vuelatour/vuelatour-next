@@ -88,7 +88,13 @@ import {
   type InventarioPayload,
 } from "@/lib/admin/refaccion-inventario";
 import { hintFolioGasto } from "@/lib/admin/gasto-folio";
-import { AYUDA_ALTA_NOMINA, TITULO_NOMINA } from "@/lib/admin/nomina";
+import {
+  AYUDA_ALTA_NOMINA,
+  CATEGORIA_NOMINA,
+  TITULO_NOMINA,
+  accionVerEnNomina,
+  avisoNominaSinRepartir,
+} from "@/lib/admin/nomina";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import type { Gasto } from "@/types/expenses";
 import {
@@ -988,7 +994,9 @@ export function ExpenseCreateDialog({
           // Sin vuelo y de categoría repartible, no cae a la bandeja: vive en
           // Otros gastos como "VuelaTour (sin asignar)" con botón Repartir.
           toast.warning(
-            `El gasto se creó SIN repartir: repártelo desde Otros gastos (o menú ⋯ → Repartir). Motivo: ${result.repartoError}`,
+            values.categoria === CATEGORIA_NOMINA
+              ? avisoNominaSinRepartir(result.repartoError)
+              : `El gasto se creó SIN repartir: repártelo desde Otros gastos (o menú ⋯ → Repartir). Motivo: ${result.repartoError}`,
             exito ? { description: exito, duration: 10000 } : { duration: 10000 },
           );
         } else if (inventarioPayload) {
@@ -999,6 +1007,15 @@ export function ExpenseCreateDialog({
           if (t.tipo === "success") toast.success(t.titulo);
           else toast.warning(t.titulo, { description: t.descripcion, duration: 15000 });
         } else {
+          // Nómina dada de alta FUERA de su pantalla (16-oct-2026): ya no
+          // sale en Gastos, así que el aviso lleva a ella. Sin useRouter (el
+          // diálogo se monta en pruebas sin next/navigation): navegación
+          // completa, como `aviso-mes-cerrado.tsx`.
+          const verEnNomina = accionVerEnNomina({
+            categoria: values.categoria,
+            defaultCategoria,
+            fecha: values.fecha_gasto,
+          });
           toast.success(
             exito ??
               (repartoItems
@@ -1010,6 +1027,15 @@ export function ExpenseCreateDialog({
                   : factura
                     ? toastGastoConComprobante(archivos.length)
                     : "Gasto registrado"),
+            verEnNomina
+              ? {
+                  duration: 10000,
+                  action: {
+                    label: verEnNomina.label,
+                    onClick: () => window.location.assign(verEnNomina.href),
+                  },
+                }
+              : undefined,
           );
         }
         setArchivos([]);

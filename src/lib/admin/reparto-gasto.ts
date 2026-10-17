@@ -663,7 +663,8 @@ export function tituloModoUno(categoria: string): string {
   if (categoria === "FIJO") {
     return "Un solo avión (o ninguno): el gasto fijo queda en VuelaTour y en el reparto a socios se prorratea entre todos los aviones activos.";
   }
-  if (categoria === "OTRO" || categoria === "NOMINA") {
+  if (categoria === "NOMINA") return TITULO_MODO_UNO_NOMINA;
+  if (categoria === "OTRO") {
     return "Un solo avión (o ninguno): el avión queda solo como referencia; el gasto es de VuelaTour.";
   }
   if (etiquetaUnoEsSinAvion(categoria)) return "Sin avión: el gasto es de VuelaTour.";
@@ -674,6 +675,32 @@ export const TITULO_MODO_REPARTO =
   "Divide el gasto entre los aviones que elijas; lo no asignado lo absorbe VuelaTour.";
 
 export const OPCION_SIN_AVION_VUELATOUR = "Sin avión (gasto de VuelaTour)";
+
+/** La NÓMINA sin avión no es gasto de VuelaTour: queda sin repartir (16-oct-2026). */
+export const OPCION_SIN_AVION_NOMINA = "Sin avión (queda sin repartir)";
+
+/** Etiqueta de la opción vacía del selector «Un avión» de una categoría repartible. */
+export function opcionSinAvionRepartible(categoria: string | null | undefined): string {
+  return categoria === "NOMINA" ? OPCION_SIN_AVION_NOMINA : OPCION_SIN_AVION_VUELATOUR;
+}
+
+// ===== Nómina (16-oct-2026, API 0.0.90, invariante 91 del API) =====
+// La nómina vive en su módulo (`/admin/nomina`) y SOLO repartida entre
+// aviones entra a un balance: sin reparto ya no va a «otros gastos» del
+// Balance general. Estos textos lo dicen donde antes decían «es de VuelaTour».
+
+export const TITULO_MODO_UNO_NOMINA =
+  "Un solo avión (o ninguno): el avión queda solo como referencia; sin repartir, el pago de nómina no entra a ningún balance.";
+
+export const AYUDA_MODO_UNO_NOMINA =
+  "Sin repartir, el pago de nómina no entra a ningún balance: repártelo entre aviones aquí o en Nómina.";
+
+/** A dónde pasa un pago de nómina al QUITAR su reparto (sin «pasa a:»: ya es la frase). */
+export const DESTINO_NOMINA_SIN_REPARTIR =
+  "queda sin repartir: no entra a ningún balance hasta repartirla en Nómina";
+
+export const DESCRIPCION_VERIFICAR_NOMINA =
+  "Confirma categoría y comprobante. Sin repartir, el pago de nómina no entra a ningún balance: repártelo entre aviones aquí o desde Nómina.";
 
 export const HINT_SIN_AVION_CATEGORIA =
   "La gasolina de vehículos y las visitas no llevan avión: para cargarlas a aviones, elige «Repartir entre aviones».";
@@ -689,7 +716,12 @@ export function ayudaModoUno(e: { categoria: string; matricula: string | null })
   if (e.categoria === "FIJO") {
     return `Gasto fijo: sin reparto queda en VuelaTour en el balance y, en el reparto a socios, se prorratea entre todos los aviones activos.${mat ? ` ${mat} queda solo como referencia.` : ""}`;
   }
-  if (e.categoria === "OTRO" || e.categoria === "NOMINA") {
+  if (e.categoria === "NOMINA") {
+    return mat
+      ? `${mat} queda solo como referencia: sin repartir, el pago de nómina no entra a ningún balance. Para cargarlo a aviones, usa «Repartir entre aviones» (aquí o en Nómina).`
+      : AYUDA_MODO_UNO_NOMINA;
+  }
+  if (e.categoria === "OTRO") {
     return mat
       ? `${mat} queda solo como referencia: el gasto sigue siendo de VuelaTour. Para cargarlo a aviones, usa «Repartir entre aviones».`
       : "Sin avión, el gasto es de VuelaTour (Balance general · Otros gastos).";
@@ -717,6 +749,7 @@ export const HINT_VUELO_EN_REPARTO =
  */
 export function descripcionVerificarGasto(e: { enReparto: boolean; categoria: string }): string {
   if (e.enReparto) return "Revisa el reparto entre aviones y confirma categoría y comprobante.";
+  if (e.categoria === "NOMINA") return DESCRIPCION_VERIFICAR_NOMINA;
   if (CATEGORIAS_REPARTIBLES.has(e.categoria)) {
     return categoriaSinAvion(e.categoria)
       ? "Confirma categoría y comprobante. No lleva avión: sin reparto es gasto de VuelaTour, o puedes repartirlo entre aviones."
@@ -820,6 +853,9 @@ export function textoQueCambiaAlRepartir(e: {
   const mat = e.matriculaGuardada && e.matriculaGuardada.trim() !== "" ? e.matriculaGuardada : null;
   if (mat && e.categoria === "INDIRECTO") {
     return `Hoy el gasto está en ${mat}: resta en su balance pero no en el reparto a socios. ${cola}`;
+  }
+  if (e.categoria === "NOMINA") {
+    return `Hoy el pago de nómina está sin repartir: no entra a ningún balance. ${cola}`;
   }
   if (mat && CATEGORIAS_EMPRESA.has(e.categoria)) {
     return `Hoy ${mat} es solo referencia: el gasto es de VuelaTour. ${cola}`;
@@ -1023,6 +1059,7 @@ export function destinoTrasQuitar(e: {
 }): string {
   const mat = e.matricula && e.matricula.trim() !== "" ? e.matricula : null;
   if (e.categoria === "PERSONAL_DUENO") return "fuera de los balances (gasto personal del dueño)";
+  if (e.categoria === "NOMINA") return DESTINO_NOMINA_SIN_REPARTIR;
   const empresa = CATEGORIAS_EMPRESA.has(e.categoria);
   if (empresa && mat) return `Balance general VuelaTour · Otros gastos (${mat} queda solo como referencia)`;
   if (empresa) return "Balance general VuelaTour · Otros gastos (lo absorbe VuelaTour)";
@@ -1113,12 +1150,15 @@ export function confirmacionRepartoAlGuardar(e: {
       parrafos.push(`Elegiste «${eleccion}», así que al guardar se quita el reparto.`);
     }
     parrafos.push(`Hoy está repartido así: ${resumenBase}.`);
+    const destino = destinoTrasQuitar({
+      categoria: e.categoriaFinal,
+      matricula: e.avionFinal,
+      tieneVuelo: e.tieneVuelo,
+    });
     parrafos.push(
-      `Cada avión pierde su parte (en su balance y en su reparto a socios) y el gasto pasa a: ${destinoTrasQuitar({
-        categoria: e.categoriaFinal,
-        matricula: e.avionFinal,
-        tieneVuelo: e.tieneVuelo,
-      })}.`,
+      e.categoriaFinal === "NOMINA"
+        ? `Cada avión pierde su parte (en su balance y en su reparto a socios) y el pago ${destino}.`
+        : `Cada avión pierde su parte (en su balance y en su reparto a socios) y el gasto pasa a: ${destino}.`,
     );
     if (e.categoriaFinal === "INDIRECTO" && e.avionFinal) {
       parrafos.push(
@@ -1420,12 +1460,16 @@ export function textoRegresarError(motivo: string): string {
 
 /** Confirmación de «Quitar reparto»: FIJO vuelve al prorrateo; el resto, el literal de siempre. */
 export function textoQuitarRepartoDialogo(categoria: string): string {
+  if (categoria === "NOMINA") {
+    return "El pago de nómina queda sin repartir: no entra a ningún balance hasta volver a repartirlo (aquí o en Nómina).";
+  }
   return categoria === "FIJO"
     ? "El gasto queda en VuelaTour en el balance y, en el reparto a socios, vuelve a prorratearse entre todos los aviones activos. Puedes volver a repartirlo cuando quieras."
     : "El gasto queda 100% como gasto de VuelaTour (empresa): no restará a ningún avión. Puedes volver a repartirlo cuando quieras.";
 }
 
 export function toastRepartoQuitadoDialogo(categoria: string): string {
+  if (categoria === "NOMINA") return "Reparto eliminado: el pago de nómina queda sin repartir (no entra a ningún balance)";
   return categoria === "FIJO"
     ? "Reparto eliminado: el gasto fijo vuelve al prorrateo entre los aviones activos"
     : "Reparto eliminado: el gasto queda 100% de VuelaTour";

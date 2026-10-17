@@ -93,7 +93,7 @@ import {
   HINT_AVION_PERSONAL,
   HINT_VUELO_EN_REPARTO,
   NOTA_DINERO_BLOQUEADO,
-  OPCION_SIN_AVION_VUELATOUR,
+  opcionSinAvionRepartible,
   TEXTO_FALLO_LECTURA_REPARTO,
   TEXTO_LEYENDO_REPARTO,
   TEXTO_RETIRAR_SIN_RESPUESTA,
@@ -2536,7 +2536,7 @@ export function ExpenseVerifyDialog({
                         {
                           value: "",
                           label: cfg.repartoPermitido
-                            ? OPCION_SIN_AVION_VUELATOUR
+                            ? opcionSinAvionRepartible(categoriaForm)
                             : ETIQUETA_MODO_SIN_AVION,
                         },
                         ...aircraft.map((a) => ({ value: a.id, label: a.matricula })),

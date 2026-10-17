@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
 import { opcionesFacturacionFiltro } from "@/lib/admin/facturacion-estatus";
 import { FILTRO_BANCO } from "@/lib/admin/conciliacion-estado";
-import { CATEGORIAS_FILTRO_GASTO, opcionCategoriaGasto } from "@/lib/admin/categorias-gasto";
+import { opcionCategoriaGasto } from "@/lib/admin/categorias-gasto";
 import {
   consultaBaseParaNavegar,
   pendienteVigente,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/admin/quote-navegacion";
 import { useRangoBorrador, type CambiosUrl } from "@/hooks/use-rango-borrador";
 import {
+  CATEGORIAS_FILTRO_GASTOS_VISTA,
   CLASE_FILTRO_ACTIVO,
   ETIQUETAS_FILTRO_GASTOS,
   ETIQUETA_FECHA_CAPTURA,
@@ -74,7 +75,8 @@ const OPCIONES_BANCO = opcionesConTodos(OPCION_TODOS, [...FILTRO_BANCO]);
 // Las 22 categorías con su destino en verde (como en la captura).
 const OPCIONES_CATEGORIA = opcionesConTodos(
   OPCION_TODAS,
-  CATEGORIAS_FILTRO_GASTO.map(opcionCategoriaGasto),
+  // Sin «Nómina» (16-oct-2026): vive en su propio módulo.
+  CATEGORIAS_FILTRO_GASTOS_VISTA.map(opcionCategoriaGasto),
 );
 const OPCIONES_ORDEN = [...OPCIONES_ORDEN_GASTOS];
 

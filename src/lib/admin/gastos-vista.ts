@@ -21,6 +21,8 @@ import { distintivoOrigen, origenCapturaLabel } from "@/lib/admin/gastos-captura
 import { estadoAvionGasto, etiquetaAvionGasto } from "@/lib/admin/gasto-avion";
 import { PESTANAS_GASTOS } from "@/lib/admin/titulos-pestana";
 import { ajustarRangoAlInicio, type InicioOficial } from "./inicio-oficial";
+import { esCampoDesconocidoParaApi, sinCampos } from "@/lib/api/campo-opcional";
+import { CATEGORIA_NOMINA, RUTA_NOMINA, hrefMesNomina } from "@/lib/admin/nomina";
 
 /**
  * Vista de GASTOS en UNA sola tabla (14-oct-2026). Pedido del cliente: «unir
@@ -54,6 +56,10 @@ export interface FiltrosGastos {
    *  del inicio y se movió (la página pinta el aviso). Solo existe si es
    *  `true`; no viaja al API. */
   ajustado?: true;
+  /** Nómina fuera de Gastos (16-oct-2026, API 0.0.90): la URL traía
+   *  `?categoria=NOMINA` y se IGNORÓ (la página pinta la franja «La nómina se
+   *  lleva en su propio módulo»). Solo existe si es `true`; no viaja al API. */
+  nominaIgnorada?: true;
   aeronave_id?: string;
   categoria?: string;
   medio?: string;
@@ -75,7 +81,8 @@ export interface FiltrosGastos {
  * IGNORA, nunca viaja al API ni provoca un 400 que tumbe la pantalla):
  *  - `f`: pendientes | duplicados; cualquier otra cosa ⇒ «todos».
  *  - `aeronave_id` y `piloto`: solo uuid.
- *  - `categoria`: una de las 22 (`CATEGORIAS_FILTRO_GASTO`), exacta.
+ *  - `categoria`: una de las 22 (`CATEGORIAS_FILTRO_GASTO`), exacta; «NOMINA»
+ *    se IGNORA y marca `nominaIgnorada` (la nómina vive en su módulo).
  *  - `medio`: los de captura (BODEGA no se filtra).
  *  - `desde`/`hasta`: `rangoFiltro` (día o ISO; invertido se corrige).
  *  - `facturacion`: los 4 estados + NO_FACTURADA.
@@ -106,7 +113,8 @@ export function leerFiltrosGastos(
   const aeronave = uuidFiltro(get("aeronave_id"));
   if (aeronave) out.aeronave_id = aeronave;
   const categoria = valorDeCatalogo(get("categoria"), CATEGORIAS_FILTRO_GASTO);
-  if (categoria) out.categoria = categoria;
+  if (categoria === CATEGORIA_FUERA_DE_GASTOS) out.nominaIgnorada = true;
+  else if (categoria) out.categoria = categoria;
   const medio = valorDeCatalogo(get("medio"), MEDIOS_CAPTURA_VALUES);
   if (medio) out.medio = medio;
   const piloto = uuidFiltro(get("piloto"));
@@ -126,12 +134,17 @@ export function leerFiltrosGastos(
 /**
  * Los filtros del API comunes a la lista, los dos contadores de pestaña y el
  * Excel (sin la pestaña). «Esta semana» = capturado desde hoy Cancún − 7 días.
+ * Desde el 16-oct-2026 (API 0.0.90) SIEMPRE excluye la nómina
+ * (`excluir_categoria=NOMINA`): vive en su módulo. Con un API ≤ 0.0.89 el 400
+ * «property excluir_categoria should not exist» lo resuelve el lector
+ * (`expenses-server.ts`) releyendo sin el campo.
  */
 export function queryBaseGastos(
   f: FiltrosGastos,
   hoy: string,
 ): Omit<ListGastosQuery, "limit" | "offset" | "pendientes" | "duplicados"> {
   return {
+    excluir_categoria: CATEGORIA_FUERA_DE_GASTOS,
     aeronave_id: f.aeronave_id,
     categoria: f.categoria,
     medio_pago: f.medio,
@@ -167,6 +180,7 @@ export function queryListaGastos(
 export function queryExcelGastos(f: FiltrosGastos, hoy: string): Record<string, string | undefined> {
   const b = queryBaseGastos(f, hoy);
   const q: Record<string, string | undefined> = {
+    excluir_categoria: b.excluir_categoria,
     aeronave_id: b.aeronave_id,
     categoria: b.categoria,
     medio_pago: b.medio_pago,
@@ -182,6 +196,52 @@ export function queryExcelGastos(f: FiltrosGastos, hoy: string): Record<string, 
   if (f.vista === "pendientes") q.pendientes = "true";
   if (f.vista === "duplicados") q.duplicados = "true";
   return q;
+}
+
+// =============================================================================
+// Nómina fuera de Gastos (16-oct-2026, API 0.0.90)
+// =============================================================================
+
+/** La categoría que Gastos ya no enseña: vive en `/admin/nomina`. */
+export const CATEGORIA_FUERA_DE_GASTOS = CATEGORIA_NOMINA;
+/** Nombre EXACTO del campo del DTO del API (`ListGastosQuery.excluir_categoria`). */
+export const CAMPO_EXCLUIR_CATEGORIA = "excluir_categoria";
+/** Los campos que un API previo no conoce (la descarga del Excel los suelta en el 400). */
+export const CAMPOS_OPCIONALES_GASTOS: readonly string[] = [CAMPO_EXCLUIR_CATEGORIA];
+
+/** Las categorías del filtro de Gastos: las 22 sin «Nómina». */
+export const CATEGORIAS_FILTRO_GASTOS_VISTA: readonly string[] = CATEGORIAS_FILTRO_GASTO.filter(
+  (c) => c !== CATEGORIA_FUERA_DE_GASTOS,
+);
+
+/**
+ * ¿El error es el 400 de un API ≤ 0.0.89 que no conoce `excluir_categoria`?
+ * Espejo de `esApiSinRangoFechas`. Un 400 de OTRO campo o un 5xx ⇒ false (sube).
+ */
+export function esApiSinExcluirCategoria(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const { status, message } = err as { status?: unknown; message?: unknown };
+  return esCampoDesconocidoParaApi(status, message, CAMPO_EXCLUIR_CATEGORIA);
+}
+
+/** La misma consulta SIN `excluir_categoria` (relectura contra un API previo). */
+export function sinExcluirCategoria<T extends Record<string, unknown>>(query: T): T {
+  return sinCampos(query, [CAMPO_EXCLUIR_CATEGORIA]);
+}
+
+export const TITULO_NOMINA_FUERA_DE_GASTOS = "La nómina se lleva en su propio módulo";
+export const DESCRIPCION_NOMINA_FUERA_DE_GASTOS =
+  "Los pagos de nómina ya no salen en Gastos: en Nómina se suman por mes o quincena y se reparten entre los aviones. Aquí ves todos los demás gastos.";
+export const ETIQUETA_IR_A_NOMINA = "Ir a Nómina";
+
+/**
+ * Enlace «Ir a Nómina» de la franja: con fechas en la URL, el mes del `desde`
+ * (o del `hasta`); sin fechas, el módulo (mes en curso).
+ */
+export function hrefNominaDesdeGastos(f: Pick<FiltrosGastos, "desde" | "hasta">): string {
+  const dia = (f.desde ?? f.hasta ?? "").slice(0, 10);
+  if (esDiaValido(dia)) return hrefMesNomina(dia.slice(0, 7));
+  return RUTA_NOMINA;
 }
 
 /** ¿Hay algún filtro puesto? (avión, categoría y captura cuentan; el orden NO). */

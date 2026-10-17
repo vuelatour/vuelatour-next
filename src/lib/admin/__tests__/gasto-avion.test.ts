@@ -16,12 +16,14 @@ import {
   DETALLE_PAGO_AFAC,
   TITULO_PAGO_AFAC_AVION,
   ETIQUETA_AVION_PERSONAL,
+  ETIQUETA_AVION_SIN_REPARTIR,
   ETIQUETA_AVION_VUELATOUR,
   ETIQUETA_FALTA_AVION,
   ETIQUETA_REPARTIDO,
   MATRICULA_DESCONOCIDA,
   TEXTO_VER_AVION,
   TITULO_FALTA_AVION,
+  TITULO_NOMINA_SIN_REPARTIR,
   TITULO_REFERENCIA_AVION,
   estadoAvionGasto,
   etiquetaAvionGasto,
@@ -44,10 +46,10 @@ const gasto = (over: Partial<Gasto> = {}): G => ({
   ...over,
 });
 
-const VUELATOUR_SIN_AVION = ["OTRO", "NOMINA", "GASOLINA", "FIJO", "VISITA", "COMISION_VENDEDOR", "INDIRECTO"];
+const VUELATOUR_SIN_AVION = ["OTRO", "GASOLINA", "FIJO", "VISITA", "COMISION_VENDEDOR", "INDIRECTO"];
 
 describe("estadoAvionGasto · sin avión ni reparto (las 22 categorías)", () => {
-  it("empresa, comisión (VuelaTour) e INDIRECTO ⇒ «VuelaTour»; PERSONAL_DUENO ⇒ «Personal»; las 14 restantes ⇒ «Falta avión»", () => {
+  it("empresa, comisión (VuelaTour) e INDIRECTO ⇒ «VuelaTour»; PERSONAL_DUENO ⇒ «Personal»; NOMINA ⇒ «Sin repartir»; las 14 restantes ⇒ «Falta avión»", () => {
     const todas = Object.keys(CATEGORIA_GASTO_LABELS);
     expect(todas).toHaveLength(22);
     const faltan: string[] = [];
@@ -57,6 +59,8 @@ describe("estadoAvionGasto · sin avión ni reparto (las 22 categorías)", () =>
         expect(e, categoria).toMatchObject({ tipo: "FUERA_DEL_AVION", etiqueta: "VuelaTour", referencia: null });
       } else if (categoria === "PERSONAL_DUENO") {
         expect(e, categoria).toMatchObject({ tipo: "FUERA_DEL_AVION", etiqueta: "Personal", referencia: null });
+      } else if (categoria === "NOMINA") {
+        expect(e, categoria).toMatchObject({ tipo: "FUERA_DEL_AVION", etiqueta: "Sin repartir", referencia: null });
       } else {
         expect(e, categoria).toEqual({ tipo: "FALTA" });
         faltan.push(categoria);
@@ -70,6 +74,44 @@ describe("estadoAvionGasto · sin avión ni reparto (las 22 categorías)", () =>
     for (const c of ["COMISION_VENDEDOR_AVION", "SERVICIOS", "REFACCION", "COMISARIATO"]) {
       expect(faltan, c).toContain(c);
     }
+  });
+});
+
+describe("estadoAvionGasto · NÓMINA (16-oct-2026, API 0.0.90)", () => {
+  it("sin reparto ⇒ «Sin repartir» (no «VuelaTour» ni «Falta avión»): no entra a ningún balance", () => {
+    expect(ETIQUETA_AVION_SIN_REPARTIR).toBe("Sin repartir");
+    expect(TITULO_NOMINA_SIN_REPARTIR).toBe(
+      "Nómina sin repartir: no entra a ningún balance hasta repartirla entre aviones en el módulo Nómina.",
+    );
+    const e = estadoAvionGasto(gasto({ categoria: "NOMINA" }));
+    expect(e).toEqual({
+      tipo: "FUERA_DEL_AVION",
+      etiqueta: "Sin repartir",
+      referencia: null,
+      titulo: TITULO_NOMINA_SIN_REPARTIR,
+    });
+    expect(etiquetaAvionGasto(e)).toBe("Sin repartir");
+  });
+
+  it("con avión sellado ⇒ «Sin repartir» con «ref. N4142R» (el avión no la carga)", () => {
+    const e = estadoAvionGasto(
+      gasto({ categoria: "NOMINA", aeronave_id: "av-1", aeronave: { matricula: "N4142R" }, vuelo_id: "v-1" }),
+    );
+    expect(e).toMatchObject({ tipo: "FUERA_DEL_AVION", etiqueta: "Sin repartir", referencia: "N4142R" });
+  });
+
+  it("repartida ⇒ «Repartido:» con sus aviones (la regla 1 manda, igual que en el API)", () => {
+    const e = estadoAvionGasto(
+      gasto({
+        categoria: "NOMINA",
+        monto: "1000.00",
+        repartos: [
+          { aeronave_id: "a1", monto: "500.00", aeronave: { matricula: "N4142R" } },
+          { aeronave_id: "a2", monto: "500.00", aeronave: { matricula: "N621TX" } },
+        ],
+      }),
+    );
+    expect(e.tipo).toBe("REPARTIDO");
   });
 });
 

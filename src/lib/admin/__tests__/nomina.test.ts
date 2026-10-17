@@ -38,7 +38,7 @@ import {
   ETIQUETA_POR_MEDIO_NOMINA,
   ETIQUETA_REGISTRAR_NOMINA,
   ETIQUETA_RESUMEN_NOMINA,
-  ETIQUETA_VER_EN_GASTOS,
+  ETIQUETA_VER_EN_NOMINA,
   MEDIO_DESCONOCIDO,
   MONEDA_DESCONOCIDA,
   NOTA_QUINCENA,
@@ -55,7 +55,10 @@ import {
   etiquetaMedioNomina,
   etiquetaMesNomina,
   etiquetaQuincena,
-  hrefGastosNomina,
+  CLAVE_PRECIERRE_NOMINA_SIN_REPARTIR,
+  accionVerEnNomina,
+  avisoNominaSinRepartir,
+  hrefPrecierreNominaSinRepartir,
   hrefMesNomina,
   mesDeHoyNomina,
   mesNominaDeUrl,
@@ -73,7 +76,6 @@ import {
   tituloListaNomina,
   tituloTotalMesNomina,
   tituloVacioNomina,
-  tituloVerEnGastos,
   type GastoNominaResumen,
 } from "@/lib/admin/nomina";
 
@@ -395,13 +397,47 @@ describe("resumen del mes con los montos REALES de prod", () => {
 });
 
 describe("enlaces y Excel", () => {
-  it("«Ver en Gastos»: categoría y fechas del mes, que Gastos lee con su MISMA función", () => {
-    const href = hrefGastosNomina("2026-10");
-    expect(href).toBe("/admin/expenses?categoria=NOMINA&desde=2026-10-01&hasta=2026-10-31");
-    const params = new URLSearchParams(href.split("?")[1]);
+  it("la nómina YA NO sale en Gastos (16-oct-2026): `?categoria=NOMINA` se ignora y se avisa", () => {
+    // Un enlace viejo «Ver en Gastos» (o un marcador) ya no filtra por nómina:
+    // Gastos la excluye siempre y pinta la franja que manda a esta pantalla.
+    const params = new URLSearchParams("categoria=NOMINA&desde=2026-10-01&hasta=2026-10-31");
     const filtros = leerFiltrosGastos((k) => params.get(k));
-    expect(filtros).toMatchObject({ vista: "todos", categoria: "NOMINA", desde: "2026-10-01", hasta: "2026-10-31" });
-    expect(hrefGastosNomina("2026-02")).toBe("/admin/expenses?categoria=NOMINA&desde=2026-02-01&hasta=2026-02-28");
+    expect(filtros.categoria).toBeUndefined();
+    expect(filtros.nominaIgnorada).toBe(true);
+    expect(filtros).toMatchObject({ vista: "todos", desde: "2026-10-01", hasta: "2026-10-31" });
+  });
+
+  it("«Resolver →» del pre-cierre (`nomina_sin_repartir`) ⇒ la nómina del MES del periodo", () => {
+    expect(CLAVE_PRECIERRE_NOMINA_SIN_REPARTIR).toBe("nomina_sin_repartir");
+    expect(hrefPrecierreNominaSinRepartir({ desde: "2026-09-01" })).toBe("/admin/nomina?mes=2026-09");
+    expect(hrefPrecierreNominaSinRepartir({ desde: "2026-10-15" })).toBe("/admin/nomina?mes=2026-10");
+    // Un periodo ilegible no inventa mes: la pantalla abre en el mes de hoy.
+    expect(hrefPrecierreNominaSinRepartir({ desde: "basura" })).toBe(RUTA_NOMINA);
+  });
+
+  it("alta de un pago de nómina DESDE Gastos ⇒ acción «Ver en Nómina» del mes del pago", () => {
+    expect(ETIQUETA_VER_EN_NOMINA).toBe("Ver en Nómina");
+    expect(accionVerEnNomina({ categoria: CATEGORIA_NOMINA, fecha: "2026-10-05" })).toEqual({
+      label: "Ver en Nómina",
+      href: "/admin/nomina?mes=2026-10",
+    });
+    // Sin fecha legible: la pantalla en el mes de hoy.
+    expect(accionVerEnNomina({ categoria: CATEGORIA_NOMINA, fecha: "" })).toEqual({
+      label: "Ver en Nómina",
+      href: RUTA_NOMINA,
+    });
+    // Desde la propia pantalla Nómina (categoría por defecto NOMINA): sin acción.
+    expect(
+      accionVerEnNomina({ categoria: CATEGORIA_NOMINA, defaultCategoria: CATEGORIA_NOMINA, fecha: "2026-10-05" }),
+    ).toBeNull();
+    // Otra categoría: sin acción.
+    expect(accionVerEnNomina({ categoria: "COMIDA", fecha: "2026-10-05" })).toBeNull();
+  });
+
+  it("el reparto del alta falló: el aviso manda a «Repartir entre aviones» de la pantalla Nómina", () => {
+    expect(avisoNominaSinRepartir("el servidor no respondió")).toBe(
+      "El pago de nómina se creó SIN repartir: repártelo en la pantalla «Nómina» con «Repartir entre aviones». Motivo: el servidor no respondió",
+    );
   });
 
   it("el mes en la URL de Nómina, de ida y vuelta", () => {
@@ -444,31 +480,31 @@ describe("enlaces y Excel", () => {
 });
 
 describe("textos EXACTOS de la pantalla", () => {
-  it("ayuda del alta con «Nómina»: de EMPRESA aunque traiga avión; a un avión solo repartida (revisión 15-oct-2026)", () => {
+  it("ayuda del alta con «Nómina»: fuera de Gastos y de todo balance hasta repartirla (16-oct-2026)", () => {
     expect(AYUDA_ALTA_NOMINA).toBe(
-      "sin vuelo. Es gasto de VuelaTour (va a «otros gastos» del Balance general) aunque elijas un avión: el avión queda solo como referencia y no le resta nada. Para cargarla a uno o varios aviones usa «Repartir entre aviones» (aquí al guardar si no eliges avión, o después desde su menú ⋯ o «Verificar / editar»). Su seguimiento vive en la pantalla «Nómina».",
+      "sin vuelo. No sale en Gastos ni entra a ningún balance hasta que se reparte entre aviones: si eliges un avión, queda solo como referencia y no le resta nada. Repártela en la pantalla «Nómina» con «Repartir entre aviones» (todo el mes o por quincena), o aquí al guardar si no eliges avión.",
     );
     // El texto viejo invitaba a ligar el sueldo al avión del piloto como si
-    // con eso se lo cargara (invariante 10 del API: no le resta nada).
+    // con eso se lo cargara (el avión elegido no le resta nada).
     expect(AYUDA_ALTA_NOMINA).not.toMatch(/piloto de un solo avión|el avión\s+es opcional/);
+    // Ya no dice que va a «otros gastos» (regla vieja: hoy sin repartir no entra a ningún balance).
+    expect(AYUDA_ALTA_NOMINA).not.toContain("otros gastos");
     // Dice lo mismo que el hint «Con lo elegido cae en: …» del MISMO formulario.
-    expect(hojaDestinoGasto(CATEGORIA_NOMINA, false, true)).toContain("el avión queda solo como referencia");
-    expect(AYUDA_ALTA_NOMINA).toContain("el avión queda solo como referencia");
+    expect(hojaDestinoGasto(CATEGORIA_NOMINA, false, true)).toContain("no entra a ningún balance hasta repartirla");
+    expect(AYUDA_ALTA_NOMINA).toContain("ni entra a ningún balance hasta que se reparte");
     expect(AYUDA_ALTA_NOMINA).toContain(`la pantalla «${TITULO_NOMINA}»`);
   });
 
   it("cabecera, alta y ayuda", () => {
     expect(TITULO_NOMINA).toBe("Nómina");
     expect(DESCRIPCION_NOMINA).toBe(
-      "Todo lo de la nómina en un solo lugar: sueldos del personal y de los pilotos, cuotas del IMSS e INFONAVIT y la asesoría de la nómina (los gastos con categoría «Nómina»). Es gasto de VuelaTour: va a «otros gastos» del Balance general; si una parte le toca a un avión, repártela desde «Verificar / editar».",
+      "Todo lo de la nómina en un solo lugar: sueldos del personal y de los pilotos, cuotas del IMSS e INFONAVIT y la asesoría de la nómina (los gastos con categoría «Nómina», que ya no salen en Gastos). Súmala por mes o quincena y repártela en partes iguales entre los aviones que elijas con «Repartir entre aviones»: solo lo repartido llega al balance de cada avión; sin repartir no entra a ningún balance.",
     );
     expect(ETIQUETA_REGISTRAR_NOMINA).toBe("Registrar pago de nómina");
     expect(AYUDA_CAPTURA_NOMINA).toBe(
       "En «Notas» escribe a quién se le pagó y qué quincena (p. ej. «Luis · 1a oct»): así lo encuentras con la búsqueda de la tabla.",
     );
     expect(NOTA_QUINCENA).toBe("La quincena sale de la fecha del gasto (la del pago).");
-    expect(ETIQUETA_VER_EN_GASTOS).toBe("Ver en Gastos");
-    expect(tituloVerEnGastos("2026-10")).toBe("Abre Gastos con la categoría «Nómina» y las fechas de octubre 2026.");
   });
 
   it("vacío y error (jamás «sin pagos» cuando la carga falló)", () => {
@@ -506,14 +542,14 @@ describe("textos EXACTOS de la pantalla", () => {
 describe("descripción de la tabla según el rol (revisión 15-oct-2026)", () => {
   it("ADMIN y COORDINADOR: el menú ⋯ trae «Eliminar»; «Repartir» solo en los pagos sin vuelo", () => {
     const texto =
-      "Cada pago es un gasto completo: su menú ⋯ trae «Verificar / editar», «Repartir entre aviones» (en los pagos sin vuelo) y «Eliminar», y en su renglón están el comprobante, la facturación y el banco.";
+      "Cada pago es un gasto completo: su menú ⋯ trae «Verificar / editar», «Repartir entre aviones» (en los pagos sin vuelo) y «Eliminar», y en su renglón están el comprobante, la facturación y el banco. Para repartir varios pagos de una vez, usa «Repartir entre aviones» arriba.";
     expect(descripcionListaNomina("ADMIN")).toBe(texto);
     expect(descripcionListaNomina("COORDINADOR")).toBe(texto);
   });
 
   it("FACTURACION ve Nómina pero el menú le esconde «Eliminar»: el texto no se lo promete", () => {
     expect(descripcionListaNomina("FACTURACION")).toBe(
-      "Cada pago es un gasto completo: su menú ⋯ trae «Verificar / editar» y «Repartir entre aviones» (en los pagos sin vuelo), y en su renglón están el comprobante, la facturación y el banco.",
+      "Cada pago es un gasto completo: su menú ⋯ trae «Verificar / editar» y «Repartir entre aviones» (en los pagos sin vuelo), y en su renglón están el comprobante, la facturación y el banco. Para repartir varios pagos de una vez, usa «Repartir entre aviones» arriba.",
     );
     expect(descripcionListaNomina("FACTURACION")).not.toContain("Eliminar");
   });

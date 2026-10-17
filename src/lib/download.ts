@@ -1,5 +1,6 @@
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { env } from "@/lib/env";
+import { esCampoDesconocidoParaApi, sinCampos } from "@/lib/api/campo-opcional";
 
 /**
  * Descarga un archivo del API con el token de sesión (fuente única: reportes,
@@ -22,6 +23,13 @@ export async function descargarDelApi(
      */
     openInTab?: boolean;
     query?: Record<string, string | undefined>;
+    /**
+     * Campos NUEVOS de la consulta que un API previo puede no conocer
+     * (ADITIVO, 16-oct-2026: `excluir_categoria` del Excel de Gastos). Si el
+     * API responde el 400 «property X should not exist» por uno de ellos, se
+     * pide UNA vez más sin esos campos. Cualquier otro error, como siempre.
+     */
+    camposOpcionales?: readonly string[];
   } = {},
 ): Promise<string | null> {
   try {
@@ -29,17 +37,34 @@ export async function descargarDelApi(
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    const params = Object.entries(opts.query ?? {}).filter(
-      (e): e is [string, string] => e[1] != null && e[1] !== "",
+    const pedir = (query: Record<string, string | undefined>) => {
+      const params = Object.entries(query).filter(
+        (e): e is [string, string] => e[1] != null && e[1] !== "",
+      );
+      const qs = params.length
+        ? `?${new URLSearchParams(params).toString()}`
+        : "";
+      return fetch(`${env.API_URL}${path}${qs}`, {
+        headers: session
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {},
+      });
+    };
+    const query = opts.query ?? {};
+    let res = await pedir(query);
+    const opcionales = (opts.camposOpcionales ?? []).filter(
+      (c) => query[c] != null && query[c] !== "",
     );
-    const qs = params.length
-      ? `?${new URLSearchParams(params).toString()}`
-      : "";
-    const res = await fetch(`${env.API_URL}${path}${qs}`, {
-      headers: session
-        ? { Authorization: `Bearer ${session.access_token}` }
-        : {},
-    });
+    if (res.status === 400 && opcionales.length > 0) {
+      let mensaje: unknown = null;
+      try {
+        mensaje = ((await res.clone().json()) as { message?: unknown }).message;
+      } catch {
+        // cuerpo no-JSON: no es el 400 de un campo desconocido
+      }
+      const sueltos = opcionales.filter((c) => esCampoDesconocidoParaApi(400, mensaje, c));
+      if (sueltos.length > 0) res = await pedir(sinCampos(query, sueltos));
+    }
     if (!res.ok) {
       // Sesión/permisos en español (el API responde estos en inglés técnico).
       if (res.status === 401)

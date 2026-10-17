@@ -30,6 +30,7 @@ import {
   destinoPorDefecto,
   errorVueloObligatorio,
   esCategoriaPagoVendedor,
+  HOJA_NOMINA_SIN_REPARTIR,
   hojaDestinoGasto,
   iaPuedeCambiarCategoria,
   mensajeGastoRequiereVuelo,
@@ -317,7 +318,24 @@ describe("hojaDestinoGasto: a qué hoja cae CON LO ELEGIDO (sin pistas falsas)",
     expect(CATEGORIAS_EMPRESA.has(AV)).toBe(false);
   });
 
-  it.each(["OTRO", "NOMINA", "GASOLINA", "FIJO", "VISITA"])(
+  it("NOMINA (16-oct-2026, API 0.0.90): vive en el módulo Nómina y sin repartir no entra a NINGÚN balance", () => {
+    // Con o sin vuelo/avión: el avión elegido es solo referencia y la
+    // nómina cuenta en un balance únicamente REPARTIDA (desde Nómina).
+    for (const [conVuelo, conAvion] of [
+      [true, true],
+      [true, false],
+      [false, true],
+      [false, false],
+    ] as const) {
+      expect(hojaDestinoGasto("NOMINA", conVuelo, conAvion)).toBe(HOJA_NOMINA_SIN_REPARTIR);
+    }
+    expect(HOJA_NOMINA_SIN_REPARTIR).toBe(
+      "Nómina (módulo Nómina): no entra a ningún balance hasta repartirla entre aviones desde Nómina",
+    );
+    expect(HOJA_NOMINA_SIN_REPARTIR).not.toContain("Otros gastos");
+  });
+
+  it.each(["OTRO", "GASOLINA", "FIJO", "VISITA"])(
     "%s (empresa) va SIEMPRE a «otros gastos» del general: el vuelo o el avión son referencia",
     (cat) => {
       expect(hojaDestinoGasto(cat, true, true)).toBe(

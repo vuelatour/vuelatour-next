@@ -9,13 +9,14 @@
  * y Otros Gastos que se llame Nomina para tener en ese apartado todo lo de
  * nomina».
  *
- * Reglas que NO cambian (las decide el API, invariante 10 y «Pendientes» de su
- * CLAUDE.md): «Nómina» (`NOMINA`) es categoría de EMPRESA —va a «otros
- * gastos» del Balance general VuelaTour aunque traiga avión o vuelo—, no resta
- * en ningún avión ni en el reparto salvo que se REPARTA a mano
- * (`gasto_reparto`, desde «Verificar / editar» u «Otros gastos») y no pide
- * avión (no es pendiente de la bandeja). La fecha del gasto es la del PAGO
- * (decisión del 13-oct-2026): de ella salen el mes y la quincena.
+ * Reglas (las decide el API; desde el 16-oct-2026, API 0.0.90, invariante 91
+ * del API): la nómina ya NO sale en Gastos ni en «Otros gastos» — vive solo
+ * aquí. SOLO la nómina REPARTIDA cuenta en los libros: cada pago se reparte en
+ * PARTES IGUALES entre los aviones que se elijan («Repartir entre aviones»,
+ * `nomina-reparto.ts`); sin repartir no entra a ningún balance y el
+ * pre-cierre lo BLOQUEA (`nomina_sin_repartir`). No pide avión (no es
+ * pendiente de la bandeja). La fecha del gasto es la del PAGO (decisión del
+ * 13-oct-2026): de ella salen el mes y la quincena.
  *
  * Aquí el panel solo SUMA montos ya registrados: en CENTAVOS enteros y POR
  * MONEDA (MXN y USD jamás se mezclan). No infiere a la persona de las notas
@@ -267,7 +268,12 @@ function sumar(acumulado: Map<string, number>, moneda: string, centavos: number)
   acumulado.set(moneda, (acumulado.get(moneda) ?? 0) + centavos);
 }
 
-function porMonedaDe(acumulado: Map<string, number>): PorMoneda[] {
+/** Totales por moneda (MXN, USD, el resto) de un acumulado en CENTAVOS enteros. */
+export function totalesPorMoneda(acumulado: ReadonlyMap<string, number>): PorMoneda[] {
+  return porMonedaDe(acumulado);
+}
+
+function porMonedaDe(acumulado: ReadonlyMap<string, number>): PorMoneda[] {
   return [...acumulado.entries()]
     .sort(([a], [b]) => compararMonedas(a, b))
     .map(([moneda, centavos]) => ({ moneda, total: centavos / 100 }));
@@ -354,13 +360,14 @@ export function hrefMesNomina(mes: string, actuales = ""): string {
 }
 
 /**
- * Gastos con la categoría «Nómina» y las fechas del mes (lo lee
- * `leerFiltrosGastos`): «/admin/expenses?categoria=NOMINA&desde=…&hasta=…».
+ * «Resolver →» del renglón BLOQUEANTE `nomina_sin_repartir` del pre-cierre
+ * (API 0.0.90): Nómina en el mes del `desde` del periodo (el foco `pc`/`ids`
+ * lo agrega `hrefResolverItem`). Un `desde` ilegible ⇒ el módulo.
  */
-export function hrefGastosNomina(mes: string): string {
-  const { desde, hasta } = rangoMesNomina(mes);
-  const params = new URLSearchParams({ categoria: CATEGORIA_NOMINA, desde, hasta });
-  return `/admin/expenses?${params.toString()}`;
+export const CLAVE_PRECIERRE_NOMINA_SIN_REPARTIR = "nomina_sin_repartir";
+export function hrefPrecierreNominaSinRepartir(p: { desde: string }): string {
+  const mes = (p.desde ?? "").slice(0, 7);
+  return esMesNomina(mes) ? hrefMesNomina(mes) : RUTA_NOMINA;
 }
 
 /** Query de «Exportar Excel» (`GET /v1/expenses/export`): la categoría y el mes de la pantalla. */
@@ -379,31 +386,48 @@ export function nombreExcelNomina(mes: string): string {
 export const TITULO_NOMINA = "Nómina";
 
 export const DESCRIPCION_NOMINA =
-  "Todo lo de la nómina en un solo lugar: sueldos del personal y de los pilotos, cuotas del IMSS e INFONAVIT y la asesoría de la nómina (los gastos con categoría «Nómina»). Es gasto de VuelaTour: va a «otros gastos» del Balance general; si una parte le toca a un avión, repártela desde «Verificar / editar».";
+  "Todo lo de la nómina en un solo lugar: sueldos del personal y de los pilotos, cuotas del IMSS e INFONAVIT y la asesoría de la nómina (los gastos con categoría «Nómina», que ya no salen en Gastos). Súmala por mes o quincena y repártela en partes iguales entre los aviones que elijas con «Repartir entre aviones»: solo lo repartido llega al balance de cada avión; sin repartir no entra a ningún balance.";
 
 export const ETIQUETA_REGISTRAR_NOMINA = "Registrar pago de nómina";
 
 /**
  * Cuadro de ayuda del alta con la categoría «Nómina» (va tras «Nómina:» en
- * negritas). Dice la regla del API (invariante 10): es gasto de EMPRESA
- * aunque traiga avión —el avión queda solo como referencia, igual que el
- * hint de `hojaDestinoGasto`— y a un avión solo llega REPARTIDA. «Repartir
- * entre aviones» del alta solo sale sin avión; el menú ⋯ y «Verificar /
- * editar» reparten también con avión (el API lo permite sin vuelo).
+ * negritas). Dice la regla del API (invariante 91 del API, 16-oct-2026): la
+ * nómina no sale en Gastos ni entra a ningún balance hasta que se REPARTE;
+ * el avión elegido queda solo como referencia —igual que el hint de
+ * `hojaDestinoGasto`—. Se reparte en partes iguales desde la pantalla
+ * «Nómina» (o en el alta, «Repartir entre aviones», si no eliges avión).
  */
 export const AYUDA_ALTA_NOMINA =
-  "sin vuelo. Es gasto de VuelaTour (va a «otros gastos» del Balance general) aunque elijas un avión: el avión queda solo como referencia y no le resta nada. Para cargarla a uno o varios aviones usa «Repartir entre aviones» (aquí al guardar si no eliges avión, o después desde su menú ⋯ o «Verificar / editar»). Su seguimiento vive en la pantalla «Nómina».";
+  "sin vuelo. No sale en Gastos ni entra a ningún balance hasta que se reparte entre aviones: si eliges un avión, queda solo como referencia y no le resta nada. Repártela en la pantalla «Nómina» con «Repartir entre aviones» (todo el mes o por quincena), o aquí al guardar si no eliges avión.";
 
 export const AYUDA_CAPTURA_NOMINA =
   "En «Notas» escribe a quién se le pagó y qué quincena (p. ej. «Luis · 1a oct»): así lo encuentras con la búsqueda de la tabla.";
 
 export const NOTA_QUINCENA = "La quincena sale de la fecha del gasto (la del pago).";
 
-export const ETIQUETA_VER_EN_GASTOS = "Ver en Gastos";
+/** Acción del aviso del alta hecha desde Gastos con la categoría «Nómina». */
+export const ETIQUETA_VER_EN_NOMINA = "Ver en Nómina";
 
-/** `title` de «Ver en Gastos»: a dónde lleva. */
-export function tituloVerEnGastos(mes: string): string {
-  return `Abre Gastos con la categoría «Nómina» y las fechas de ${etiquetaMesNomina(mes)}.`;
+/**
+ * Tras dar de alta un pago de nómina DESDE OTRA pantalla (Gastos, Conciliación,
+ * Caja chica…), el aviso ofrece «Ver en Nómina» (ese pago ya no sale en Gastos)
+ * con el mes de su fecha. Desde la propia pantalla «Nómina» (la categoría ya
+ * venía puesta) o con otra categoría ⇒ null.
+ */
+export function accionVerEnNomina(p: {
+  categoria: string | null | undefined;
+  defaultCategoria?: string | null;
+  fecha?: string | null;
+}): { label: string; href: string } | null {
+  if (p.categoria !== CATEGORIA_NOMINA || p.defaultCategoria === CATEGORIA_NOMINA) return null;
+  const mes = (p.fecha ?? "").slice(0, 7);
+  return { label: ETIQUETA_VER_EN_NOMINA, href: esMesNomina(mes) ? hrefMesNomina(mes) : RUTA_NOMINA };
+}
+
+/** El alta se guardó pero su reparto no (estado recuperable: no se borra nada). */
+export function avisoNominaSinRepartir(motivo: string): string {
+  return `El pago de nómina se creó SIN repartir: repártelo en la pantalla «Nómina» con «Repartir entre aviones». Motivo: ${motivo}`;
 }
 
 /** Vacío con la lista CARGADA (con la lista caída se dice que falló, jamás esto). */
@@ -452,7 +476,7 @@ export function descripcionListaNomina(rol: string | null | undefined): string {
   const acciones = puedeEliminarGasto(rol)
     ? `«Verificar / editar», ${repartir} y «Eliminar»`
     : `«Verificar / editar» y ${repartir}`;
-  return `Cada pago es un gasto completo: su menú ⋯ trae ${acciones}, y en su renglón están el comprobante, la facturación y el banco.`;
+  return `Cada pago es un gasto completo: su menú ⋯ trae ${acciones}, y en su renglón están el comprobante, la facturación y el banco. Para repartir varios pagos de una vez, usa «Repartir entre aviones» arriba.`;
 }
 
 /** Nombre accesible del resumen del mes. */

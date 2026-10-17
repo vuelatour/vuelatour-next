@@ -1,4 +1,5 @@
 import { apiServer } from "./server";
+import { esCampoDesconocidoParaApi, sinCampos } from "./campo-opcional";
 import type { GastoListResponse, OtrosGastosResponse } from "@/types/expenses";
 
 export interface ListFuelLoadsQuery {
@@ -33,6 +34,10 @@ export async function listFuelLoads(query: ListFuelLoadsQuery = {}) {
 }
 
 export interface ListGastosQuery {
+  /** Categoría que NO se lista (API 0.0.90): Gastos manda «NOMINA» porque la
+   *  nómina vive en su módulo. Un API previo responde 400 «property
+   *  excluir_categoria should not exist» y `listGastos` relee SIN el campo. */
+  excluir_categoria?: string;
   vuelo_id?: string;
   aeronave_id?: string;
   usuario_captura_id?: string;
@@ -62,12 +67,41 @@ export interface ListGastosQuery {
   offset?: number;
 }
 
-/** Bandeja de gastos para verificación en oficina. */
-export function listGastos(query: ListGastosQuery = {}) {
+function pedirGastos(query: ListGastosQuery) {
   return apiServer<GastoListResponse>("/v1/expenses", {
     searchParams: query as Record<string, string | number | boolean | undefined>,
     cache: "no-store",
   });
+}
+
+const CAMPO_EXCLUIR = "excluir_categoria" satisfies keyof ListGastosQuery;
+
+/**
+ * Pide una página tolerando un API ≤ 0.0.89 (skew de deploy, 16-oct-2026): si
+ * la consulta trae `excluir_categoria` y el API responde el 400 «property
+ * excluir_categoria should not exist», RELEE sin el campo (patrón
+ * `esApiSinRangoFechas`). Es un GET deliberado con OTROS parámetros, no el
+ * reintento automático de `apiFetch` (prohibido en 4xx). Un 400 de otro campo
+ * o un 5xx suben como siempre. Devuelve también la consulta que funcionó, para
+ * que las páginas siguientes no repitan el 400.
+ */
+async function pedirGastosTolerante(
+  query: ListGastosQuery,
+): Promise<{ res: GastoListResponse; query: ListGastosQuery }> {
+  try {
+    return { res: await pedirGastos(query), query };
+  } catch (err) {
+    if (query.excluir_categoria == null) throw err;
+    const { status, message } = (err ?? {}) as { status?: unknown; message?: unknown };
+    if (!esCampoDesconocidoParaApi(status, message, CAMPO_EXCLUIR)) throw err;
+    const sin = sinCampos(query as Record<string, unknown>, [CAMPO_EXCLUIR]) as ListGastosQuery;
+    return { res: await pedirGastos(sin), query: sin };
+  }
+}
+
+/** Bandeja de gastos para verificación en oficina. */
+export async function listGastos(query: ListGastosQuery = {}) {
+  return (await pedirGastosTolerante(query)).res;
 }
 
 /**
@@ -80,10 +114,10 @@ export async function listGastosAll(
   query: Omit<ListGastosQuery, "limit" | "offset"> = {},
 ) {
   const limit = 200;
-  const first = await listGastos({ ...query, limit, offset: 0 });
+  const { res: first, query: efectiva } = await pedirGastosTolerante({ ...query, limit, offset: 0 });
   const data = [...first.data];
   while (data.length < first.count) {
-    const page = await listGastos({ ...query, limit, offset: data.length });
+    const page = await pedirGastos({ ...efectiva, limit, offset: data.length });
     if (page.data.length === 0) break; // defensa anti-bucle si count cambió
     data.push(...page.data);
   }

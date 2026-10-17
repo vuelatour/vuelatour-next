@@ -277,13 +277,17 @@ function gastoNomina(over: Partial<Gasto> = {}): Gasto {
 }
 
 describe("la MISMA tabla de Gastos, sin el proveedor de «Unir en compra»", () => {
-  it("se pinta sin ExpensesSeleccionProvider: el pago con su menú ⋯, «Nómina» y «VuelaTour»; sin casillas", () => {
+  it("se pinta sin ExpensesSeleccionProvider: el pago con su menú ⋯, «Nómina» y «Sin repartir»; sin casillas", () => {
     const html = renderToStaticMarkup(
       <ExpensesTable gastos={[gastoNomina()]} aircraft={[]} providers={[]} fotoUrls={{}} rol="ADMIN" />,
     );
     expect(html).toContain('data-acciones="g-nom"');
     expect(html).toContain(">Nómina<");
-    expect(html).toContain(">VuelaTour<");
+    // 16-oct-2026 (API 0.0.90): una nómina SIN reparto no entra a ningún
+    // balance ⇒ «Sin repartir» (ya no «VuelaTour»).
+    expect(html).toContain(">Sin repartir<");
+    expect(html).toContain('title="Nómina sin repartir: no entra a ningún balance hasta repartirla entre aviones en el módulo Nómina."');
+    expect(html).not.toContain(">VuelaTour<");
     expect(html).toContain(">$6,830 MXN<");
     expect(html).toContain("Sueldo · persona 1 · 1a oct");
     expect(html).not.toContain('type="checkbox"');
@@ -337,7 +341,8 @@ describe("alta: botón con etiqueta propia (prop ADITIVA) y la ayuda de NÓMINA"
       `<p data-ayuda-nomina="" class="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground"><span class="font-medium">Nómina</span>: ${esc(AYUDA_ALTA_NOMINA)}</p>`,
     );
     expect(html).not.toContain("piloto de un solo avión");
-    expect(html).toContain("el avión queda solo como referencia");
+    expect(html).toContain("queda solo como referencia y no le resta nada");
+    expect(html).toContain("No sale en Gastos ni entra a ningún balance hasta que se reparte entre aviones");
   });
 
   it("cableado del diálogo: la prop es opcional y el contexto se pinta también sin el modo controlado", () => {
@@ -421,7 +426,8 @@ describe("página /admin/nomina (cableado por regex)", () => {
   it("alta: el diálogo de siempre con NOMINA, el botón propio, el título y la ayuda", () => {
     const alta = /<ExpenseCreateDialog[\s\S]*?\/>/.exec(page)?.[0] ?? "";
     expect(alta).toContain("defaultCategoria={CATEGORIA_NOMINA}");
-    expect(alta).toContain('varianteBoton="default"');
+    // «Repartir entre aviones» es el primario cuando se ofrece; si no, el alta.
+    expect(alta).toContain('varianteBoton={ofrecerReparto ? "outline" : "default"}');
     expect(alta).toContain("etiquetaBoton={ETIQUETA_REGISTRAR_NOMINA}");
     expect(alta).toContain("titulo={ETIQUETA_REGISTRAR_NOMINA}");
     expect(alta).toContain("contexto={AYUDA_CAPTURA_NOMINA}");
@@ -429,16 +435,46 @@ describe("página /admin/nomina (cableado por regex)", () => {
     expect(alta).toContain("providers={providers}");
   });
 
-  it("Excel de Gastos con la categoría y el mes; «Ver en Gastos» con manita", () => {
+  it("Excel de Gastos con la categoría y el mes; SIN «Ver en Gastos» (la nómina ya no sale ahí)", () => {
     const excel = /<ExcelExportButton[\s\S]*?\/>/.exec(page)?.[0] ?? "";
     expect(excel).toContain('path="/v1/expenses/export"');
     expect(excel).toContain("filename={nombreExcelNomina(mes)}");
     expect(excel).toContain("query={queryExcelNomina(mes)}");
     expect(excel).toContain("title={tituloExcelGastos(me?.rol ?? null)}");
     expect(excel).toContain('className="h-8"');
-    expect(page).toMatch(
-      /<Link\s+href=\{hrefGastosNomina\(mes\)\}[\s\S]*?buttonVariants\(\{ variant: "outline", size: "sm" \}\), "h-8 cursor-pointer"[\s\S]*?\{ETIQUETA_VER_EN_GASTOS\}/,
+    // 16-oct-2026 (API 0.0.90): Gastos excluye la nómina; el enlace mandaría
+    // a una lista vacía.
+    expect(page).not.toMatch(/hrefGastosNomina|ETIQUETA_VER_EN_GASTOS|tituloVerEnGastos/);
+    expect(page).not.toContain("<Link");
+  });
+
+  it("«Repartir entre aviones»: botón primario solo con la lista cargada, pagos y permiso; maxDuration 120", () => {
+    expect(page).toContain(
+      "const ofrecerReparto = lista.ok && gastos.length > 0 && puedeRepartirNomina(me?.rol ?? null);",
     );
+    expect(page).toMatch(
+      /\{ofrecerReparto && \(\s*<NominaRepartoBoton\s+pagos=\{gastos\.map\(pagoNominaDeGasto\)\}\s+etiquetaMes=\{etiquetaMesNomina\(mes\)\}\s*\/>\s*\)\}/,
+    );
+    expect(page.indexOf("<NominaRepartoBoton")).toBeLessThan(page.indexOf("<ExpenseCreateDialog"));
+    expect(page).toContain("export const maxDuration = 120;");
+    // Resumen «Repartido / Sin repartir / Por avión» con las partes GUARDADAS.
+    expect(page).toContain("<NominaRepartoResumen resumen={resumenRepartoNomina(gastos)} />");
+    expect(page.indexOf("<NominaResumen")).toBeLessThan(page.indexOf("<NominaRepartoResumen"));
+    expect(page.indexOf("<NominaRepartoResumen")).toBeLessThan(page.indexOf("<ExpensesTable"));
+  });
+
+  it("foco del pre-cierre (`nomina_sin_repartir`): los pagos primero y en ámbar, con la franja", () => {
+    expect(page).toContain("const foco = leerFocoPreCierre(sp);");
+    expect(page).toContain("filasResaltadasPrimero(gastosLista, foco.ids, (g) => g.id)");
+    expect(page).toContain("const gastos = conFoco.filas;");
+    expect(page).toMatch(/<FranjaPreCierre[\s\S]*?encontrados=\{lista\.ok \? conFoco\.encontrados : null\}/);
+    expect(page).toContain('hrefQuitar={hrefQuitarResaltado("/admin/nomina", sp)}');
+    expect(page).toContain("notaVista={NOTA_VISTA_MES}");
+    const tabla = /<ExpensesTable[\s\S]*?\/>/.exec(page)?.[0] ?? "";
+    expect(tabla).toContain("resaltados={foco?.ids}");
+    // La FRANJA va después del aviso de degradación y antes de la lista.
+    expect(page.indexOf("<AvisoDegradado")).toBeLessThan(page.indexOf("<FranjaPreCierre"));
+    expect(page.indexOf("<FranjaPreCierre")).toBeLessThan(page.indexOf("<ExpensesTable"));
   });
 
   it("periodo: el selector de Gastos personales entre «‹ anterior» y «siguiente ›» (no hacia el futuro)", () => {
@@ -448,7 +484,8 @@ describe("página /admin/nomina (cableado por regex)", () => {
     // Los enlaces del mes viven en el componente de cliente (leen la query
     // VIVA): la página ya no arma ningún `hrefMesNomina`.
     expect(page).not.toContain("hrefMesNomina");
-    expect(page.match(/prefetch=\{false\}/g)).toHaveLength(1);
+    // Sin «Ver en Gastos» la página ya no tiene enlaces propios.
+    expect(page.match(/prefetch=\{false\}/g)).toBeNull();
     const nav = leer("../nomina-nav-meses.tsx");
     expect(nav.startsWith('"use client";')).toBe(true);
     expect(nav).toContain("const actuales = useSearchParams().toString();");

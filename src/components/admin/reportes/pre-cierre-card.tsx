@@ -85,6 +85,10 @@ import {
   hrefPrecierreTransporte,
 } from "@/lib/admin/pre-cierre-transporte";
 import { hrefConciliacion } from "@/lib/admin/conciliacion-vista";
+import {
+  CLAVE_PRECIERRE_NOMINA_SIN_REPARTIR,
+  hrefPrecierreNominaSinRepartir,
+} from "@/lib/admin/nomina";
 import { ANCLA_PRE_CIERRE, hrefResolverItem } from "@/lib/admin/pre-cierre-resolver";
 import { lineasLeyendaPreCierre, textoBadgeCierrePeriodo } from "@/lib/admin/cierre-mes";
 import { ChipEstadoCierre, ChipMarcaCierre } from "@/components/admin/chip-cierre";
@@ -264,6 +268,9 @@ const LINK_POR_CLAVE: Record<
   string,
   (p: { desde: string; hasta: string }) => string
 > = {
+  // Nómina sin repartir (BLOQUEANTE, API 0.0.90): se reparte en Nómina, en el
+  // mes del periodo; el foco ámbar (`pc`/`ids`) lo agrega `hrefResolverItem`.
+  [CLAVE_PRECIERRE_NOMINA_SIN_REPARTIR]: hrefPrecierreNominaSinRepartir,
   // Vuelos sin completar: la lista del periodo (externos incluidos — esos
   // se completan a mano en su detalle y NO aparecen en taco-live).
   vuelos_sin_completar: (p) =>

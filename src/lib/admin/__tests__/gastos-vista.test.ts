@@ -186,6 +186,7 @@ describe("consultas: lista, contadores y Excel", () => {
       `aeronave_id=${UUID}&categoria=REFACCION&medio=EFECTIVO&piloto=${UUID2}&desde=2026-10-01&hasta=2026-10-14&facturacion=PENDIENTE&banco=sin_conciliar&orden=captura`,
     );
     expect(queryBaseGastos(f, HOY)).toEqual({
+      excluir_categoria: "NOMINA",
       aeronave_id: UUID,
       categoria: "REFACCION",
       medio_pago: "EFECTIVO",

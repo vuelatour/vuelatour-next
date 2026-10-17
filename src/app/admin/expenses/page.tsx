@@ -43,16 +43,21 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { avionCatalogoGasto } from "@/lib/admin/combustibles";
 import {
   AVION_FILTRO_DESCONOCIDO,
+  CAMPOS_OPCIONALES_GASTOS,
   DESCRIPCION_ERROR_LISTA_GASTOS,
+  DESCRIPCION_NOMINA_FUERA_DE_GASTOS,
+  ETIQUETA_IR_A_NOMINA,
   ETIQUETA_CHIP_AVION,
   ETIQUETA_FOTOS_COMPROBANTES,
   ETIQUETA_LISTA_GASTOS,
   ETIQUETA_TOTAL_PENDIENTES,
   TEXTO_QUITAR_FILTROS_GASTOS,
   TITULO_ERROR_LISTA_GASTOS,
+  TITULO_NOMINA_FUERA_DE_GASTOS,
   TITULO_QUITAR_FILTRO_AVION,
   ariaQuitarFiltroAvion,
   hayFiltrosGastos,
+  hrefNominaDesdeGastos,
   hrefQuitarFiltrosGastos,
   leerFiltrosGastos,
   queryBaseGastos,
@@ -255,7 +260,12 @@ export default async function ExpensesPage({
     const params = new URLSearchParams();
     if (key !== "todos") params.set("f", key);
     if (conAvion && aeronaveId) params.set("aeronave_id", aeronaveId);
-    for (const k of FILTROS_URL) if (sp[k]) params.set(k, sp[k]);
+    for (const k of FILTROS_URL) {
+      // `?categoria=NOMINA` se IGNORA (la nómina vive en su módulo): ningún
+      // enlace interno la arrastra (16-oct-2026).
+      if (k === "categoria" && filtros.nominaIgnorada) continue;
+      if (sp[k]) params.set(k, sp[k]);
+    }
     return params;
   };
   const hrefCon = (params: URLSearchParams) => {
@@ -333,6 +343,9 @@ export default async function ExpensesPage({
             // (incluye el resumen de efectivos por persona y su facturado) y,
             // desde el 14-oct-2026, con la pestaña (Pendientes/Duplicados).
             query={queryExcelGastos(filtros, hoy)}
+            // Un API ≤ 0.0.89 no conoce `excluir_categoria`: el Excel se
+            // vuelve a pedir sin él (16-oct-2026).
+            camposOpcionales={CAMPOS_OPCIONALES_GASTOS}
           />
         </div>
       </div>
@@ -401,6 +414,25 @@ export default async function ExpensesPage({
             aviones={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula, activa: a.activa }))}
           />
           <AvisoPeriodoAjustado inicio={inicio} ajustado={!!filtros.ajustado} />
+          {filtros.nominaIgnorada && (
+            <div
+              role="status"
+              data-franja="nomina-fuera-de-gastos"
+              className="flex flex-wrap items-center gap-3 rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-800 dark:text-sky-200"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{TITULO_NOMINA_FUERA_DE_GASTOS}</p>
+                <p className="text-xs opacity-90">{DESCRIPCION_NOMINA_FUERA_DE_GASTOS}</p>
+              </div>
+              <Link
+                href={hrefNominaDesdeGastos(filtros)}
+                prefetch={false}
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-pointer")}
+              >
+                {ETIQUETA_IR_A_NOMINA}
+              </Link>
+            </div>
+          )}
 
           {/* Catálogos/contadores/fotos que no cargaron: se dice en vez de pintar 0. */}
           <AvisoDegradado faltantes={degradado.faltantes} />

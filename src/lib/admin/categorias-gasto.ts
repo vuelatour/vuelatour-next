@@ -45,9 +45,10 @@ export const CATEGORIA_GASTO_LABELS: Record<string, string> = {
   // Indirectos" del balance del avión (o repartible desde la pantalla
   // Otros gastos; cada parcial cae en esa misma hoja del avión elegido).
   INDIRECTO: "Gastos indirectos de avión",
-  // Nómina del personal: sin vuelo. De EMPRESA («otros gastos» del Balance
-  // general) aunque traiga avión, que queda solo como referencia; a un avión
-  // solo llega REPARTIDA (`AYUDA_ALTA_NOMINA`, invariante 10 del API).
+  // Nómina del personal: sin vuelo. Vive en su módulo (`/admin/nomina`) y
+  // desde el 16-oct-2026 (API 0.0.90, invariante 91) SOLO repartida entre
+  // aviones entra a un balance; sin reparto no va a ningún libro. El avión
+  // que traiga es solo referencia (`AYUDA_ALTA_NOMINA`).
   NOMINA: "Nómina",
   // Servicio/mantenimiento DE UN AVIÓN sin vuelo (taller, seguros del avión…).
   SERVICIOS: "Servicios (avión)",
@@ -488,6 +489,15 @@ const HOJA_OTROS_GASTOS_SIN_NADA =
   "Balance general VuelaTour · Otros gastos (repártelo desde la pantalla Otros gastos para cargarlo a aviones)";
 
 /**
+ * Destino de un gasto «Nómina» (16-oct-2026, API 0.0.90, invariante 91): la
+ * nómina vive en su módulo y SOLO repartida entre aviones entra a un balance
+ * (el del avión y, por él, el general). Sin reparto ya no va a la hoja «otros
+ * gastos» del Balance general.
+ */
+export const HOJA_NOMINA_SIN_REPARTIR =
+  "Nómina (módulo Nómina): no entra a ningún balance hasta repartirla entre aviones desde Nómina";
+
+/**
  * "¿A qué hoja del balance cae este gasto CON LO ELEGIDO?" — precisión
  * dinámica (categoría + vuelo + avión) para la segunda línea del hint bajo el
  * select de categoría (alta y verificación); la primera línea es el destino
@@ -500,7 +510,9 @@ const HOJA_OTROS_GASTOS_SIN_NADA =
  * - COMISION_VENDEDOR_AVION («(avión)», 13-oct-2026) → columna COMISIONES
  *   del balance del avión y reparto a socios, en el mes del vuelo (en «otros
  *   movimientos» sale con egreso $0.00 «a cargo del avión»);
- * - EMPRESA (OTRO/NOMINA/GASOLINA/FIJO/VISITA) → SIEMPRE «otros gastos» del
+ * - NOMINA (16-oct-2026, API 0.0.90) → el módulo Nómina: sin reparto no
+ *   entra a ningún balance (`HOJA_NOMINA_SIN_REPARTIR`);
+ * - EMPRESA (OTRO/GASOLINA/FIJO/VISITA) → SIEMPRE «otros gastos» del
  *   general (desde el 11-sep-2026); el vuelo/avión quedan de referencia —
  *   antes decía «hoja del vuelo» y justo esa pista confundió al cliente
  *   (28-sep-2026: capturó la comisión como «Otros gastos VuelaTour»);
@@ -526,6 +538,9 @@ export function hojaDestinoGasto(
   if (categoria === CATEGORIA_PAGO_VENDEDOR_AVION) {
     return "Balance del avión · columna COMISIONES y reparto a socios, en el mes del vuelo (con el vuelo completado; en «otros movimientos» sale con egreso $0.00 «a cargo del avión»)";
   }
+  // Nómina (16-oct-2026, API 0.0.90, invariante 91): vive en su módulo y no
+  // entra a ningún balance hasta repartirla; ya no va a «otros gastos».
+  if (categoria === "NOMINA") return HOJA_NOMINA_SIN_REPARTIR;
   if (CATEGORIAS_EMPRESA.has(categoria)) {
     if (tieneVuelo) {
       return "Balance general VuelaTour · Otros gastos (el vuelo queda solo como referencia)";

@@ -810,8 +810,15 @@ describe("textos EXACTOS", () => {
     expect(ayudaModoUno({ categoria: "OTRO", matricula: "N621TX" })).toBe(
       "N621TX queda solo como referencia: el gasto sigue siendo de VuelaTour. Para cargarlo a aviones, usa «Repartir entre aviones».",
     );
+    // NÓMINA (16-oct-2026, API 0.0.90): sin reparto no entra a ningún balance.
     expect(ayudaModoUno({ categoria: "NOMINA", matricula: null })).toBe(
-      "Sin avión, el gasto es de VuelaTour (Balance general · Otros gastos).",
+      "Sin repartir, el pago de nómina no entra a ningún balance: repártelo entre aviones aquí o en Nómina.",
+    );
+    expect(ayudaModoUno({ categoria: "NOMINA", matricula: "N4142R" })).toBe(
+      "N4142R queda solo como referencia: sin repartir, el pago de nómina no entra a ningún balance. Para cargarlo a aviones, usa «Repartir entre aviones» (aquí o en Nómina).",
+    );
+    expect(tituloModoUno("NOMINA")).toBe(
+      "Un solo avión (o ninguno): el avión queda solo como referencia; sin repartir, el pago de nómina no entra a ningún balance.",
     );
     expect(ayudaModoUno({ categoria: "GASOLINA", matricula: null })).toBe(
       "La gasolina de vehículos y las visitas no llevan avión: para cargarlas a aviones, elige «Repartir entre aviones».",
@@ -820,11 +827,14 @@ describe("textos EXACTOS", () => {
     expect(descripcionVerificarGasto({ enReparto: true, categoria: "INDIRECTO" })).toBe(
       "Revisa el reparto entre aviones y confirma categoría y comprobante.",
     );
-    for (const categoria of ["OTRO", "INDIRECTO", "NOMINA", "FIJO"]) {
+    for (const categoria of ["OTRO", "INDIRECTO", "FIJO"]) {
       expect(descripcionVerificarGasto({ enReparto: false, categoria }), categoria).toBe(
         "Confirma categoría y comprobante. El avión es opcional: sin avión es gasto de VuelaTour, o puedes repartirlo entre aviones.",
       );
     }
+    expect(descripcionVerificarGasto({ enReparto: false, categoria: "NOMINA" })).toBe(
+      "Confirma categoría y comprobante. Sin repartir, el pago de nómina no entra a ningún balance: repártelo entre aviones aquí o desde Nómina.",
+    );
     for (const categoria of ["GASOLINA", "VISITA"]) {
       expect(descripcionVerificarGasto({ enReparto: false, categoria }), categoria).toBe(
         "Confirma categoría y comprobante. No lleva avión: sin reparto es gasto de VuelaTour, o puedes repartirlo entre aviones.",
@@ -1636,5 +1646,14 @@ describe("tipos del resultado (el gasto del embed)", () => {
   it("partesDeGasto acepta el Gasto de la lista tal cual", () => {
     const g = { repartos: EMBED_STARLINK } as Pick<Gasto, "repartos">;
     expect(partesDeGasto(g).map((p) => p.matricula)).toEqual(["N4142R", "N621TX", "N990GG"]);
+  });
+});
+
+describe("opción vacía del selector «Un avión» (16-oct-2026, nómina)", () => {
+  it("la NÓMINA sin avión queda sin repartir; las demás repartibles son de VuelaTour", () => {
+    expect(mod.opcionSinAvionRepartible("NOMINA")).toBe("Sin avión (queda sin repartir)");
+    for (const cat of ["OTRO", "FIJO", "INDIRECTO", "GASOLINA", "VISITA", null, undefined]) {
+      expect(mod.opcionSinAvionRepartible(cat)).toBe("Sin avión (gasto de VuelaTour)");
+    }
   });
 });

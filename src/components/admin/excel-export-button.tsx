@@ -17,6 +17,7 @@ export function ExcelExportButton({
   className,
   title,
   "aria-label": ariaLabel,
+  camposOpcionales,
 }: {
   path: string;
   filename: string;
@@ -29,12 +30,14 @@ export function ExcelExportButton({
   title?: string;
   /** Nombre accesible (ADITIVO): distingue botones con el mismo `label` («Descargar el balance de XB-PEV en Excel»). */
   "aria-label"?: string;
+  /** Campos que un API previo puede no conocer (ADITIVO, 16-oct-2026): ver `descargarDelApi`. */
+  camposOpcionales?: readonly string[];
 }) {
   const [loading, setLoading] = useState(false);
 
   const run = async () => {
     setLoading(true);
-    const err = await descargarDelApi(path, { filename, query });
+    const err = await descargarDelApi(path, { filename, query, camposOpcionales });
     if (err) toast.error("No se pudo exportar", { description: err });
     setLoading(false);
   };
