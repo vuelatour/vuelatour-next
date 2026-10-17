@@ -46,6 +46,8 @@ import { todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { LibroExcel as LibroExcelJson } from "@/types/libro-excel";
 import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { getMe } from "@/lib/api/me";
+import { puedeEditarAfacReal } from "@/lib/admin/libro-afac";
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
@@ -106,6 +108,16 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
     periodoDefaultVista(todayCancun()),
     inicio,
   );
+
+  // AFAC por vuelo (16-oct-2026, API 0.0.89): ¿puede capturar el costo real
+  // en la celda EGRESO de «otros movimientos»? Rol de oficina + la base con la
+  // migración (`config.afac_real`). `/me` ya está cacheado por el layout (sin
+  // HTTP extra); si falla, nadie edita (el libro se ve igual).
+  const me = await getMe().catch((e: unknown) => {
+    if (esErrorDeNext(e)) throw e;
+    return null;
+  });
+  const edicionAfac = puedeEditarAfacReal(me);
 
   let libro: LibroExcelJson | null = null;
   let matricula: string | null = null;
@@ -201,6 +213,7 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
           pantalla
           gastoInicial={gasto ?? null}
           claveAnchos={claveAnchosVistaBalance(destino)}
+          edicionAfac={edicionAfac}
         />
       ) : error && error.motivo === "fallo" ? (
         <TarjetaErrorCarga titulo={error.titulo} descripcion={error.descripcion} />

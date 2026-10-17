@@ -6,6 +6,9 @@ import { isApiError } from "@/lib/api/errors";
 import { getPreviaCierre, type CargaCierres } from "@/lib/api/cierres-server";
 import { esMesValido } from "@/lib/admin/reparto-pagos";
 import { textoCargaCierres, validarMotivoReabrir } from "@/lib/admin/cierre-mes";
+import { errorMontoParaApi } from "@/lib/admin/libro-afac";
+import { esUuid } from "@/lib/admin/url-params";
+import type { RespuestaAfacReal } from "@/types/afac";
 import type { PreviaCierre, ResultadoCerrarMes, ResultadoReabrirMes } from "@/types/cierres";
 
 /**
@@ -89,6 +92,63 @@ export async function reabrirMesAction(periodo: string, motivo: string): Promise
       body: { confirmar: true, motivo: motivo.trim() },
     });
     revalidarCierre();
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// =============================================================================
+// AFAC POR VUELO (16-oct-2026, API 0.0.89, invariante 90 del API)
+// =============================================================================
+
+const VUELO_INVALIDO = "No se reconoce el vuelo de esta celda. Pulsa «Actualizar datos».";
+
+/**
+ * Captura el COSTO REAL AFAC de un vuelo desde la celda EGRESO del Balance
+ * general en pantalla: `PUT /v1/flights/:id/afac-real {costo_real_mxn}`. Las
+ * `notas` NO viajan (omitidas ⇒ el API conserva las que haya). Nunca lanza.
+ *
+ * SIN `revalidatePath` A PROPÓSITO (decisión D10 del contrato): revalidar
+ * repintaría la página abierta y el Balance general tarda decenas de
+ * segundos en regenerarse; el libro enseña lo tecleado y pide UN refresco 15 s
+ * después del último guardado (`RETRASO_REFRESCO_AFAC_MS`). El rechazo
+ * conserva `code`/`details`/`status` (409 `MES_CERRADO` con su texto y el
+ * enlace a Reportes).
+ */
+export async function guardarCostoRealAfacAction(input: {
+  vueloId: string;
+  monto: number;
+}): Promise<ActionResult<RespuestaAfacReal>> {
+  if (!esUuid(input?.vueloId)) return { ok: false, error: VUELO_INVALIDO };
+  const invalido = errorMontoParaApi(input.monto);
+  if (invalido) return { ok: false, error: invalido };
+  try {
+    const data = await apiServer<RespuestaAfacReal>(`/v1/flights/${input.vueloId}/afac-real`, {
+      method: "PUT",
+      body: { costo_real_mxn: Math.round(input.monto * 100) / 100 },
+    });
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * «Quitar» el costo real AFAC (el vuelo vuelve a «sin capturar»):
+ * `DELETE /v1/flights/:id/afac-real`. El panel lo pide SOLO tras la
+ * confirmación (acción destructiva: regla del cliente). El API nunca borra la
+ * fila: la deja en null y su bitácora registra QUITADO. Sin revalidar (ver
+ * arriba). Nunca lanza.
+ */
+export async function quitarCostoRealAfacAction(input: {
+  vueloId: string;
+}): Promise<ActionResult<RespuestaAfacReal>> {
+  if (!esUuid(input?.vueloId)) return { ok: false, error: VUELO_INVALIDO };
+  try {
+    const data = await apiServer<RespuestaAfacReal>(`/v1/flights/${input.vueloId}/afac-real`, {
+      method: "DELETE",
+    });
     return { ok: true, data };
   } catch (err) {
     return fail(err);

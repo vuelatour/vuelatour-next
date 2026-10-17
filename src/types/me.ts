@@ -54,6 +54,15 @@ export interface ConfigMe {
   captura_taco_foto_ia?: boolean;
   dias_gracia_gastos_semana?: number;
   gastos_sin_limite_hasta?: string | null;
+  /**
+   * AFAC por vuelo (16-oct-2026, API 0.0.89, invariante 90): true = la base
+   * ya tiene la migración 20261016000005 (costo real por vuelo y la marca
+   * «Pago de AFAC» del gasto). Ausente o false ⇒ el panel NO ofrece la
+   * casilla ni la celda editable y no manda `es_pago_afac` (el API viejo
+   * daría 400 por `forbidNonWhitelisted`). Se lee SOLO con
+   * `lib/admin/libro-afac.ts#afacRealHabilitado`.
+   */
+  afac_real?: boolean;
 }
 
 export interface PermisosMe {

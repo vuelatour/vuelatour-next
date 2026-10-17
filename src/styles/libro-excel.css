@@ -79,6 +79,10 @@
      scrollLeft/scrollTop: instantáneo, como Excel. El `scroll-behavior: smooth`
      de globals.css es de `html` y no se hereda; esto deja la intención escrita. */
   scroll-behavior: auto;
+  /* Bloque contenedor del cuadro de edición del costo real AFAC
+     (16-oct-2026): un hijo absoluto del marco se desplaza con las celdas. No
+     toca lo sticky (las celdas fijas siguen ancladas al marco). */
+  position: relative;
 }
 
 .xl-marco:focus-visible {
@@ -417,6 +421,112 @@
   padding: 24px;
   font-size: 13px;
   color: var(--xl-gris-texto);
+}
+
+/*
+ * AFAC por vuelo (16-oct-2026, API 0.0.89): la celda EGRESO de cada fila
+ * «AFAC por vuelo» de «otros movimientos» se captura aquí (clase de
+ * `claseEdicionCelda`, lib/admin/libro-afac.ts). Ninguna de estas reglas toca
+ * el `position` de una celda (las fijas siguen sticky).
+ *  - editable: cursor de texto y una raya verde abajo (como un campo; el
+ *    relleno verde suave lo pone pyservices), más marcada al pasar el ratón;
+ *  - guardando: gris en cursiva hasta que el API contesta;
+ *  - bloqueada: el tooltip dice por qué (mes cerrado, rol, fila de otro avión).
+ */
+.xl-celda.xl-edicion-editable {
+  cursor: text;
+  box-shadow: inset 0 -2px 0 rgb(33 115 70 / 0.35);
+}
+
+.xl-celda.xl-edicion-editable:hover {
+  box-shadow: inset 0 -2px 0 rgb(33 115 70 / 0.8);
+}
+
+.xl-celda.xl-edicion-guardando {
+  color: #7f7f7f !important;
+  font-style: italic;
+}
+
+.xl-celda.xl-edicion-bloqueada {
+  cursor: not-allowed;
+}
+
+/* El cuadro encima de la celda: mismo rectángulo, contorno verde de la
+   selección, número a la derecha. z-index 1: por encima de las celdas que se
+   desplazan y por DEBAJO de lo inmovilizado (2+), como una celda más. */
+.xl-editor-afac {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 0;
+  outline: 2px solid var(--xl-seleccion);
+  outline-offset: -2px;
+  background: #ffffff;
+  color: #000000;
+  font-family: var(--xl-fuente);
+  font-size: 11pt;
+  text-align: right;
+}
+
+/* El estado de la captura, a la derecha de la barra de fórmulas. */
+.xl-afac-estado {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 70%;
+  margin-left: auto;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  font-family: var(--xl-fuente);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.xl-afac-estado-texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xl-afac-estado[data-tono="ayuda"] {
+  color: #1e5c38;
+}
+
+.xl-afac-estado[data-tono="guardando"] {
+  background: #f3f3f3;
+  color: var(--xl-gris-texto);
+}
+
+.xl-afac-estado[data-tono="guardado"] {
+  background: #e8f3ec;
+  border-color: #b7dcc4;
+  color: #1e5c38;
+}
+
+.xl-afac-estado[data-tono="error"] {
+  background: #fdecec;
+  border-color: #f5c2c0;
+  color: #9c0006;
+}
+
+.xl-afac-estado-cerrar {
+  display: inline-flex;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.xl-afac-estado-cerrar:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+  border-radius: 2px;
 }
 
 /*

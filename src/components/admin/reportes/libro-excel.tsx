@@ -69,6 +69,23 @@ import {
   llegadaAGasto,
   type FranjaGasto,
 } from "@/lib/admin/libro-vinculos";
+import {
+  cajaEditorAfac,
+  claseEdicionCelda,
+  estadoBarraAfac,
+  leerVinculoAfacReal,
+  prepararHojaAfac,
+  teclaEdicionAfac,
+  textoEdicionInicial,
+} from "@/lib/admin/libro-afac";
+import {
+  ConfirmarQuitarAfacDialog,
+  EditorCeldaAfac,
+  EstadoAfacBarra,
+  RefrescoDiferidoAfac,
+  useEdicionAfac,
+  type FinEdicionAfac,
+} from "@/components/admin/reportes/libro-afac-edicion";
 import "@/styles/libro-excel.css";
 
 export interface DescargaLibro {
@@ -211,6 +228,7 @@ const TramoFila = memo(
             fija && "xl-fija-col",
             cSeleccionada === cv.c && "xl-seleccionada",
             cv.celda?.n && "xl-con-nota",
+            claseEdicionCelda(cv.celda?.edicion),
           )}
           style={{
             ...estiloCeldaCss(cv.celda, cv.estilo, { desborda: cv.desborda }),
@@ -220,6 +238,7 @@ const TramoFila = memo(
           title={tituloCelda(cv.celda)}
           data-ref={referenciaCelda(cv.r, cv.c)}
           data-formula={cv.celda?.f}
+          data-edicion={cv.celda?.edicion?.estado}
         >
           {cv.altoRecortePx === null ? (
             texto
@@ -295,6 +314,7 @@ export function LibroExcel({
   pantalla = false,
   gastoInicial = null,
   claveAnchos = "",
+  edicionAfac = false,
 }: {
   libro: LibroExcelJson;
   descarga?: DescargaLibro | null;
@@ -313,6 +333,12 @@ export function LibroExcel({
    *  un ancho del «balance» del general no se aplica al «balance» de un
    *  avión aunque las hojas se llamen igual. Sin la prop, clave vacía. */
   claveAnchos?: string;
+  /** AFAC por vuelo (16-oct-2026, API 0.0.89): este usuario puede capturar el
+   *  COSTO REAL AFAC en las celdas que pyservices marca con `vinculo`
+   *  `afac_real` (la página pasa `puedeEditarAfacReal(me)`: rol de oficina y
+   *  `config.afac_real`). Solo cuenta con `pantalla`. Sin la prop, ninguna
+   *  celda se edita (sus tooltips dicen por qué). */
+  edicionAfac?: boolean;
 }) {
   // Dónde vive el gasto en ESTE libro (puro, `lib/admin/libro-vinculos.ts`).
   // UNA vez por montaje y también en el servidor: el HTML ya trae la pestaña,
@@ -334,7 +360,25 @@ export function LibroExcel({
   const [franja, setFranja] = useState<FranjaGasto | null>(() =>
     llegada ? franjaDeLlegada(llegada) : null,
   );
-  const hoja = libro.hojas[hojaIdx] ?? null;
+  // AFAC por vuelo (16-oct-2026): los cambios locales por vuelo (lo tecleado
+  // mientras llega el libro nuevo), el cuadro abierto y la confirmación de
+  // «quitar» (`libro-afac-edicion.tsx`). La hoja que se PINTA lleva en cada
+  // celda `afac_real` su estado de edición y lo tecleado
+  // (`prepararHojaAfac`, puro; sin esas celdas es la MISMA hoja del libro).
+  const afac = useEdicionAfac(libro);
+  const puedeEditarAfac = pantalla && edicionAfac;
+  const hojaDelLibro = libro.hojas[hojaIdx] ?? null;
+  const hoja = useMemo(
+    () =>
+      hojaDelLibro
+        ? prepararHojaAfac(hojaDelLibro, {
+            cambios: afac.cambios,
+            puedeEditar: puedeEditarAfac,
+            estilos: libro.estilos,
+          })
+        : null,
+    [hojaDelLibro, afac.cambios, puedeEditarAfac, libro.estilos],
+  );
   // Anchos que el operador ajustó con la manija (14-oct-2026), por TIPO de
   // libro (`claveAnchos`) y hoja (`claveAnchosHoja`, puro). Estado del
   // componente: sobreviven a «Actualizar datos» (router.refresh() conserva el
@@ -434,6 +478,65 @@ export function LibroExcel({
     const td = e.target instanceof Element ? e.target.closest("td") : null;
     const sel = td && e.currentTarget.contains(td) ? coordenadaDeReferencia(td.dataset.ref ?? "") : null;
     if (sel) seleccionar(sel);
+    // Doble clic (el 2.º clic trae `detail` 2) en una celda editable del
+    // costo real AFAC: abre el cuadro con su valor, como en Excel.
+    if (sel && e.detail === 2) abrirEdicionAfac(sel, null);
+  };
+
+  // ===== Captura del COSTO REAL AFAC (16-oct-2026, API 0.0.89) =====
+  // La celda (de la hoja que se pinta) solo se abre si `prepararHojaAfac` la
+  // dejó «editable»: vínculo válido, `editable` del API, rol y `pantalla`.
+  const celdaAfacEditable = (sel: Seleccion | null) => {
+    if (!hoja || !sel) return null;
+    const celda = hoja.celdas.find((x) => x.r === sel.r && x.c === sel.c) ?? null;
+    const vinculo = leerVinculoAfacReal(celda);
+    return vinculo && celda?.edicion?.estado === "editable" ? vinculo : null;
+  };
+  // El cuadro va ENCIMA de la celda con su rectángulo REAL (el alto de fila
+  // del libro es nominal): se mide el <td> y el marco aquí, en el manejador.
+  const abrirEdicionAfac = (sel: Seleccion, tecleado: string | null) => {
+    const vinculo = celdaAfacEditable(sel);
+    const el = marco.current;
+    const td = tabla.current?.querySelector<HTMLTableCellElement>(
+      `td[data-ref="${referenciaCelda(sel.r, sel.c)}"]`,
+    );
+    if (!vinculo || !el || !td) return;
+    afac.abrir({
+      r: sel.r,
+      c: sel.c,
+      vinculo,
+      texto: tecleado ?? textoEdicionInicial(vinculo.valor),
+      seleccionarTodo: tecleado === null,
+      caja: cajaEditorAfac(td.getBoundingClientRect(), el.getBoundingClientRect(), el),
+    });
+  };
+  // Enter / F2 / un dígito abren el cuadro; Supr / Retroceso piden quitar el
+  // valor (con confirmación). Solo sobre una celda editable seleccionada.
+  const teclaCeldaAfac = (e: KeyboardEvent<HTMLDivElement>): boolean => {
+    const accion = teclaEdicionAfac(e);
+    const vinculo = accion ? celdaAfacEditable(seleccion) : null;
+    if (!accion || !vinculo || !seleccion) return false;
+    e.preventDefault();
+    if (accion.tipo === "vaciar") {
+      if (vinculo.valor !== null) afac.pedirQuitar(vinculo);
+      return true;
+    }
+    abrirEdicionAfac(seleccion, accion.tipo === "teclear" ? accion.texto : null);
+    return true;
+  };
+  // Al terminar: el foco vuelve al marco (el teclado sigue en la hoja) y, con
+  // Enter o Tab, la selección baja o avanza como en Excel (Mayús: al revés).
+  const terminarEdicionAfac = (fin: FinEdicionAfac): boolean => {
+    const ed = afac.editor;
+    const cerrado = afac.terminar(fin);
+    if (!cerrado || !ed || fin.tipo === "blur") return cerrado;
+    marco.current?.focus({ preventScroll: true });
+    if (vista && (fin.tipo === "enter" || fin.tipo === "tab")) {
+      const tecla =
+        fin.tipo === "enter" ? (fin.atras ? "ArrowUp" : "ArrowDown") : fin.atras ? "ArrowLeft" : "ArrowRight";
+      seleccionar(desplazarSeleccion(vista, { r: ed.r, c: ed.c }, tecla));
+    }
+    return true;
   };
 
   // Efecto de LLEGADA (13-oct-2026, punto 5; la ÚNICA excepción documentada a
@@ -458,6 +561,7 @@ export function LibroExcel({
   // flecha devolvía el marco de golpe a la celda activa. Con Ctrl/⌘, Home/End
   // van a A1 / la última celda, como en Excel.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (puedeEditarAfac && teclaCeldaAfac(e)) return;
     if (!vista || !esTeclaNavegacionHoja(e.key)) return;
     e.preventDefault();
     // `seleccion` del render y no el updater funcional: keydown es un evento
@@ -566,6 +670,17 @@ export function LibroExcel({
     setRedimensionando(false);
   };
 
+  // El estado de la captura del costo real AFAC, a la derecha de la barra de
+  // fórmulas (null = nada).
+  const estadoAfac = puedeEditarAfac
+    ? estadoBarraAfac({
+        cambios: afac.cambios,
+        error: afac.aviso,
+        editando: afac.editor !== null,
+        celdaEditable: celdaAfacEditable(seleccion) !== null,
+      })
+    : null;
+
   // `zona-clara`: el libro es una isla BLANCA dentro del admin oscuro; sin
   // re-escopar los tokens (globals.css, `.dark .zona-clara`) los controles de
   // la barra —Button outline, «N hojas»— heredan los colores del dark mode
@@ -617,7 +732,12 @@ export function LibroExcel({
           aria-live="polite"
           aria-atomic="true"
         >
-          {contenidoBarraFormulas(celdaSeleccionada)}
+          {/* Editando el costo real AFAC: lo que se teclea, como en Excel. */}
+          {afac.editor ? afac.editor.texto : contenidoBarraFormulas(celdaSeleccionada)}
+          {/* Y a la derecha, el estado de la captura (cómo terminar,
+              «Guardando…», cambios guardados o el último error: a pantalla
+              completa el toast no se ve). Sin captura AFAC, nada. */}
+          {estadoAfac ? <EstadoAfacBarra estado={estadoAfac} onQuitarAviso={afac.quitarAviso} /> : null}
         </div>
         <div className="xl-barra-acciones">
           <span className="text-xs text-muted-foreground hidden sm:inline">
@@ -732,10 +852,33 @@ export function LibroExcel({
               ))}
             </tbody>
           </table>
+          {/* El cuadro del costo real AFAC: hijo absoluto del marco (se
+              desplaza con las celdas), encima de la celda. */}
+          {afac.editor ? (
+            <EditorCeldaAfac
+              key={`${afac.editor.r}:${afac.editor.c}`}
+              editor={afac.editor}
+              onCambio={afac.cambiarTexto}
+              onTerminar={terminarEdicionAfac}
+            />
+          ) : null}
         </div>
       ) : (
         <div className="xl-vacio">Este libro no tiene hojas.</div>
       )}
+
+      {puedeEditarAfac ? (
+        <>
+          <RefrescoDiferidoAfac marca={afac.marcaRefresco} />
+          <ConfirmarQuitarAfacDialog
+            vinculo={afac.porQuitar}
+            // A pantalla completa el navegador solo enseña el libro.
+            contenedor={enPantallaCompleta ? raiz : null}
+            onConfirmar={afac.confirmarQuitar}
+            onCancelar={afac.cancelarQuitar}
+          />
+        </>
+      ) : null}
 
       <div className="xl-pestanas" role="tablist" aria-label="Hojas del libro">
         {libro.hojas.map((h, i) => (

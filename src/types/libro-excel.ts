@@ -46,12 +46,58 @@ export interface LibroExcelCelda {
   s?: number;
   /** Nota (comentario) de la celda. */
   n?: string;
-  /** Fase 2 (edición): registro del API al que pertenece la celda. */
+  /** Fase 2 (edición): registro del API al que pertenece la celda. Hoy el
+   *  único tipo que el panel EDITA es `afac_real` (16-oct-2026, API 0.0.89):
+   *  ver `VinculoAfacReal`; se lee SIEMPRE con
+   *  `lib/admin/libro-afac.ts#leerVinculoAfacReal` (otra forma ⇒ solo lectura). */
   vinculo?: Record<string, unknown>;
   /** Gastos que componen la celda (13-oct-2026, API 0.0.75, punto 5): solo
    *  en los libros de la vista en pantalla que los marcan (`vinculos_gasto`).
    *  Se leen SIEMPRE con `lib/admin/libro-vinculos.ts`. */
   vinculos?: LibroExcelVinculo[];
+  /** SOLO DEL PANEL (16-oct-2026, AFAC por vuelo): lo pone
+   *  `lib/admin/libro-afac.ts#prepararHojaAfac` sobre las celdas con `vinculo`
+   *  `afac_real` (si se puede capturar ahí, por qué no, o «guardando»).
+   *  pyservices y el API JAMÁS lo mandan. */
+  edicion?: EdicionCeldaLibro;
+}
+
+/** Estado de edición de una celda del libro en pantalla (solo del panel). */
+export interface EdicionCeldaLibro {
+  estado: "editable" | "bloqueada" | "guardando";
+  /** Lo que dice el tooltip: cómo capturarla o por qué no se puede. */
+  titulo: string;
+}
+
+/**
+ * Celda EDITABLE «costo real AFAC» de la hoja «otros movimientos» del Balance
+ * general (16-oct-2026, API 0.0.89, invariante 90 del API). pyservices la
+ * anota con `libro_json.vincular(cell, {...})` en la celda EGRESO (columna D)
+ * de cada fila `AFAC_VUELO`; la del reservado (INGRESO) no lleva vínculo.
+ * Viaja en `LibroExcelCelda.vinculo` (que sigue siendo `Record<string,
+ * unknown>`: cualquier otra forma ⇒ celda de solo lectura). `valor: null` =
+ * sin capturar (la celda viaja aunque esté vacía). `editable` lo decide el API
+ * (migración aplicada, fila «dueña» del vuelo, mes contable abierto) y
+ * `motivo` dice por qué no; el ROL lo decide el panel (`ROLES_AFAC_REAL`) y
+ * el PUT lo vuelve a validar.
+ */
+export interface VinculoAfacReal {
+  tipo: "afac_real";
+  campo: "costo_real_mxn";
+  vuelo_id: string;
+  /** «#236 · Ambulancia Internacional» (la clave de la fila). */
+  clave: string | null;
+  matricula: string | null;
+  /** Costo real capturado en pesos; null = sin capturar. */
+  valor: number | null;
+  /** La provisión del vuelo (lo RESERVADO, columna INGRESO). */
+  reservado_mxn: number | null;
+  editable: boolean;
+  motivo: string | null;
+  /** Mes contable «AAAA-MM» del vuelo. */
+  mes: string | null;
+  capturado_por: string | null;
+  capturado_at: string | null;
 }
 
 /**

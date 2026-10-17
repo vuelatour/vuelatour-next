@@ -42,6 +42,7 @@ function AlertDialogContent({
   className,
   size = "default",
   backdropForceRender,
+  portalContainer,
   ...props
 }: AlertDialogPrimitive.Popup.Props & {
   size?: "default" | "sm"
@@ -51,9 +52,16 @@ function AlertDialogContent({
    * seguía recibiendo clics (confirmaciones de dinero dentro de «Vincular»).
    */
   backdropForceRender?: boolean
+  /**
+   * Dónde se monta el diálogo (16-oct-2026, ADITIVO; sin la prop, en
+   * `<body>` como siempre). El libro en pantalla a PANTALLA COMPLETA solo
+   * enseña su propio subárbol: su confirmación «¿Quitar el costo real
+   * AFAC?» se monta dentro del libro o no se vería.
+   */
+  portalContainer?: AlertDialogPrimitive.Portal.Props["container"]
 }) {
   return (
-    <AlertDialogPortal>
+    <AlertDialogPortal container={portalContainer}>
       <AlertDialogOverlay forceRender={backdropForceRender} />
       <AlertDialogPrimitive.Popup
         data-slot="alert-dialog-content"

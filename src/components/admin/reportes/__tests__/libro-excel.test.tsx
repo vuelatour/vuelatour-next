@@ -44,6 +44,12 @@ vi.mock("@/components/admin/excel-export-button", () => ({
 // Router montado, así que se simula (solo lo pide la vista «pantalla»).
 const refrescar = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: refrescar }) }));
+// La captura del costo real AFAC (16-oct-2026) importa sus server actions;
+// aquí no hay servidor (ni variables de Supabase).
+vi.mock("@/app/admin/reportes/actions", () => ({
+  guardarCostoRealAfacAction: async () => ({ ok: false }),
+  quitarCostoRealAfacAction: async () => ({ ok: false }),
+}));
 
 const { LibroExcel } = await import("../libro-excel");
 const { VerEnPantallaLink } = await import("../ver-en-pantalla-link");

@@ -400,10 +400,12 @@ export function contenidoBarraFormulas(celda: LibroExcelCelda | null | undefined
   return String(celda.v);
 }
 
-/** Tooltip de la celda: la nota (como en Excel) y, debajo, la fórmula. */
+/** Tooltip de la celda: la nota (como en Excel), debajo la fórmula y, en
+ *  una celda editable del panel (AFAC por vuelo, 16-oct-2026), cómo
+ *  capturarla o por qué no se puede (`edicion`, `lib/admin/libro-afac.ts`). */
 export function tituloCelda(celda: LibroExcelCelda | null | undefined): string | undefined {
   if (!celda) return undefined;
-  const partes = [celda.n, celda.f].filter((x): x is string => Boolean(x));
+  const partes = [celda.n, celda.f, celda.edicion?.titulo].filter((x): x is string => Boolean(x));
   return partes.length ? partes.join("\n") : undefined;
 }
 
