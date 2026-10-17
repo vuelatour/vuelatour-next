@@ -230,13 +230,32 @@ describe("cableado del libro (lectura del fuente)", () => {
     expect(edicion).toContain("quitarCostoRealAfacAction({ vueloId: id })");
     expect(edicion).toContain("setCambios((prev) => restaurarCambioAfac(prev, id, anterior));");
     expect(edicion).toContain("if (!toastMesCerradoSiAplica(r)) toast.error(texto);");
-    expect(edicion).toContain("if (falloAfacIncierto(r)) setMarcaRefresco((n) => n + 1);");
+    // Revisión 16-oct-2026: también relee tras un 409/400/404 que dice que el libro quedó viejo.
+    expect(edicion).toContain("if (falloAfacPideRefresco(r)) setMarcaRefresco((n) => n + 1);");
     expect(edicion).toContain(".catch(sinConexion)");
     // Los cambios locales se depuran al llegar un libro NUEVO, en el render (sin efecto).
     expect(edicion).toMatch(/if \(libro !== libroVisto\) \{\s*setLibroVisto\(libro\);\s*setCambios\(\(prev\) => depurarCambiosAfac\(prev, libro\)\);/);
     const actions = leer("app/admin/reportes/actions.ts");
     const afacActions = actions.slice(actions.indexOf("export async function guardarCostoRealAfacAction"));
     expect(afacActions).not.toContain("revalidatePath(");
+  });
+
+  it("revisión 16-oct-2026: con el cuadro abierto y un libro NUEVO, si la celda ya es de otro vuelo o se bloqueó, se cierra SIN guardar", () => {
+    // El hook recibe la hoja CRUDA que se enseña (la del libro nuevo).
+    expect(src).toMatch(/const hojaDelLibro = libro\.hojas\[hojaIdx\] \?\? null;[\s\S]*?const afac = useEdicionAfac\(libro, hojaDelLibro\);/);
+    const ajuste = edicion.match(/if \(libro !== libroVisto\) \{([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    expect(ajuste).toContain("const vigente = revisarEditorAfac(editor, hoja, depurarCambiosAfac(cambios, libro));");
+    expect(ajuste).toMatch(/if \(!vigente\) \{\s*setEditor\(null\);\s*setAviso\(MSG_AFAC_CELDA_CAMBIO\);/);
+    // Cerrar NO pasa por `terminar` (no guarda): solo se suelta el cuadro.
+    expect(ajuste).not.toContain("terminar(");
+    expect(ajuste).not.toContain("enviar(");
+  });
+
+  it("revisión 16-oct-2026: la barra dice por qué no se captura la celda AFAC seleccionada (tooltip de la bloqueada)", () => {
+    expect(src).toContain(
+      'celdaSeleccionada?.edicion?.estado === "bloqueada" ? celdaSeleccionada.edicion.titulo : null',
+    );
+    expect(css).toMatch(/\.xl-afac-estado\[data-tono="bloqueada"\]\s*\{/);
   });
 
   it("UN refresco 15 s después del ÚLTIMO guardado (cada guardado lo reprograma; desmontar lo cancela)", () => {

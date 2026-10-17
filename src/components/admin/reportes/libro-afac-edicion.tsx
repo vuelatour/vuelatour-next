@@ -13,7 +13,11 @@
  *    lo trae, `depurarCambiosAfac`), el cuadro abierto, la confirmación de
  *    «quitar», el último aviso y la señal del refresco diferido. Guarda con
  *    `guardarCostoRealAfacAction` / `quitarCostoRealAfacAction` (PUT/DELETE
- *    `/v1/flights/:id/afac-real`, SIN revalidar).
+ *    `/v1/flights/:id/afac-real`, SIN revalidar). Revisión 16-oct-2026: con
+ *    el cuadro abierto y un libro nuevo, si esa celda ya es de otro vuelo o
+ *    se bloqueó, el cuadro se cierra SIN guardar (`revisarEditorAfac`); un
+ *    rechazo que dice que el libro quedó viejo (409/400/404) lo vuelve a leer
+ *    (`falloAfacPideRefresco`).
  *  - `EditorCeldaAfac`: el cuadro de texto ENCIMA de la celda (hijo absoluto
  *    del marco: se desplaza con las celdas). Enter guarda y baja (Mayús+Enter
  *    sube), Tab guarda y avanza, Esc cancela, clic fuera guarda.
@@ -49,6 +53,7 @@ import {
   BOTON_CANCELAR_AFAC,
   BOTON_QUITAR_AFAC,
   ETIQUETA_QUITAR_AVISO_AFAC,
+  MSG_AFAC_CELDA_CAMBIO,
   MSG_AFAC_SIN_RESPUESTA,
   RETRASO_REFRESCO_AFAC_MS,
   SIN_CAMBIOS_AFAC,
@@ -56,10 +61,11 @@ import {
   costoRealDeRespuesta,
   decidirGuardadoAfac,
   depurarCambiosAfac,
-  falloAfacIncierto,
+  falloAfacPideRefresco,
   mensajeErrorAfac,
   nombreVueloAfac,
   restaurarCambioAfac,
+  revisarEditorAfac,
   textoQuitarAfac,
   toastGuardadoAfac,
   toastQuitadoAfac,
@@ -68,7 +74,7 @@ import {
   type EstadoBarraAfac,
 } from "@/lib/admin/libro-afac";
 import type { RespuestaAfacReal } from "@/types/afac";
-import type { LibroExcel as LibroExcelJson, VinculoAfacReal } from "@/types/libro-excel";
+import type { LibroExcel as LibroExcelJson, LibroExcelHoja, VinculoAfacReal } from "@/types/libro-excel";
 
 /** El cuadro abierto: en qué celda, de qué vuelo, lo tecleado y dónde se pinta. */
 export interface EditorAfac {
@@ -95,22 +101,35 @@ const sinConexion = (): ActionResult<RespuestaAfacReal> => ({
   error: MSG_AFAC_SIN_RESPUESTA,
 });
 
-export function useEdicionAfac(libro: LibroExcelJson) {
-  // Al llegar un libro NUEVO (refresco diferido, «Actualizar datos»,
-  // RefreshOnFocus) se descartan los cambios locales que ya trae. Ajuste de
-  // estado durante el render (patrón de React; nada de efectos).
+export function useEdicionAfac(libro: LibroExcelJson, hoja: LibroExcelHoja | null) {
   const [libroVisto, setLibroVisto] = useState(libro);
   const [cambios, setCambios] = useState<CambiosAfac>(SIN_CAMBIOS_AFAC);
-  if (libro !== libroVisto) {
-    setLibroVisto(libro);
-    setCambios((prev) => depurarCambiosAfac(prev, libro));
-  }
   const [editor, setEditor] = useState<EditorAfac | null>(null);
   const [porQuitar, setPorQuitar] = useState<VinculoAfacReal | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
-  // Sube con cada guardado (y con un fallo incierto): `RefrescoDiferidoAfac`
-  // reprograma su único refresco.
+  // Sube con cada guardado (y con un fallo incierto o que dice que el libro
+  // quedó viejo): `RefrescoDiferidoAfac` reprograma su único refresco.
   const [marcaRefresco, setMarcaRefresco] = useState(0);
+  // Al llegar un libro NUEVO (refresco diferido, «Actualizar datos»,
+  // RefreshOnFocus) se descartan los cambios locales que ya trae. Ajuste de
+  // estado durante el render (patrón de React; nada de efectos).
+  if (libro !== libroVisto) {
+    setLibroVisto(libro);
+    setCambios((prev) => depurarCambiosAfac(prev, libro));
+    // Revisión 16-oct-2026: con el cuadro ABIERTO (p. ej. se volvió de otra
+    // ventana y RefreshOnFocus trajo el libro), si la celda (r, c) ya es de
+    // otro vuelo o ya no se puede capturar, el cuadro se cierra SIN guardar:
+    // lo tecleado iría al vuelo del vínculo viejo, no al que se ve.
+    if (editor) {
+      const vigente = revisarEditorAfac(editor, hoja, depurarCambiosAfac(cambios, libro));
+      if (!vigente) {
+        setEditor(null);
+        setAviso(MSG_AFAC_CELDA_CAMBIO);
+      } else if (vigente !== editor.vinculo) {
+        setEditor({ ...editor, vinculo: vigente });
+      }
+    }
+  }
 
   const enviar = (v: VinculoAfacReal, monto: number | null) => {
     const id = v.vuelo_id;
@@ -135,8 +154,10 @@ export function useEdicionAfac(libro: LibroExcelJson) {
       const texto = mensajeErrorAfac(r);
       setAviso(texto);
       if (!toastMesCerradoSiAplica(r)) toast.error(texto);
-      // Sin respuesta pudo haberse guardado: el libro se vuelve a leer.
-      if (falloAfacIncierto(r)) setMarcaRefresco((n) => n + 1);
+      // Sin respuesta pudo haberse guardado, y un 409/400/404 dice que el
+      // libro en pantalla quedó viejo (la celda seguía «editable»): en los
+      // dos casos el libro se vuelve a leer (el mismo refresco diferido).
+      if (falloAfacPideRefresco(r)) setMarcaRefresco((n) => n + 1);
     });
   };
 

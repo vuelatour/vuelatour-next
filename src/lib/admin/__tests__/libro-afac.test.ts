@@ -11,6 +11,7 @@ import {
   MARGEN_LIBRO_NUEVO_MS,
   MSG_AFAC_API_PREVIO,
   MSG_AFAC_SESION,
+  MSG_AFAC_VUELO_NO_EXISTE,
   MSG_AFAC_SIN_PERMISO,
   MSG_AFAC_SIN_RESPUESTA,
   MSG_MONTO_AFAC_DECIMALES,
@@ -38,6 +39,7 @@ import {
   errorMontoParaApi,
   estadoBarraAfac,
   falloAfacIncierto,
+  falloAfacPideRefresco,
   leerVinculoAfacReal,
   mensajeErrorAfac,
   mismoMontoAfac,
@@ -45,6 +47,7 @@ import {
   prepararHojaAfac,
   puedeEditarAfacReal,
   restaurarCambioAfac,
+  revisarEditorAfac,
   teclaEdicionAfac,
   textoCambiosGuardadosAfac,
   textoEdicionInicial,
@@ -197,6 +200,10 @@ describe("parsearMontoAfac: lo que el operador teclea en la celda (pesos)", () =
     [".5", 0.5],
     ["0", 0],
     ["1,234,567.89", 1234567.89],
+    // Revisión 16-oct-2026: miles con coma y centavos (el caso de la captura).
+    ["1,700.50", 1700.5],
+    ["$1,700.50", 1700.5],
+    ["1,700", 1700],
   ])("«%s» ⇒ %d", (texto, valor) => {
     expect(parsearMontoAfac(texto)).toEqual({ tipo: "monto", valor });
   });
@@ -214,6 +221,11 @@ describe("parsearMontoAfac: lo que el operador teclea en la celda (pesos)", () =
     // La coma decimal no es de es-MX: jamás se adivina «4427,80».
     expect(parsearMontoAfac("4427,80")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_INVALIDO });
     expect(parsearMontoAfac("44,27.80")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_INVALIDO });
+    // Formato europeo: error, jamás 1.7 ni 1700.5 adivinados.
+    expect(parsearMontoAfac("1.700,50")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_INVALIDO });
+    expect(parsearMontoAfac("1700,50")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_INVALIDO });
+    expect(parsearMontoAfac("1.700")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_DECIMALES });
+    expect(parsearMontoAfac("1,70")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_INVALIDO });
     expect(parsearMontoAfac("abc")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_INVALIDO });
     expect(parsearMontoAfac("$")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_INVALIDO });
     expect(parsearMontoAfac(".")).toEqual({ tipo: "error", mensaje: MSG_MONTO_AFAC_INVALIDO });
@@ -430,6 +442,38 @@ describe("cambios locales: se descartan cuando el libro nuevo ya los trae", () =
   });
 });
 
+describe("revisarEditorAfac: el cuadro abierto cuando llega un libro NUEVO (revisión 16-oct-2026)", () => {
+  // El cuadro guarda en el vuelo de SU vínculo pero se pinta sobre (r, c):
+  // si en el libro nuevo esa celda ya es de otro vuelo, se cierra SIN guardar.
+  const v236 = leerVinculoAfacReal(celdaD(5, { valor: 4500 }))!;
+  const editor = { r: 5, c: 4, vinculo: v236 };
+
+  it("misma celda, mismo vuelo, mismo valor ⇒ el MISMO vínculo (sin re-render)", () => {
+    expect(revisarEditorAfac(editor, hoja([celdaD(5, { valor: 4500 })]), SIN_CAMBIOS_AFAC)).toBe(v236);
+  });
+
+  it("en (r, c) ahora vive OTRO vuelo (llegó o se fue una fila) ⇒ null (cerrar sin guardar)", () => {
+    const h = hoja([celdaD(5, { vuelo_id: V223, clave: "#223 · Morena Mia" }), celdaD(6, { valor: 4500 })]);
+    expect(revisarEditorAfac(editor, h, SIN_CAMBIOS_AFAC)).toBeNull();
+  });
+
+  it("la celda ya no se puede capturar (mes cerrado) o ya no existe ⇒ null", () => {
+    expect(revisarEditorAfac(editor, hoja([celdaD(5, { valor: 4500, editable: false, motivo: "cerrado" })]), SIN_CAMBIOS_AFAC)).toBeNull();
+    expect(revisarEditorAfac(editor, hoja([]), SIN_CAMBIOS_AFAC)).toBeNull();
+    expect(revisarEditorAfac(editor, null, SIN_CAMBIOS_AFAC)).toBeNull();
+    // La celda sigue ahí pero sin vínculo (pyservices previo).
+    expect(revisarEditorAfac(editor, hoja([{ r: 5, c: 4, v: 4500, t: "4,500.00" }]), SIN_CAMBIOS_AFAC)).toBeNull();
+  });
+
+  it("mismo vuelo con OTRO valor (otra persona lo capturó) ⇒ el vínculo fresco; con cambio local manda el local", () => {
+    const fresco = revisarEditorAfac(editor, hoja([celdaD(5, { valor: 4600 })]), SIN_CAMBIOS_AFAC);
+    expect(fresco).not.toBe(v236);
+    expect(fresco).toMatchObject({ vuelo_id: V236, valor: 4600 });
+    const local: CambiosAfac = { [V236]: { valor: 4500, estado: "guardado", guardadoEn: 1 } };
+    expect(revisarEditorAfac(editor, hoja([celdaD(5, { valor: null })]), local)).toBe(v236);
+  });
+});
+
 describe("textos EXACTOS (barra, toasts, confirmación)", () => {
   it("la barra: error > guardando > editando > guardados > ayuda > nada", () => {
     const guardado: CambiosAfac = { [V236]: { valor: 4500, estado: "guardado", guardadoEn: 1 } };
@@ -456,6 +500,22 @@ describe("textos EXACTOS (barra, toasts, confirmación)", () => {
     });
     expect(estadoBarraAfac({ cambios: SIN_CAMBIOS_AFAC, error: null, editando: false, celdaEditable: false })).toBeNull();
     expect(textoCambiosGuardadosAfac(3)).toBe("3 cambios guardados · los totales se actualizan en unos segundos");
+  });
+
+  it("la barra dice POR QUÉ no se captura la celda AFAC seleccionada (revisión 16-oct-2026: el doble clic no hacía nada)", () => {
+    const motivo = "Septiembre 2026 ya está cerrado (Ale, 16-oct). Reábrelo en Reportes para corregir.";
+    const guardado: CambiosAfac = { [V236]: { valor: 4500, estado: "guardado", guardadoEn: 1 } };
+    const guardando: CambiosAfac = { [V236]: { valor: 4500, estado: "guardando", guardadoEn: null } };
+    const base = { error: null, editando: false, celdaEditable: false, motivoCelda: motivo };
+    expect(estadoBarraAfac({ ...base, cambios: SIN_CAMBIOS_AFAC })).toEqual({ tono: "bloqueada", texto: motivo });
+    // Antes que «N cambios guardados» (es lo que el operador intenta ahora)…
+    expect(estadoBarraAfac({ ...base, cambios: guardado })).toEqual({ tono: "bloqueada", texto: motivo });
+    // …y después del error y de «Guardando…».
+    expect(estadoBarraAfac({ ...base, cambios: guardando })?.tono).toBe("guardando");
+    expect(estadoBarraAfac({ ...base, cambios: SIN_CAMBIOS_AFAC, error: "x" })?.tono).toBe("error");
+    // Sin motivo (o vacío), como antes.
+    expect(estadoBarraAfac({ ...base, cambios: SIN_CAMBIOS_AFAC, motivoCelda: null })).toBeNull();
+    expect(estadoBarraAfac({ ...base, cambios: SIN_CAMBIOS_AFAC, motivoCelda: "" })).toBeNull();
   });
 
   it("toasts con el folio del API (o la clave de la fila)", () => {
@@ -515,13 +575,42 @@ describe("respuesta y errores del PUT/DELETE", () => {
     expect(mensajeErrorAfac({ status: 403, error: "Forbidden resource" })).toBe(MSG_AFAC_SIN_PERMISO);
     expect(mensajeErrorAfac({ status: 404, error: `Cannot PUT /v1/flights/${V236}/afac-real` })).toBe(MSG_AFAC_API_PREVIO);
     expect(mensajeErrorAfac({ status: 404, error: `Cannot DELETE /v1/flights/${V236}/afac-real` })).toBe(MSG_AFAC_API_PREVIO);
-    expect(mensajeErrorAfac({ status: 404, code: "VUELO_NO_EXISTE", error: "El vuelo no existe." })).toBe("El vuelo no existe.");
+    // El API REAL (afac-real.service#validarVuelo) manda «Vuelo <uuid> not
+    // found»: inglés y con el id crudo. Jamás se pinta tal cual.
+    expect(
+      mensajeErrorAfac({ status: 404, code: "VUELO_NO_EXISTE", error: `Vuelo ${V236} not found` }),
+    ).toBe(MSG_AFAC_VUELO_NO_EXISTE);
+    expect(mensajeErrorAfac({ status: 404, error: `Vuelo ${V236} not found` })).toBe(MSG_AFAC_VUELO_NO_EXISTE);
+    expect(MSG_AFAC_VUELO_NO_EXISTE).toBe(
+      "Este vuelo ya no existe (lo borraron o lo cambiaron). Pulsa «Actualizar datos».",
+    );
     const sinRed = { code: "SIN_CONEXION", error: MSG_AFAC_SIN_RESPUESTA };
     expect(mensajeErrorAfac(sinRed)).toBe(MSG_AFAC_SIN_RESPUESTA);
     expect(falloAfacIncierto(sinRed)).toBe(true);
     expect(mensajeErrorAfac({ status: 500, error: "Internal server error" })).toBe(MSG_AFAC_SIN_RESPUESTA);
     expect(falloAfacIncierto({ status: 500, error: "Internal server error" })).toBe(true);
     expect(falloAfacIncierto({ status: 502, code: "PARSE_ERROR", error: "x" })).toBe(true);
+  });
+
+  it("falloAfacPideRefresco: lo incierto y los rechazos que dicen que el libro quedó VIEJO vuelven a leer el libro", () => {
+    // Revisión 16-oct-2026: sin releer, la celda seguía verde («editable») y
+    // el operador reintentaba la misma celda o las demás del mes cerrado.
+    const cerrado = { ok: false, code: "MES_CERRADO", status: 409, error: "Septiembre 2026 ya está cerrado.", details: { periodo: "2026-09" } };
+    expect(falloAfacPideRefresco(cerrado)).toBe(true);
+    expect(falloAfacPideRefresco({ status: 404, code: "VUELO_NO_EXISTE", error: `Vuelo ${V236} not found` })).toBe(true);
+    expect(falloAfacPideRefresco({ status: 400, code: "AFAC_VUELO_SIN_AVION", error: "Este vuelo no tiene avión de la flota…" })).toBe(true);
+    expect(falloAfacPideRefresco({ status: 400, code: "AFAC_VUELO_SIN_FECHA", error: "…" })).toBe(true);
+    expect(falloAfacPideRefresco({ status: 400, code: "PERIODO_ANTES_DEL_INICIO", error: "…" })).toBe(true);
+    expect(falloAfacPideRefresco({ code: "SIN_CONEXION", error: MSG_AFAC_SIN_RESPUESTA })).toBe(true);
+    // Lo que se corrige tecleando, la sesión, el rol, el API previo y la
+    // base sin migración NO piden el libro (no lo arreglaría).
+    expect(falloAfacPideRefresco({ status: 400, code: "AFAC_COSTO_INVALIDO", error: "El costo real debe ser…" })).toBe(false);
+    expect(falloAfacPideRefresco({ status: 401, code: "UNAUTHORIZED", error: "Sesión inválida" })).toBe(false);
+    expect(falloAfacPideRefresco({ status: 403, code: "FORBIDDEN", error: "Solo oficina" })).toBe(false);
+    expect(falloAfacPideRefresco({ status: 404, code: "NOT_FOUND", error: `Cannot PUT /v1/flights/${V236}/afac-real` })).toBe(false);
+    expect(
+      falloAfacPideRefresco({ status: 503, code: "AFAC_REAL_NO_DISPONIBLE", error: "El costo real AFAC todavía no está habilitado…" }),
+    ).toBe(false);
   });
 
   it("errorMontoParaApi: la misma regla que el DTO antes de hablar con el API", () => {

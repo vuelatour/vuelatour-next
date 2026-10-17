@@ -11434,3 +11434,37 @@ remanente, los totales y el bloque VUELATOUR llegan en el libro.
   reservado no tiene celda (contrato §8). Avisar al cliente: capturar los
   costos reales de septiembre ANTES de cerrarlo (cerrado, la celda queda
   bloqueada hasta reabrir).
+- **Revisión adversaria (16-oct-2026, contra el API real de la rama
+  afac-real)**:
+  - El 404 `VUELO_NO_EXISTE` del API llega en INGLÉS y con el uuid
+    («Vuelo 5e2a… not found»): `mensajeErrorAfac` lo cambia por «Este vuelo
+    ya no existe (lo borraron o lo cambiaron). Pulsa «Actualizar datos».»
+    (`MSG_AFAC_VUELO_NO_EXISTE`). La prueba vieja suponía un texto en español
+    que el API no manda.
+  - Un rechazo que dice que el libro en pantalla quedó VIEJO (409
+    `MES_CERRADO`, 404 `VUELO_NO_EXISTE`, 400 `AFAC_VUELO_SIN_AVION` /
+    `AFAC_VUELO_SIN_FECHA` / `PERIODO_ANTES_DEL_INICIO`) ahora también pide el
+    refresco diferido (`falloAfacPideRefresco`, que incluye lo incierto): antes
+    la celda seguía verde y el operador reintentaba esa celda o las demás del
+    mes cerrado.
+  - Cuadro ABIERTO + libro nuevo (RefreshOnFocus al volver de otra ventana —el
+    cuadro sigue abierto a propósito— o el refresco diferido): el cuadro guarda
+    en el vuelo de SU vínculo pero se pinta sobre (r, c). Si esa celda ya es de
+    OTRO vuelo (llegó o se fue una fila) o ya no se puede capturar, se cierra
+    SIN guardar con «El libro se actualizó mientras capturabas y esa celda
+    cambió: no se guardó nada. Vuelve a abrirla.» (`revisarEditorAfac`, en el
+    mismo ajuste de estado del render que `depurarCambiosAfac`; el hook recibe
+    la hoja CRUDA que se enseña). Mismo vuelo con otro valor ⇒ el vínculo se
+    refresca (lo «sin cambios» y la confirmación comparan contra él).
+  - Celda AFAC seleccionada que NO se puede capturar (mes cerrado, fila de otro
+    avión, migración pendiente): el doble clic o Enter no hacía nada y solo el
+    tooltip lo explicaba. La barra de fórmulas dice ahora el motivo (tono
+    `bloqueada`, ámbar; `estadoBarraAfac({ motivoCelda })`, después de error,
+    «Guardando…» y «Enter guarda · Esc cancela», antes de «N cambios
+    guardados»).
+  - Verificado sin cambios: Enter + blur no guardan dos veces (`terminado` del
+    cuadro; React no despacha el blur del `<input>` que se desmonta); «quitar»
+    SOLO sale de la confirmación (`confirmarQuitar`); «1,700.50» ⇒ 1700.5 y
+    «1.700,50» / «1700,50» ⇒ error (jamás se adivina la coma); ANALISTA ve la
+    celda bloqueada con «Solo administración…» y el teclado no la abre; sin
+    `vinculo` o sin `config.afac_real` la hoja es la MISMA (byte a byte).

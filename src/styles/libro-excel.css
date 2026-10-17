@@ -508,6 +508,14 @@
   color: #1e5c38;
 }
 
+/* Celda AFAC seleccionada que no se puede capturar (mes cerrado, fila de
+   otro avión): por qué, en ámbar suave (revisión 16-oct-2026). */
+.xl-afac-estado[data-tono="bloqueada"] {
+  background: #fff8e1;
+  border-color: #f2d48a;
+  color: #7a5200;
+}
+
 .xl-afac-estado[data-tono="error"] {
   background: #fdecec;
   border-color: #f5c2c0;

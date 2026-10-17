@@ -376,6 +376,35 @@ export function prepararHojaAfac(
   return toco ? { ...hoja, celdas } : hoja;
 }
 
+/**
+ * El cuadro está ABIERTO y llega un libro nuevo (refresco diferido, «Actualizar
+ * datos» o RefreshOnFocus al volver de otra ventana —el cuadro sigue abierto
+ * al cambiar de ventana—). Revisión 16-oct-2026: el cuadro guarda en el vuelo
+ * de SU vínculo pero se pinta sobre la celda (r, c); si en el libro nuevo esa
+ * celda ya es de OTRO vuelo (llegó o se fue una fila), o ya no se puede
+ * capturar (mes cerrado, fila de otro avión), lo tecleado se guardaría en un
+ * vuelo distinto del que se ve. Devuelve:
+ *  - null ⇒ cerrar el cuadro SIN guardar (`MSG_AFAC_CELDA_CAMBIO`);
+ *  - el MISMO vínculo si nada que importe cambió (sin re-render);
+ *  - el vínculo fresco si el valor que se enseña cambió (otra persona lo
+ *    capturó): «sin cambios» y la confirmación de quitar comparan contra él.
+ * `hoja` = la hoja CRUDA del libro nuevo que se está enseñando; `cambios` = los
+ * locales ya depurados (el valor que se enseña es el local si lo hay).
+ */
+export function revisarEditorAfac(
+  editor: { r: number; c: number; vinculo: VinculoAfacReal },
+  hoja: Pick<LibroExcelHoja, "celdas"> | null | undefined,
+  cambios: CambiosAfac,
+): VinculoAfacReal | null {
+  const celda = hoja?.celdas.find((x) => x.r === editor.r && x.c === editor.c) ?? null;
+  const v = leerVinculoAfacReal(celda);
+  if (!v || !v.editable || v.vuelo_id !== editor.vinculo.vuelo_id) return null;
+  const cambio = cambios[v.vuelo_id];
+  if (cambio?.estado === "guardando") return null;
+  const valor = cambio ? cambio.valor : v.valor;
+  return mismoMontoAfac(valor, editor.vinculo.valor) ? editor.vinculo : { ...v, valor };
+}
+
 /** Clase de la celda según su estado de edición (styles/libro-excel.css). */
 export function claseEdicionCelda(edicion: EdicionCeldaLibro | null | undefined): string | undefined {
   if (!edicion) return undefined;
@@ -418,7 +447,7 @@ export function cajaEditorAfac(
 
 /** El estado de la captura que se enseña a la derecha de la barra de fórmulas. */
 export interface EstadoBarraAfac {
-  tono: "error" | "guardando" | "guardado" | "ayuda";
+  tono: "error" | "guardando" | "guardado" | "ayuda" | "bloqueada";
   texto: string;
 }
 
@@ -432,20 +461,25 @@ export function textoCambiosGuardadosAfac(n: number): string {
 
 /**
  * Qué dice la barra (null = nada): el último error manda (en pantalla
- * completa el toast no se ve: la barra sí); luego «Guardando…», luego los
- * cambios que esperan el libro nuevo, luego la ayuda de la celda
- * seleccionada (editando: cómo terminar).
+ * completa el toast no se ve: la barra sí); luego «Guardando…», luego cómo
+ * terminar si se está editando, luego POR QUÉ no se puede capturar la celda
+ * seleccionada (`motivoCelda`: el tooltip de una celda AFAC bloqueada —mes
+ * cerrado, fila de otro avión—; revisión 16-oct-2026: el doble clic o Enter
+ * sobre ella no hacía nada y nada lo explicaba sin pasar el ratón), luego los
+ * cambios que esperan el libro nuevo, luego la ayuda de la celda editable.
  */
 export function estadoBarraAfac(p: {
   cambios: CambiosAfac;
   error: string | null;
   editando: boolean;
   celdaEditable: boolean;
+  motivoCelda?: string | null;
 }): EstadoBarraAfac | null {
   if (p.error) return { tono: "error", texto: p.error };
   const { guardando, guardados } = conteoCambiosAfac(p.cambios);
   if (guardando > 0) return { tono: "guardando", texto: TEXTO_BARRA_AFAC_GUARDANDO };
   if (p.editando) return { tono: "ayuda", texto: TEXTO_BARRA_AFAC_EDITANDO };
+  if (p.motivoCelda) return { tono: "bloqueada", texto: p.motivoCelda };
   if (guardados > 0) return { tono: "guardado", texto: textoCambiosGuardadosAfac(guardados) };
   if (p.celdaEditable) return { tono: "ayuda", texto: TEXTO_BARRA_AFAC_AYUDA };
   return null;
@@ -496,6 +530,14 @@ export const MSG_AFAC_API_PREVIO =
   "El costo real AFAC necesita la actualización del servidor (API 0.0.89). Vuelve a intentarlo más tarde.";
 export const MSG_AFAC_SIN_PERMISO = TITULO_CELDA_AFAC_SIN_ROL;
 export const MSG_AFAC_SESION = "Tu sesión expiró. Vuelve a entrar e inténtalo de nuevo.";
+/** 404 `VUELO_NO_EXISTE` (revisión 16-oct-2026): el API lo manda en inglés
+ *  con el uuid («Vuelo 5e2a… not found»); al operador, esto. */
+export const MSG_AFAC_VUELO_NO_EXISTE =
+  "Este vuelo ya no existe (lo borraron o lo cambiaron). Pulsa «Actualizar datos».";
+/** El libro llegó nuevo con el cuadro abierto y esa celda ya es de otro
+ *  vuelo o ya no se puede capturar (revisión 16-oct-2026). */
+export const MSG_AFAC_CELDA_CAMBIO =
+  "El libro se actualizó mientras capturabas y esa celda cambió: no se guardó nada. Vuelve a abrirla.";
 
 /** El resultado fallido de una action (`ActionResult`). */
 export interface FalloAfac {
@@ -519,8 +561,36 @@ export function mensajeErrorAfac(r: FalloAfac): string {
   if (r.status === 401) return MSG_AFAC_SESION;
   if (r.status === 403) return MSG_AFAC_SIN_PERMISO;
   if (r.status === 404 && /^Cannot (PUT|DELETE)\b/i.test((r.error ?? "").trim())) return MSG_AFAC_API_PREVIO;
+  // El API manda «Vuelo <uuid> not found» (inglés y con el id crudo).
+  if (r.code === "VUELO_NO_EXISTE" || (r.status === 404 && /\bnot found\b/i.test(r.error ?? ""))) {
+    return MSG_AFAC_VUELO_NO_EXISTE;
+  }
   if (r.code === "SIN_CONEXION" || esErrorTecnico({ error: r.error, code: r.code })) return MSG_AFAC_SIN_RESPUESTA;
   return (r.error ?? "").trim();
+}
+
+/** Rechazos del API que dicen que el libro en pantalla quedó VIEJO: la
+ *  celda se ofrecía para capturar y el servidor dice que ya no (mes cerrado,
+ *  vuelo borrado, sin avión o sin fecha, antes del inicio oficial). */
+const CODIGOS_AFAC_LIBRO_VIEJO: ReadonlySet<string> = new Set([
+  "MES_CERRADO",
+  "VUELO_NO_EXISTE",
+  "AFAC_VUELO_SIN_AVION",
+  "AFAC_VUELO_SIN_FECHA",
+  "PERIODO_ANTES_DEL_INICIO",
+]);
+
+/**
+ * ¿Tras este rechazo hay que volver a leer el libro? (revisión 16-oct-2026)
+ * Sí cuando no se sabe si el API escribió (`falloAfacIncierto`) y también
+ * cuando el rechazo dice que el libro quedó viejo: sin releerlo, la celda
+ * seguía verde y «editable» y el operador reintentaba la misma celda (o las
+ * demás del mes cerrado) una y otra vez. Usa el MISMO refresco diferido.
+ */
+export function falloAfacPideRefresco(r: FalloAfac): boolean {
+  if (falloAfacIncierto(r)) return true;
+  if (typeof r.code === "string" && CODIGOS_AFAC_LIBRO_VIEJO.has(r.code)) return true;
+  return r.status === 404 && /\bnot found\b/i.test(r.error ?? "");
 }
 
 /** ¿Un fallo en el que NO se sabe si el API escribió? (sin respuesta, 5xx,

@@ -365,9 +365,11 @@ export function LibroExcel({
   // «quitar» (`libro-afac-edicion.tsx`). La hoja que se PINTA lleva en cada
   // celda `afac_real` su estado de edición y lo tecleado
   // (`prepararHojaAfac`, puro; sin esas celdas es la MISMA hoja del libro).
-  const afac = useEdicionAfac(libro);
-  const puedeEditarAfac = pantalla && edicionAfac;
   const hojaDelLibro = libro.hojas[hojaIdx] ?? null;
+  // La hoja CRUDA también va al hook: con el cuadro abierto y un libro nuevo,
+  // revisa que la celda siga siendo del MISMO vuelo (`revisarEditorAfac`).
+  const afac = useEdicionAfac(libro, hojaDelLibro);
+  const puedeEditarAfac = pantalla && edicionAfac;
   const hoja = useMemo(
     () =>
       hojaDelLibro
@@ -678,6 +680,9 @@ export function LibroExcel({
         error: afac.aviso,
         editando: afac.editor !== null,
         celdaEditable: celdaAfacEditable(seleccion) !== null,
+        // Celda AFAC seleccionada que NO se puede capturar: por qué (su tooltip).
+        motivoCelda:
+          celdaSeleccionada?.edicion?.estado === "bloqueada" ? celdaSeleccionada.edicion.titulo : null,
       })
     : null;
 
