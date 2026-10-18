@@ -274,7 +274,9 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                               <MultiAvionChip v={v} />
                               {/* Cierre de mes (API 0.0.88): «Viene de
                                   septiembre 2026» / «Pendiente de cobro:
-                                  pasará a…». Texto del API. */}
+                                  pasará a…» / «Pasará a… · cobrado el
+                                  14-oct, después del 30-sep» (0.0.91).
+                                  Texto del API. */}
                               <ChipMarcaCierre marca={v.cierre_marca} className="mt-0.5" />
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">

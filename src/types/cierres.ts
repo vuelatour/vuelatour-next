@@ -74,12 +74,23 @@ export interface VueloDiferido {
   cobrado_usd: number;
   por_cobrar_usd: number;
   cobrado_posterior_usd: number;
+  /**
+   * ADITIVO (API 0.0.91, caso #351): día Cancún `YYYY-MM-DD` del cobro más
+   * reciente con fecha POSTERIOR al corte; null sin cobros posteriores. Con
+   * un API previo la llave no viaja.
+   */
+  fecha_cobro_posterior?: string | null;
   motivo: MotivoDiferir | null;
   /** `YYYY-MM` al que pasa (en `vuelos_que_pasan`). */
   destino?: string;
   /** `YYYY-MM` del que viene (en `vuelos_que_vienen`). */
   origen?: string;
-  /** Texto es-MX del API («Pasa a octubre 2026 · pendiente de cobro: …»). */
+  /**
+   * Texto es-MX del API: «Pasa a octubre 2026 · pendiente de cobro: cobrado
+   * $0.00 de $2,076.40 USD» o, si ya se cobró después del corte (API 0.0.91),
+   * «Pasa a octubre 2026 · cobrado el 14-oct, después del 30-sep (al 30-sep:
+   * $0.00 de $2,343.20 USD)».
+   */
   leyenda: string;
 }
 
@@ -210,6 +221,20 @@ export interface VueloDiferidoMarca {
   por_cobrar_mxn?: number;
   destino?: string;
   origen?: string;
+  /**
+   * ADITIVOS (API 0.0.91, caso #351; ausentes con un API previo). Reparto:
+   * `motivo` y lo cobrado DESPUÉS del corte (`cobrado_posterior_usd`; la
+   * fecha solo en los que pasarían). Balances: `motivo`, `corte`
+   * (`YYYY-MM-DD`, último día del mes que se cierra) y, en los que pasarían,
+   * `cobrado_despues_usd/_mxn` y `fecha_cobro_despues`.
+   */
+  motivo?: MotivoDiferir | null;
+  corte?: string | null;
+  cobrado_posterior_usd?: number | null;
+  fecha_cobro_posterior?: string | null;
+  cobrado_despues_usd?: number | null;
+  cobrado_despues_mxn?: number | null;
+  fecha_cobro_despues?: string | null;
   leyenda: string;
 }
 

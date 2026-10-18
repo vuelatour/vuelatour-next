@@ -68,8 +68,10 @@ export interface DetalleVuelo {
       la cotización (la cotización no trae tc_usd_mxn). */
   tc_oficial?: { tc: number; fecha_dato: string; fuente: string };
   /** ADITIVOS (cierre de mes, 16-oct-2026, API 0.0.88): marca del API
-      («Viene de septiembre 2026» / «Pendiente de cobro: pasará a…») y los
-      meses `YYYY-MM` de/a los que se difirió. Ausentes con un API previo. */
+      («Viene de septiembre 2026» / «Pendiente de cobro: pasará a…» o, ya
+      cobrado después del corte, «Pasará a… · cobrado el 14-oct, después del
+      30-sep» desde el 0.0.91) y los meses `YYYY-MM` de/a los que se
+      difirió. Ausentes con un API previo. */
   cierre_marca?: string | null;
   diferido_de?: string | null;
   diferido_a?: string | null;

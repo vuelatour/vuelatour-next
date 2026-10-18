@@ -11406,9 +11406,10 @@ ni decide qué vuelo pasa**: copia montos, leyendas (`leyenda`,
   ámbar claro; un texto que no reconoce NO se pinta. Dónde:
   - Reparto (`/admin/profit-sharing`): `CierreRepartoAviso` (estado del mes,
     aviso rojo si `coincide_con_snapshot === false`, bloques «Pasan a
-    octubre 2026 (no se reparten)» / «Vienen de…» / «Pendientes de cobro:
-    pasarán a … al cerrar»), `CierreRepartoAvion` en cada card y
-    `cierre_marca` junto a la ruta en el desglose.
+    octubre 2026 (sin cobro completo al 30-sep, no se reparten)» / «Vienen
+    de…» / «Pasarán a octubre 2026 al cerrar el mes (sin cobro completo al
+    30-sep)»), `CierreRepartoAvion` en cada card (la leyenda del API en el
+    `title` de cada línea) y `cierre_marca` junto a la ruta en el desglose.
   - Balance en pantalla: junto al título, estado + conteos («5 pasan a
     octubre 2026», `chipsResumenDiferidos`) de `libro.cierre` (pyservices lo
     copia a la raíz del JSON). Las marcas por vuelo YA vienen en las celdas.
@@ -11465,6 +11466,36 @@ ni decide qué vuelo pasa**: copia montos, leyendas (`leyenda`,
   - Pruebas: `app/admin/reportes/__tests__/cierre-actions.test.ts` (cuerpo
     exacto, nada inválido sale a la red, solo el éxito revalida, el
     rechazo conserva code/details/status, skew de la previa).
+- **Caso #351 (16-oct-2026, API 0.0.91)**: el cliente vio «aparece que aún
+  no se cobran pero sí están cobrados». Los cinco de septiembre (#316, #337,
+  #343, #344, #351) pasan a octubre con motivo `COBRO_POSTERIOR`: no estaban
+  cobrados al 30-sep, pero se cobraron en octubre. Un vuelo que pasa NO
+  siempre está «pendiente de cobro», así que ningún texto PROPIO del panel lo
+  dice; la regla que sí es cierta de todos es «sin cobro completo al <corte>».
+  - Las LEYENDAS siguen siendo del API y ya dicen cuándo se cobró («Pasa a
+    octubre 2026 · cobrado el 14-oct, después del 30-sep (…)», «Pasará a
+    octubre 2026 al cerrar · cobrado el 14-oct, …»). Siguen arrancando con
+    «Pasa a» / «Pasará a» / «Pendiente de cobro», así que `tonoMarcaCierre`
+    no cambió (sus pruebas lo congelan con las marcas nuevas).
+  - Textos propios (`lib/admin/cierre-mes.ts`, mismos que el PDF y el Excel
+    de pyservices): `tituloBloquePasan` / `tituloBloquePasarian` (arriba),
+    los `title` de `chipsCierreVuelo` («Sin cobro completo al 30-sep
+    (cierre de septiembre 2026): su dinero cuenta en el mes al que pasó.»)
+    y de `chipsResumenDiferidos` («Sin cobro completo al 30-sep: no suman en
+    este mes (#316, #337).»; el corte sale del `corte` del API o, sin él, de
+    `corteCortoDeDestino`), y la descripción del diálogo de cierre
+    (`textoDescripcionCerrar`: «…también los que se cobraron después de esa
+    fecha: su dinero cuenta en ese mes.»).
+  - Diálogo de cierre: la celda «Cobrado después» es `textoCobradoPosterior`
+    («$2,343.20 USD · el 14-oct») con `fecha_cobro_posterior` (ADITIVO del
+    API 0.0.91, día Cancún `YYYY-MM-DD`, leído con `diaCortoDeDia`, espejo
+    del API; un timestamp NO se recorta a día). Sin la llave (API previo),
+    solo el monto.
+  - `VueloDiferidoMarca` suma los ADITIVOS del 0.0.91 (`motivo`, `corte`,
+    `cobrado_posterior_usd`, `fecha_cobro_posterior`,
+    `cobrado_despues_usd/_mxn`, `fecha_cobro_despues`); el panel solo usa
+    `corte`. Skew: panel nuevo + API ≤ 0.0.90 ⇒ títulos nuevos (el corte se
+    deduce del destino) y la celda sin fecha; nada se rompe.
 
 ## AFAC por vuelo (16-oct-2026, API 0.0.89)
 

@@ -14,6 +14,8 @@ import {
   chipsCierreVuelo,
   chipsResumenDiferidos,
   clasificarFalloCierres,
+  corteCortoDeDestino,
+  diaCortoDeDia,
   decidirRespuestaCerrar,
   deltasReparto,
   diferidosDelAvion,
@@ -40,7 +42,9 @@ import {
   textoBadgeCierrePeriodo,
   textoCargaCierres,
   textoCheckboxCerrar,
+  textoCobradoPosterior,
   textoConfirmacionReabrir,
+  textoDescripcionCerrar,
   textoElegirMesCompleto,
   textoMotivoNoCerrable,
   textoNoCerrableDeMes,
@@ -48,6 +52,9 @@ import {
   textoNoCoincideSnapshot,
   textoToastCerrado,
   textoToastReabierto,
+  tituloBloquePasan,
+  tituloBloquePasarian,
+  tituloBloqueVienen,
   tonoMarcaCierre,
   ultimoDiaCorto,
   validarMotivoReabrir,
@@ -153,6 +160,26 @@ describe("meses y fechas es-MX (hora Cancún)", () => {
   it("hrefReportesMes: el mes completo", () => {
     expect(hrefReportesMes("2026-09")).toBe("/admin/reportes?desde=2026-09-01&hasta=2026-09-30");
     expect(hrefReportesMes("basura")).toBeNull();
+  });
+  it("diaCortoDeDia: espejo del API (día sin cero; solo un DÍA `YYYY-MM-DD`)", () => {
+    expect(diaCortoDeDia("2026-10-04")).toBe("4-oct");
+    expect(diaCortoDeDia("2026-10-14")).toBe("14-oct");
+    expect(diaCortoDeDia("2026-09-30")).toBe("30-sep");
+    // Un timestamp no se recorta: su día Cancún podría ser otro.
+    expect(diaCortoDeDia("2026-10-01T03:00:00Z")).toBeNull();
+    expect(diaCortoDeDia("2026-13-01")).toBeNull();
+    expect(diaCortoDeDia("2026-10-00")).toBeNull();
+    expect(diaCortoDeDia("")).toBeNull();
+    expect(diaCortoDeDia(null)).toBeNull();
+    expect(diaCortoDeDia(undefined)).toBeNull();
+  });
+  it("corteCortoDeDestino: último día del mes anterior al destino", () => {
+    expect(corteCortoDeDestino("2026-10")).toBe("30-sep");
+    expect(corteCortoDeDestino("2026-11")).toBe("31-oct");
+    expect(corteCortoDeDestino("2026-03")).toBe("28-feb");
+    expect(corteCortoDeDestino("2027-01")).toBe("31-dic");
+    expect(corteCortoDeDestino("nada")).toBeNull();
+    expect(corteCortoDeDestino(null)).toBeNull();
   });
 });
 
@@ -392,7 +419,7 @@ describe("chips (texto del API; el panel solo elige el color)", () => {
       {
         tono: "pasa",
         texto: "2 pasan a octubre 2026",
-        title: "Pendientes de cobro al cerrar: no suman en este mes (#316, #337).",
+        title: "Sin cobro completo al 30-sep: no suman en este mes (#316, #337).",
       },
     ]);
     expect(
@@ -404,6 +431,102 @@ describe("chips (texto del API; el panel solo elige el color)", () => {
         pasarian: [{ folio: 388, leyenda: "Pendiente de cobro: …", destino: "2026-11" }],
       }).map((x) => x.texto),
     ).toEqual(["1 viene de septiembre 2026", "1 pasaría a noviembre 2026 al cerrar"]);
+  });
+});
+
+describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () => {
+  // Las marcas del API 0.0.91 (mes-contable.util.ts) tal cual.
+  const POSTERIOR_CERRADO = "Pasa a octubre 2026 (cobrado después del 30-sep; al cierre: $0.00 MXN de $36,632.89 MXN)";
+  const POSTERIOR_PREVIA = "Pasa a octubre 2026 · cobrado el 14-oct, después del 30-sep (al 30-sep: $0.00 de $2,343.20 USD)";
+  const POSTERIOR_PASARA = "Pasará a octubre 2026 al cerrar · cobrado el 14-oct, después del 30-sep";
+  const PARCIAL_PASARA =
+    "Pendiente de cobro: pasará a octubre 2026 al cerrar (al 30-sep: cobrado $500.00 de $2,076.40 USD; después: $500.00 USD)";
+  it("las marcas nuevas del API conservan su color (el prefijo no cambió)", () => {
+    expect(tonoMarcaCierre(POSTERIOR_CERRADO)).toBe("pasa");
+    expect(tonoMarcaCierre(POSTERIOR_PREVIA)).toBe("pasa");
+    expect(tonoMarcaCierre(POSTERIOR_PASARA)).toBe("pasaria");
+    expect(tonoMarcaCierre(PARCIAL_PASARA)).toBe("pasaria");
+  });
+  it("títulos del reparto: «sin cobro completo al <corte>», jamás «pendientes de cobro»", () => {
+    expect(tituloBloquePasan("2026-10")).toBe("Pasan a octubre 2026 (sin cobro completo al 30-sep, no se reparten)");
+    expect(tituloBloquePasarian("2026-11")).toBe("Pasarán a noviembre 2026 al cerrar el mes (sin cobro completo al 31-oct)");
+    expect(tituloBloqueVienen("2026-09")).toBe("Vienen de septiembre 2026");
+    // Sin destino legible: sin corte, sin inventar.
+    expect(tituloBloquePasan(undefined)).toBe("Pasan al mes siguiente (no se reparten)");
+    expect(tituloBloquePasan("nada")).toBe("Pasan a nada (no se reparten)");
+    expect(tituloBloquePasarian(null)).toBe("Pasarán al mes siguiente al cerrar el mes");
+    for (const t of [tituloBloquePasan("2026-10"), tituloBloquePasarian("2026-10"), tituloBloquePasarian(null)]) {
+      expect(t).not.toMatch(/pendiente/i);
+    }
+  });
+  it("chips del vuelo: el title dice el corte y no «pendiente de cobro»", () => {
+    const c = chipsCierreVuelo({ diferido_de: "2026-09", diferido_a: "2026-11", mes_cerrado: false, cierre: null });
+    expect(c).toEqual([
+      {
+        tono: "viene",
+        texto: "Viene de septiembre 2026",
+        title: "Sin cobro completo al 30-sep (cierre de septiembre 2026): su dinero cuenta en el mes al que pasó.",
+      },
+      {
+        tono: "pasa",
+        texto: "Pasa a noviembre 2026",
+        title: "Sin cobro completo al 31-oct: su dinero cuenta en noviembre 2026.",
+      },
+    ]);
+    expect(chipsCierreVuelo({ diferido_de: "nada", diferido_a: null, mes_cerrado: false, cierre: null })[0].title).toBe(
+      "Sin cobro completo al cerrar nada: su dinero cuenta en el mes al que pasó.",
+    );
+  });
+  it("chips del libro en pantalla: el corte del API manda; sin él, el del destino", () => {
+    const conCorte = chipsResumenDiferidos({
+      disponible: true,
+      periodo: "2026-10",
+      estado: "ABIERTO",
+      vienen: [{ folio: 316, leyenda: "Viene de septiembre 2026", origen: "2026-09" }],
+      pasarian: [
+        {
+          folio: 351,
+          leyenda: POSTERIOR_PASARA,
+          destino: "2026-11",
+          motivo: "COBRO_POSTERIOR",
+          corte: "2026-10-31",
+          cobrado_despues_usd: 2343.2,
+          cobrado_despues_mxn: 40000,
+          fecha_cobro_despues: "2026-11-04",
+        },
+      ],
+    });
+    expect(conCorte.map((x) => x.title)).toEqual([
+      "Vuelos de meses anteriores sin cobro completo al cerrar su mes: suman completos aquí (#316).",
+      "Sin cobro completo al 31-oct: si el mes se cierra hoy, pasan completos al mes siguiente (#351).",
+    ]);
+    const sinDestino = chipsResumenDiferidos({
+      disponible: true,
+      periodo: "2026-09",
+      estado: "CERRADO",
+      pasan: [{ folio: "316", leyenda: POSTERIOR_CERRADO }],
+    });
+    expect(sinDestino[0].title).toBe("Sin cobro completo al cierre: no suman en este mes (#316).");
+    for (const c of [...conCorte, ...sinDestino]) expect(c.title).not.toMatch(/pendiente/i);
+  });
+  it("diálogo de cierre: «Cobrado después» con la fecha del cobro (API 0.0.91) o solo el monto", () => {
+    expect(textoCobradoPosterior({ cobrado_posterior_usd: 2343.2, fecha_cobro_posterior: "2026-10-14" })).toBe(
+      "$2,343.20 USD · el 14-oct",
+    );
+    // API previo: la llave no viaja ⇒ solo el monto.
+    expect(textoCobradoPosterior({ cobrado_posterior_usd: 2076.4 })).toBe("$2,076.40 USD");
+    expect(textoCobradoPosterior({ cobrado_posterior_usd: 0, fecha_cobro_posterior: null })).toBe("$0 USD");
+    // Una fecha sin cobro posterior no se pinta (no hay nada que fechar).
+    expect(textoCobradoPosterior({ cobrado_posterior_usd: 0, fecha_cobro_posterior: "2026-10-14" })).toBe("$0 USD");
+    // Un timestamp no se recorta a día (su día Cancún podría ser otro).
+    expect(textoCobradoPosterior({ cobrado_posterior_usd: 100, fecha_cobro_posterior: "2026-10-14T05:00:00Z" })).toBe(
+      "$100 USD",
+    );
+  });
+  it("descripción del diálogo: la regla tal cual (también los cobrados después)", () => {
+    expect(textoDescripcionCerrar("2026-09", "2026-10")).toBe(
+      "Al cerrar, septiembre 2026 queda bloqueado para capturas (gastos, cobros, ingresos, caja chica, cotizaciones). Los vuelos que no estén cobrados completos al 30-sep pasan completos a octubre 2026, también los que se cobraron después de esa fecha: su dinero cuenta en ese mes.",
+    );
   });
 });
 

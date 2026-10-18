@@ -10,8 +10,9 @@ import {
  * Chips del cierre de mes (16-oct-2026, API 0.0.88). Sin estado ni hooks:
  * sirven en Server y Client Components. El TEXTO es siempre el del API
  * (`cierre_marca` / `leyenda`): el panel solo elige el color por cómo
- * arranca («Pasa a…» ámbar, «Viene de…» azul, «Pendiente de cobro…» ámbar
- * claro); un texto que no reconoce no se pinta (API distinto ⇒ nada raro).
+ * arranca («Pasa a…» ámbar, «Viene de…» azul, «Pendiente de cobro…» y
+ * «Pasará a… · cobrado el 14-oct, después del 30-sep» ámbar claro); un
+ * texto que no reconoce no se pinta (API distinto ⇒ nada raro).
  */
 
 const CLASE_BASE =

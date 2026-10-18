@@ -81,6 +81,11 @@ describe("cableado del diálogo de cierre (las reglas viven en lib/admin/cierre-
     expect(src).toContain('informativo ? "Cobrado al cerrar su mes"');
     expect(src).toContain('{!informativo && <th className="px-2 py-1 text-right font-medium">Cobrado después</th>}');
   });
+  it("caso #351: «Cobrado después» lleva la fecha del cobro y la descripción dice la regla", () => {
+    expect(src).toContain("{textoCobradoPosterior(v)}");
+    expect(src).toContain("{textoDescripcionCerrar(mes, destino)}");
+    expect(src).not.toContain("y se reparten cuando se cobren");
+  });
   it("Reportes da 300 s a sus server actions (el cierre corre pre-cierre + 2 repartos)", () => {
     expect(leer("src/app/admin/reportes/page.tsx")).toMatch(/^export const maxDuration = 300;$/m);
   });
@@ -106,17 +111,51 @@ describe("reparto: estado del mes y listas (texto del API)", () => {
       },
     ],
   };
-  it("badge, aviso rojo de snapshot y bloque «Pasan a octubre 2026 (no se reparten)»", () => {
+  it("badge, aviso rojo de snapshot y bloque «Pasan a octubre 2026 (sin cobro completo al 30-sep, no se reparten)»", () => {
     const html = renderToStaticMarkup(<CierreRepartoAviso cierre={cierre} />);
     expect(html).toContain("Cerrado el 16-oct-2026 por Ale");
     expect(html).toContain("Los números de hoy no coinciden con el cierre del 16-oct-2026");
-    expect(html).toContain("Pasan a octubre 2026 (no se reparten)");
+    expect(html).toContain("Pasan a octubre 2026 (sin cobro completo al 30-sep, no se reparten)");
     expect(html).toContain("#316 · Mike Nelson · N990GG · $2,076.40 USD");
     expect(html).toContain('data-chip-cierre="pasa"');
   });
   it("por avión: solo los de su matrícula", () => {
     expect(renderToStaticMarkup(<CierreRepartoAvion cierre={cierre} matricula="N990GG" />)).toContain("#316");
     expect(renderToStaticMarkup(<CierreRepartoAvion cierre={cierre} matricula="N621TX" />)).toBe("");
+  });
+  it("caso #351: los que pasarían ya cobrados después del corte no se rotulan «pendientes de cobro»", () => {
+    const html = renderToStaticMarkup(
+      <CierreRepartoAviso
+        cierre={{
+          disponible: true,
+          periodo: "2026-09",
+          estado: "ABIERTO",
+          pendientes_que_pasarian: [
+            {
+              id: "v351",
+              folio: 351,
+              cliente: "Cliente 351",
+              matricula: "XA-VGV",
+              venta_usd: 2343.2,
+              destino: "2026-10",
+              motivo: "COBRO_POSTERIOR",
+              cobrado_posterior_usd: 2343.2,
+              fecha_cobro_posterior: "2026-10-14",
+              leyenda: "Pasará a octubre 2026 al cerrar · cobrado el 14-oct, después del 30-sep (al 30-sep: $0.00 de $2,343.20 USD)",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("Pasarán a octubre 2026 al cerrar el mes (sin cobro completo al 30-sep)");
+    expect(html).toContain("cobrado el 14-oct, después del 30-sep");
+    expect(html).toContain('data-chip-cierre="pasaria"');
+    expect(html).not.toMatch(/pendientes? de cobro/i);
+  });
+  it("por avión (compacta): la leyenda del API queda en el title de cada línea", () => {
+    expect(renderToStaticMarkup(<CierreRepartoAvion cierre={cierre} matricula="N990GG" />)).toContain(
+      'title="Pasa a octubre 2026 · pendiente de cobro: cobrado $0.00 de $2,076.40 USD"',
+    );
   });
   it("API previo (sin `cierre`) ⇒ nada", () => {
     expect(renderToStaticMarkup(<CierreRepartoAviso cierre={undefined} />)).toBe("");

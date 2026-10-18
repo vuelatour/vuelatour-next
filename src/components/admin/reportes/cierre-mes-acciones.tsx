@@ -54,7 +54,9 @@ import {
   puedeConfirmarCierre,
   resumenPrevia,
   textoCheckboxCerrar,
+  textoCobradoPosterior,
   textoConfirmacionReabrir,
+  textoDescripcionCerrar,
   textoNoCerrableDePrevia,
   textoToastCerrado,
   textoToastReabierto,
@@ -232,7 +234,7 @@ function DialogoCerrar({
         <AlertDialogHeader>
           <AlertDialogTitle>{`${etiquetaBotonCerrar(mes)}`}</AlertDialogTitle>
           <AlertDialogDescription>
-            {`Al cerrar, ${mesEnMinuscula(mes)} queda bloqueado para capturas (gastos, cobros, ingresos, caja chica, cotizaciones). Los vuelos que no estén cobrados al ${ultimoDiaCorto(mes)} pasan completos a ${mesEnMinuscula(destino)} y se reparten cuando se cobren.`}
+            {textoDescripcionCerrar(mes, destino)}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -403,7 +405,7 @@ function TablaVuelos({
                     {fmtMonto(v.por_cobrar_usd, "USD")}
                   </td>
                   {!informativo && (
-                    <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.cobrado_posterior_usd, "USD")}</td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right font-mono">{textoCobradoPosterior(v)}</td>
                   )}
                 </tr>
               ))}

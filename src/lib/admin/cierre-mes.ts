@@ -13,7 +13,9 @@
  * ADMIN con confirmación.
  *
  * Aquí NO hay dinero calculado: los montos y las leyendas («Pasa a octubre
- * 2026 · pendiente de cobro: …») los arma el API y el panel los copia.
+ * 2026 · pendiente de cobro: …» o, si el vuelo ya se cobró después del
+ * corte, «Pasa a octubre 2026 · cobrado el 14-oct, después del 30-sep (…)»)
+ * los arma el API y el panel los copia.
  */
 import type {
   CierrePeriodoAditivo,
@@ -96,6 +98,29 @@ export function ultimoDiaCorto(mes: string): string {
   const r = rangoDeMes(mes);
   if (!r) return mes;
   return `${Number(r.hasta.slice(8, 10))}-${MESES_CORTOS[Number(mes.slice(5, 7)) - 1]}`;
+}
+
+/**
+ * «2026-10-04» ⇒ «4-oct» (espejo de `diaCortoDeDia` del API). El API manda
+ * la fecha del cobro posterior y el corte como DÍA Cancún `YYYY-MM-DD`;
+ * cualquier otra cosa ⇒ null (jamás se adivina el día de un timestamp).
+ */
+export function diaCortoDeDia(dia: string | null | undefined): string | null {
+  if (typeof dia !== "string" || !DIA_RE.test(dia)) return null;
+  const m = Number(dia.slice(5, 7));
+  const d = Number(dia.slice(8, 10));
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return `${d}-${MESES_CORTOS[m - 1]}`;
+}
+
+/**
+ * El corte con el que se midió «cobrado al cierre» de un vuelo que pasa a
+ * `destino`: el último día del mes ANTERIOR («2026-10» ⇒ «30-sep»). Mes
+ * inválido ⇒ null.
+ */
+export function corteCortoDeDestino(destino: string | null | undefined): string | null {
+  const anterior = esMesValido(destino) ? sumarMeses(destino, -1) : null;
+  return anterior ? ultimoDiaCorto(anterior) : null;
 }
 
 /** `/admin/reportes?desde=YYYY-MM-01&hasta=YYYY-MM-DD` (el mes completo). */
@@ -479,6 +504,29 @@ export function textoCheckboxCerrar(mes: string): string {
   return `Entiendo que ${mesEnMinuscula(mes)} quedará bloqueado para capturas`;
 }
 
+/**
+ * Descripción del diálogo de cierre. Caso #351 (16-oct-2026): los vuelos que
+ * pasan NO siempre están por cobrar — los de septiembre cobrados en octubre
+ * también pasan —, así que se dice la regla tal cual: sin cobro COMPLETO al
+ * corte, aunque se haya cobrado después.
+ */
+export function textoDescripcionCerrar(mes: string, destino: string): string {
+  return `Al cerrar, ${mesEnMinuscula(mes)} queda bloqueado para capturas (gastos, cobros, ingresos, caja chica, cotizaciones). Los vuelos que no estén cobrados completos al ${ultimoDiaCorto(mes)} pasan completos a ${mesEnMinuscula(destino)}, también los que se cobraron después de esa fecha: su dinero cuenta en ese mes.`;
+}
+
+/**
+ * Celda «Cobrado después» del diálogo de cierre: «$2,343.20 USD · el 14-oct»
+ * con la fecha del cobro posterior que manda el API 0.0.91; sin fecha (API
+ * previo) o sin cobro posterior, solo el monto.
+ */
+export function textoCobradoPosterior(
+  v: Pick<VueloDiferido, "cobrado_posterior_usd" | "fecha_cobro_posterior">,
+): string {
+  const monto = fmtMonto(v.cobrado_posterior_usd, "USD");
+  const cuando = (v.cobrado_posterior_usd ?? 0) > 0 ? diaCortoDeDia(v.fecha_cobro_posterior) : null;
+  return cuando ? `${monto} · el ${cuando}` : monto;
+}
+
 /** «Ningún vuelo pasa…» / «1 vuelo pasa…» / «5 vuelos pasan…». */
 function fraseVuelosPasan(n: number, destino: string, tiempo: "presente" | "pasado" = "presente"): string {
   const d = mesEnMinuscula(destino);
@@ -627,8 +675,19 @@ export function textoBadgeCierrePeriodo(cierre: CierrePeriodoAditivo | null | un
   return { tono: "abierto", texto: "Abierto" };
 }
 
+/*
+ * Títulos de las listas del reparto. Caso #351 (16-oct-2026): un vuelo que
+ * pasa de mes NO siempre está «pendiente de cobro» (los de septiembre
+ * cobrados en octubre pasan igual), así que se dice lo que es cierto de
+ * todos: no tenían el cobro completo al corte. Mismo texto que el PDF y el
+ * Excel del reparto (pyservices).
+ */
 export function tituloBloquePasan(destino: string | null | undefined): string {
-  return destino ? `Pasan a ${mesEnMinuscula(destino)} (no se reparten)` : "Pasan al mes siguiente (no se reparten)";
+  if (!destino) return "Pasan al mes siguiente (no se reparten)";
+  const corte = corteCortoDeDestino(destino);
+  return corte
+    ? `Pasan a ${mesEnMinuscula(destino)} (sin cobro completo al ${corte}, no se reparten)`
+    : `Pasan a ${mesEnMinuscula(destino)} (no se reparten)`;
 }
 
 export function tituloBloqueVienen(origen: string | null | undefined): string {
@@ -636,9 +695,11 @@ export function tituloBloqueVienen(origen: string | null | undefined): string {
 }
 
 export function tituloBloquePasarian(destino: string | null | undefined): string {
-  return destino
-    ? `Pendientes de cobro: pasarán a ${mesEnMinuscula(destino)} al cerrar`
-    : "Pendientes de cobro: pasarán al mes siguiente al cerrar";
+  if (!destino) return "Pasarán al mes siguiente al cerrar el mes";
+  const corte = corteCortoDeDestino(destino);
+  return corte
+    ? `Pasarán a ${mesEnMinuscula(destino)} al cerrar el mes (sin cobro completo al ${corte})`
+    : `Pasarán a ${mesEnMinuscula(destino)} al cerrar el mes`;
 }
 
 /** Aviso rojo del reparto cuando `coincide_con_snapshot === false`. */
@@ -673,15 +734,29 @@ export function chipsCierreVuelo(
 ): { tono: TonoMarcaCierre | "cerrado"; texto: string; title?: string }[] {
   if (!cierre) return [];
   const out: { tono: TonoMarcaCierre | "cerrado"; texto: string; title?: string }[] = [];
+  // Caso #351: el title no dice «pendiente de cobro» (un vuelo cobrado
+  // después del corte también pasa); dice lo que es cierto de todos.
   if (cierre.diferido_de) {
+    const de = mesEnMinuscula(cierre.diferido_de);
+    const corte = esMesValido(cierre.diferido_de) ? ultimoDiaCorto(cierre.diferido_de) : null;
     out.push({
       tono: "viene",
-      texto: `Viene de ${mesEnMinuscula(cierre.diferido_de)}`,
-      title: `Pendiente de cobro al cerrar ${mesEnMinuscula(cierre.diferido_de)}: su dinero cuenta en el mes al que pasó.`,
+      texto: `Viene de ${de}`,
+      title: corte
+        ? `Sin cobro completo al ${corte} (cierre de ${de}): su dinero cuenta en el mes al que pasó.`
+        : `Sin cobro completo al cerrar ${de}: su dinero cuenta en el mes al que pasó.`,
     });
   }
   if (cierre.diferido_a) {
-    out.push({ tono: "pasa", texto: `Pasa a ${mesEnMinuscula(cierre.diferido_a)}` });
+    const a = mesEnMinuscula(cierre.diferido_a);
+    const corte = corteCortoDeDestino(cierre.diferido_a);
+    out.push({
+      tono: "pasa",
+      texto: `Pasa a ${a}`,
+      title: corte
+        ? `Sin cobro completo al ${corte}: su dinero cuenta en ${a}.`
+        : `Sin cobro completo al cierre: su dinero cuenta en ${a}.`,
+    });
   }
   if (cierre.mes_cerrado) {
     const c = cierre.cierre;
@@ -710,8 +785,10 @@ export interface VueloLeyendaPreCierre {
 }
 
 /**
- * Una línea por vuelo con `leyenda` del API («#388 · Pasará a noviembre 2026
- * al cerrar (cobrado $0.00 de $2,076.40 USD)»), tope `max` y «y N más» contra
+ * Una línea por vuelo con `leyenda` del API («#388 · Pendiente de cobro:
+ * pasará a noviembre 2026 al cerrar (cobrado $0.00 de $2,076.40 USD)» o, ya
+ * cobrado después del corte, «#351 · Pasará a octubre 2026 al cerrar ·
+ * cobrado el 14-oct, después del 30-sep (…)»), tope `max` y «y N más» contra
  * el `count` del renglón (el API puede topar la lista). Sin leyendas (API
  * previo) ⇒ ninguna línea: el renglón se pinta como siempre.
  */
@@ -749,26 +826,34 @@ export function chipsResumenDiferidos(
   const folios = (l: VueloDiferidoMarca[]) => l.map(folioDiferido).join(", ");
   const mes = (m: string | undefined, alt: string) => (m && esMesValido(m) ? mesEnMinuscula(m) : alt);
   const n = (k: number, uno: string, varios: string) => `${k} ${k === 1 ? uno : varios}`;
+  // Caso #351: «sin cobro completo al 30-sep» (cierto de todos los que pasan,
+  // también de los que ya se cobraron después). El corte: el del API
+  // (`corte`, balances 0.0.91) o, sin él, el último día del mes anterior al
+  // destino.
+  const alCorte = (l: VueloDiferidoMarca[]) => {
+    const c = diaCortoDeDia(l.find((v) => typeof v.corte === "string")?.corte) ?? corteCortoDeDestino(l[0]?.destino);
+    return c ? `al ${c}` : "al cierre";
+  };
   const out: { tono: TonoMarcaCierre; texto: string; title: string }[] = [];
   if (salen.length > 0) {
     out.push({
       tono: "pasa",
       texto: `${n(salen.length, "pasa", "pasan")} a ${mes(salen[0].destino, "el mes siguiente")}`,
-      title: `Pendientes de cobro al cerrar: no suman en este mes (${folios(salen)}).`,
+      title: `Sin cobro completo ${alCorte(salen)}: no suman en este mes (${folios(salen)}).`,
     });
   }
   if (entran.length > 0) {
     out.push({
       tono: "viene",
       texto: `${n(entran.length, "viene", "vienen")} de ${mes(entran[0].origen, "meses anteriores")}`,
-      title: `Vuelos de meses anteriores que se cobraron después: suman completos aquí (${folios(entran)}).`,
+      title: `Vuelos de meses anteriores sin cobro completo al cerrar su mes: suman completos aquí (${folios(entran)}).`,
     });
   }
   if (pasarian.length > 0) {
     out.push({
       tono: "pasaria",
       texto: `${n(pasarian.length, "pasaría", "pasarían")} a ${mes(pasarian[0].destino, "el mes siguiente")} al cerrar`,
-      title: `Pendientes de cobro: si el mes se cierra hoy, pasan completos al mes siguiente (${folios(pasarian)}).`,
+      title: `Sin cobro completo ${alCorte(pasarian)}: si el mes se cierra hoy, pasan completos al mes siguiente (${folios(pasarian)}).`,
     });
   }
   return out;

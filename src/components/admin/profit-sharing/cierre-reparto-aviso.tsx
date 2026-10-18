@@ -98,7 +98,11 @@ function ListaDiferidos({
       </p>
       <ul className="mt-1 space-y-0.5">
         {vuelos.slice(0, max).map((v, i) => (
-          <li key={v.id ?? `${folioDiferido(v)}-${i}`} className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+          <li
+            key={v.id ?? `${folioDiferido(v)}-${i}`}
+            className="flex flex-wrap items-center gap-1.5 text-muted-foreground"
+            title={compacta ? v.leyenda : undefined}
+          >
             {v.id ? (
               <Link href={`/admin/flights/${v.id}`} className="cursor-pointer underline underline-offset-2 hover:text-foreground">
                 {lineaDiferido(v)}
