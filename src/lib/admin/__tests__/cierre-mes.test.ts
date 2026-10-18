@@ -34,6 +34,7 @@ import {
   mesesCerrados,
   normalizarCierres,
   normalizarPrevia,
+  porCobrarYaSeCobro,
   previaDeDetails,
   puedeCerrarMes,
   puedeConfirmarCierre,
@@ -339,7 +340,7 @@ describe("diálogos: toasts, confirmación y motivo", () => {
   it("resumen de la previa y antes/después solo de los aviones que cambian", () => {
     const p = normalizarPrevia(PREVIA_SEP) as PreviaCierre;
     expect(resumenPrevia(p)).toBe(
-      "91 vuelos: 84 completados y 7 cancelados · 5 pasan a octubre 2026 ($16,199.76 USD por cobrar al 30-sep) · 6 con $0 cierran aquí",
+      "91 vuelos: 84 completados y 7 cancelados · 5 pasan a octubre 2026 ($16,199.76 USD por cobrar al 30-sep; después se cobraron $16,199.76 USD) · 6 con $0 cierran aquí",
     );
     expect(deltasReparto(p.reparto)).toEqual([
       { matricula: "N990GG", antes: 10000, despues: 8478.02, delta: 8478.02 - 10000 },
@@ -522,6 +523,21 @@ describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () =
     expect(textoCobradoPosterior({ cobrado_posterior_usd: 100, fecha_cobro_posterior: "2026-10-14T05:00:00Z" })).toBe(
       "$100 USD",
     );
+  });
+  it("resumen de la previa: sin cobro posterior, la línea de siempre", () => {
+    const sinDespues = normalizarPrevia({
+      ...PREVIA_SEP,
+      totales: { ...PREVIA_SEP.totales, pasan_cobrado_posterior_usd: 0 },
+    }) as PreviaCierre;
+    expect(resumenPrevia(sinDespues)).toBe(
+      "91 vuelos: 84 completados y 7 cancelados · 5 pasan a octubre 2026 ($16,199.76 USD por cobrar al 30-sep) · 6 con $0 cierran aquí",
+    );
+  });
+  it("«Por cobrar al <corte>» en gris solo si el API dice que ya se cobró después", () => {
+    expect(porCobrarYaSeCobro({ motivo: "COBRO_POSTERIOR" })).toBe(true);
+    expect(porCobrarYaSeCobro({ motivo: "SIN_COBRO" })).toBe(false);
+    expect(porCobrarYaSeCobro({ motivo: "COBRO_PARCIAL" })).toBe(false);
+    expect(porCobrarYaSeCobro({ motivo: null })).toBe(false);
   });
   it("descripción del diálogo: la regla tal cual (también los cobrados después)", () => {
     expect(textoDescripcionCerrar("2026-09", "2026-10")).toBe(

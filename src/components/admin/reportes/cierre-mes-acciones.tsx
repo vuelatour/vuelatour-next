@@ -7,8 +7,9 @@
  *
  * «Cerrar»: al ABRIR pide la previa (lectura pesada: dos repartos + el
  * pre-cierre) y la pinta: bloqueantes, los vuelos que pasarán al mes
- * siguiente (folio · cliente · avión · venta · cobrado al corte · por cobrar ·
- * cobrado después), los totales y el reparto antes/después por avión. Exige
+ * siguiente (folio · cliente · avión · venta · cobrado al corte · por cobrar
+ * al corte · cobrado después con su fecha), los totales y el reparto
+ * antes/después por avión. Exige
  * la casilla «Entiendo que … quedará bloqueado» y manda `vuelos_esperados`
  * (los ids que se vieron): si el API responde `PREVIA_CAMBIO`, el diálogo se
  * repinta con la previa nueva y hay que volver a confirmar. Cualquier otro
@@ -51,6 +52,7 @@ import {
   etiquetaBotonCerrar,
   mensajeErrorCierre,
   mesEnMinuscula,
+  porCobrarYaSeCobro,
   puedeConfirmarCierre,
   resumenPrevia,
   textoCheckboxCerrar,
@@ -384,7 +386,9 @@ function TablaVuelos({
                 <th className="px-2 py-1 text-right font-medium">
                   {informativo ? "Cobrado al cerrar su mes" : `Cobrado al ${corte}`}
                 </th>
-                <th className="px-2 py-1 text-right font-medium">{informativo ? "Por cobrar entonces" : "Por cobrar"}</th>
+                <th className="px-2 py-1 text-right font-medium">
+                  {informativo ? "Por cobrar entonces" : `Por cobrar al ${corte}`}
+                </th>
                 {!informativo && <th className="px-2 py-1 text-right font-medium">Cobrado después</th>}
               </tr>
             </thead>
@@ -401,7 +405,12 @@ function TablaVuelos({
                   <td className="whitespace-nowrap px-2 py-1">{v.fecha_vuelo ? fmtDate(v.fecha_vuelo) : "—"}</td>
                   <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.venta_usd, "USD")}</td>
                   <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.cobrado_usd, "USD")}</td>
-                  <td className="px-2 py-1 text-right font-mono text-amber-700 dark:text-amber-300">
+                  {/* Caso #351: ya cobrado después ⇒ gris (el ámbar se leía «se debe»). */}
+                  <td
+                    className={`px-2 py-1 text-right font-mono ${
+                      porCobrarYaSeCobro(v) ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300"
+                    }`}
+                  >
                     {fmtMonto(v.por_cobrar_usd, "USD")}
                   </td>
                   {!informativo && (

@@ -85,6 +85,9 @@ describe("cableado del diálogo de cierre (las reglas viven en lib/admin/cierre-
     expect(src).toContain("{textoCobradoPosterior(v)}");
     expect(src).toContain("{textoDescripcionCerrar(mes, destino)}");
     expect(src).not.toContain("y se reparten cuando se cobren");
+    // «Por cobrar» lleva el corte y deja el ámbar si ya se cobró después.
+    expect(src).toContain('{informativo ? "Por cobrar entonces" : `Por cobrar al ${corte}`}');
+    expect(src).toMatch(/porCobrarYaSeCobro\(v\) \? "text-muted-foreground" : "text-amber-700/);
   });
   it("Reportes da 300 s a sus server actions (el cierre corre pre-cierre + 2 repartos)", () => {
     expect(leer("src/app/admin/reportes/page.tsx")).toMatch(/^export const maxDuration = 300;$/m);

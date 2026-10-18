@@ -515,6 +515,15 @@ export function textoDescripcionCerrar(mes: string, destino: string): string {
 }
 
 /**
+ * ¿La cifra «Por cobrar al <corte>» de este vuelo ya se cobró después? Lo
+ * dice el API con el motivo (`COBRO_POSTERIOR`): entonces el diálogo la
+ * pinta en gris y no en ámbar (caso #351: el ámbar se leía «se debe»).
+ */
+export function porCobrarYaSeCobro(v: Pick<VueloDiferido, "motivo">): boolean {
+  return v.motivo === "COBRO_POSTERIOR";
+}
+
+/**
  * Celda «Cobrado después» del diálogo de cierre: «$2,343.20 USD · el 14-oct»
  * con la fecha del cobro posterior que manda el API 0.0.91; sin fecha (API
  * previo) o sin cobro posterior, solo el monto.
@@ -577,16 +586,23 @@ export function validarMotivoReabrir(motivo: string): string | null {
 
 /**
  * Una línea con los totales de la previa: «91 vuelos: 84 completados y 7
- * cancelados · 5 pasan a octubre 2026 (US$16,199.76 por cobrar al 30-sep) ·
- * 6 con $0 cierran aquí».
+ * cancelados · 5 pasan a octubre 2026 ($16,199.76 USD por cobrar al 30-sep;
+ * después se cobraron $16,199.76 USD) · 6 con $0 cierran aquí». Caso #351:
+ * sin la segunda mitad, la línea hacía creer que los cinco de septiembre
+ * seguían sin cobrar (se cobraron en octubre). La cifra es el total del API
+ * (`pasan_cobrado_posterior_usd`); con 0 no se dice nada.
  */
 export function resumenPrevia(previa: PreviaCierre): string {
   const t = previa.totales;
   const destino = sumarMeses(previa.periodo, 1) ?? "";
   const partes = [`${t.vuelos} vuelo${t.vuelos === 1 ? "" : "s"}: ${t.completados} completados y ${t.cancelados} cancelados`];
   if (t.pasan > 0) {
+    const despues =
+      t.pasan_cobrado_posterior_usd > 0
+        ? `; después se cobraron ${fmtMonto(t.pasan_cobrado_posterior_usd, "USD")}`
+        : "";
     partes.push(
-      `${t.pasan} ${t.pasan === 1 ? "pasa" : "pasan"} a ${mesEnMinuscula(destino)} (${fmtMonto(t.pasan_por_cobrar_usd, "USD")} por cobrar al ${ultimoDiaCorto(previa.periodo)})`,
+      `${t.pasan} ${t.pasan === 1 ? "pasa" : "pasan"} a ${mesEnMinuscula(destino)} (${fmtMonto(t.pasan_por_cobrar_usd, "USD")} por cobrar al ${ultimoDiaCorto(previa.periodo)}${despues})`,
     );
   } else {
     partes.push(`ninguno pasa a ${mesEnMinuscula(destino)}`);

@@ -11385,7 +11385,7 @@ ni decide qué vuelo pasa**: copia montos, leyendas (`leyenda`,
     /v1/cierres/:periodo/previa`, lectura pesada) y pinta: bloqueantes (con
     «Resolver en el pre-cierre →» al ancla de la card de arriba), la tabla
     «Vuelos que pasarán a octubre 2026» (folio · cliente · avión · fecha ·
-    venta · cobrado al 30-sep · por cobrar · cobrado después), «Vuelos que
+    venta · cobrado al 30-sep · por cobrar al 30-sep · cobrado después), «Vuelos que
     vienen de …» si hay, el resumen y el saldo del reparto antes → después
     solo de los aviones que cambian. Casilla «Entiendo que septiembre 2026
     quedará bloqueado para capturas» obligatoria. `cerrarMesAction` manda
@@ -11490,7 +11490,10 @@ ni decide qué vuelo pasa**: copia montos, leyendas (`leyenda`,
     («$2,343.20 USD · el 14-oct») con `fecha_cobro_posterior` (ADITIVO del
     API 0.0.91, día Cancún `YYYY-MM-DD`, leído con `diaCortoDeDia`, espejo
     del API; un timestamp NO se recorta a día). Sin la llave (API previo),
-    solo el monto.
+    solo el monto. La columna se llama «Por cobrar al 30-sep» y va en GRIS
+    (no en ámbar) cuando `porCobrarYaSeCobro` (motivo `COBRO_POSTERIOR` del
+    API). La línea de resumen (`resumenPrevia`) suma «; después se cobraron
+    $16,199.76 USD» con `totales.pasan_cobrado_posterior_usd` > 0.
   - `VueloDiferidoMarca` suma los ADITIVOS del 0.0.91 (`motivo`, `corte`,
     `cobrado_posterior_usd`, `fecha_cobro_posterior`,
     `cobrado_despues_usd/_mxn`, `fecha_cobro_despues`); el panel solo usa
