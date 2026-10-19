@@ -4,15 +4,19 @@
  * por rol en español. Combustibles lo ven ADMIN, COORDINADOR y FACTURACION;
  * a FACTURACION le salía «Required role: … Current: FACTURACION» al eliminar.
  */
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ROLES_ELIMINAN_GASTO,
+  ROLES_MARCAN_PAGADO_GASTO,
   ROLES_VISTO_BUENO_GASTO,
   TEXTO_SIN_PERMISO_GASTO,
   etiquetaAccionesGasto,
   mensajeErrorAccionGasto,
   puedeDarVistoBuenoGasto,
   puedeEliminarGasto,
+  puedeMarcarPagadoGasto,
 } from "../gasto-acciones";
 
 describe("roles del menú ⋯ (espejo del API)", () => {
@@ -66,5 +70,31 @@ describe("403 por rol en español", () => {
     );
     expect(mensajeErrorAccionGasto(409, "Required role: X")).toBe("Required role: X");
     expect(mensajeErrorAccionGasto(undefined, "Error")).toBe("Error");
+  });
+});
+
+describe("«Marcar pagado» por rol (gastos por pagar, revisión del lote, P19)", () => {
+  it("espejo del @Roles de PATCH /v1/expenses/:id: SOCIO y ANALISTA no lo tienen", () => {
+    expect(ROLES_MARCAN_PAGADO_GASTO).toEqual(["ADMIN", "COORDINADOR", "FACTURACION", "PILOTO", "MECANICO", "VISITANTE"]);
+    for (const rol of ROLES_MARCAN_PAGADO_GASTO) expect(puedeMarcarPagadoGasto(rol), rol).toBe(true);
+    expect(puedeMarcarPagadoGasto("SOCIO")).toBe(false);
+    expect(puedeMarcarPagadoGasto("ANALISTA")).toBe(false);
+  });
+
+  it("sin rol conocido se ofrece (el API sigue siendo el candado)", () => {
+    for (const r of [null, undefined, ""]) expect(puedeMarcarPagadoGasto(r)).toBe(true);
+  });
+
+  /** Repo hermano del API (solo existe en el workspace local). */
+  const controller = path.resolve(__dirname, "../../../../../vuelatour-api/src/modules/expenses/expenses.controller.ts");
+  const fuente = existsSync(controller) ? readFileSync(controller, "utf8") : null;
+  it.skipIf(!fuente)("paridad con el API: el @Roles que sigue a @Patch(':id') es EXACTAMENTE esa lista", () => {
+    const lineas = fuente!.split("\n");
+    const i = lineas.findIndex((l) => l.trim() === "@Patch(':id')");
+    expect(i, "no se encontró @Patch(':id') en el API").toBeGreaterThanOrEqual(0);
+    const ventana = lineas.slice(i + 1, i + 12).join("\n");
+    const roles = ventana.match(/@Roles\(([^)]*)\)/)?.[1];
+    expect(roles, "sin @Roles tras @Patch(':id')").toBeTruthy();
+    expect([...roles!.matchAll(/Rol\.(\w+)/g)].map((m) => m[1])).toEqual([...ROLES_MARCAN_PAGADO_GASTO]);
   });
 });

@@ -9,6 +9,7 @@ import { etiquetaComprobante } from "@/lib/admin/comprobante-badge";
 import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
 import { BotonChipPorPagar } from "@/components/admin/expenses/marcar-pagado";
+import { puedeMarcarPagadoGasto } from "@/lib/admin/gasto-acciones";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import {
@@ -43,12 +44,18 @@ export function FlightGastosTable({
   fotoUrls,
   aircraft,
   providers,
+  rol,
 }: {
   gastos: Gasto[];
   fotoUrls: Record<string, string>;
   aircraft: AvionCatalogoGasto[];
   providers: { id: string; nombre: string }[];
+  /** Rol de quien mira (revisión del lote «por pagar», P19): el detalle del
+      vuelo lo ve cualquier rol del panel; el menú ⋯ y el chip esconden lo
+      que el API le rechazaría. Sin dato no se esconde nada. */
+  rol?: string | null;
 }) {
+  const puedeMarcarPagado = puedeMarcarPagadoGasto(rol);
   const columns: Array<DataTableColumn<Gasto>> = [
     {
       key: "fecha",
@@ -60,8 +67,9 @@ export function FlightGastosTable({
         <span>
           {fmtDateOnly(g.fecha_gasto)}
           {/* «Por pagar · 20 oct» / «Vencido · 20 oct» (19-oct-2026, API
-              0.0.95): clic = «Marcar pagado»; sin la llave, nada. */}
-          <BotonChipPorPagar gasto={g} className="ml-1.5" />
+              0.0.95): clic = «Marcar pagado» (solo lectura para un rol que
+              no puede); sin la llave, nada. */}
+          <BotonChipPorPagar gasto={g} className="ml-1.5" puedeMarcar={puedeMarcarPagado} />
           <CapturadoLinea linea={lineaCaptura(g)} />
         </span>
       ),
@@ -217,6 +225,7 @@ export function FlightGastosTable({
           aircraft={aircraft}
           providers={providers}
           fotoUrl={g.foto_url ? fotoUrls[g.foto_url] : undefined}
+          rol={rol}
         />
       ),
     },

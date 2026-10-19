@@ -73,7 +73,9 @@ import { getInicioOficial } from "@/lib/api/inicio-oficial";
 import type { InicioOficial } from "@/lib/admin/inicio-oficial";
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 import {
+  CLAVE_PRECIERRE_GASTOS_POR_PAGAR,
   DESCRIPCION_POR_PAGAR_IGNORADO,
+  NOTA_VISTA_POR_PAGAR_GASTOS,
   TITULO_POR_PAGAR_IGNORADO,
   capacidadPorPagarDeMe,
 } from "@/lib/admin/gasto-por-pagar";
@@ -476,6 +478,11 @@ export default async function ExpensesPage({
               encontrados={lista.ok ? conFoco.encontrados : null}
               hrefQuitar={hrefQuitarResaltado("/admin/expenses", sp)}
               hrefVolver={hrefVolverPreCierre(foco, hoy)}
+              // Gastos por pagar: el detalle del API cuenta también la nómina
+              // por pagar, que Gastos no enseña (se marca pagada en Nómina).
+              notaVista={
+                foco.clave === CLAVE_PRECIERRE_GASTOS_POR_PAGAR ? NOTA_VISTA_POR_PAGAR_GASTOS : undefined
+              }
             />
           )}
 

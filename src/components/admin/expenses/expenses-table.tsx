@@ -36,6 +36,7 @@ import {
 } from "@/components/admin/expenses/expenses-seleccion";
 import { CapturadoCompacto } from "@/components/admin/expenses/capturado-linea";
 import { BotonChipPorPagar } from "@/components/admin/expenses/marcar-pagado";
+import { puedeMarcarPagadoGasto } from "@/lib/admin/gasto-acciones";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMonto } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
@@ -298,8 +299,9 @@ export function ExpensesTable({
               <span className="block">{fmtDateOnly(f.gasto.fecha_gasto)}</span>
               {/* «Por pagar · 20 oct» / «Vencido · 20 oct» (19-oct-2026, API
                   0.0.95): solo con `estado_pago` ≠ PAGADO; clic = «Marcar
-                  pagado». Sin la llave del API no se pinta nada. */}
-              <BotonChipPorPagar gasto={f.gasto} className="my-0.5" />
+                  pagado» (solo lectura para un rol que no puede). Sin la
+                  llave del API no se pinta nada. */}
+              <BotonChipPorPagar gasto={f.gasto} className="my-0.5" puedeMarcar={puedeMarcarPagadoGasto(rol)} />
               {/* Cuándo, quién y desde dónde se capturó (7-sep), en hora
                   Cancún, con la pista ámbar del 28-ago y el DISTINTIVO de
                   origen (Oficina / Sistema / Visitante, pedido del 9-jul). */}

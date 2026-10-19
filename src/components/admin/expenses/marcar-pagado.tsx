@@ -58,12 +58,23 @@ export function ChipEstadoPagoGasto({ chip, className }: { chip: Chip | null; cl
 /**
  * El chip como BOTÓN que abre «Marcar pagado» (la manera directa: el
  * operador ve «Vencido · 20 oct» en rojo y lo pulsa). `aria-haspopup`: con
- * el foco aquí, ↑/↓ no mueven la fila activa de la tabla.
+ * el foco aquí, ↑/↓ no mueven la fila activa de la tabla. Con `puedeMarcar`
+ * en false (el rol no puede hacer el PATCH: `puedeMarcarPagadoGasto`) se
+ * pinta el chip de SOLO LECTURA: un botón que responde 403 es peor que nada.
  */
-export function BotonChipPorPagar({ gasto, className }: { gasto: GastoPorPagar; className?: string }) {
+export function BotonChipPorPagar({
+  gasto,
+  className,
+  puedeMarcar = true,
+}: {
+  gasto: GastoPorPagar;
+  className?: string;
+  puedeMarcar?: boolean;
+}) {
   const [abierto, setAbierto] = useState(false);
   const chip = chipEstadoPago(gasto);
   if (!chip) return null;
+  if (!puedeMarcar) return <ChipEstadoPagoGasto chip={chip} className={className} />;
   return (
     <>
       <button

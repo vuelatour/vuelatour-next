@@ -964,6 +964,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             vueloCancelado={snapshot.estado === "CANCELADO"}
             aeronaveId={snapshot.aeronave_id}
             pilotoNombre={piloto?.nombre ?? null}
+            // «Marcar pagado» y el menú ⋯ según el rol (P19 del lote «por
+            // pagar»): SOCIO y ANALISTA ven el vuelo pero el PATCH es 403.
+            rol={me?.rol ?? null}
           />
 
           {/* Historial de gastos: quién capturó/editó/eliminó y qué cambió

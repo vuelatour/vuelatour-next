@@ -93,6 +93,7 @@ import {
   CLAVE_PRECIERRE_GASTOS_POR_PAGAR,
   hrefPrecierreGastosPorPagar,
 } from "@/lib/admin/gasto-por-pagar";
+import { resolverPrecierreGastosPorPagar } from "@/lib/admin/pre-cierre-por-pagar";
 import { ANCLA_PRE_CIERRE, hrefResolverItem } from "@/lib/admin/pre-cierre-resolver";
 import { lineasLeyendaPreCierre, textoBadgeCierrePeriodo } from "@/lib/admin/cierre-mes";
 import { ChipEstadoCierre, ChipMarcaCierre } from "@/components/admin/chip-cierre";
@@ -253,6 +254,11 @@ interface PreCierreItem {
       El panel los anexa al «Resolver →» (`hrefResolverItem`); ausentes con
       un API previo ⇒ la franja dice «N por resolver» sin resaltar. */
   ids?: string[];
+  /** ADITIVO (`gastos_por_pagar`, revisión del lote «por pagar», API
+      0.0.95): el subconjunto de `ids` cuya categoría es NOMINA (va JUSTO
+      antes de `ids`). Gastos no enseña la nómina: esos se resuelven en
+      Nómina (`resolverPrecierreGastosPorPagar`). Ausente ⇒ como siempre. */
+  ids_nomina?: string[];
   ids_truncado?: true;
 }
 
@@ -276,8 +282,10 @@ const LINK_POR_CLAVE: Record<
   // mes del periodo; el foco ámbar (`pc`/`ids`) lo agrega `hrefResolverItem`.
   [CLAVE_PRECIERRE_NOMINA_SIN_REPARTIR]: hrefPrecierreNominaSinRepartir,
   // Gastos por pagar sin confirmar (BLOQUEANTE, 19-oct-2026, API 0.0.95):
-  // Gastos con el filtro «Por pagar» del periodo, donde cada fila tiene
-  // «Marcar pagado»; el foco ámbar (`pc`/`ids`) lo agrega `hrefResolverItem`.
+  // Gastos con el filtro «Por pagar» (SIN desde/hasta: el API cuenta por el
+  // mes contable y la fecha del pago puede caer en otro mes), donde cada fila
+  // tiene «Marcar pagado». Es la BASE: la nómina va a Nómina y el foco lo pone
+  // `resolverPrecierreGastosPorPagar` (abajo, en el render del renglón).
   [CLAVE_PRECIERRE_GASTOS_POR_PAGAR]: hrefPrecierreGastosPorPagar,
   // Vuelos sin completar: la lista del periodo (externos incluidos — esos
   // se completan a mano en su detalle y NO aparecen en taco-live).
@@ -491,11 +499,18 @@ export async function PreCierreCard({
             // «Resolver →» con FOCO (15-oct-2026): la pantalla de siempre +
             // `pc`/`ids`/… para que pinte en ámbar lo que hay que resolver.
             // Los informativos llevan su enlace tal cual.
-            const href = hrefResolverItem(
-              item,
-              { desde, hasta },
-              LINK_POR_CLAVE[item.clave]?.({ desde, hasta }),
-            );
+            const baseResolver = LINK_POR_CLAVE[item.clave]?.({ desde, hasta });
+            // Gastos por pagar (revisión del lote, 19-oct-2026): la nómina
+            // por pagar se resuelve en Nómina (Gastos no la enseña). Todos de
+            // nómina ⇒ «Resolver →» a Nómina; mezcla ⇒ a Gastos + el aviso
+            // «N son de Nómina…» con su liga. Sin `ids_nomina`, como siempre.
+            const porPagar =
+              item.clave === CLAVE_PRECIERRE_GASTOS_POR_PAGAR
+                ? resolverPrecierreGastosPorPagar(item, { desde, hasta }, baseResolver)
+                : null;
+            const href = porPagar
+              ? porPagar.href
+              : hrefResolverItem(item, { desde, hasta }, baseResolver);
             const info = item.informativo === true;
             // Chips con helper propio (factura obligatoria y los renglones
             // inversos); sin entrada ⇒ renderer genérico de abajo.
@@ -585,6 +600,23 @@ export async function PreCierreCard({
                   {!ocultarDetalle && (
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {item.detalle}
+                    </p>
+                  )}
+                  {/* Gastos por pagar con nómina MEZCLADA: esos no salen en
+                      Gastos; su aviso lleva a Nómina con su propio foco. */}
+                  {porPagar?.nomina && (
+                    <p
+                      className="text-xs mt-1 text-amber-700 dark:text-amber-300"
+                      data-precierre-por-pagar-nomina=""
+                    >
+                      {porPagar.nomina.texto}
+                      {" · "}
+                      <Link
+                        href={porPagar.nomina.href}
+                        className="cursor-pointer font-medium underline underline-offset-2"
+                      >
+                        {porPagar.nomina.etiqueta}
+                      </Link>
                     </p>
                   )}
                   {/* Chips con helper propio (`CHIP_POR_CLAVE`): factura

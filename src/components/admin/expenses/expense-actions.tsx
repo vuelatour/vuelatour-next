@@ -48,6 +48,7 @@ import {
   etiquetaAccionesGasto,
   puedeDarVistoBuenoGasto,
   puedeEliminarGasto,
+  puedeMarcarPagadoGasto,
 } from "@/lib/admin/gasto-acciones";
 import type { Gasto } from "@/types/expenses";
 import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
@@ -74,9 +75,10 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl, rol }: Exp
   const [openCrearCompra, setOpenCrearCompra] = useState(false);
   const [openLigarCompra, setOpenLigarCompra] = useState(false);
   // «Marcar pagado» (19-oct-2026, API 0.0.95): solo si el API dice que el
-  // gasto sigue por pagar (`estado_pago` ≠ PAGADO; sin la llave, nada).
+  // gasto sigue por pagar (`estado_pago` ≠ PAGADO; sin la llave, nada) y el
+  // rol puede hacer el PATCH (SOCIO/ANALISTA recibirían 403: revisión P19).
   const [openPagado, setOpenPagado] = useState(false);
-  const porPagar = porPagarVigente(gasto);
+  const porPagar = porPagarVigente(gasto) && puedeMarcarPagadoGasto(rol);
   const [pending, startTransition] = useTransition();
 
   const repartible =

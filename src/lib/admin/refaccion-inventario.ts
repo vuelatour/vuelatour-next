@@ -15,8 +15,11 @@
  * salida); aquí no hay red.
  */
 import { fmtMonto } from "@/lib/format";
+import { todayCancun } from "@/lib/datetime";
+import { esDiaValido } from "@/lib/admin/url-params";
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 import type { GastoInventarioResultado } from "@/types/expenses";
+import type { CapacidadPorPagar } from "@/lib/admin/gasto-por-pagar";
 
 export type { GastoInventarioResultado };
 
@@ -58,6 +61,33 @@ export const NOTA_ELIGE_AVION_REFACCION = "Elige el avión al que se carga la re
 /** La nota del bloque «¿A dónde va la refacción?» en el alta por la suma (solo «Directo al avión»). */
 export function notaRefaccionDesdeCargos(conAvion: boolean): string {
   return `${conAvion ? NOTA_DIRECTO_AVION : NOTA_ELIGE_AVION_REFACCION} ${NOTA_INVENTARIO_NO_DESDE_CARGOS}`;
+}
+
+/**
+ * Refacción «A Inventario/Tienda» con fecha FUTURA (revisión del lote «por
+ * pagar», 19-oct-2026, acuerdo 4 entre repos): la fecha del gasto es la del
+ * PAGO, y la ENTRADA del cardex, la venta al avión y su cargo de bodega
+ * nacerían con esa fecha futura (y no se mueven al marcarlo pagado). El API
+ * responde 400 `INVENTARIO_FECHA_FUTURA` con ESTE texto EXACTO antes de
+ * insertar nada; el panel lo previene y lo dice igual.
+ */
+export const MSG_INVENTARIO_FECHA_FUTURA =
+  "Una refacción con fecha futura queda «por pagar»: guárdala sin entrada a Inventario/Tienda y registra la entrada desde Inventario/Tienda (Compras) el día que llegue la pieza.";
+
+/**
+ * El texto de arriba (o null): destino «A Inventario/Tienda», con la
+ * capacidad de gastos por pagar y una fecha posterior a hoy (Cancún). Sin la
+ * capacidad (API previo o sin la migración) no hay «por pagar»: como antes.
+ */
+export function errorInventarioFechaFutura(p: {
+  destino: DestinoRefaccion;
+  fecha: string | null | undefined;
+  capacidad: Pick<CapacidadPorPagar, "habilitado">;
+  hoy?: string;
+}): string | null {
+  if (p.destino !== "INVENTARIO" || !p.capacidad.habilitado) return null;
+  const f = (p.fecha ?? "").slice(0, 10);
+  return esDiaValido(f) && f > (p.hoy ?? todayCancun()) ? MSG_INVENTARIO_FECHA_FUTURA : null;
 }
 
 /** La nota de la TRAZA (punto 1 del cliente): con avión elegido. */

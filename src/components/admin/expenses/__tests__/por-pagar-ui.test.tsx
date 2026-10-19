@@ -18,7 +18,13 @@ import type { ReactNode } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Gasto } from "@/types/expenses";
-import { NOTA_QUEDARA_POR_PAGAR, NOTA_SIGUE_POR_PAGAR, chipEstadoPago } from "@/lib/admin/gasto-por-pagar";
+import {
+  MSG_FECHA_FUTURA_CON_CARGOS,
+  NOTA_QUEDARA_POR_PAGAR,
+  NOTA_SIGUE_POR_PAGAR,
+  chipEstadoPago,
+} from "@/lib/admin/gasto-por-pagar";
+import { MSG_INVENTARIO_FECHA_FUTURA } from "@/lib/admin/refaccion-inventario";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),
@@ -51,6 +57,8 @@ vi.mock("@/components/admin/expenses/gasto-banco-sheet", () => ({
   useDetalleBancoGasto: () => ({ abrir: () => {} }),
   GastoBancoSheet: () => null,
 }));
+// El historial del vuelo monta «Editar» con el diálogo de verificar: fuera (P20).
+vi.mock("@/components/admin/flights/historial-gasto-editar", () => ({ HistorialGastoEditar: () => null }));
 // Diálogo abierto sin portal.
 vi.mock("@/components/ui/dialog", () => {
   const Caja = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -71,9 +79,11 @@ afterAll(() => vi.useRealTimers());
 
 const { ChipEstadoPagoGasto, BotonChipPorPagar, BotonMarcarPagado } = await import("../marcar-pagado");
 const { MarcarPagadoDialog } = await import("../marcar-pagado-dialog");
-const { NotaFechaPorPagar } = await import("../nota-por-pagar");
+const { NotaFechaPorPagar, AvisoInventarioFechaFutura } = await import("../nota-por-pagar");
 const { PorPagarProvider } = await import("@/components/admin/por-pagar-provider");
 const { ExpensesTable } = await import("../expenses-table");
+const { FlightGastosTable } = await import("@/components/admin/flights/flight-gastos-table");
+const { FlightGastosHistorialCard } = await import("@/components/admin/flights/flight-gastos-historial-card");
 
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const G = "0f3c2b1a-3333-4a7b-8c9d-0e1f2a3b4c5d";
@@ -298,6 +308,21 @@ describe("menú ⋯: «Marcar pagado» solo si `estado_pago` ≠ PAGADO", () => 
       expect(items(html)).not.toContain("Marcar pagado");
     }
   });
+
+  it("P19: SOCIO y ANALISTA no lo tienen (el PATCH les responde 403); los roles del PATCH y sin rol, sí", () => {
+    for (const rol of ["SOCIO", "ANALISTA"]) {
+      const html = renderToStaticMarkup(
+        <ExpenseActions gasto={gasto({ estado_pago: "VENCIDO" })} aircraft={[]} providers={[]} rol={rol} />,
+      );
+      expect(items(html), rol).not.toContain("Marcar pagado");
+    }
+    for (const rol of ["COORDINADOR", "FACTURACION", null]) {
+      const html = renderToStaticMarkup(
+        <ExpenseActions gasto={gasto({ estado_pago: "VENCIDO" })} aircraft={[]} providers={[]} rol={rol} />,
+      );
+      expect(items(html)[0], String(rol)).toBe("Marcar pagado");
+    }
+  });
 });
 
 describe("cableado (regex sobre los fuentes)", () => {
@@ -307,13 +332,74 @@ describe("cableado (regex sobre los fuentes)", () => {
   it("los dos diálogos de captura usan la regla ÚNICA y pintan la nota", () => {
     for (const rel of ["components/admin/expenses/expense-create-dialog.tsx", "components/admin/expenses/expense-verify-dialog.tsx"]) {
       const s = fuente(rel);
-      expect(s, rel).toContain("evaluarFechaGasto(values.fecha_gasto, capacidadPorPagar).pideConfirmacion");
+      // Revisión del lote (P17/P18): la capacidad de la FECHA pasa por
+      // `capacidadFechaCaptura` (con cargos o conciliado ⇒ sin capacidad).
+      expect(s, rel).toContain("evaluarFechaGasto(values.fecha_gasto, capacidadFecha).pideConfirmacion");
+      expect(s, rel).not.toContain("evaluarFechaGasto(values.fecha_gasto, capacidadPorPagar)");
       expect(s, rel).not.toContain("fechaGastoSospechosa(");
       expect(s, rel).toContain("const capacidadPorPagar = usePorPagar();");
-      expect(s, rel).toMatch(/<NotaFechaPorPagar fecha=/);
+      expect(s, rel).toMatch(/<NotaFechaPorPagar\s+fecha=/);
     }
     expect(fuente("components/admin/expenses/expense-verify-dialog.tsx")).toContain(
       "estadoGuardado={estadoPagoDe(gasto)}",
+    );
+  });
+
+  it("P17: «Créalo por la suma» evalúa la fecha SIN capacidad y frena una fecha futura antes de la red", () => {
+    const s = fuente("components/admin/expenses/expense-create-dialog.tsx");
+    expect(s).toContain("const capacidadFecha = capacidadFechaCaptura(capacidadPorPagar, { conCargos });");
+    expect(s).toContain("<NotaFechaPorPagar fecha={fechaGasto} conCargos={conCargos} />");
+    const submit = s.slice(s.indexOf("const onSubmit = handleSubmit("), s.indexOf("const fechaIaOtroAnio"));
+    const iError = submit.indexOf("errorFechaFuturaConCargos(values.fecha_gasto, capacidadPorPagar)");
+    const iInv = submit.indexOf("errorInventarioFechaFutura(");
+    const iToast = submit.indexOf("toast.error(errorFecha);");
+    const iConfirma = submit.indexOf("evaluarFechaGasto(values.fecha_gasto, capacidadFecha)");
+    expect(iError).toBeGreaterThan(-1);
+    expect(iInv).toBeGreaterThan(-1);
+    // El freno va ANTES de la confirmación de fecha (y de `guardarGasto`).
+    expect(iToast).toBeGreaterThan(iError);
+    expect(iConfirma).toBeGreaterThan(iToast);
+    expect(submit.slice(iToast, iConfirma)).toMatch(/toast\.error\(errorFecha\);\s*return;/);
+  });
+
+  it("P12: la refacción «A Inventario/Tienda» con fecha futura no se guarda; el aviso va AL FINAL del bloque", () => {
+    const s = fuente("components/admin/expenses/expense-create-dialog.tsx");
+    expect(s).toMatch(/errorInventarioFechaFutura\(\{\s*destino: refDestino,\s*fecha: values\.fecha_gasto,\s*capacidad: capacidadPorPagar,\s*\}\)/);
+    // Último hijo del fragmento del destino INVENTARIO: un hijo nuevo antes
+    // correría los ids de `useId` de los campos (el golden del alta).
+    expect(s).toMatch(/<AvisoInventarioFechaFutura fecha=\{fechaGasto\} \/>\s*<\/>\s*\)\}/);
+  });
+
+  it("P18: «Verificar / editar» de un conciliado evalúa la fecha sin capacidad y la nota lo sabe", () => {
+    const s = fuente("components/admin/expenses/expense-verify-dialog.tsx");
+    expect(s).toContain("const gastoConciliado = gasto.conciliado === true;");
+    expect(s).toContain("const capacidadFecha = capacidadFechaCaptura(capacidadPorPagar, { conciliado: gastoConciliado });");
+    expect(s).toMatch(/<NotaFechaPorPagar\s+fecha=\{watch\("fecha_gasto"\)\}\s+estadoGuardado=\{estadoPagoDe\(gasto\)\}\s+conciliado=\{gastoConciliado\}\s+\/>/);
+  });
+
+  it("P19: el rol llega a «Marcar pagado» del detalle del vuelo, de Gastos y de la caja chica", () => {
+    expect(fuente("app/admin/flights/[id]/page.tsx")).toMatch(/<FlightGastosCard[\s\S]*?rol=\{me\?\.rol \?\? null\}[\s\S]*?\/>/);
+    const card = fuente("components/admin/flights/flight-gastos-card.tsx");
+    expect(card).toMatch(/<FlightGastosTable[\s\S]*?rol=\{rol\}[\s\S]*?\/>/);
+    const tabla = fuente("components/admin/flights/flight-gastos-table.tsx");
+    expect(tabla).toContain("<BotonChipPorPagar gasto={g} className=\"ml-1.5\" puedeMarcar={puedeMarcarPagado} />");
+    expect(tabla).toMatch(/<ExpenseActions[\s\S]*?rol=\{rol\}[\s\S]*?\/>/);
+    expect(fuente("components/admin/expenses/expenses-table.tsx")).toContain(
+      "puedeMarcar={puedeMarcarPagadoGasto(rol)}",
+    );
+    expect(fuente("components/admin/expenses/expense-actions.tsx")).toContain(
+      "const porPagar = porPagarVigente(gasto) && puedeMarcarPagadoGasto(rol);",
+    );
+    expect(fuente("app/admin/caja-chica/[id]/page.tsx")).toMatch(/<PorPagarCaja[\s\S]*?rol=\{me\?\.rol \?\? null\}[\s\S]*?\/>/);
+  });
+
+  it("P1/P2: el renglón del pre-cierre decide su destino con `resolverPrecierreGastosPorPagar` y pinta el aviso de Nómina", () => {
+    const card = fuente("components/admin/reportes/pre-cierre-card.tsx");
+    expect(card).toContain("resolverPrecierreGastosPorPagar(item, { desde, hasta }, baseResolver)");
+    expect(card).toContain("data-precierre-por-pagar-nomina");
+    const pagina = fuente("app/admin/expenses/page.tsx");
+    expect(pagina).toMatch(
+      /notaVista=\{\s*foco\.clave === CLAVE_PRECIERRE_GASTOS_POR_PAGAR \? NOTA_VISTA_POR_PAGAR_GASTOS : undefined\s*\}/,
     );
   });
 
@@ -358,5 +444,122 @@ describe("cableado (regex sobre los fuentes)", () => {
     const pagina = fuente("app/admin/caja-chica/[id]/page.tsx");
     expect(pagina).toContain("const porPagar = porPagarDeFondo(fondo);");
     expect(pagina).toMatch(/\{porPagar && \(\s*<PorPagarCaja/);
+  });
+});
+
+describe("revisión del lote: la fecha de un gasto que YA está pagado (P17, P18) y la refacción a Inventario (P12)", () => {
+  it("P17: con cargos del banco y fecha futura, el ERROR (nunca «Quedará POR PAGAR»)", () => {
+    const html = renderToStaticMarkup(
+      <PorPagarProvider capacidad={CAPACIDAD}>
+        <NotaFechaPorPagar fecha="2026-10-25" conCargos />
+      </PorPagarProvider>,
+    );
+    expect(html).toContain(`>${MSG_FECHA_FUTURA_CON_CARGOS}<`);
+    expect(html).toContain('role="alert"');
+    expect(html).not.toContain(NOTA_QUEDARA_POR_PAGAR);
+    // Con la fecha de hoy, o sin la capacidad (API previo): nada, como antes.
+    for (const [cap, fecha] of [
+      [CAPACIDAD, "2026-10-19"],
+      [{ habilitado: false, fechaMax: null }, "2026-10-25"],
+    ] as const) {
+      expect(
+        renderToStaticMarkup(
+          <PorPagarProvider capacidad={cap}>
+            <NotaFechaPorPagar fecha={fecha} conCargos />
+          </PorPagarProvider>,
+        ),
+      ).toBe("");
+    }
+  });
+
+  it("P18: un gasto CONCILIADO con fecha futura no promete «Quedará POR PAGAR»", () => {
+    expect(
+      renderToStaticMarkup(
+        <PorPagarProvider capacidad={CAPACIDAD}>
+          <NotaFechaPorPagar fecha="2026-10-25" estadoGuardado="PAGADO" conciliado />
+        </PorPagarProvider>,
+      ),
+    ).toBe("");
+    // El mismo gasto SIN conciliar sí la lleva (la nota no se apagó para todos).
+    expect(
+      renderToStaticMarkup(
+        <PorPagarProvider capacidad={CAPACIDAD}>
+          <NotaFechaPorPagar fecha="2026-10-25" estadoGuardado="PAGADO" />
+        </PorPagarProvider>,
+      ),
+    ).toContain(NOTA_QUEDARA_POR_PAGAR);
+  });
+
+  it("P12: el aviso de la refacción a Inventario/Tienda con fecha futura: texto EXACTO del API; con hoy o sin capacidad, nada", () => {
+    const html = renderToStaticMarkup(
+      <PorPagarProvider capacidad={CAPACIDAD}>
+        <AvisoInventarioFechaFutura fecha="2026-11-05" />
+      </PorPagarProvider>,
+    );
+    expect(html).toContain(esc(MSG_INVENTARIO_FECHA_FUTURA));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("data-error-inventario-fecha-futura");
+    expect(
+      renderToStaticMarkup(
+        <PorPagarProvider capacidad={CAPACIDAD}>
+          <AvisoInventarioFechaFutura fecha="2026-10-19" />
+        </PorPagarProvider>,
+      ),
+    ).toBe("");
+    expect(renderToStaticMarkup(<AvisoInventarioFechaFutura fecha="2026-11-05" />)).toBe("");
+  });
+});
+
+describe("«Marcar pagado» por rol (revisión del lote, P19)", () => {
+  it("sin permiso, el chip es de SOLO LECTURA (span, sin botón ni diálogo)", () => {
+    const html = renderToStaticMarkup(<BotonChipPorPagar gasto={gasto({ estado_pago: "VENCIDO" })} puedeMarcar={false} />);
+    expect(html).toMatch(/^<span/);
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("aria-haspopup");
+    expect(html).toContain('data-estado-pago="VENCIDO"');
+  });
+
+  it("Gastos: un ANALISTA (llega por «Resolver →») ve el chip sin botón; ADMIN y sin rol, con botón", () => {
+    const filas = [gasto({ id: "g-por", estado_pago: "POR_PAGAR" }), gasto({ id: "g-ven", estado_pago: "VENCIDO" })];
+    const analista = renderToStaticMarkup(
+      <ExpensesTable gastos={filas} aircraft={[]} providers={[]} fotoUrls={{}} rol="ANALISTA" />,
+    );
+    expect(analista.match(/<span[^>]*data-estado-pago="/g)).toHaveLength(2);
+    expect(analista).not.toMatch(/<button[^>]*data-estado-pago="/);
+    for (const rol of ["ADMIN", undefined]) {
+      const html = renderToStaticMarkup(<ExpensesTable gastos={filas} aircraft={[]} providers={[]} fotoUrls={{}} rol={rol} />);
+      expect(html.match(/<button[^>]*data-estado-pago="/g), String(rol)).toHaveLength(2);
+    }
+  });
+
+  it("Gastos del vuelo: un SOCIO ve el chip sin botón (el detalle del vuelo lo ve cualquier rol)", () => {
+    const filas = [gasto({ id: "g-por", estado_pago: "POR_PAGAR" })];
+    const socio = renderToStaticMarkup(<FlightGastosTable gastos={filas} fotoUrls={{}} aircraft={[]} providers={[]} rol="SOCIO" />);
+    expect(socio).toMatch(/<span[^>]*data-estado-pago="POR_PAGAR"/);
+    expect(socio).not.toMatch(/<button[^>]*data-estado-pago="/);
+    const admin = renderToStaticMarkup(<FlightGastosTable gastos={filas} fotoUrls={{}} aircraft={[]} providers={[]} rol="ADMIN" />);
+    expect(admin).toMatch(/<button[^>]*data-estado-pago="POR_PAGAR"/);
+  });
+});
+
+describe("«Historial de gastos» del vuelo: `por_pagar` en es-MX (revisión del lote, P20)", () => {
+  it("«Pago: Por pagar → Pagado» al marcarlo pagado, y al revés al re-programarlo; jamás true/false", () => {
+    const evento = (antes: boolean, despues: boolean) => ({
+      gasto_id: G,
+      accion: "UPDATE" as const,
+      actor_nombre: "Pablo",
+      created_at: "2026-10-22T19:05:00Z",
+      diff: { por_pagar: { antes, despues } },
+      descripcion_gasto: "Taxi / estacionamiento · $500 MXN",
+    });
+    const pagado = renderToStaticMarkup(<FlightGastosHistorialCard eventos={[evento(true, false)]} />);
+    expect(pagado).toMatch(
+      /Pago:<\/span> <span class="line-through text-muted-foreground">Por pagar<\/span> → <span class="font-medium">Pagado<\/span>/,
+    );
+    expect(pagado).not.toMatch(/>(true|false)</);
+    const reprogramado = renderToStaticMarkup(<FlightGastosHistorialCard eventos={[evento(false, true)]} />);
+    expect(reprogramado).toMatch(
+      /Pago:<\/span> <span class="line-through text-muted-foreground">Pagado<\/span> → <span class="font-medium">Por pagar<\/span>/,
+    );
   });
 });

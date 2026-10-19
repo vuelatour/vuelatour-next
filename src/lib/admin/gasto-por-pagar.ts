@@ -132,6 +132,45 @@ export const NOTA_QUEDARA_POR_PAGAR =
 export const NOTA_SIGUE_POR_PAGAR =
   "Este gasto sigue POR PAGAR: cambiar la fecha no lo marca pagado. Cuando se pague, usa «Marcar pagado» (menú ⋯ del gasto).";
 
+/**
+ * Captura de un gasto que YA está pagado (revisión del 19-oct-2026, P17/P18):
+ * «Créalo por la suma» (nace ligado a cargos del banco: el cargo ES el pago)
+ * o «Verificar / editar» de un gasto CONCILIADO (el banco prueba el pago; el
+ * API lo da por PAGADO). Ninguno puede quedar «por pagar».
+ */
+export interface GastoYaPagado {
+  conCargos?: boolean;
+  conciliado?: boolean;
+}
+
+/**
+ * La capacidad que manda en la FECHA de esa captura: con cargos o conciliado
+ * ⇒ como SIN la capacidad (la confirmación de «fecha futura» de siempre y
+ * jamás la nota «Quedará POR PAGAR», que sería falsa); si no, la de `/me`.
+ */
+export function capacidadFechaCaptura(capacidad: CapacidadPorPagar, ctx: GastoYaPagado = {}): CapacidadPorPagar {
+  return ctx.conCargos === true || ctx.conciliado === true ? SIN_CAPACIDAD_POR_PAGAR : capacidad;
+}
+
+/**
+ * «Créalo por la suma» con una fecha futura (P17): con la capacidad el API
+ * respondería 400 `POR_PAGAR_FECHA_FUTURA` (un cargo del banco ya es el
+ * pago); el panel lo dice bajo la fecha y no deja guardar.
+ */
+export const MSG_FECHA_FUTURA_CON_CARGOS =
+  "Con cargos del banco la fecha del gasto es la del pago (la del último cargo): no puede ser futura.";
+
+/** Error de la fecha de «Créalo por la suma» (o null): con la capacidad y fecha > hoy. Sin ella, como antes. */
+export function errorFechaFuturaConCargos(
+  fecha: string | null | undefined,
+  capacidad: CapacidadPorPagar,
+  hoy: string = todayCancun(),
+): string | null {
+  if (!capacidad.habilitado) return null;
+  const f = (fecha ?? "").slice(0, 10);
+  return esDiaValido(f) && f > hoy ? MSG_FECHA_FUTURA_CON_CARGOS : null;
+}
+
 /** La nota de la captura (o null): fecha nueva, capacidad y el estado GUARDADO (solo en «Verificar / editar»). */
 export function notaFechaPorPagar(
   fecha: string | null | undefined,
@@ -362,9 +401,14 @@ export const TITULO_POR_PAGAR_IGNORADO = "El filtro «Por pagar» todavía no es
 export const DESCRIPCION_POR_PAGAR_IGNORADO =
   "El servidor aún no tiene los gastos por pagar: se muestran todos los gastos con los demás filtros.";
 
+/**
+ * El vacío de «Por pagar» (acuerdo 1 del lote, 19-oct-2026): Gastos SIEMPRE
+ * excluye la nómina (vive en su módulo), así que no puede afirmar que «todos
+ * están marcados pagados» — una nómina por pagar no sale aquí.
+ */
 export const VACIO_POR_PAGAR = {
   titulo: "Sin gastos por pagar",
-  descripcion: "Ningún gasto con estos filtros espera su pago: todos están marcados pagados.",
+  descripcion: "Ningún gasto con estos filtros espera su pago. La nómina por pagar se marca en Nómina.",
 } as const;
 
 // =============================================================================
@@ -373,9 +417,37 @@ export const VACIO_POR_PAGAR = {
 
 export const CLAVE_PRECIERRE_GASTOS_POR_PAGAR = "gastos_por_pagar";
 
-/** «Resolver →» = Gastos con el filtro «Por pagar» del periodo (el foco ámbar lo agrega `hrefResolverItem`). */
-export function hrefPrecierreGastosPorPagar(p: { desde: string; hasta: string }): string {
-  return `/admin/expenses?${PARAM_POR_PAGAR}=${VALOR_URL_POR_PAGAR}&desde=${p.desde}&hasta=${p.hasta}`;
+/**
+ * «Resolver →» = Gastos con el filtro «Por pagar», SIN `desde`/`hasta`
+ * (acuerdo 1 del lote, 19-oct-2026): el API cuenta el renglón por el MES
+ * CONTABLE del gasto (eje vuelo ⇒ el mes de su vuelo), así que un por pagar
+ * del periodo puede traer su `fecha_gasto` (la del pago) en otro mes y el
+ * rango lo escondería. Cuáles son lo dicen los `ids` del foco (los agrega
+ * `hrefResolverItem`; el periodo viaja en `pcp` para «Volver al
+ * pre-cierre»). La nómina va a Nómina: `pre-cierre-por-pagar.ts`.
+ */
+export function hrefPrecierreGastosPorPagar(): string {
+  return `/admin/expenses?${PARAM_POR_PAGAR}=${VALOR_URL_POR_PAGAR}`;
+}
+
+/**
+ * Nota de la franja del pre-cierre en Gastos para este renglón: el `count` y
+ * el detalle del API incluyen la nómina por pagar, que Gastos no enseña.
+ */
+export const NOTA_VISTA_POR_PAGAR_GASTOS = "La nómina por pagar no sale en Gastos: se marca pagada en Nómina.";
+
+// =============================================================================
+// «Historial de gastos» del vuelo: la columna `por_pagar` de la bitácora
+// =============================================================================
+
+/** Etiqueta del campo (revisión del 19-oct-2026, P20): «Pago: Por pagar → Pagado». */
+export const ETIQUETA_HISTORIAL_POR_PAGAR = "Pago";
+export const VALOR_HISTORIAL_POR_PAGAR = "Por pagar";
+export const VALOR_HISTORIAL_PAGADO = "Pagado";
+
+/** El valor de `por_pagar` del diff de la bitácora en es-MX (jamás «true»/«false»). */
+export function valorHistorialPorPagar(v: unknown): string {
+  return v === true ? VALOR_HISTORIAL_POR_PAGAR : VALOR_HISTORIAL_PAGADO;
 }
 
 // =============================================================================

@@ -9,18 +9,24 @@ import { fechaGastoSospechosa } from "../fecha-gasto";
 import {
   CLASES_CHIP_ESTADO_PAGO,
   CLAVE_PRECIERRE_GASTOS_POR_PAGAR,
+  ETIQUETA_HISTORIAL_POR_PAGAR,
   MSG_CONFLICTO_VERSION_PAGADO,
+  MSG_FECHA_FUTURA_CON_CARGOS,
   MSG_GASTO_YA_NO_EXISTE,
   MSG_MARCAR_PAGADO_FALLO,
   MSG_MARCAR_PAGADO_INCIERTO,
   NOTA_QUEDARA_POR_PAGAR,
   NOTA_SIGUE_POR_PAGAR,
+  NOTA_VISTA_POR_PAGAR_GASTOS,
   SIN_CAPACIDAD_POR_PAGAR,
   TITULO_POR_PAGAR_CAJA,
+  VACIO_POR_PAGAR,
+  capacidadFechaCaptura,
   capacidadPorPagarDeMe,
   chipEstadoPago,
   cuerpoMarcarPagado,
   diaMesCorto,
+  errorFechaFuturaConCargos,
   errorFechaPago,
   estadoPagoDe,
   evaluarFechaGasto,
@@ -36,6 +42,7 @@ import {
   textoConteoPorPagarCaja,
   toastMarcadoPagado,
   validarMarcarPagado,
+  valorHistorialPorPagar,
   type CapacidadPorPagar,
 } from "../gasto-por-pagar";
 import {
@@ -305,10 +312,13 @@ describe("filtro «Por pagar» de Gastos (`?por_pagar=1`)", () => {
     expect("por_pagar" in queryBaseGastos(sin, HOY)).toBe(false);
     expect("por_pagar" in queryExcelGastos(sin, HOY)).toBe(false);
     expect(hayFiltrosGastos(leerFiltrosGastos(sp("por_pagar=1"), null, false))).toBe(false);
+    // Revisión del lote (P2, acuerdo 1): Gastos excluye SIEMPRE la nómina,
+    // así que el vacío ya no afirma «todos están marcados pagados».
     expect(vacioGastos("todos", true, true)).toEqual({
       titulo: "Sin gastos por pagar",
-      descripcion: "Ningún gasto con estos filtros espera su pago: todos están marcados pagados.",
+      descripcion: "Ningún gasto con estos filtros espera su pago. La nómina por pagar se marca en Nómina.",
     });
+    expect(VACIO_POR_PAGAR.descripcion).not.toContain("todos están marcados pagados");
     // En «Pendientes»/«Duplicados» manda la pestaña.
     expect(vacioGastos("pendientes", true, true).titulo).toBe("Sin pendientes con estos filtros");
     expect(vacioGastos("todos", true).titulo).toBe("Ningún gasto coincide con estos filtros");
@@ -316,11 +326,17 @@ describe("filtro «Por pagar» de Gastos (`?por_pagar=1`)", () => {
 });
 
 describe("pre-cierre y caja chica", () => {
-  it("«Resolver →» del renglón bloqueante: Gastos «Por pagar» del periodo", () => {
+  it("«Resolver →» del renglón bloqueante: Gastos «Por pagar» SIN desde/hasta (P1: el API cuenta por el mes contable)", () => {
     expect(CLAVE_PRECIERRE_GASTOS_POR_PAGAR).toBe("gastos_por_pagar");
-    expect(hrefPrecierreGastosPorPagar({ desde: "2026-10-01", hasta: "2026-10-31" })).toBe(
-      "/admin/expenses?por_pagar=1&desde=2026-10-01&hasta=2026-10-31",
-    );
+    // Revisión del lote (acuerdo 1): un por pagar de eje vuelo puede tener su
+    // fecha de pago fuera del periodo; un rango lo escondería. Los ids del
+    // foco dicen cuáles son.
+    expect(hrefPrecierreGastosPorPagar()).toBe("/admin/expenses?por_pagar=1");
+    expect(hrefPrecierreGastosPorPagar()).not.toMatch(/desde|hasta/);
+  });
+
+  it("la nota de la franja en Gastos: la nómina por pagar no sale ahí", () => {
+    expect(NOTA_VISTA_POR_PAGAR_GASTOS).toBe("La nómina por pagar no sale en Gastos: se marca pagada en Nómina.");
   });
 
   it("la lista aditiva de la caja: sin la llave, null o vacía ⇒ null (no se pinta)", () => {
@@ -336,5 +352,46 @@ describe("pre-cierre y caja chica", () => {
     expect(TITULO_POR_PAGAR_CAJA).toBe("Por pagar (aún no sale de la caja)");
     expect(textoConteoPorPagarCaja(1)).toBe("1 gasto por pagar");
     expect(textoConteoPorPagarCaja(3)).toBe("3 gastos por pagar");
+  });
+});
+
+describe("captura de un gasto que YA está pagado (revisión del lote: P17 con cargos, P18 conciliado)", () => {
+  it("con cargos o conciliado, la fecha se evalúa SIN la capacidad: confirmación de siempre y jamás «Quedará POR PAGAR»", () => {
+    expect(capacidadFechaCaptura(OFICINA, { conCargos: true })).toBe(SIN_CAPACIDAD_POR_PAGAR);
+    expect(capacidadFechaCaptura(OFICINA, { conciliado: true })).toBe(SIN_CAPACIDAD_POR_PAGAR);
+    // Sin contexto (o en false), la capacidad de `/me` tal cual.
+    expect(capacidadFechaCaptura(OFICINA)).toBe(OFICINA);
+    expect(capacidadFechaCaptura(OFICINA, { conCargos: false, conciliado: false })).toBe(OFICINA);
+    // P18: un conciliado movido a +6 días vuelve a pedir la confirmación de
+    // siempre (con la capacidad a secas no la pedía) y no promete la nota.
+    expect(evaluarFechaGasto("2026-10-25", OFICINA, HOY)).toEqual({ quedaPorPagar: true, pideConfirmacion: false });
+    expect(evaluarFechaGasto("2026-10-25", capacidadFechaCaptura(OFICINA, { conciliado: true }), HOY)).toEqual({
+      quedaPorPagar: false,
+      pideConfirmacion: true,
+    });
+    expect(notaFechaPorPagar("2026-10-25", capacidadFechaCaptura(OFICINA, { conciliado: true }), "PAGADO", HOY)).toBeNull();
+    expect(notaFechaPorPagar("2026-10-25", capacidadFechaCaptura(OFICINA, { conCargos: true }), null, HOY)).toBeNull();
+  });
+
+  it("«Créalo por la suma» con fecha futura: el texto local (el API respondería 400 POR_PAGAR_FECHA_FUTURA)", () => {
+    expect(MSG_FECHA_FUTURA_CON_CARGOS).toBe(
+      "Con cargos del banco la fecha del gasto es la del pago (la del último cargo): no puede ser futura.",
+    );
+    expect(errorFechaFuturaConCargos("2026-10-25", OFICINA, HOY)).toBe(MSG_FECHA_FUTURA_CON_CARGOS);
+    expect(errorFechaFuturaConCargos("2026-10-20", CAMPO, HOY)).toBe(MSG_FECHA_FUTURA_CON_CARGOS);
+    // Hoy, pasada, ilegible o SIN la capacidad (API previo): nada, como antes.
+    expect(errorFechaFuturaConCargos(HOY, OFICINA, HOY)).toBeNull();
+    expect(errorFechaFuturaConCargos("2026-09-30", OFICINA, HOY)).toBeNull();
+    expect(errorFechaFuturaConCargos("", OFICINA, HOY)).toBeNull();
+    expect(errorFechaFuturaConCargos("2026-10-25", SIN_CAPACIDAD_POR_PAGAR, HOY)).toBeNull();
+  });
+});
+
+describe("historial de gastos del vuelo: la columna `por_pagar` (revisión del lote, P20)", () => {
+  it("«Pago: Por pagar → Pagado», jamás los booleanos crudos", () => {
+    expect(ETIQUETA_HISTORIAL_POR_PAGAR).toBe("Pago");
+    expect(valorHistorialPorPagar(true)).toBe("Por pagar");
+    expect(valorHistorialPorPagar(false)).toBe("Pagado");
+    expect(valorHistorialPorPagar(true)).not.toMatch(/true|false/);
   });
 });

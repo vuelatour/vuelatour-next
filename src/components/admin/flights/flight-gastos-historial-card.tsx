@@ -18,6 +18,7 @@ import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
 import { textoComprobante } from "@/lib/admin/comprobante-badge";
 import { etiquetaFacturacion } from "@/lib/admin/facturacion-estatus";
 import { ETIQUETA_HISTORIAL_PAGO_AFAC } from "@/lib/admin/pago-afac";
+import { ETIQUETA_HISTORIAL_POR_PAGAR, valorHistorialPorPagar } from "@/lib/admin/gasto-por-pagar";
 import { cn } from "@/lib/utils";
 import {
   destinoDeGastosMovidos,
@@ -112,6 +113,8 @@ const CAMPO_LABELS: Record<string, string> = {
   conciliado: "Conciliación",
   // «Pago de AFAC» (16-oct-2026, API 0.0.89, invariante 90): Sí / No.
   es_pago_afac: ETIQUETA_HISTORIAL_PAGO_AFAC,
+  // Gastos «por pagar» (19-oct-2026, API 0.0.95): «Pago: Por pagar → Pagado».
+  por_pagar: ETIQUETA_HISTORIAL_POR_PAGAR,
 };
 
 /** Campos cuyo valor es un uuid: jamás se pinta el id crudo. */
@@ -178,6 +181,9 @@ function fmtValor(campo: string, v: unknown, moneda: string | null): string {
       return v === true ? "conciliado" : "sin conciliar";
     case "es_pago_afac":
       return v === true ? "Sí" : "No";
+    // La bitácora guarda el booleano crudo: jamás «true»/«false» en pantalla.
+    case "por_pagar":
+      return valorHistorialPorPagar(v);
     default:
       return String(v);
   }

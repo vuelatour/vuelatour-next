@@ -173,7 +173,7 @@ import {
   fechaGastoDistancia,
   fechaGastoLegible,
 } from "@/lib/admin/fecha-gasto";
-import { estadoPagoDe, evaluarFechaGasto } from "@/lib/admin/gasto-por-pagar";
+import { capacidadFechaCaptura, estadoPagoDe, evaluarFechaGasto } from "@/lib/admin/gasto-por-pagar";
 import { usePorPagar } from "@/components/admin/por-pagar-provider";
 import { NotaFechaPorPagar } from "@/components/admin/expenses/nota-por-pagar";
 import { avionPorMatricula } from "@/lib/admin/matricula";
@@ -363,6 +363,12 @@ export function ExpenseVerifyDialog({
   // Gastos «por pagar» (19-oct-2026, API 0.0.95): misma regla de fecha que
   // el alta (`evaluarFechaGasto`); sin la capacidad, todo como antes.
   const capacidadPorPagar = usePorPagar();
+  // Un gasto CONCILIADO ya está pagado (revisión del lote, P18: el banco lo
+  // prueba y el API lo da por PAGADO): su fecha se evalúa como SIN la
+  // capacidad — la confirmación de «fecha futura» de siempre y jamás la nota
+  // «Quedará POR PAGAR», que sería falsa.
+  const gastoConciliado = gasto.conciliado === true;
+  const capacidadFecha = capacidadFechaCaptura(capacidadPorPagar, { conciliado: gastoConciliado });
   const [pagoAfac, setPagoAfac] = useState(() => gasto.es_pago_afac === true);
   const [confirmarTua, setConfirmarTua] = useState<{
     values: GastoVerifyValues;
@@ -1741,7 +1747,7 @@ export function ExpenseVerifyDialog({
     if (
       values.fecha_gasto &&
       values.fecha_gasto !== original &&
-      evaluarFechaGasto(values.fecha_gasto, capacidadPorPagar).pideConfirmacion
+      evaluarFechaGasto(values.fecha_gasto, capacidadFecha).pideConfirmacion
     ) {
       setConfirmarFecha({ ...values });
       return;
@@ -2344,7 +2350,11 @@ export function ExpenseVerifyDialog({
                 </p>
               )}
               <AvisoCapturaAntesDelInicio fecha={watch("fecha_gasto")} />
-              <NotaFechaPorPagar fecha={watch("fecha_gasto")} estadoGuardado={estadoPagoDe(gasto)} />
+              <NotaFechaPorPagar
+                fecha={watch("fecha_gasto")}
+                estadoGuardado={estadoPagoDe(gasto)}
+                conciliado={gastoConciliado}
+              />
             </Field>
           </div>
           {/* R16: los montos del reparto guardado están en su moneda. */}

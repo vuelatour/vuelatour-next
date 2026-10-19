@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  MSG_INVENTARIO_FECHA_FUTURA,
   OPCION_ARTICULO_NUEVO,
   destinoRefaccionInicial,
+  errorInventarioFechaFutura,
   esApiSinInventario,
   formAlElegirArticulo,
   formInventarioVacio,
@@ -91,5 +93,36 @@ describe("refacción: respuesta del API", () => {
     expect(esApiSinInventario("property inventario should not exist")).toBe(true);
     expect(mensajeErrorInventario("property inventario should not exist")).toContain("Directo al avión");
     expect(mensajeErrorInventario("Elige el artículo")).toBe("Elige el artículo");
+  });
+});
+
+describe("refacción «A Inventario/Tienda» con fecha FUTURA (revisión del lote «por pagar», P12, acuerdo 4)", () => {
+  const HOY = "2026-10-20";
+  const CON = { habilitado: true };
+  const SIN = { habilitado: false };
+
+  it("el texto EXACTO del API (`INVENTARIO_FECHA_FUTURA`)", () => {
+    expect(MSG_INVENTARIO_FECHA_FUTURA).toBe(
+      "Una refacción con fecha futura queda «por pagar»: guárdala sin entrada a Inventario/Tienda y registra la entrada desde Inventario/Tienda (Compras) el día que llegue la pieza.",
+    );
+  });
+
+  it("con la capacidad, destino Inventario y fecha > hoy (Cancún) ⇒ no se guarda y se dice", () => {
+    // El caso de la revisión: llantas de N4142R con pago el 05-nov.
+    expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "2026-11-05", capacidad: CON, hoy: HOY })).toBe(
+      MSG_INVENTARIO_FECHA_FUTURA,
+    );
+    expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "2026-10-21", capacidad: CON, hoy: HOY })).toBe(
+      MSG_INVENTARIO_FECHA_FUTURA,
+    );
+  });
+
+  it("hoy o antes, «Directo al avión», ilegible o SIN la capacidad (API previo): como antes", () => {
+    expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: HOY, capacidad: CON, hoy: HOY })).toBeNull();
+    expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "2026-10-01", capacidad: CON, hoy: HOY })).toBeNull();
+    expect(errorInventarioFechaFutura({ destino: "AVION", fecha: "2026-11-05", capacidad: CON, hoy: HOY })).toBeNull();
+    expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "", capacidad: CON, hoy: HOY })).toBeNull();
+    expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "2026-02-30", capacidad: CON, hoy: HOY })).toBeNull();
+    expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "2026-11-05", capacidad: SIN, hoy: HOY })).toBeNull();
   });
 });

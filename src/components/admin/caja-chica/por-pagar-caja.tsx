@@ -10,6 +10,7 @@ import {
   type PorPagarCajaItem,
 } from "@/lib/admin/gasto-por-pagar";
 import { BotonMarcarPagado, ChipEstadoPagoGasto } from "@/components/admin/expenses/marcar-pagado";
+import { puedeMarcarPagadoGasto } from "@/lib/admin/gasto-acciones";
 
 /**
  * Caja chica (detalle del fondo): «Por pagar (aún no sale de la caja)»
@@ -25,6 +26,7 @@ export function PorPagarCaja({
   total,
   moneda,
   versiones = {},
+  rol,
 }: {
   items: PorPagarCajaItem[];
   /** `por_pagar_total` del API (en la moneda del fondo); null = no vino. */
@@ -32,7 +34,12 @@ export function PorPagarCaja({
   moneda: string;
   /** `updated_at` por id (de los gastos que la página ya leyó): el control de versión. */
   versiones?: Record<string, string | null | undefined>;
+  /** Rol de quien mira (revisión del lote, P19): SOCIO ve la caja chica pero
+      el PATCH de «Marcar pagado» le responde 403 ⇒ sin el botón. Sin rol
+      conocido se ofrece (el API decide). */
+  rol?: string | null;
 }) {
+  const puedeMarcar = puedeMarcarPagadoGasto(rol);
   return (
     <Card data-por-pagar-caja="">
       <CardHeader className="gap-1">
@@ -59,17 +66,19 @@ export function PorPagarCaja({
                   {it.concepto && <span className="text-muted-foreground"> · {it.concepto}</span>}
                 </span>
                 <span className="font-medium tabular-nums">{fmtMonto(it.monto, it.moneda)}</span>
-                <BotonMarcarPagado
-                  gasto={{
-                    id: it.id,
-                    fecha_gasto: it.fecha_gasto,
-                    monto: it.monto,
-                    moneda: it.moneda,
-                    categoria: it.categoria,
-                    estado_pago: it.estado_pago,
-                    updated_at: versiones[it.id] ?? null,
-                  }}
-                />
+                {puedeMarcar && (
+                  <BotonMarcarPagado
+                    gasto={{
+                      id: it.id,
+                      fecha_gasto: it.fecha_gasto,
+                      monto: it.monto,
+                      moneda: it.moneda,
+                      categoria: it.categoria,
+                      estado_pago: it.estado_pago,
+                      updated_at: versiones[it.id] ?? null,
+                    }}
+                  />
+                )}
               </li>
             );
           })}

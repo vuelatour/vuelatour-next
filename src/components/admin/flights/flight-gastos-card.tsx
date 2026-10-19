@@ -29,6 +29,7 @@ export function FlightGastosCard({
   vueloCancelado = false,
   aeronaveId,
   pilotoNombre,
+  rol,
 }: {
   gastos: Gasto[];
   fotoUrls: Record<string, string>;
@@ -43,6 +44,9 @@ export function FlightGastosCard({
   aeronaveId?: string | null;
   /** Piloto del vuelo (para "simular como piloto"). null = sin piloto. */
   pilotoNombre?: string | null;
+  /** Rol de quien mira: el menú ⋯ y «Marcar pagado» esconden lo que el API
+      le rechazaría (revisión del lote «por pagar», P19). */
+  rol?: string | null;
 }) {
   // Totales por moneda (no se mezclan MXN y USD).
   const totales = new Map<string, number>();
@@ -108,6 +112,7 @@ export function FlightGastosCard({
             fotoUrls={fotoUrls}
             aircraft={aircraft}
             providers={providers}
+            rol={rol}
           />
         )}
       </CardContent>

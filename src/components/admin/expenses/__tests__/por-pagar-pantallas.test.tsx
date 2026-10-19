@@ -117,7 +117,7 @@ describe("pre-cierre: «Gastos por pagar sin confirmar» (BLOQUEANTE)", () => {
     return m ? m[1].replace(/&amp;/g, "&") : null;
   };
 
-  it("«Resolver →» = Gastos «Por pagar» del periodo + el foco ámbar con los `ids`; montos sin sumar monedas", async () => {
+  it("«Resolver →» = Gastos «Por pagar» SIN desde/hasta (P1) + el foco ámbar con los `ids`; montos sin sumar monedas", async () => {
     const detalle =
       "2 gasto(s) siguen «por pagar» (1 vencidos): márcalos pagados con la fecha real del pago, o elimínalos si no se pagaron.";
     const html = await pintar([
@@ -136,8 +136,15 @@ describe("pre-cierre: «Gastos por pagar sin confirmar» (BLOQUEANTE)", () => {
     expect(html).toContain("$850 MXN");
     expect(html).toContain("$40 USD");
     const h = hrefResolver(html) as string;
-    expect(h.startsWith("/admin/expenses?por_pagar=1&desde=2026-10-01&hasta=2026-10-31&pc=gastos_por_pagar&pcn=2&")).toBe(true);
-    expect(new URLSearchParams(h.split("?")[1]).get("ids")).toBe(`${A},${B}`);
+    // Revisión del lote (P1, acuerdo 1): el API cuenta el renglón por el mes
+    // CONTABLE; un rango por fecha del pago escondería los de eje vuelo.
+    expect(h.startsWith("/admin/expenses?por_pagar=1&pc=gastos_por_pagar&pcn=2&pcp=2026-10-01,2026-10-31&")).toBe(true);
+    const q = new URLSearchParams(h.split("?")[1]);
+    expect(q.get("ids")).toBe(`${A},${B}`);
+    expect(q.has("desde")).toBe(false);
+    expect(q.has("hasta")).toBe(false);
+    // Sin `ids_nomina` (API previo): sin aviso de nómina.
+    expect(html).not.toContain("data-precierre-por-pagar-nomina");
   });
 
   it("lectura caída ⇒ «sin verificar» y el enlace sin foco", async () => {
@@ -145,7 +152,54 @@ describe("pre-cierre: «Gastos por pagar sin confirmar» (BLOQUEANTE)", () => {
       { clave: "gastos_por_pagar", titulo: "Gastos por pagar sin confirmar", detalle: "x", count: 0, lectura_fallida: true },
     ]);
     expect(html).toContain("sin verificar");
-    expect(hrefResolver(html)).toBe("/admin/expenses?por_pagar=1&desde=2026-10-01&hasta=2026-10-31");
+    expect(hrefResolver(html)).toBe("/admin/expenses?por_pagar=1");
+  });
+
+  const N1 = "cccccccc-0000-4000-8000-00000000000c";
+  const N2 = "dddddddd-0000-4000-8000-00000000000d";
+
+  it("TODOS de nómina (P2) ⇒ «Resolver →» a Nómina del mes del periodo con el foco, sin aviso", async () => {
+    const html = await pintar([
+      {
+        clave: "gastos_por_pagar",
+        titulo: "Gastos por pagar sin confirmar",
+        detalle: "2 gasto(s) siguen «por pagar» (0 vencidos): …",
+        count: 2,
+        monto_mxn: 90000,
+        ids_nomina: [N1, N2],
+        ids: [N1, N2],
+      },
+    ]);
+    const h = hrefResolver(html) as string;
+    expect(h.startsWith("/admin/nomina?mes=2026-10&pc=gastos_por_pagar&pcn=2&")).toBe(true);
+    expect(new URLSearchParams(h.split("?")[1]).get("ids")).toBe(`${N1},${N2}`);
+    expect(html).not.toContain("data-precierre-por-pagar-nomina");
+  });
+
+  it("MEZCLA (P2) ⇒ «Resolver →» a Gastos con lo que sí sale ahí + «N son de Nómina» con su liga a Nómina", async () => {
+    const html = await pintar([
+      {
+        clave: "gastos_por_pagar",
+        titulo: "Gastos por pagar sin confirmar",
+        detalle: "3 gasto(s) siguen «por pagar» (1 vencidos): …",
+        count: 3,
+        ids_nomina: [N1],
+        ids: [A, N1, B],
+      },
+    ]);
+    const h = hrefResolver(html) as string;
+    const q = new URLSearchParams(h.split("?")[1]);
+    expect(h.split("?")[0]).toBe("/admin/expenses");
+    expect(q.get("ids")).toBe(`${A},${B}`);
+    expect(q.get("pcn")).toBe("2");
+    const aviso = html.match(/<p[^>]*data-precierre-por-pagar-nomina=""[^>]*>[\s\S]*?<\/p>/)?.[0] ?? "";
+    expect(aviso).toContain("1 es de Nómina: resuélvelo en Nómina");
+    const liga = /<a href="([^"]*)"[^>]*>Ir a Nómina →<\/a>/.exec(aviso);
+    expect(liga).not.toBeNull();
+    expect(liga![0]).toContain("cursor-pointer");
+    const hn = liga![1].replace(/&amp;/g, "&");
+    expect(hn.startsWith("/admin/nomina?mes=2026-10&pc=gastos_por_pagar&pcn=1&")).toBe(true);
+    expect(new URLSearchParams(hn.split("?")[1]).get("ids")).toBe(N1);
   });
 });
 
@@ -173,5 +227,18 @@ describe("caja chica: «Por pagar (aún no sale de la caja)»", () => {
     expect(html.match(/Marcar pagado/g)?.length).toBe(2);
     expect(html).toContain("2 gastos por pagar");
     expect(html).toContain("$850 MXN");
+  });
+
+  it("por rol (P19): SOCIO ve la caja y los chips, pero SIN «Marcar pagado» (el PATCH le da 403); sin rol se ofrece", () => {
+    const items = [
+      { id: "g-1", fecha_gasto: "2026-10-20", monto: 500, moneda: "MXN", categoria: "TAXI", concepto: "Taxi", estado_pago: "POR_PAGAR" },
+    ];
+    const socio = renderToStaticMarkup(<PorPagarCaja moneda="MXN" total={500} items={items} rol="SOCIO" />);
+    expect(socio).toContain(">Por pagar · 20 oct<");
+    expect(socio).not.toContain("Marcar pagado");
+    for (const rol of ["ADMIN", "FACTURACION", null, undefined]) {
+      const html = renderToStaticMarkup(<PorPagarCaja moneda="MXN" total={500} items={items} rol={rol} />);
+      expect(html, String(rol)).toContain("Marcar pagado");
+    }
   });
 });

@@ -26,6 +26,21 @@ export const ROLES_ELIMINAN_GASTO = [
 export const ROLES_VISTO_BUENO_GASTO = ["ADMIN", "FACTURACION", "ANALISTA"] as const;
 
 /**
+ * Espejo del `@Roles` de `PATCH /v1/expenses/:id`, que es por donde viaja
+ * «Marcar pagado» (gastos por pagar, 19-oct-2026). SOCIO y ANALISTA ven la
+ * caja chica, el detalle del vuelo o el «Resolver →» del pre-cierre, pero el
+ * API les responde 403: a ellos no se les ofrece (revisión del lote, P19).
+ */
+export const ROLES_MARCAN_PAGADO_GASTO = [
+  "ADMIN",
+  "COORDINADOR",
+  "FACTURACION",
+  "PILOTO",
+  "MECANICO",
+  "VISITANTE",
+] as const;
+
+/**
  * Sin rol conocido (la página no lo pasó o `/me` falló) NO se esconde nada:
  * el API sigue siendo el candado, y esconder por falta de dato le quitaría
  * la acción a quien sí puede.
@@ -40,6 +55,11 @@ export function puedeEliminarGasto(rol: string | null | undefined): boolean {
 
 export function puedeDarVistoBuenoGasto(rol: string | null | undefined): boolean {
   return rolIncluido(rol, ROLES_VISTO_BUENO_GASTO);
+}
+
+/** ¿Este rol puede «Marcar pagado» un gasto por pagar? Sin rol conocido, sí (el API decide). */
+export function puedeMarcarPagadoGasto(rol: string | null | undefined): boolean {
+  return rolIncluido(rol, ROLES_MARCAN_PAGADO_GASTO);
 }
 
 /**

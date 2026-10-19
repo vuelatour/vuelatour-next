@@ -73,6 +73,7 @@ import {
   PLACEHOLDER_CATEGORIA_ITEM,
   TITULO_DESTINO_REFACCION,
   destinoRefaccionInicial,
+  errorInventarioFechaFutura,
   formAlElegirArticulo,
   formInventarioVacio,
   hojaDestinoRefaccionInventario,
@@ -128,9 +129,16 @@ import {
   fechaGastoDistancia,
   fechaGastoLegible,
 } from "@/lib/admin/fecha-gasto";
-import { evaluarFechaGasto } from "@/lib/admin/gasto-por-pagar";
+import {
+  capacidadFechaCaptura,
+  errorFechaFuturaConCargos,
+  evaluarFechaGasto,
+} from "@/lib/admin/gasto-por-pagar";
 import { usePorPagar } from "@/components/admin/por-pagar-provider";
-import { NotaFechaPorPagar } from "@/components/admin/expenses/nota-por-pagar";
+import {
+  AvisoInventarioFechaFutura,
+  NotaFechaPorPagar,
+} from "@/components/admin/expenses/nota-por-pagar";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
   AYUDA_COMISARIATO,
@@ -343,6 +351,10 @@ export function ExpenseCreateDialog({
   // futura hasta fin de mes (o el tope del API) NO pide la confirmación de
   // «fecha futura» y lleva la nota ámbar; sin ella, todo como antes.
   const capacidadPorPagar = usePorPagar();
+  // «Créalo por la suma» (revisión del lote, P17): el gasto nace ligado a
+  // cargos del banco = YA pagado ⇒ su fecha se evalúa como SIN la capacidad
+  // (la confirmación de siempre y jamás «Quedará POR PAGAR»).
+  const capacidadFecha = capacidadFechaCaptura(capacidadPorPagar, { conCargos });
   const [pagoAfac, setPagoAfac] = useState(false);
   // Comprobante adjunto (12-oct-2026: VARIOS archivos — «un proveedor de
   // gasolina nos emite como 5 comprobantes en PDF»). El PRIMERO es la hoja
@@ -1083,11 +1095,30 @@ export function ExpenseCreateDialog({
 
   const onSubmit = handleSubmit(
     (values) => {
+      // Fechas que el API rechazaría por «por pagar» (revisión del lote,
+      // 19-oct-2026), ANTES de la confirmación de fecha y de subir nada:
+      // con cargos del banco el cargo ya es el pago (400
+      // POR_PAGAR_FECHA_FUTURA), y una refacción «A Inventario/Tienda» con
+      // fecha futura metería al cardex la fecha del pago (400
+      // INVENTARIO_FECHA_FUTURA, acuerdo 4). Sin la capacidad, como antes.
+      const errorFecha =
+        (conCargos ? errorFechaFuturaConCargos(values.fecha_gasto, capacidadPorPagar) : null) ??
+        (values.categoria === "REFACCION"
+          ? errorInventarioFechaFutura({
+              destino: refDestino,
+              fecha: values.fecha_gasto,
+              capacidad: capacidadPorPagar,
+            })
+          : null);
+      if (errorFecha) {
+        toast.error(errorFecha);
+        return;
+      }
       // Fecha sospechosa (> 60 días atrás o > 2 días a futuro): casi siempre
       // es el año equivocado del ticket — confirmación explícita antes de
       // guardar; si es real, se guarda igual. Con gastos por pagar, una
       // fecha futura hasta fin de mes no pregunta (`evaluarFechaGasto`).
-      if (evaluarFechaGasto(values.fecha_gasto, capacidadPorPagar).pideConfirmacion) {
+      if (evaluarFechaGasto(values.fecha_gasto, capacidadFecha).pideConfirmacion) {
         setConfirmarFecha({ ...values });
         return;
       }
@@ -1470,7 +1501,7 @@ export function ExpenseCreateDialog({
                   </p>
                 )}
                 <AvisoCapturaAntesDelInicio fecha={fechaGasto} />
-                <NotaFechaPorPagar fecha={fechaGasto} />
+                <NotaFechaPorPagar fecha={fechaGasto} conCargos={conCargos} />
               </Field>
             </div>
 
@@ -1759,6 +1790,12 @@ export function ExpenseCreateDialog({
                         />
                       </div>
                     )}
+                    {/* Fecha futura (acuerdo 4 del lote «por pagar»): la
+                        entrada a Inventario/Tienda no se registra con la
+                        fecha del pago; «Guardar» tampoco deja. AL FINAL a
+                        propósito: un hijo nuevo antes correría los ids de
+                        `useId` de los campos de este bloque. */}
+                    <AvisoInventarioFechaFutura fecha={fechaGasto} />
                   </>
                 )}
               </div>

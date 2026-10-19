@@ -341,6 +341,8 @@ export default async function CajaFondoPage({
           total={porPagar.total}
           moneda={fondo.moneda}
           versiones={versionesPorPagar}
+          // SOCIO ve la caja chica pero no puede marcar pagado (P19).
+          rol={me?.rol ?? null}
         />
       )}
 
