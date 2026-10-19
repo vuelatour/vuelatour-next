@@ -65,7 +65,6 @@ import {
   HINT_PRECIO_VENTA,
   HINT_VENDER_AL_AVION,
   NOTA_DIRECTO_AVION,
-  NOTA_DIRECTO_AVION_SIN_AVION,
   NOTA_ELIGE_AVION_REFACCION,
   NOTA_INVENTARIO_SIN_AVION,
   OPCION_ARTICULO_NUEVO,
@@ -73,11 +72,12 @@ import {
   PLACEHOLDER_CATEGORIA_ITEM,
   TITULO_DESTINO_REFACCION,
   destinoRefaccionInicial,
-  errorInventarioFechaFutura,
+  errorFechaAlGuardarAlta,
   formAlElegirArticulo,
   formInventarioVacio,
   hojaDestinoRefaccionInventario,
   mensajeErrorInventario,
+  notaDirectoAvionSinAvion,
   notaInventarioConAvion,
   notaRefaccionDesdeCargos,
   opcionesArticulos,
@@ -131,7 +131,6 @@ import {
 } from "@/lib/admin/fecha-gasto";
 import {
   capacidadFechaCaptura,
-  errorFechaFuturaConCargos,
   evaluarFechaGasto,
 } from "@/lib/admin/gasto-por-pagar";
 import { usePorPagar } from "@/components/admin/por-pagar-provider";
@@ -844,7 +843,14 @@ export function ExpenseCreateDialog({
       let inventarioPayload: InventarioPayload | null = null;
       if (values.categoria === "REFACCION") {
         if (refDestino === "AVION" && !values.aeronave_id) {
-          toast.error(conCargos ? NOTA_ELIGE_AVION_REFACCION : NOTA_DIRECTO_AVION_SIN_AVION);
+          // Con la fecha futura que «A Inventario/Tienda» no acepta, la
+          // salida real y no «o pásala a Inventario/Tienda» (segunda
+          // revisión del lote «por pagar»: cada aviso mandaba al otro).
+          toast.error(
+            conCargos
+              ? NOTA_ELIGE_AVION_REFACCION
+              : notaDirectoAvionSinAvion({ fecha: values.fecha_gasto, capacidad: capacidadPorPagar }),
+          );
           return;
         }
         if (refDestino === "INVENTARIO") {
@@ -1100,16 +1106,18 @@ export function ExpenseCreateDialog({
       // con cargos del banco el cargo ya es el pago (400
       // POR_PAGAR_FECHA_FUTURA), y una refacción «A Inventario/Tienda» con
       // fecha futura metería al cardex la fecha del pago (400
-      // INVENTARIO_FECHA_FUTURA, acuerdo 4). Sin la capacidad, como antes.
-      const errorFecha =
-        (conCargos ? errorFechaFuturaConCargos(values.fecha_gasto, capacidadPorPagar) : null) ??
-        (values.categoria === "REFACCION"
-          ? errorInventarioFechaFutura({
-              destino: refDestino,
-              fecha: values.fecha_gasto,
-              capacidad: capacidadPorPagar,
-            })
-          : null);
+      // INVENTARIO_FECHA_FUTURA, acuerdo 4). La regla es PURA y se usa TAL
+      // CUAL (`lib/admin/refaccion-inventario.ts`): solo la categoría
+      // REFACCION frena por el destino, que en el alta general arranca en
+      // «A Inventario/Tienda» para cualquier categoría. Sin la capacidad,
+      // como antes.
+      const errorFecha = errorFechaAlGuardarAlta({
+        conCargos,
+        categoria: values.categoria,
+        destino: refDestino,
+        fecha: values.fecha_gasto,
+        capacidad: capacidadPorPagar,
+      });
       if (errorFecha) {
         toast.error(errorFecha);
         return;
@@ -1677,7 +1685,9 @@ export function ExpenseCreateDialog({
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      {avionSel ? NOTA_DIRECTO_AVION : NOTA_DIRECTO_AVION_SIN_AVION}
+                      {avionSel
+                        ? NOTA_DIRECTO_AVION
+                        : notaDirectoAvionSinAvion({ fecha: fechaGasto, capacidad: capacidadPorPagar })}
                     </p>
                   )
                 ) : (

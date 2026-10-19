@@ -24,7 +24,9 @@ describe("refacción a Inventario/Tienda: cableado del alta", () => {
     expect(alta).toMatch(/destinoRefaccionInicial\(\{ conVueloPrefijado: !!defaultVueloId \}\)/);
     expect(alta).toMatch(/matriculaSel\s*\?\s*notaInventarioConAvion\(\{/);
     expect(alta).toContain("NOTA_INVENTARIO_SIN_AVION");
-    expect(alta).toMatch(/\{avionSel \? NOTA_DIRECTO_AVION : NOTA_DIRECTO_AVION_SIN_AVION\}/);
+    expect(alta).toMatch(
+      /\{avionSel\s*\?\s*NOTA_DIRECTO_AVION\s*:\s*notaDirectoAvionSinAvion\(\{ fecha: fechaGasto, capacidad: capacidadPorPagar \}\)\}/,
+    );
   });
 
   it("el sub-formulario: artículo (existente o nuevo), unidades, precio de venta OBLIGATORIO y «vender al avión» solo con avión", () => {

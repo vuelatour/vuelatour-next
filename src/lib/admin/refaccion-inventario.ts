@@ -19,7 +19,7 @@ import { todayCancun } from "@/lib/datetime";
 import { esDiaValido } from "@/lib/admin/url-params";
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 import type { GastoInventarioResultado } from "@/types/expenses";
-import type { CapacidadPorPagar } from "@/lib/admin/gasto-por-pagar";
+import { errorFechaFuturaConCargos, type CapacidadPorPagar } from "@/lib/admin/gasto-por-pagar";
 
 export type { GastoInventarioResultado };
 
@@ -88,6 +88,63 @@ export function errorInventarioFechaFutura(p: {
   if (p.destino !== "INVENTARIO" || !p.capacidad.habilitado) return null;
   const f = (p.fecha ?? "").slice(0, 10);
   return esDiaValido(f) && f > (p.hoy ?? todayCancun()) ? MSG_INVENTARIO_FECHA_FUTURA : null;
+}
+
+/**
+ * La salida real de una refacción con fecha FUTURA y SIN avión (segunda
+ * revisión del lote «por pagar», 19-oct-2026): «A Inventario/Tienda» no se
+ * guarda con fecha futura (acuerdo 4) y «Directo al avión» exige el avión,
+ * así que cada aviso mandaba al otro y la compra no se podía capturar.
+ * Texto PROPIO del panel (el del API, arriba, no se toca): va bajo
+ * `MSG_INVENTARIO_FECHA_FUTURA` y en la nota y el toast de «Directo al
+ * avión» sin avión.
+ */
+export const NOTA_REFACCION_POR_PAGAR_SIN_AVION =
+  "Si todavía no sabes a qué avión va, regístrala el día que la pagues (la fecha del gasto es la del pago).";
+
+/**
+ * «Directo al avión» SIN avión elegido (la nota del bloque y el toast de
+ * «Guardar»): con la fecha futura que «A Inventario/Tienda» no acepta ya no
+ * dice «o pásala a Inventario/Tienda» (ahí tampoco se guarda) sino la salida
+ * real; si no (hoy o antes, o sin la capacidad), el texto de siempre.
+ */
+export function notaDirectoAvionSinAvion(p: {
+  fecha: string | null | undefined;
+  capacidad: Pick<CapacidadPorPagar, "habilitado">;
+  hoy?: string;
+}): string {
+  return errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: p.fecha, capacidad: p.capacidad, hoy: p.hoy })
+    ? `${NOTA_ELIGE_AVION_REFACCION} ${NOTA_REFACCION_POR_PAGAR_SIN_AVION}`
+    : NOTA_DIRECTO_AVION_SIN_AVION;
+}
+
+/**
+ * Las fechas que frenan «Guardar» del ALTA (revisión del lote «por pagar»,
+ * 19-oct-2026), ANTES de la confirmación de fecha y de subir nada. `onSubmit`
+ * la usa TAL CUAL (se prueba por comportamiento, no por la forma del código):
+ *  - con cargos del banco («Créalo por la suma», P17) y fecha futura ⇒
+ *    `MSG_FECHA_FUTURA_CON_CARGOS` (el API respondería 400
+ *    `POR_PAGAR_FECHA_FUTURA`: el cargo ya es el pago);
+ *  - una REFACCIÓN «A Inventario/Tienda» con fecha futura (P12, acuerdo 4)
+ *    ⇒ `MSG_INVENTARIO_FECHA_FUTURA`. SOLO la categoría REFACCION: en el alta
+ *    general el destino arranca en «A Inventario/Tienda» para CUALQUIER
+ *    categoría (`destinoRefaccionInicial`), y una comida o un taxi por pagar
+ *    es justo el caso de uso del lote.
+ * Sin la capacidad (API previo o sin la migración) no frena nada: como antes.
+ */
+export function errorFechaAlGuardarAlta(p: {
+  conCargos: boolean;
+  categoria: string;
+  destino: DestinoRefaccion;
+  fecha: string | null | undefined;
+  capacidad: CapacidadPorPagar;
+  hoy?: string;
+}): string | null {
+  const hoy = p.hoy ?? todayCancun();
+  const conCargos = p.conCargos ? errorFechaFuturaConCargos(p.fecha, p.capacidad, hoy) : null;
+  if (conCargos) return conCargos;
+  if (p.categoria !== "REFACCION") return null;
+  return errorInventarioFechaFutura({ destino: p.destino, fecha: p.fecha, capacidad: p.capacidad, hoy });
 }
 
 /** La nota de la TRAZA (punto 1 del cliente): con avión elegido. */

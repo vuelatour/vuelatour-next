@@ -200,7 +200,12 @@ describe("cableado (regex sobre el fuente)", () => {
   it("refacción con los cargos: siempre «Directo al avión» (el segmento de siempre queda intacto sin ellos)", () => {
     expect(alta).toContain('const refDestino: DestinoRefaccion = conCargos ? "AVION" : refDestinoElegido;');
     expect(alta).toMatch(/\{conCargos \? \(\s*\/\/[^\n]*\n\s*<span className="text-xs font-medium" data-refaccion-solo-avion>/);
-    expect(alta).toContain("toast.error(conCargos ? NOTA_ELIGE_AVION_REFACCION : NOTA_DIRECTO_AVION_SIN_AVION);");
+    // Sin avión: con los cargos, «Elige el avión…»; sin ellos, la nota de
+    // `notaDirectoAvionSinAvion` (con fecha futura, la salida real del día
+    // del pago; probada por comportamiento en `refaccion-inventario.test.ts`).
+    expect(alta).toMatch(
+      /toast\.error\(\s*conCargos\s*\?\s*NOTA_ELIGE_AVION_REFACCION\s*:\s*notaDirectoAvionSinAvion\(\{ fecha: values\.fecha_gasto, capacidad: capacidadPorPagar \}\),?\s*\);/,
+    );
   });
 
   it("éxito: el aviso de quien lo montó; error: la caja roja con SU texto y el alta sigue abierta", () => {

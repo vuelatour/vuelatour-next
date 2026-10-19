@@ -350,12 +350,15 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(s).toContain("const capacidadFecha = capacidadFechaCaptura(capacidadPorPagar, { conCargos });");
     expect(s).toContain("<NotaFechaPorPagar fecha={fechaGasto} conCargos={conCargos} />");
     const submit = s.slice(s.indexOf("const onSubmit = handleSubmit("), s.indexOf("const fechaIaOtroAnio"));
-    const iError = submit.indexOf("errorFechaFuturaConCargos(values.fecha_gasto, capacidadPorPagar)");
-    const iInv = submit.indexOf("errorInventarioFechaFutura(");
+    // La regla es PURA (`errorFechaAlGuardarAlta`, probada por comportamiento
+    // en `refaccion-inventario.test.ts`): aquí solo el cableado y el ORDEN.
+    const iError = submit.indexOf("const errorFecha = errorFechaAlGuardarAlta({");
     const iToast = submit.indexOf("toast.error(errorFecha);");
     const iConfirma = submit.indexOf("evaluarFechaGasto(values.fecha_gasto, capacidadFecha)");
     expect(iError).toBeGreaterThan(-1);
-    expect(iInv).toBeGreaterThan(-1);
+    expect(submit.slice(iError, iToast)).toMatch(
+      /conCargos,\s*categoria: values\.categoria,\s*destino: refDestino,\s*fecha: values\.fecha_gasto,\s*capacidad: capacidadPorPagar,/,
+    );
     // El freno va ANTES de la confirmación de fecha (y de `guardarGasto`).
     expect(iToast).toBeGreaterThan(iError);
     expect(iConfirma).toBeGreaterThan(iToast);
@@ -364,7 +367,7 @@ describe("cableado (regex sobre los fuentes)", () => {
 
   it("P12: la refacción «A Inventario/Tienda» con fecha futura no se guarda; el aviso va AL FINAL del bloque", () => {
     const s = fuente("components/admin/expenses/expense-create-dialog.tsx");
-    expect(s).toMatch(/errorInventarioFechaFutura\(\{\s*destino: refDestino,\s*fecha: values\.fecha_gasto,\s*capacidad: capacidadPorPagar,\s*\}\)/);
+    expect(s).toMatch(/errorFechaAlGuardarAlta\(\{\s*conCargos,\s*categoria: values\.categoria,\s*destino: refDestino,\s*fecha: values\.fecha_gasto,\s*capacidad: capacidadPorPagar,\s*\}\)/);
     // Último hijo del fragmento del destino INVENTARIO: un hijo nuevo antes
     // correría los ids de `useId` de los campos (el golden del alta).
     expect(s).toMatch(/<AvisoInventarioFechaFutura fecha=\{fechaGasto\} \/>\s*<\/>\s*\)\}/);

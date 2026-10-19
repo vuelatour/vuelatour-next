@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { CATEGORIAS_CAPTURA } from "@/lib/admin/categorias-gasto";
+import { MSG_FECHA_FUTURA_CON_CARGOS, SIN_CAPACIDAD_POR_PAGAR } from "@/lib/admin/gasto-por-pagar";
 import {
   MSG_INVENTARIO_FECHA_FUTURA,
+  NOTA_DIRECTO_AVION_SIN_AVION,
+  NOTA_ELIGE_AVION_REFACCION,
+  NOTA_REFACCION_POR_PAGAR_SIN_AVION,
   OPCION_ARTICULO_NUEVO,
   destinoRefaccionInicial,
+  errorFechaAlGuardarAlta,
   errorInventarioFechaFutura,
+  notaDirectoAvionSinAvion,
   esApiSinInventario,
   formAlElegirArticulo,
   formInventarioVacio,
@@ -124,5 +131,105 @@ describe("refacción «A Inventario/Tienda» con fecha FUTURA (revisión del lot
     expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "", capacidad: CON, hoy: HOY })).toBeNull();
     expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "2026-02-30", capacidad: CON, hoy: HOY })).toBeNull();
     expect(errorInventarioFechaFutura({ destino: "INVENTARIO", fecha: "2026-11-05", capacidad: SIN, hoy: HOY })).toBeNull();
+  });
+});
+
+describe("el freno de fecha de «Guardar» del alta (`errorFechaAlGuardarAlta`, segunda revisión del lote: P12/P17)", () => {
+  // «Hoy» Cancún = 20-oct; fin de mes = 31-oct.
+  const HOY = "2026-10-20";
+  const MANANA = "2026-10-21";
+  const CON = { habilitado: true, fechaMax: "2026-11-19" };
+  const base = {
+    conCargos: false,
+    categoria: "REFACCION",
+    destino: "INVENTARIO" as const,
+    fecha: MANANA,
+    capacidad: CON,
+    hoy: HOY,
+  };
+
+  it("REFACCION «A Inventario/Tienda» con fecha futura ⇒ el texto EXACTO del API (también a fin de mes y más allá)", () => {
+    expect(errorFechaAlGuardarAlta(base)).toBe(MSG_INVENTARIO_FECHA_FUTURA);
+    expect(errorFechaAlGuardarAlta({ ...base, fecha: "2026-10-31" })).toBe(MSG_INVENTARIO_FECHA_FUTURA);
+    // Oficina hasta +30 (más allá de fin de mes): el freno va ANTES de la confirmación.
+    expect(errorFechaAlGuardarAlta({ ...base, fecha: "2026-11-15" })).toBe(MSG_INVENTARIO_FECHA_FUTURA);
+  });
+
+  it("NINGUNA otra categoría frena aunque el destino del alta general siga en «A Inventario/Tienda» (el caso de uso del lote)", () => {
+    // `destinoRefaccionInicial({ conVueloPrefijado: false })` = INVENTARIO para
+    // CUALQUIER categoría: una comida o un taxi por pagar mañana se guarda.
+    expect(destinoRefaccionInicial({ conVueloPrefijado: false })).toBe("INVENTARIO");
+    const otras = CATEGORIAS_CAPTURA.filter((c) => c !== "REFACCION");
+    expect(otras.length).toBeGreaterThan(15);
+    for (const categoria of otras) {
+      expect(errorFechaAlGuardarAlta({ ...base, categoria }), categoria).toBeNull();
+    }
+    expect(errorFechaAlGuardarAlta({ ...base, categoria: "COMIDA" })).toBeNull();
+  });
+
+  it("REFACCION «Directo al avión» con fecha futura ⇒ se guarda (queda por pagar)", () => {
+    expect(errorFechaAlGuardarAlta({ ...base, destino: "AVION" })).toBeNull();
+  });
+
+  it("con cargos del banco y fecha futura ⇒ el error de «Créalo por la suma», en cualquier categoría", () => {
+    for (const categoria of ["OTRO", "COMIDA", "REFACCION"]) {
+      // Con cargos el alta fuerza «Directo al avión».
+      expect(errorFechaAlGuardarAlta({ ...base, conCargos: true, categoria, destino: "AVION" }), categoria).toBe(
+        MSG_FECHA_FUTURA_CON_CARGOS,
+      );
+    }
+    // Aun si el destino llegara INVENTARIO, el de los cargos va primero.
+    expect(errorFechaAlGuardarAlta({ ...base, conCargos: true })).toBe(MSG_FECHA_FUTURA_CON_CARGOS);
+  });
+
+  it("hoy, antes, ilegible o SIN la capacidad (API previo) ⇒ nada frena, como antes", () => {
+    for (const fecha of [HOY, "2026-10-01", "", null, undefined, "2026-02-30"]) {
+      expect(errorFechaAlGuardarAlta({ ...base, fecha }), String(fecha)).toBeNull();
+      expect(errorFechaAlGuardarAlta({ ...base, conCargos: true, fecha }), `cargos ${String(fecha)}`).toBeNull();
+    }
+    expect(errorFechaAlGuardarAlta({ ...base, capacidad: SIN_CAPACIDAD_POR_PAGAR })).toBeNull();
+    expect(errorFechaAlGuardarAlta({ ...base, conCargos: true, capacidad: SIN_CAPACIDAD_POR_PAGAR })).toBeNull();
+  });
+});
+
+describe("refacción por pagar SIN avión: la salida real (segunda revisión del lote, NUEVO-1)", () => {
+  const HOY = "2026-10-20";
+  const CON = { habilitado: true };
+  const SIN = { habilitado: false };
+
+  it("el texto propio del panel", () => {
+    expect(NOTA_REFACCION_POR_PAGAR_SIN_AVION).toBe(
+      "Si todavía no sabes a qué avión va, regístrala el día que la pagues (la fecha del gasto es la del pago).",
+    );
+  });
+
+  it("«Directo al avión» sin avión y con fecha futura ⇒ ya no manda a «pásala a Inventario/Tienda» (ahí tampoco se guarda)", () => {
+    const nota = notaDirectoAvionSinAvion({ fecha: "2026-10-21", capacidad: CON, hoy: HOY });
+    expect(nota).toBe(`${NOTA_ELIGE_AVION_REFACCION} ${NOTA_REFACCION_POR_PAGAR_SIN_AVION}`);
+    expect(nota).toBe(
+      "Elige el avión al que se carga la refacción. Si todavía no sabes a qué avión va, regístrala el día que la pagues (la fecha del gasto es la del pago).",
+    );
+    expect(nota).not.toContain("pásala a Inventario/Tienda");
+  });
+
+  it("hoy, antes, ilegible o SIN la capacidad ⇒ el texto de siempre (Inventario/Tienda sí se guarda)", () => {
+    for (const fecha of [HOY, "2026-10-01", "", null, undefined]) {
+      expect(notaDirectoAvionSinAvion({ fecha, capacidad: CON, hoy: HOY }), String(fecha)).toBe(
+        NOTA_DIRECTO_AVION_SIN_AVION,
+      );
+    }
+    expect(notaDirectoAvionSinAvion({ fecha: "2026-10-21", capacidad: SIN, hoy: HOY })).toBe(
+      NOTA_DIRECTO_AVION_SIN_AVION,
+    );
+    expect(NOTA_DIRECTO_AVION_SIN_AVION).toContain("pásala a Inventario/Tienda");
+  });
+
+  it("los dos avisos ya no se mandan uno al otro: el de Inventario manda al día del pago, el del avión también", () => {
+    // El freno de Inventario (texto del API) dice «guárdala sin entrada a
+    // Inventario/Tienda» = «Directo al avión»; sin avión, esa nota ya no
+    // regresa a Inventario/Tienda sino al día del pago.
+    expect(MSG_INVENTARIO_FECHA_FUTURA).toContain("guárdala sin entrada a Inventario/Tienda");
+    const nota = notaDirectoAvionSinAvion({ fecha: "2026-10-25", capacidad: CON, hoy: HOY });
+    expect(nota).toContain("regístrala el día que la pagues");
   });
 });
