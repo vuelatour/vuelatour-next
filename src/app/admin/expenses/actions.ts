@@ -38,6 +38,7 @@ import {
   type FacturaDeGasto,
   type ResultadoSubidaFacturas,
 } from "@/lib/admin/facturas-gasto";
+import { cuerpoMarcarPagado, validarMarcarPagado } from "@/lib/admin/gasto-por-pagar";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
 import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -1359,5 +1360,36 @@ export async function quitarFacturaDeGastoAction(input: {
     // 404 FACTURA_NO_LIGADA / 409 GASTO_FACTURAS_CAMBIARON (otra persona ya
     // la quitó): con código, para que el diálogo recargue la lista.
     return failConCodigo(err);
+  }
+}
+
+/**
+ * «Marcar pagado» (19-oct-2026, API 0.0.95, gastos «por pagar»): `PATCH
+ * /v1/expenses/:id` con `{por_pagar: false, fecha_gasto, if_updated_at?}`
+ * EXACTO (`cuerpoMarcarPagado`). La fecha es la del PAGO real (≤ hoy
+ * Cancún): se valida ANTES de la red junto con el uuid. El API aplica las
+ * reglas de un cambio de fecha (mes cerrado, semana, reposición de caja
+ * chica…) y el control de versión (409 `CONFLICTO_VERSION`). Nunca lanza;
+ * en el éxito revalida lo mismo que «Verificar / editar»; un rechazo
+ * conserva code/status/details (el diálogo decide el texto con
+ * `mensajeErrorMarcarPagado`) y una falla sin respuesta es `SIN_CONEXION`
+ * (pudo escribirse: el diálogo recarga).
+ */
+export async function marcarPagadoGastoAction(
+  id: string,
+  input: { fecha_gasto: string; if_updated_at?: string | null },
+): Promise<ActionResult<Gasto>> {
+  const invalido = validarMarcarPagado(id, input);
+  if (invalido) return { ok: false, error: invalido, code: "ENTRADA_INVALIDA", status: 400 };
+  try {
+    const updated = await apiServer<Gasto>(`/v1/expenses/${id}`, {
+      method: "PATCH",
+      body: cuerpoMarcarPagado({ fecha_gasto: input.fecha_gasto, if_updated_at: input.if_updated_at }),
+    });
+    revalidarVerificacion();
+    return { ok: true, data: updated };
+  } catch (err) {
+    if (isApiError(err)) return failConCodigo<Gasto>(err);
+    return { ok: false, error: err instanceof Error ? err.message : "Error desconocido", code: "SIN_CONEXION" };
   }
 }

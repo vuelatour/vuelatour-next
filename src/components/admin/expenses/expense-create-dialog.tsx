@@ -127,8 +127,10 @@ import {
   fechaGastoAntigua,
   fechaGastoDistancia,
   fechaGastoLegible,
-  fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
+import { evaluarFechaGasto } from "@/lib/admin/gasto-por-pagar";
+import { usePorPagar } from "@/components/admin/por-pagar-provider";
+import { NotaFechaPorPagar } from "@/components/admin/expenses/nota-por-pagar";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
   AYUDA_COMISARIATO,
@@ -337,6 +339,10 @@ export function ExpenseCreateDialog({
   // Permiso y solo para quien puede marcarlo (rol de oficina + la base ya con
   // la migración: `config.afac_real`). Cambiar la categoría la desmarca.
   const puedeMarcarPagoAfac = usePuedeMarcarPagoAfac();
+  // Gastos «por pagar» (19-oct-2026, API 0.0.95): con la capacidad, una fecha
+  // futura hasta fin de mes (o el tope del API) NO pide la confirmación de
+  // «fecha futura» y lleva la nota ámbar; sin ella, todo como antes.
+  const capacidadPorPagar = usePorPagar();
   const [pagoAfac, setPagoAfac] = useState(false);
   // Comprobante adjunto (12-oct-2026: VARIOS archivos — «un proveedor de
   // gasolina nos emite como 5 comprobantes en PDF»). El PRIMERO es la hoja
@@ -1079,8 +1085,9 @@ export function ExpenseCreateDialog({
     (values) => {
       // Fecha sospechosa (> 60 días atrás o > 2 días a futuro): casi siempre
       // es el año equivocado del ticket — confirmación explícita antes de
-      // guardar; si es real, se guarda igual.
-      if (fechaGastoSospechosa(values.fecha_gasto)) {
+      // guardar; si es real, se guarda igual. Con gastos por pagar, una
+      // fecha futura hasta fin de mes no pregunta (`evaluarFechaGasto`).
+      if (evaluarFechaGasto(values.fecha_gasto, capacidadPorPagar).pideConfirmacion) {
         setConfirmarFecha({ ...values });
         return;
       }
@@ -1463,6 +1470,7 @@ export function ExpenseCreateDialog({
                   </p>
                 )}
                 <AvisoCapturaAntesDelInicio fecha={fechaGasto} />
+                <NotaFechaPorPagar fecha={fechaGasto} />
               </Field>
             </div>
 

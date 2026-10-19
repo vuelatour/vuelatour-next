@@ -8,6 +8,7 @@ import { HojasComprobanteBoton } from "@/components/admin/expenses/hojas-comprob
 import { etiquetaComprobante } from "@/lib/admin/comprobante-badge";
 import { CapturadoLinea } from "@/components/admin/expenses/capturado-linea";
 import { ExpenseActions } from "@/components/admin/expenses/expense-actions";
+import { BotonChipPorPagar } from "@/components/admin/expenses/marcar-pagado";
 import { FacturacionBadge } from "@/components/admin/expenses/facturacion-badge";
 import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import {
@@ -58,6 +59,9 @@ export function FlightGastosTable({
       cell: (g) => (
         <span>
           {fmtDateOnly(g.fecha_gasto)}
+          {/* «Por pagar · 20 oct» / «Vencido · 20 oct» (19-oct-2026, API
+              0.0.95): clic = «Marcar pagado»; sin la llave, nada. */}
+          <BotonChipPorPagar gasto={g} className="ml-1.5" />
           <CapturadoLinea linea={lineaCaptura(g)} />
         </span>
       ),

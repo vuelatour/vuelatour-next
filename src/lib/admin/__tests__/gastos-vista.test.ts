@@ -343,6 +343,8 @@ describe("opciones de la barra", () => {
     );
     expect(ETIQUETAS_FILTRO_GASTOS).toEqual({
       categoria: "Categoría",
+      // «Pago» (19-oct-2026, gastos por pagar): solo se pinta con la capacidad.
+      pago: "Pago",
       avion: "Avión",
       facturacion: "Facturación",
       banco: "Banco",

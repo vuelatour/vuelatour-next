@@ -89,6 +89,10 @@ import {
   CLAVE_PRECIERRE_NOMINA_SIN_REPARTIR,
   hrefPrecierreNominaSinRepartir,
 } from "@/lib/admin/nomina";
+import {
+  CLAVE_PRECIERRE_GASTOS_POR_PAGAR,
+  hrefPrecierreGastosPorPagar,
+} from "@/lib/admin/gasto-por-pagar";
 import { ANCLA_PRE_CIERRE, hrefResolverItem } from "@/lib/admin/pre-cierre-resolver";
 import { lineasLeyendaPreCierre, textoBadgeCierrePeriodo } from "@/lib/admin/cierre-mes";
 import { ChipEstadoCierre, ChipMarcaCierre } from "@/components/admin/chip-cierre";
@@ -271,6 +275,10 @@ const LINK_POR_CLAVE: Record<
   // Nómina sin repartir (BLOQUEANTE, API 0.0.90): se reparte en Nómina, en el
   // mes del periodo; el foco ámbar (`pc`/`ids`) lo agrega `hrefResolverItem`.
   [CLAVE_PRECIERRE_NOMINA_SIN_REPARTIR]: hrefPrecierreNominaSinRepartir,
+  // Gastos por pagar sin confirmar (BLOQUEANTE, 19-oct-2026, API 0.0.95):
+  // Gastos con el filtro «Por pagar» del periodo, donde cada fila tiene
+  // «Marcar pagado»; el foco ámbar (`pc`/`ids`) lo agrega `hrefResolverItem`.
+  [CLAVE_PRECIERRE_GASTOS_POR_PAGAR]: hrefPrecierreGastosPorPagar,
   // Vuelos sin completar: la lista del periodo (externos incluidos — esos
   // se completan a mano en su detalle y NO aparecen en taco-live).
   vuelos_sin_completar: (p) =>

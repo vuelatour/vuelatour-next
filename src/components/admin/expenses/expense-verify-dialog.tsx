@@ -172,8 +172,10 @@ import {
   fechaGastoAntigua,
   fechaGastoDistancia,
   fechaGastoLegible,
-  fechaGastoSospechosa,
 } from "@/lib/admin/fecha-gasto";
+import { estadoPagoDe, evaluarFechaGasto } from "@/lib/admin/gasto-por-pagar";
+import { usePorPagar } from "@/components/admin/por-pagar-provider";
+import { NotaFechaPorPagar } from "@/components/admin/expenses/nota-por-pagar";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import { tieneDiscrepanciaIa } from "@/lib/admin/notas-gasto";
 import {
@@ -358,6 +360,9 @@ export function ExpenseVerifyDialog({
   // SOLO si el gasto trae la llave (API con la columna). Viaja solo si
   // cambió contra la BASE de la sesión (`pagoAfacParaPatch`).
   const puedeMarcarPagoAfac = usePuedeMarcarPagoAfac() && apiConPagoAfac(gasto);
+  // Gastos «por pagar» (19-oct-2026, API 0.0.95): misma regla de fecha que
+  // el alta (`evaluarFechaGasto`); sin la capacidad, todo como antes.
+  const capacidadPorPagar = usePorPagar();
   const [pagoAfac, setPagoAfac] = useState(() => gasto.es_pago_afac === true);
   const [confirmarTua, setConfirmarTua] = useState<{
     values: GastoVerifyValues;
@@ -1736,7 +1741,7 @@ export function ExpenseVerifyDialog({
     if (
       values.fecha_gasto &&
       values.fecha_gasto !== original &&
-      fechaGastoSospechosa(values.fecha_gasto)
+      evaluarFechaGasto(values.fecha_gasto, capacidadPorPagar).pideConfirmacion
     ) {
       setConfirmarFecha({ ...values });
       return;
@@ -2339,6 +2344,7 @@ export function ExpenseVerifyDialog({
                 </p>
               )}
               <AvisoCapturaAntesDelInicio fecha={watch("fecha_gasto")} />
+              <NotaFechaPorPagar fecha={watch("fecha_gasto")} estadoGuardado={estadoPagoDe(gasto)} />
             </Field>
           </div>
           {/* R16: los montos del reparto guardado están en su moneda. */}

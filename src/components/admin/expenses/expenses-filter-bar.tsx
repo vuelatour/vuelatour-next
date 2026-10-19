@@ -48,6 +48,13 @@ import {
 } from "@/lib/admin/gastos-vista";
 import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
 import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
+import { usePorPagar } from "@/components/admin/por-pagar-provider";
+import {
+  DESCRIPCION_OPCION_POR_PAGAR,
+  OPCION_FILTRO_POR_PAGAR,
+  PARAM_POR_PAGAR,
+  VALOR_URL_POR_PAGAR,
+} from "@/lib/admin/gasto-por-pagar";
 
 // Etiquetas desde la FUENTE ÚNICA (@/lib/admin/medios-pago); aquí solo vive
 // el ORDEN del filtro. BODEGA queda fuera a propósito (cargo contable de
@@ -79,6 +86,10 @@ const OPCIONES_CATEGORIA = opcionesConTodos(
   CATEGORIAS_FILTRO_GASTOS_VISTA.map(opcionCategoriaGasto),
 );
 const OPCIONES_ORDEN = [...OPCIONES_ORDEN_GASTOS];
+// «Pago» (19-oct-2026, gastos por pagar): solo con la capacidad del API.
+const OPCIONES_PAGO = opcionesConTodos(OPCION_TODOS, [
+  { value: VALOR_URL_POR_PAGAR, label: OPCION_FILTRO_POR_PAGAR, description: DESCRIPCION_OPCION_POR_PAGAR },
+]);
 
 const CLASE_ETIQUETA = "mb-1 block text-[11px] font-medium text-muted-foreground";
 
@@ -114,8 +125,10 @@ export function ExpensesFilterBar({
   const router = useRouter();
   // Inicio oficial (16-oct-2026): las fechas no bajan del inicio. Sin él, libres.
   const inicio = useInicioOficial();
+  // Gastos por pagar (19-oct-2026): el filtro «Pago» solo con la capacidad.
+  const porPagar = usePorPagar();
   const sp = useSearchParams();
-  const f = leerFiltrosGastos((k) => sp.get(k), inicio);
+  const f = leerFiltrosGastos((k) => sp.get(k), inicio, porPagar.habilitado);
   const [actualizando, startTransition] = useTransition();
   // La última consulta PEDIDA (UNA para toda la barra): mientras la
   // navegación está en vuelo `sp` sigue siendo la URL ANTERIOR. Caduca en
@@ -224,6 +237,7 @@ export function ExpensesFilterBar({
       cap: null,
       cap_desde: null,
       cap_hasta: null,
+      [PARAM_POR_PAGAR]: null,
     });
   };
 
@@ -346,6 +360,15 @@ export function ExpensesFilterBar({
         valor: f.banco ?? "",
         param: "banco",
       })}
+      {porPagar.habilitado &&
+        selector({
+          campo: "pago",
+          etiqueta: ETIQUETAS_FILTRO_GASTOS.pago,
+          ancho: "sm:w-36",
+          opciones: OPCIONES_PAGO,
+          valor: f.por_pagar ? VALOR_URL_POR_PAGAR : "",
+          param: PARAM_POR_PAGAR,
+        })}
       {selector({
         campo: "medio",
         etiqueta: ETIQUETAS_FILTRO_GASTOS.medio,

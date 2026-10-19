@@ -1,3 +1,4 @@
+import type { PorPagarCajaItem } from "@/lib/admin/gasto-por-pagar";
 import type { UbicacionBalanceGasto } from "@/types/conciliacion";
 
 export type TipoMovimientoCaja = "REPOSICION" | "REINTEGRO" | "AJUSTE";
@@ -125,4 +126,12 @@ export interface CajaFondoDetail extends CajaFondo {
    * «no fondea» (ver `cajasParaReponer`).
    */
   cajas_fondeadas?: CajaFondeada[] | null;
+  /**
+   * Gastos EFECTIVO «por pagar» vigentes (19-oct-2026, API 0.0.95, ADITIVO):
+   * NO son del libro (no tocan saldo ni lo por reponer) hasta marcarlos
+   * pagados. Ausente = API previo. Leerlo vía `porPagarDeFondo`.
+   */
+  por_pagar?: PorPagarCajaItem[] | null;
+  /** Σ de `por_pagar` en la moneda del fondo (la calcula el API). */
+  por_pagar_total?: number | string | null;
 }

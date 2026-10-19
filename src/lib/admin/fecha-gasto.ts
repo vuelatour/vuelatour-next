@@ -14,9 +14,11 @@ export const DIAS_FECHA_ANTIGUA = 365;
 /**
  * Días de HOY (día Cancún) a la fecha dada (+ = pasado, − = futuro).
  * Ambas fechas YYYY-MM-DD ancladas a UTC: la resta nunca cruza husos.
+ * `hoyDia` (opcional, 19-oct-2026): el «hoy» de quien llama (pruebas y la
+ * regla de «por pagar», `lib/admin/gasto-por-pagar.ts`); sin él, hoy Cancún.
  */
-export function diasDesdeHoyCancun(fecha: string): number {
-  const hoy = Date.parse(`${todayCancun()}T00:00:00Z`);
+export function diasDesdeHoyCancun(fecha: string, hoyDia: string = todayCancun()): number {
+  const hoy = Date.parse(`${hoyDia}T00:00:00Z`);
   const f = Date.parse(`${fecha}T00:00:00Z`);
   if (!Number.isFinite(f)) return 0;
   return Math.round((hoy - f) / 86_400_000);
@@ -24,9 +26,9 @@ export function diasDesdeHoyCancun(fecha: string): number {
 
 /** true = la fecha amerita confirmación explícita antes de guardar
  *  (> 60 días atrás o > 2 días a futuro). */
-export function fechaGastoSospechosa(fecha: string): boolean {
+export function fechaGastoSospechosa(fecha: string, hoyDia: string = todayCancun()): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return false; // el zod la rechaza
-  const dias = diasDesdeHoyCancun(fecha);
+  const dias = diasDesdeHoyCancun(fecha, hoyDia);
   return dias > DIAS_PASADO_SOSPECHOSO || dias < -DIAS_FUTURO_SOSPECHOSO;
 }
 

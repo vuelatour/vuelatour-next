@@ -23,6 +23,7 @@ import { PESTANAS_GASTOS } from "@/lib/admin/titulos-pestana";
 import { ajustarRangoAlInicio, type InicioOficial } from "./inicio-oficial";
 import { esCampoDesconocidoParaApi, sinCampos } from "@/lib/api/campo-opcional";
 import { CATEGORIA_NOMINA, RUTA_NOMINA, hrefMesNomina } from "@/lib/admin/nomina";
+import { ETIQUETA_FILTRO_PAGO, PARAM_POR_PAGAR, VACIO_POR_PAGAR, porPagarDeUrl } from "@/lib/admin/gasto-por-pagar";
 
 /**
  * Vista de GASTOS en UNA sola tabla (14-oct-2026). Pedido del cliente: «unir
@@ -72,6 +73,13 @@ export interface FiltrosGastos {
   cap_desde?: string;
   cap_hasta?: string;
   orden?: "captura";
+  /** «Por pagar» (19-oct-2026, API 0.0.95): `?por_pagar=1` ⇒ estado ≠
+   *  PAGADO. Solo con la CAPACIDAD (`config.gastos_por_pagar`); viaja al API
+   *  y al Excel. Solo existe si es `true`. */
+  por_pagar?: true;
+  /** La URL pedía «Por pagar» y el API todavía no lo tiene (sin capacidad):
+   *  se IGNORA y la página lo dice. Solo existe si es `true`; no viaja. */
+  porPagarIgnorado?: true;
 }
 
 /**
@@ -92,10 +100,14 @@ export interface FiltrosGastos {
  *    rango, si no `cap=7d` es «Esta semana» (los últimos 7 días, hora
  *    Cancún); si no, «todas».
  *  - `orden`: "captura" o nada (fecha del gasto, el default del API).
+ *  - `por_pagar` (19-oct-2026): `1`/`true` y SOLO con `porPagarDisponible`
+ *    (la capacidad de `/v1/me`); sin ella se ignora (`porPagarIgnorado`): un
+ *    API previo respondería 400 «property por_pagar should not exist».
  */
 export function leerFiltrosGastos(
   get: (clave: string) => string | null | undefined,
   inicio: InicioOficial = null,
+  porPagarDisponible = false,
 ): FiltrosGastos {
   const f = get("f");
   const vista: VistaGastos = f === "pendientes" || f === "duplicados" ? f : "todos";
@@ -127,6 +139,10 @@ export function leerFiltrosGastos(
   if (capDesde) out.cap_desde = capDesde;
   if (capHasta) out.cap_hasta = capHasta;
   if (get("orden") === "captura") out.orden = "captura";
+  if (porPagarDeUrl(get(PARAM_POR_PAGAR))) {
+    if (porPagarDisponible) out.por_pagar = true;
+    else out.porPagarIgnorado = true;
+  }
   if (rango.ajustado) out.ajustado = true;
   return out;
 }
@@ -156,6 +172,9 @@ export function queryBaseGastos(
     capturado_desde: f.captura === "semana" ? diaMas(hoy, -7) : f.cap_desde,
     capturado_hasta: f.cap_hasta,
     orden: f.orden,
+    // «Por pagar» (19-oct-2026): solo con la capacidad (lo decide
+    // `leerFiltrosGastos`); sin el filtro la llave no viaja.
+    ...(f.por_pagar ? { por_pagar: true } : {}),
   };
 }
 
@@ -193,6 +212,8 @@ export function queryExcelGastos(f: FiltrosGastos, hoy: string): Record<string, 
     capturado_hasta: b.capturado_hasta,
     orden: b.orden,
   };
+  // El Excel sale con el filtro «Por pagar» que se ve (`ToBooleanQuery`).
+  if (b.por_pagar) q.por_pagar = "true";
   if (f.vista === "pendientes") q.pendientes = "true";
   if (f.vista === "duplicados") q.duplicados = "true";
   return q;
@@ -255,7 +276,8 @@ export function hayFiltrosGastos(f: FiltrosGastos): boolean {
       f.desde ||
       f.hasta ||
       f.facturacion ||
-      f.banco
+      f.banco ||
+      f.por_pagar
     ) || f.captura !== "todas"
   );
 }
@@ -290,7 +312,10 @@ const DESCRIPCION_VACIO_CON_FILTROS = "Cambia o quita algún filtro para ver má
 export function vacioGastos(
   vista: VistaGastos,
   conFiltros: boolean,
+  porPagar = false,
 ): { titulo: string; descripcion: string } {
+  // «Por pagar» (19-oct-2026): con el filtro puesto en «Todos», el vacío lo dice.
+  if (porPagar && vista === "todos") return { ...VACIO_POR_PAGAR };
   if (conFiltros) {
     const titulo =
       vista === "pendientes"
@@ -416,6 +441,7 @@ export function anchoFiltroCategoria(categoria: string | null | undefined): stri
 /** Etiquetas visibles de los campos de la barra (sin cambio de nombre). */
 export const ETIQUETAS_FILTRO_GASTOS = {
   categoria: "Categoría",
+  pago: ETIQUETA_FILTRO_PAGO,
   avion: "Avión",
   facturacion: "Facturación",
   banco: "Banco",

@@ -86,6 +86,16 @@ export interface Gasto {
    *  PERMISO (trigger en la BD). undefined = API sin la columna ⇒ el panel no
    *  pinta ni manda la casilla. Leerlo SIEMPRE vía `@/lib/admin/pago-afac`. */
   es_pago_afac?: boolean;
+  /** ADITIVOS (19-oct-2026, API 0.0.95, gastos «por pagar»): la columna y
+   *  el estado que CALCULA el API (conciliado ⇒ PAGADO; fecha < hoy ⇒
+   *  VENCIDO). Sin la migración no viajan ⇒ el panel no pinta nada. Leerlos
+   *  SIEMPRE vía `@/lib/admin/gasto-por-pagar` (`estadoPagoDe`,
+   *  `chipEstadoPago`). */
+  por_pagar?: boolean;
+  estado_pago?: "PAGADO" | "POR_PAGAR" | "VENCIDO" | string;
+  /** Sello de la última escritura: viaja como `if_updated_at` (CAS del API,
+   *  409 CONFLICTO_VERSION) al marcar pagado. */
+  updated_at?: string | null;
   /** ADITIVO, solo en la respuesta del alta con `inventario` (ver el tipo). */
   inventario?: GastoInventarioResultado | null;
   /** ADITIVO (API 0.0.77), solo en la respuesta del alta con

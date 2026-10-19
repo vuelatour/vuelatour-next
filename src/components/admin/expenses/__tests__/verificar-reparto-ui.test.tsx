@@ -402,7 +402,7 @@ describe("cableado en el fuente", () => {
     }
     // R24: lo que se frena antes de la red, al inicio de onSubmit.
     const submit = src.slice(src.indexOf("const onSubmit = handleSubmit"), src.indexOf("const fechaIaOtroAnio"));
-    expect(submit.indexOf("errorRepartoEnPantalla(")).toBeLessThan(submit.indexOf("fechaGastoSospechosa("));
+    expect(submit.indexOf("errorRepartoEnPantalla(")).toBeLessThan(submit.indexOf("evaluarFechaGasto("));
     expect(src).not.toContain('includes("⚠")');
   });
 
@@ -470,7 +470,7 @@ describe("cableado en el fuente", () => {
     const submit = src.slice(src.indexOf("const onSubmit = handleSubmit"), src.indexOf("const fechaIaOtroAnio"));
     const gas = submit.indexOf("errorQuitarRepartoSinAvion(");
     expect(gas).toBeGreaterThan(submit.indexOf("errorRepartoEnPantalla("));
-    expect(gas).toBeLessThan(submit.indexOf("fechaGastoSospechosa("));
+    expect(gas).toBeLessThan(submit.indexOf("evaluarFechaGasto("));
     expect(submit).toMatch(/if \(errorGas\) \{\s*toast\.error\(errorGas\);\s*return;\s*\}/);
   });
 

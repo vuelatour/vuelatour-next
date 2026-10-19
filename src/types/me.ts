@@ -63,6 +63,15 @@ export interface ConfigMe {
    * `lib/admin/libro-afac.ts#afacRealHabilitado`.
    */
   afac_real?: boolean;
+  /**
+   * Gastos «por pagar» (19-oct-2026, API 0.0.95): true = la base ya tiene la
+   * migración `20261019000001` y el API manda `estado_pago`, el filtro
+   * `?por_pagar=1` y «Marcar pagado». Ausente o false ⇒ todo como antes. Se
+   * lee SOLO con `lib/admin/gasto-por-pagar.ts#capacidadPorPagarDeMe`.
+   */
+  gastos_por_pagar?: boolean;
+  /** Tope de la fecha de un gasto para este usuario («YYYY-MM-DD», día Cancún). */
+  gasto_fecha_max?: string | null;
 }
 
 export interface PermisosMe {

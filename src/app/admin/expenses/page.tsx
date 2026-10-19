@@ -72,6 +72,11 @@ import {
 import { getInicioOficial } from "@/lib/api/inicio-oficial";
 import type { InicioOficial } from "@/lib/admin/inicio-oficial";
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
+import {
+  DESCRIPCION_POR_PAGAR_IGNORADO,
+  TITULO_POR_PAGAR_IGNORADO,
+  capacidadPorPagarDeMe,
+} from "@/lib/admin/gasto-por-pagar";
 
 export const dynamic = "force-dynamic";
 // «Subir facturas» del gasto (16-oct-2026): la server action vive en esta
@@ -87,8 +92,9 @@ export const maxDuration = 60;
 function filtroGastosDeUrl(
   sp: Record<string, string | undefined>,
   inicio: InicioOficial = null,
+  porPagarDisponible = false,
 ): FiltrosGastos {
-  return leerFiltrosGastos((k) => sp[k], inicio);
+  return leerFiltrosGastos((k) => sp[k], inicio, porPagarDisponible);
 }
 
 /** «Gastos» (Todos) · «Gastos · Pendientes» · «Gastos · Duplicados». */
@@ -144,6 +150,9 @@ export default async function ExpensesPage({
     pct?: string;
     pcd?: string;
     pcp?: string;
+    /** «Por pagar» (19-oct-2026, API 0.0.95): `1` ⇒ estado ≠ PAGADO. Solo
+        con la capacidad de `/v1/me`; viaja al API y al Excel. */
+    por_pagar?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -153,7 +162,15 @@ export default async function ExpensesPage({
   // ni provoca un 400 que tumbe la pantalla, 21-sep-2026).
   // Inicio oficial (16-oct-2026, API 0.0.84): un `?desde` anterior se sube con aviso.
   const inicio = await getInicioOficial();
-  const filtros = filtroGastosDeUrl(sp as Record<string, string | undefined>, inicio);
+  // Gastos por pagar (19-oct-2026, API 0.0.95): el filtro `?por_pagar=1`
+  // SOLO con la capacidad (`config.gastos_por_pagar`; `/me` ya está cacheado
+  // por el layout). Sin ella se ignora y se dice (un API previo daría 400).
+  const porPagar = capacidadPorPagarDeMe(await getMe().catch(() => null));
+  const filtros = filtroGastosDeUrl(
+    sp as Record<string, string | undefined>,
+    inicio,
+    porPagar.habilitado,
+  );
   const filtro = filtros.vista;
   const conFiltros = hayFiltrosGastos(filtros);
   // Filtro por avión (link desde el expediente del avión); lo respetan las
@@ -255,6 +272,8 @@ export default async function ExpensesPage({
     // Filtro «Categoría» (14-oct-2026, una sola tabla): al final, así las
     // URLs de antes se escriben igual.
     "categoria",
+    // «Por pagar» (19-oct-2026): las pestañas y «quitar avión» lo conservan.
+    "por_pagar",
   ] as const;
   const paramsFiltros = (key: VistaGastos, conAvion: boolean) => {
     const params = new URLSearchParams();
@@ -314,7 +333,7 @@ export default async function ExpensesPage({
     { key: "pendientes", count: pendientesRes.count },
     { key: "duplicados", count: duplicadosRes.count },
   ];
-  const vacio = vacioGastos(filtro, conFiltros);
+  const vacio = vacioGastos(filtro, conFiltros, !!filtros.por_pagar);
 
   return (
     <div className="space-y-4">
@@ -431,6 +450,19 @@ export default async function ExpensesPage({
               >
                 {ETIQUETA_IR_A_NOMINA}
               </Link>
+            </div>
+          )}
+
+          {/* «Por pagar» pedido por la URL sin la capacidad del API: se dice
+              (jamás una lista «filtrada» que en realidad trae todo). */}
+          {filtros.porPagarIgnorado && (
+            <div
+              role="status"
+              data-franja="por-pagar-ignorado"
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200"
+            >
+              <p className="font-medium">{TITULO_POR_PAGAR_IGNORADO}</p>
+              <p className="text-xs opacity-90">{DESCRIPCION_POR_PAGAR_IGNORADO}</p>
             </div>
           )}
 

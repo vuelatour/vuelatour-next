@@ -47,6 +47,8 @@ import { HistorialPeriodoFiltro } from "@/components/admin/caja-chica/historial-
 import { getInicioOficial } from "@/lib/api/inicio-oficial";
 import { textoSaldoInicial } from "@/lib/admin/inicio-oficial";
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
+import { porPagarDeFondo } from "@/lib/admin/gasto-por-pagar";
+import { PorPagarCaja } from "@/components/admin/caja-chica/por-pagar-caja";
 
 export const dynamic = "force-dynamic";
 
@@ -152,6 +154,12 @@ export default async function CajaFondoPage({
   const periodoVisto = textoPeriodoHistorial(rango, entradas.length, fondo.historial.length);
   // Caja MADRE: a quién puede reponer desde «Registrar movimiento».
   const cajasFondeadas = cajasParaReponer(fondo);
+  // Gastos por pagar (19-oct-2026, API 0.0.95): la lista ADITIVA del API
+  // (no son del libro: no tocan saldos). Sin la llave ⇒ null ⇒ sin bloque.
+  const porPagar = porPagarDeFondo(fondo);
+  const versionesPorPagar = Object.fromEntries(
+    (porPagar?.items ?? []).map((it) => [it.id, gastosById.get(it.id)?.updated_at ?? null]),
+  );
   const historial: MovimientoFondoRow[] = entradas.map((e) => {
     const gasto = e.origen === "gasto" ? (gastosById.get(e.id) ?? null) : null;
     const movimiento =
@@ -326,6 +334,15 @@ export default async function CajaFondoPage({
           </CardContent>
         </Card>
       </div>
+
+      {porPagar && (
+        <PorPagarCaja
+          items={porPagar.items}
+          total={porPagar.total}
+          moneda={fondo.moneda}
+          versiones={versionesPorPagar}
+        />
+      )}
 
       <Card>
         <CardHeader className="gap-2">

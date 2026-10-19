@@ -5,8 +5,10 @@ import { AdminTopbar } from "./admin-topbar";
 import { NotificationsProvider } from "./notifications/notifications-provider";
 import { InicioOficialProvider } from "./inicio-oficial-provider";
 import { AfacRealProvider } from "./afac-real-provider";
+import { PorPagarProvider } from "./por-pagar-provider";
 import { inicioOficialDeMe } from "@/lib/admin/inicio-oficial";
 import { puedeEditarAfacReal } from "@/lib/admin/libro-afac";
+import { capacidadPorPagarDeMe } from "@/lib/admin/gasto-por-pagar";
 import type { MeResponse } from "@/types/me";
 
 interface AdminShellProps {
@@ -21,6 +23,9 @@ export function AdminShell({ me, children }: AdminShellProps) {
       {/* AFAC por vuelo (16-oct-2026, API 0.0.89): sin `config.afac_real` o
           sin rol de oficina ⇒ false ⇒ sin la casilla «Es pago de AFAC». */}
       <AfacRealProvider puedeMarcarPagoAfac={puedeEditarAfacReal(me)}>
+        {/* Gastos por pagar (19-oct-2026, API 0.0.95): sin
+            `config.gastos_por_pagar` ⇒ sin capacidad ⇒ todo como antes. */}
+        <PorPagarProvider capacidad={capacidadPorPagarDeMe(me)}>
         <NotificationsProvider currentUserId={me.id}>
           <div className="min-h-screen bg-background">
             {/* Sidebar desktop fija */}
@@ -37,6 +42,7 @@ export function AdminShell({ me, children }: AdminShellProps) {
             </div>
           </div>
         </NotificationsProvider>
+        </PorPagarProvider>
       </AfacRealProvider>
     </InicioOficialProvider>
   );

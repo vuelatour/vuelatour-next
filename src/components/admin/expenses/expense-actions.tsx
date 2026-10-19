@@ -5,6 +5,7 @@ import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import {
   ArrowsRightLeftIcon,
+  BanknotesIcon,
   CheckBadgeIcon,
   EllipsisHorizontalIcon,
   PencilIcon,
@@ -37,6 +38,8 @@ import { createCompraAction } from "@/app/admin/inventory/compras/actions";
 import { ExpenseVerifyDialog } from "./expense-verify-dialog";
 import { RepartoDialog } from "./reparto-dialog";
 import { CompraLinkDialog } from "./compra-link-dialog";
+import { MarcarPagadoDialog } from "./marcar-pagado-dialog";
+import { TEXTO_MARCAR_PAGADO, porPagarVigente } from "@/lib/admin/gasto-por-pagar";
 import { esCategoriaCompra } from "@/types/compras";
 // Fuente única sincronizada con el API: antes un Set local sin
 // GASOLINA/VISITA escondía el menú "Repartir" para esas categorías.
@@ -70,6 +73,10 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl, rol }: Exp
   const [openReparto, setOpenReparto] = useState(false);
   const [openCrearCompra, setOpenCrearCompra] = useState(false);
   const [openLigarCompra, setOpenLigarCompra] = useState(false);
+  // «Marcar pagado» (19-oct-2026, API 0.0.95): solo si el API dice que el
+  // gasto sigue por pagar (`estado_pago` ≠ PAGADO; sin la llave, nada).
+  const [openPagado, setOpenPagado] = useState(false);
+  const porPagar = porPagarVigente(gasto);
   const [pending, startTransition] = useTransition();
 
   const repartible =
@@ -136,6 +143,12 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl, rol }: Exp
           <EllipsisHorizontalIcon className="h-4 w-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {porPagar && (
+            <DropdownMenuItem onClick={() => setOpenPagado(true)} className="cursor-pointer gap-2">
+              <BanknotesIcon className="h-4 w-4" />
+              {TEXTO_MARCAR_PAGADO}
+            </DropdownMenuItem>
+          )}
           {gasto.requiere_visto_bueno === true && puedeVistoBueno && (
             <DropdownMenuItem onClick={darVistoBueno} className="cursor-pointer gap-2">
               <CheckBadgeIcon className="h-4 w-4" />
@@ -190,6 +203,8 @@ export function ExpenseActions({ gasto, aircraft, providers, fotoUrl, rol }: Exp
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {openPagado && <MarcarPagadoDialog gasto={gasto} onCerrar={() => setOpenPagado(false)} />}
 
       <ExpenseVerifyDialog
         open={openEdit}

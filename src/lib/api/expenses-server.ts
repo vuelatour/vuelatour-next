@@ -63,6 +63,9 @@ export interface ListGastosQuery {
   orden?: "fecha" | "captura";
   desde?: string;
   hasta?: string;
+  /** «Por pagar» (19-oct-2026, API 0.0.95): true = estado ≠ PAGADO. Solo
+   *  con la capacidad (`config.gastos_por_pagar`): un API previo daría 400. */
+  por_pagar?: boolean;
   limit?: number;
   offset?: number;
 }
