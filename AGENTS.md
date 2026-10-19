@@ -11960,7 +11960,19 @@ chica); el panel solo pinta y decide la UI.
     se ignoran;
   - la franja de Gastos con ese foco agrega `NOTA_VISTA_POR_PAGAR_GASTOS`
     («La nómina por pagar no sale en Gastos: se marca pagada en Nómina.»):
-    el detalle del API cuenta también la nómina.
+    el detalle del API cuenta también la nómina;
+  - **lectura caída** (P3 del API): el renglón llega con `count: 0` +
+    `lectura_fallida: true` y BLOQUEA (`listo: false`). La card del
+    pre-cierre ya lo pintaba «· sin verificar»; el diálogo «Cerrar <mes>»
+    también lo hace desde esta revisión: `ListaBloqueantesPrevia`
+    (`cierre-mes-acciones.tsx`) usa `textoConteoPreCierre(b)` —jamás
+    `· {b.count}`: «Gastos por pagar sin confirmar · 0» bloqueaba sin
+    explicar por qué— con el title `TITULO_BLOQUEANTE_SIN_VERIFICAR`
+    (`lib/admin/cierre-mes.ts`) y `data-sin-verificar`. Vale también para
+    `nomina_sin_repartir`. `BloqueantePrevia` (`types/cierres.ts`) gana
+    `lectura_fallida?` e `ids_nomina?` (ADITIVOS; `normalizarPrevia` los
+    deja pasar). Prueba: describe «bloqueantes de la previa del cierre» de
+    `reportes/__tests__/cierre-mes-ui.test.tsx`.
 - **Caja chica** (detalle del fondo): `PorPagarCaja`, «Por pagar (aún no sale
   de la caja)» con la lista aditiva `por_pagar[]` y `por_pagar_total` del API
   (chip, concepto, monto, «Marcar pagado» solo con `puedeMarcarPagadoGasto`);
