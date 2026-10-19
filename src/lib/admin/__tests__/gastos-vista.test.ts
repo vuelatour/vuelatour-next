@@ -721,3 +721,44 @@ describe("modo «Unir en compra»", () => {
 // El tipo de los filtros es parte del contrato de la barra.
 const _f: FiltrosGastos = { vista: "todos", captura: "todas" };
 void _f;
+
+// =============================================================================
+// Fecha del vuelo bajo «Vuelo #375» (19-oct-2026, API 0.0.96)
+// =============================================================================
+
+describe("fecha del vuelo del gasto (API 0.0.96)", async () => {
+  const { textoFechaVueloGasto, tituloFechaVueloGasto, PREFIJO_FECHA_VUELO_LECTOR } = await import(
+    "@/lib/admin/gastos-vista"
+  );
+
+  it("el día Cancún de la salida, con el formato de la columna Fecha", () => {
+    expect(
+      textoFechaVueloGasto({ vuelo_id: "v-375", vuelo: { folio: "375", fecha_vuelo: "2026-10-14T15:00:00+00:00" } }),
+    ).toBe("14 oct 2026");
+    // 21:30 del 14-oct en Cancún = 02:30 UTC del 15-oct: manda el día Cancún.
+    expect(
+      textoFechaVueloGasto({ vuelo_id: "v-375", vuelo: { folio: "375", fecha_vuelo: "2026-10-15T02:30:00Z" } }),
+    ).toBe("14 oct 2026");
+  });
+
+  it("sin vuelo, sin la llave (API previo), con null o ilegible ⇒ null (no se pinta nada)", () => {
+    expect(textoFechaVueloGasto({ vuelo_id: null, vuelo: null })).toBeNull();
+    expect(textoFechaVueloGasto({ vuelo_id: "v-1", vuelo: { folio: "441" } })).toBeNull();
+    expect(textoFechaVueloGasto({ vuelo_id: "v-1", vuelo: { folio: "441", fecha_vuelo: null } })).toBeNull();
+    expect(textoFechaVueloGasto({ vuelo_id: "v-1", vuelo: { folio: "441", fecha_vuelo: "no-es-fecha" } })).toBeNull();
+    // Un embed que sobrevivió a quitar el vuelo no se pinta.
+    expect(
+      textoFechaVueloGasto({ vuelo_id: null, vuelo: { folio: "375", fecha_vuelo: "2026-10-14T15:00:00Z" } }),
+    ).toBeNull();
+  });
+
+  it("textos exactos", () => {
+    expect(PREFIJO_FECHA_VUELO_LECTOR).toBe("Fecha del vuelo: ");
+    expect(tituloFechaVueloGasto("375")).toBe(
+      "Fecha del vuelo #375 (salida, hora Cancún). La fecha del gasto es la del pago.",
+    );
+    expect(tituloFechaVueloGasto(null)).toBe(
+      "Fecha del vuelo (salida, hora Cancún). La fecha del gasto es la del pago.",
+    );
+  });
+});

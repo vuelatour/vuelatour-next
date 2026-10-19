@@ -149,7 +149,10 @@ export interface Gasto {
   proveedor?: { nombre: string } | null;
   aeronave?: { matricula: string } | null;
   captura?: { nombre: string } | null;
-  vuelo?: { folio: string | null } | null;
+  /** `fecha_vuelo` (ADITIVO, API 0.0.96): `timestamptz` de la salida; la
+   *  tabla de Gastos pinta su día Cancún bajo «Vuelo #375». Con un API previo
+   *  no viaja y no se pinta nada. */
+  vuelo?: { folio: string | null; fecha_vuelo?: string | null } | null;
   /** Reparto entre aviones (tabla hija): la fila del gasto NUNCA se parte —
    *  conciliación y anti-duplicados siguen viendo un solo gasto. El monto de
    *  cada parte va en la MONEDA del gasto (numeric → puede llegar string).

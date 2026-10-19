@@ -61,6 +61,7 @@ import {
   ENCABEZADOS_GASTOS,
   ETIQUETA_SIN_VISTA_PREVIA,
   PLACEHOLDER_BUSCAR_GASTOS,
+  PREFIJO_FECHA_VUELO_LECTOR,
   TEXTO_DUPLICADO,
   TEXTO_FALTA_VISTO_BUENO,
   TITULO_COLUMNA_UNIR,
@@ -77,10 +78,12 @@ import {
   lineaComprobanteGasto,
   lineaEstadoMovilGasto,
   textoBusquedaGasto,
+  textoFechaVueloGasto,
   textoPagosCompra,
   textoPropinaGasto,
   tituloAbrirCompra,
   tituloConfirmadoGasto,
+  tituloFechaVueloGasto,
 } from "@/lib/admin/gastos-vista";
 import type { Gasto } from "@/types/expenses";
 import { esCategoriaCompra, type CompraEstado } from "@/types/compras";
@@ -539,6 +542,9 @@ export function ExpensesTable({
               </Badge>
             );
           }
+          // Fecha del vuelo bajo «Vuelo #375» (19-oct-2026, API 0.0.96): el
+          // día Cancún de su salida; sin la llave (API previo), nada.
+          const fechaVuelo = textoFechaVueloGasto(g);
           return (
             <div className="max-w-[6.5rem]">
               {principal}
@@ -549,6 +555,16 @@ export function ExpensesTable({
                 >
                   {textoVueloGasto(g.vuelo?.folio)}
                 </Link>
+              )}
+              {fechaVuelo && (
+                <span
+                  className="block whitespace-nowrap text-[11px] text-muted-foreground"
+                  title={tituloFechaVueloGasto(g.vuelo?.folio)}
+                  data-fecha-vuelo=""
+                >
+                  <span className="sr-only">{PREFIJO_FECHA_VUELO_LECTOR}</span>
+                  {fechaVuelo}
+                </span>
               )}
             </div>
           );

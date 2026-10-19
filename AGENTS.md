@@ -9538,6 +9538,32 @@ DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
   `categorias-gasto.ts` o `lib/format.ts`, se cambian los dos repos en el
   MISMO lote.
 
+### Fecha del vuelo bajo «Vuelo #375» (19-oct-2026, API 0.0.96)
+
+Pedido del cliente (captura de la fila «Operaciones · XA-VGV · Vuelo #375»
+con «Fecha Vuelo» marcado debajo): ver la fecha del vuelo al que está ligado
+el gasto.
+
+- El API manda `vuelo.fecha_vuelo` (ADITIVO dentro del embed, invariante 94
+  del API: el `timestamptz` de la salida tal cual). `Gasto.vuelo` lo tipa
+  opcional.
+- `textoFechaVueloGasto(g)` (`lib/admin/gastos-vista.ts`, PURO) = el día
+  Cancún con `fmtDate`, el mismo formato de la columna Fecha («14 oct
+  2026»); `null` sin vuelo, sin la llave (API previo) o con fecha ilegible ⇒
+  no se pinta nada (jamás «—»). La celda «Avión · vuelo» la pinta JUSTO bajo
+  el enlace «Vuelo #375», gris de 11 px, con `data-fecha-vuelo`, el title
+  `tituloFechaVueloGasto` («Fecha del vuelo #375 (salida, hora Cancún). La
+  fecha del gasto es la del pago.») y el prefijo `sr-only` «Fecha del vuelo:
+  ». No entra a la búsqueda rápida (la fecha del gasto tampoco).
+- **Va en `gastos-vista.ts` y NO en `gasto-avion.ts` a propósito**: la
+  paridad del API ejecuta `gasto-avion.ts` con solo sus imports de hoy;
+  sumarle `lib/datetime` la rompería.
+- Pruebas: describe «fecha del vuelo del gasto» de
+  `lib/admin/__tests__/gastos-vista.test.ts` (día Cancún al cruzar la
+  medianoche UTC, sin llave, ilegible, textos) y «fecha del vuelo bajo
+  «Vuelo #375»» de `expenses/__tests__/gastos-una-tabla.test.tsx` (marcado
+  con la fecha distinta a la del pago, y la celda de siempre sin la llave).
+
 ## Títulos de las pestañas del navegador (14-oct-2026)
 
 Pedido del cliente: «estaría genial que en cada pestaña del navegador se

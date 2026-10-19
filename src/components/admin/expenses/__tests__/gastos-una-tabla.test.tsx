@@ -458,3 +458,39 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(leer("../../flights/flight-gastos-card.tsx")).not.toContain("Operativos y generales");
   });
 });
+
+describe("fecha del vuelo bajo «Vuelo #375» (19-oct-2026, API 0.0.96)", () => {
+  const conFecha = gasto({
+    id: "g-375",
+    categoria: "OPERACIONES",
+    monto: "200.89",
+    // El caso de la captura: pagado y capturado el 15-oct (13:48 en Cancún),
+    // el vuelo salió el 14-oct.
+    fecha_gasto: "2026-10-15",
+    created_at: "2026-10-15T18:48:00Z",
+    capturado_en: "2026-10-15T18:48:00Z",
+    aeronave_id: "av-2",
+    aeronave: { matricula: "XA-VGV" },
+    vuelo_id: "v-375",
+    // 21:30 del 14-oct en Cancún = 02:30 UTC del 15-oct.
+    vuelo: { folio: "375", fecha_vuelo: "2026-10-15T02:30:00+00:00" },
+  });
+  const sinLlave = GASTOS.find((g) => g.id === "g-vuelo")!;
+  const html = pintar({ gastos: [conFecha, sinLlave] });
+
+  it("la fecha (día Cancún) va justo bajo el enlace del vuelo, con su title y el prefijo del lector", () => {
+    const f = fila(html, "g-375");
+    expect(f).toMatch(
+      />Vuelo #375<\/a><span(?=[^>]*data-fecha-vuelo="")[^>]*><span class="sr-only">Fecha del vuelo: <\/span>14 oct 2026<\/span>/,
+    );
+    expect(f).toContain('title="Fecha del vuelo #375 (salida, hora Cancún). La fecha del gasto es la del pago."');
+    // La fecha del gasto (la del pago) sigue en su columna, distinta.
+    expect(f).toContain('<span class="block">15 oct 2026</span>');
+    expect(f.match(/14 oct 2026/g)).toHaveLength(1);
+  });
+
+  it("sin la llave (API previo) la celda queda como antes: sin línea de fecha", () => {
+    expect(fila(html, "g-vuelo")).not.toContain("data-fecha-vuelo");
+    expect(fila(html, "g-vuelo")).toMatch(/>N4142R<\/a><a[^>]*>Vuelo #441<\/a><\/div>/);
+  });
+});

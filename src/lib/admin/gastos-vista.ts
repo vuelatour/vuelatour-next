@@ -687,6 +687,32 @@ export function lineaEstadoMovilGasto(g: Gasto): string {
 }
 
 // =============================================================================
+// Fecha del vuelo bajo «Vuelo #375» (19-oct-2026, API 0.0.96)
+// =============================================================================
+
+/**
+ * Día Cancún de la SALIDA del vuelo ligado al gasto, con el formato de la
+ * columna Fecha («14 oct 2026»). null sin vuelo, sin la llave (API previo) o
+ * con una fecha ilegible: entonces no se pinta nada (jamás «—»).
+ */
+export function textoFechaVueloGasto(g: Pick<Gasto, "vuelo_id" | "vuelo">): string | null {
+  if (!g.vuelo_id) return null;
+  const iso = g.vuelo?.fecha_vuelo;
+  if (!iso) return null;
+  const texto = fmtDate(iso);
+  return texto === "—" ? null : texto;
+}
+
+/** Prefijo para el lector de pantalla (visualmente la fecha va sola). */
+export const PREFIJO_FECHA_VUELO_LECTOR = "Fecha del vuelo: ";
+
+/** Title de la línea: deja claro que NO es la fecha del gasto (la del pago). */
+export function tituloFechaVueloGasto(folio: string | number | null | undefined): string {
+  const f = folio == null ? "" : String(folio).trim();
+  return `Fecha del vuelo${f ? ` #${f}` : ""} (salida, hora Cancún). La fecha del gasto es la del pago.`;
+}
+
+// =============================================================================
 // Compra (renglón-grupo)
 // =============================================================================
 
