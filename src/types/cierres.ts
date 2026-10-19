@@ -99,6 +99,14 @@ export interface BloqueantePrevia {
   titulo: string;
   count: number;
   ids?: string[];
+  /**
+   * ADITIVO (API 0.0.95): `true` = el API no pudo leer ese renglón y manda
+   * `count: 0`. Ese 0 NO es «no hay»: el renglón bloquea el cierre y se
+   * pinta «sin verificar» (`textoConteoPreCierre`), jamás «· 0».
+   */
+  lectura_fallida?: boolean | null;
+  /** ADITIVO (API 0.0.95, `gastos_por_pagar`): el subconjunto de `ids` que es NÓMINA. */
+  ids_nomina?: string[];
 }
 
 export interface RepartoAvionPrevia {

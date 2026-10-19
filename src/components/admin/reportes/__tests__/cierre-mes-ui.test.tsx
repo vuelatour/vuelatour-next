@@ -19,7 +19,8 @@ vi.mock("@/app/admin/reportes/actions", () => ({
   reabrirMesAction: async () => ({ ok: false }),
 }));
 
-const { CierreMesAcciones } = await import("../cierre-mes-acciones");
+const { CierreMesAcciones, ListaBloqueantesPrevia } = await import("../cierre-mes-acciones");
+const { TITULO_BLOQUEANTE_SIN_VERIFICAR } = await import("@/lib/admin/cierre-mes");
 const { CierreRepartoAviso, CierreRepartoAvion } = await import(
   "@/components/admin/profit-sharing/cierre-reparto-aviso"
 );
@@ -91,6 +92,46 @@ describe("cableado del diálogo de cierre (las reglas viven en lib/admin/cierre-
   });
   it("Reportes da 300 s a sus server actions (el cierre corre pre-cierre + 2 repartos)", () => {
     expect(leer("src/app/admin/reportes/page.tsx")).toMatch(/^export const maxDuration = 300;$/m);
+  });
+  it("los bloqueantes de la previa los pinta ListaBloqueantesPrevia (con la regla del pre-cierre)", () => {
+    expect(src).toContain("<ListaBloqueantesPrevia bloqueantes={previa.bloqueantes} />");
+    expect(src).toContain("· {textoConteoPreCierre(b)}");
+    expect(src).not.toContain("· {b.count}");
+  });
+});
+
+describe("bloqueantes de la previa del cierre (API 0.0.95: lectura_fallida)", () => {
+  it("un renglón que el API no pudo leer dice «sin verificar», nunca «· 0»", () => {
+    const html = renderToStaticMarkup(
+      <ListaBloqueantesPrevia
+        bloqueantes={[
+          { clave: "nomina_sin_repartir", titulo: "Nómina sin repartir entre aviones", count: 3 },
+          {
+            clave: "gastos_por_pagar",
+            titulo: "Gastos por pagar sin confirmar",
+            count: 0,
+            lectura_fallida: true,
+            ids_nomina: [],
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain("Nómina sin repartir entre aviones");
+    expect(html).toContain("· 3");
+    expect(html).toContain("Gastos por pagar sin confirmar");
+    expect(html).toContain("· sin verificar");
+    expect(html).not.toContain("· 0<");
+    // El tooltip explica por qué bloquea; solo el renglón sin verificar lo lleva.
+    expect(html.split("data-sin-verificar").length - 1).toBe(1);
+    expect(html).toContain(`title="${TITULO_BLOQUEANTE_SIN_VERIFICAR}"`);
+  });
+  it("API previo (sin la llave): el conteo de siempre", () => {
+    const html = renderToStaticMarkup(
+      <ListaBloqueantesPrevia bloqueantes={[{ clave: "gastos_sin_tc", titulo: "Gastos sin T.C.", count: 2 }]} />,
+    );
+    expect(html).toContain("· 2");
+    expect(html).not.toContain("sin verificar");
+    expect(html).not.toContain("data-sin-verificar");
   });
 });
 

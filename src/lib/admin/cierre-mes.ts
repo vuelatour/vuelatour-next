@@ -637,6 +637,14 @@ export const CODIGO_PREVIA_CAMBIO = "PREVIA_CAMBIO";
 export const TEXTO_PREVIA_CAMBIO =
   "La lista de vuelos cambió mientras revisabas: aquí está la nueva. Revísala y vuelve a confirmar.";
 
+/**
+ * `title` de un bloqueante de la previa que el API no pudo leer
+ * (`lectura_fallida`, API 0.0.95): su conteo se pinta «sin verificar» con
+ * `textoConteoPreCierre` y el mes no se cierra mientras siga así.
+ */
+export const TITULO_BLOQUEANTE_SIN_VERIFICAR =
+  "El servidor no pudo leer este renglón: el mes no se puede cerrar hasta verificarlo. Cierra este cuadro y vuelve a abrirlo, o revísalo en el pre-cierre.";
+
 export function previaDeDetails(details: unknown): PreviaCierre | null {
   if (!details || typeof details !== "object") return null;
   const d = details as { previa?: unknown };

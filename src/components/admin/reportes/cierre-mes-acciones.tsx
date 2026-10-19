@@ -40,6 +40,7 @@ import { Label } from "@/components/ui/label";
 import { fmtMonto } from "@/lib/format";
 import { fmtDate } from "@/lib/datetime";
 import { ANCLA_PRE_CIERRE } from "@/lib/admin/pre-cierre-resolver";
+import { textoConteoPreCierre } from "@/lib/admin/pre-cierre-items";
 import {
   ETIQUETA_BOTON_REABRIR,
   ETIQUETA_CARGANDO_PREVIA,
@@ -47,6 +48,7 @@ import {
   ETIQUETA_CONFIRMAR_REABRIR,
   MOTIVO_REABRIR_MAX,
   TEXTO_PREVIA_CAMBIO,
+  TITULO_BLOQUEANTE_SIN_VERIFICAR,
   decidirRespuestaCerrar,
   deltasReparto,
   etiquetaBotonCerrar,
@@ -74,7 +76,13 @@ import {
   reabrirMesAction,
   type ActionResult,
 } from "@/app/admin/reportes/actions";
-import type { PreviaCierre, ResultadoCerrarMes, ResultadoReabrirMes, VueloDiferido } from "@/types/cierres";
+import type {
+  BloqueantePrevia,
+  PreviaCierre,
+  ResultadoCerrarMes,
+  ResultadoReabrirMes,
+  VueloDiferido,
+} from "@/types/cierres";
 
 const PREVIA_SIN_RESPUESTA =
   "No se pudo revisar el mes: el servidor no respondió. Cierra este cuadro y vuelve a abrirlo para reintentar.";
@@ -273,15 +281,7 @@ function DialogoCerrar({
             {previa.bloqueantes.length > 0 && (
               <div className="rounded-lg border border-amber-400/50 p-3" data-bloqueantes>
                 <p className="font-medium">Pendientes que impiden cerrar</p>
-                <ul className="mt-1 space-y-0.5 text-xs">
-                  {previa.bloqueantes.map((b) => (
-                    <li key={b.clave} className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span>
-                        {b.titulo} <span className="font-semibold text-amber-600">· {b.count}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <ListaBloqueantesPrevia bloqueantes={previa.bloqueantes} />
                 <a
                   href={`#${ANCLA_PRE_CIERRE}`}
                   onClick={() => cambiarAbierto(false)}
@@ -348,6 +348,36 @@ function DialogoCerrar({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/**
+ * Los bloqueantes de la previa del cierre. Un renglón que el API no pudo leer
+ * (`lectura_fallida`, API 0.0.95) llega con `count: 0` y se pinta «sin
+ * verificar» con la MISMA regla del pre-cierre (`textoConteoPreCierre`):
+ * «Gastos por pagar sin confirmar · 0» bloqueando el cierre no se entendía.
+ */
+export function ListaBloqueantesPrevia({ bloqueantes }: { bloqueantes: readonly BloqueantePrevia[] }) {
+  return (
+    <ul className="mt-1 space-y-0.5 text-xs">
+      {bloqueantes.map((b) => {
+        const sinVerificar = b.lectura_fallida === true;
+        return (
+          <li key={b.clave} className="flex flex-wrap items-baseline justify-between gap-2">
+            <span>
+              {b.titulo}{" "}
+              <span
+                className="font-semibold text-amber-600"
+                title={sinVerificar ? TITULO_BLOQUEANTE_SIN_VERIFICAR : undefined}
+                data-sin-verificar={sinVerificar ? "" : undefined}
+              >
+                · {textoConteoPreCierre(b)}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
