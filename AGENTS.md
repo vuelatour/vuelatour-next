@@ -6007,8 +6007,9 @@ ninguna alerta. Solo panel (sin API ni migración).
   FACTURACION le salía el toast en inglés «Required role: … Current:
   FACTURACION». Prop OPCIONAL `rol` en `ExpenseActions`; **sin rol no se
   esconde nada** (el API sigue siendo el candado). Gastos y Combustibles la
-  pasan desde `getMe().catch(() => null)`; el detalle del vuelo y caja chica
-  todavía no (ahí queda la red de abajo). Y `fail()` de
+  pasan desde `getMe().catch(() => null)` (y, desde el 19-oct-2026, el
+  detalle del vuelo); el historial de caja chica todavía no (ahí queda la
+  red de abajo). Y `fail()` de
   `app/admin/expenses/actions.ts` traduce el 403 del RolesGuard con
   `mensajeErrorAccionGasto` («Tu rol no tiene permiso para esta acción. Pide a
   un administrador que la haga.»); los demás mensajes del API pasan tal cual.
@@ -6078,8 +6079,9 @@ ninguna alerta. Solo panel (sin API ni migración).
 ### Pendientes conocidos
 
 - Sin QA visual en navegador (menú y banda solo probados como HTML).
-- El menú del detalle del vuelo y de caja chica aún no recibe `rol` (muestran
-  todo; un 403 ya sale en español).
+- El menú del historial de caja chica aún no recibe `rol` (muestra todo; un
+  403 ya sale en español). El del detalle del vuelo sí, desde el 19-oct-2026
+  (lote «por pagar», P19).
 - Al guardar desde «Verificar / editar» la carga queda sellada como verificada
   por oficina, igual que en Gastos.
 
@@ -11854,11 +11856,35 @@ chica); el panel solo pinta y decide la UI.
   el chip, el diálogo, los errores, el filtro, el pre-cierre y la caja
   chica. `fecha-gasto.ts` ganó un `hoy` opcional (pruebas).
 - **Captura**: alta y «Verificar / editar» (cubren refacción, combustible y
-  caja chica) usan `evaluarFechaGasto(...).pideConfirmacion` en lugar de
-  `fechaGastoSospechosa` y pintan `NotaFechaPorPagar` en el campo de la
-  fecha (en «Verificar / editar» de un gasto que sigue por pagar con fecha ≤
-  hoy, dice que cambiar la fecha NO lo marca pagado). El payload no cambia:
-  el API pone `por_pagar` solo.
+  caja chica) usan `evaluarFechaGasto(values.fecha_gasto,
+  capacidadFecha).pideConfirmacion` en lugar de `fechaGastoSospechosa` y
+  pintan `NotaFechaPorPagar` en el campo de la fecha (en «Verificar /
+  editar» de un gasto que sigue por pagar con fecha ≤ hoy, dice que cambiar
+  la fecha NO lo marca pagado). El payload no cambia: el API pone
+  `por_pagar` solo.
+- **Un gasto que YA está pagado nunca queda «por pagar»** (revisión del
+  lote, P17/P18): `capacidadFechaCaptura(capacidad, { conCargos,
+  conciliado })` = SIN la capacidad con cargos del banco («Créalo por la
+  suma») o en «Verificar / editar» de un CONCILIADO ⇒ la confirmación de
+  «fecha futura» de siempre y jamás la nota «Quedará POR PAGAR» (que sería
+  falsa). `NotaFechaPorPagar` gana las props `conCargos` / `conciliado`
+  (cambio de PROPS, no de árbol: los goldens del alta siguen byte a byte).
+  Con cargos y la capacidad, una fecha futura es ERROR bajo la fecha
+  (`MSG_FECHA_FUTURA_CON_CARGOS`, `role="alert"`) y `onSubmit` la frena
+  ANTES de la confirmación y de subir nada (el API respondería 400
+  `POR_PAGAR_FECHA_FUTURA`, cuyo texto dice lo contrario de la nota). Un
+  conciliado con fecha futura lo rechaza el API (409 `GASTO_CONCILIADO`,
+  acuerdo 6) con su texto, que el diálogo pinta tal cual.
+- **Refacción «A Inventario/Tienda» con fecha futura** (acuerdo 4, P12): con
+  la capacidad y fecha > hoy Cancún NO se guarda (`errorInventarioFechaFutura`
+  en `onSubmit`, antes de la confirmación) y el bloque del destino dice el
+  texto EXACTO del API `INVENTARIO_FECHA_FUTURA`
+  (`MSG_INVENTARIO_FECHA_FUTURA`, `lib/admin/refaccion-inventario.ts`) con
+  `AvisoInventarioFechaFutura` (`nota-por-pagar.tsx`), montado como ÚLTIMO
+  hijo del fragmento INVENTARIO (5 → 6 hijos no cambia el ancho de la
+  bifurcación de `useId`: un hijo en medio correría los ids de los `Field`
+  y rompería el golden). Sin la capacidad, como antes; si el API lo rechaza
+  igual, su `message` sale tal cual (`mensajeErrorInventario`).
 - **Gastos**: chip «Por pagar · 20 oct» (ámbar) / «Vencido · 20 oct» (rojo)
   bajo la fecha (también en «Gastos del vuelo»), como botón que abre
   «Marcar pagado»; el menú ⋯ lo trae PRIMERO (solo con `estado_pago` ≠
@@ -11870,21 +11896,69 @@ chica); el panel solo pinta y decide la UI.
   editar» solo en el éxito, nunca lanza). Errores del API tal cual;
   `MES_CERRADO` con «Ir a Reportes»; `CONFLICTO_VERSION`, 404 o sin
   respuesta ⇒ el texto, cerrar y `router.refresh()`.
+- **Por rol** (revisión del lote, P19): `puedeMarcarPagadoGasto(rol)`
+  (`lib/admin/gasto-acciones.ts`, `ROLES_MARCAN_PAGADO_GASTO` = espejo del
+  `@Roles` de `PATCH /v1/expenses/:id`: ADMIN, COORDINADOR, FACTURACION,
+  PILOTO, MECANICO, VISITANTE; prueba de paridad contra el controlador del
+  API si el repo hermano está al lado; sin rol conocido se ofrece). SOCIO
+  (caja chica, detalle del vuelo) y ANALISTA (detalle del vuelo, «Resolver
+  →» del pre-cierre) ven el chip de SOLO LECTURA (`BotonChipPorPagar
+  puedeMarcar={false}` ⇒ `ChipEstadoPagoGasto`), sin «Marcar pagado» en el
+  menú ⋯ ni en `PorPagarCaja` (prop `rol`). El detalle del vuelo ya pasa
+  `rol={me?.rol ?? null}` a `FlightGastosCard` → `FlightGastosTable` →
+  `ExpenseActions` (también esconde «Eliminar»/«Dar visto bueno» a quien el
+  API se los rechaza). El historial de caja chica sigue sin `rol`: sus filas
+  son del libro (pagados), ahí «Marcar pagado» nunca sale.
 - **Filtro «Pago: Todos | Por pagar»** (`?por_pagar=1`, también `true`)
   SOLO con la capacidad (`leerFiltrosGastos(get, inicio, disponible)`); viaja
   al API y al Excel, lo conservan las pestañas (`FILTROS_URL`), cuenta para
-  «Limpiar» y tiene su vacío. La URL con `por_pagar` sin capacidad se ignora
-  y la página lo dice (`data-franja="por-pagar-ignorado"`).
-- **Pre-cierre**: renglón BLOQUEANTE `gastos_por_pagar` (lo decide el API) con
-  «Resolver →» `hrefPrecierreGastosPorPagar` = Gastos «Por pagar» del periodo
-  + el foco ámbar de sus `ids`.
+  «Limpiar» y tiene su vacío: «Ningún gasto con estos filtros espera su
+  pago. La nómina por pagar se marca en Nómina.» (acuerdo 1: Gastos excluye
+  SIEMPRE la nómina, así que no puede afirmar «todos están marcados
+  pagados»). La URL con `por_pagar` sin capacidad se ignora y la página lo
+  dice (`data-franja="por-pagar-ignorado"`).
+- **Pre-cierre**: renglón BLOQUEANTE `gastos_por_pagar` (lo decide el API,
+  por el MES CONTABLE del gasto: eje vuelo ⇒ el mes del vuelo). «Resolver →»
+  lo decide `resolverPrecierreGastosPorPagar(item, periodo, base)`
+  (`lib/admin/pre-cierre-por-pagar.ts`, PURO; acuerdo 1 entre repos):
+  - la base `hrefPrecierreGastosPorPagar()` = `/admin/expenses?por_pagar=1`
+    **SIN `desde`/`hasta`** (P1: la fecha del pago de un por pagar del
+    periodo puede caer en otro mes y el rango lo escondía); los `ids` del
+    foco dicen cuáles son y el periodo viaja en `pcp`;
+  - llave ADITIVA `ids_nomina` (el subconjunto de `ids` que es NOMINA):
+    ausente o vacía (API previo) ⇒ Gastos con el foco de todos los ids;
+    TODOS de nómina ⇒ `/admin/nomina?mes=<mes del periodo>` con el foco
+    (la página Nómina ya resalta `foco.ids`); MEZCLA ⇒ Gastos con el foco de
+    los que sí salen ahí (`pcn` = cuántos) + bajo el detalle del renglón el
+    aviso ámbar `data-precierre-por-pagar-nomina` «1 es de Nómina:
+    resuélvelo en Nómina» / «2 son de Nómina: resuélvelos en Nómina» con «Ir
+    a Nómina →» (foco de los de nómina). Con `ids_truncado`, «Al menos N…» y
+    Gastos conserva el `count` del API. Ids de nómina que no vienen en `ids`
+    se ignoran;
+  - la franja de Gastos con ese foco agrega `NOTA_VISTA_POR_PAGAR_GASTOS`
+    («La nómina por pagar no sale en Gastos: se marca pagada en Nómina.»):
+    el detalle del API cuenta también la nómina.
 - **Caja chica** (detalle del fondo): `PorPagarCaja`, «Por pagar (aún no sale
   de la caja)» con la lista aditiva `por_pagar[]` y `por_pagar_total` del API
-  (chip, concepto, monto, «Marcar pagado»); sin la llave no se pinta; no toca
-  saldos.
+  (chip, concepto, monto, «Marcar pagado» solo con `puedeMarcarPagadoGasto`);
+  sin la llave no se pinta; no toca saldos.
+- **Historial de gastos del vuelo** (P20): la bitácora audita `por_pagar`;
+  la card pinta «Pago: ~~Por pagar~~ → Pagado» (`ETIQUETA_HISTORIAL_POR_PAGAR`,
+  `valorHistorialPorPagar`), jamás «true → false».
 - **Pruebas**: `lib/admin/__tests__/gasto-por-pagar.test.ts`,
+  `pre-cierre-por-pagar.test.ts`, `refaccion-inventario.test.ts` (P12),
+  `gasto-acciones.test.ts` (P19 + paridad),
   `app/admin/expenses/__tests__/marcar-pagado-action.test.ts`,
-  `components/admin/expenses/__tests__/por-pagar-ui.test.tsx`,
-  `por-pagar-pantallas.test.tsx` y `alta-por-pagar.test.tsx`.
+  `components/admin/expenses/__tests__/por-pagar-ui.test.tsx` (render de las
+  notas P12/P17/P18, roles P19, historial P20 y el cableado),
+  `por-pagar-pantallas.test.tsx` (pre-cierre P1/P2 renderizado, caja chica
+  por rol) y `alta-por-pagar.test.tsx`.
+- **Pendientes conocidos**: «Resolver →» / «Ir a Nómina →» llevan a Nómina,
+  que solo ven ADMIN, COORDINADOR y FACTURACION (`puedeVerNomina`): un
+  ANALISTA que siga el enlace ve «no encontrado», igual que con el «Resolver
+  →» de `nomina_sin_repartir` (16-oct-2026; hoy no hay usuarios ANALISTA
+  activos). El campo de fecha de «Créalo por la suma» no lleva `max`: la
+  validación nativa del navegador taparía el texto es-MX del freno. Sin QA
+  visual en navegador (diálogos en portal).
 - **Orden de deploy**: migración → API 0.0.95 → panel (en cualquier orden es
   seguro: sin capacidad, nada cambia).
