@@ -11875,8 +11875,17 @@ chica); el panel solo pinta y decide la UI.
   `POR_PAGAR_FECHA_FUTURA`, cuyo texto dice lo contrario de la nota). Un
   conciliado con fecha futura lo rechaza el API (409 `GASTO_CONCILIADO`,
   acuerdo 6) con su texto, que el diálogo pinta tal cual.
+- **El freno de «Guardar» del alta es UNA regla PURA**
+  (`errorFechaAlGuardarAlta({ conCargos, categoria, destino, fecha,
+  capacidad })`, `lib/admin/refaccion-inventario.ts`; segunda revisión del
+  lote): `onSubmit` la llama TAL CUAL antes de la confirmación de fecha y de
+  subir nada. Con cargos y fecha futura ⇒ `MSG_FECHA_FUTURA_CON_CARGOS`;
+  SOLO la categoría REFACCION frena por el destino (en el alta general el
+  destino arranca en «A Inventario/Tienda» para CUALQUIER categoría, y una
+  comida o un taxi por pagar es el caso de uso del lote); sin la capacidad,
+  nada. No volver a escribir la decisión en línea dentro de `onSubmit`.
 - **Refacción «A Inventario/Tienda» con fecha futura** (acuerdo 4, P12): con
-  la capacidad y fecha > hoy Cancún NO se guarda (`errorInventarioFechaFutura`
+  la capacidad y fecha > hoy Cancún NO se guarda (`errorFechaAlGuardarAlta`
   en `onSubmit`, antes de la confirmación) y el bloque del destino dice el
   texto EXACTO del API `INVENTARIO_FECHA_FUTURA`
   (`MSG_INVENTARIO_FECHA_FUTURA`, `lib/admin/refaccion-inventario.ts`) con
@@ -11885,6 +11894,20 @@ chica); el panel solo pinta y decide la UI.
   bifurcación de `useId`: un hijo en medio correría los ids de los `Field`
   y rompería el golden). Sin la capacidad, como antes; si el API lo rechaza
   igual, su `message` sale tal cual (`mensajeErrorInventario`).
+- **Refacción por pagar SIN avión: la salida real** (segunda revisión,
+  NUEVO-1): «A Inventario/Tienda» no se guarda con fecha futura y «Directo
+  al avión» exige el avión, así que cada aviso mandaba al otro y la compra
+  no se podía capturar. Sin tocar el texto del API: `AvisoInventarioFechaFutura`
+  pinta, en un `<p>` propio debajo, `NOTA_REFACCION_POR_PAGAR_SIN_AVION`
+  («Si todavía no sabes a qué avión va, regístrala el día que la pagues (la
+  fecha del gasto es la del pago).»; el cambio es DENTRO del componente, no
+  un hermano nuevo en el fragmento), y la nota y el toast de «Directo al
+  avión» sin avión salen de `notaDirectoAvionSinAvion({ fecha, capacidad })`:
+  con la fecha futura que Inventario no acepta, «Elige el avión… Si todavía
+  no sabes…» en lugar de «…o pásala a Inventario/Tienda»; si no, el texto
+  de siempre. La otra opción —dejar guardar «Directo al avión» sin avión con
+  fecha futura (el gasto quedaría «Falta avión» en la bandeja)— NO se
+  implementó: queda pendiente de decidir.
 - **Gastos**: chip «Por pagar · 20 oct» (ámbar) / «Vencido · 20 oct» (rojo)
   bajo la fecha (también en «Gastos del vuelo»), como botón que abre
   «Marcar pagado»; el menú ⋯ lo trae PRIMERO (solo con `estado_pago` ≠
@@ -11946,13 +11969,28 @@ chica); el panel solo pinta y decide la UI.
   la card pinta «Pago: ~~Por pagar~~ → Pagado» (`ETIQUETA_HISTORIAL_POR_PAGAR`,
   `valorHistorialPorPagar`), jamás «true → false».
 - **Pruebas**: `lib/admin/__tests__/gasto-por-pagar.test.ts`,
-  `pre-cierre-por-pagar.test.ts`, `refaccion-inventario.test.ts` (P12),
-  `gasto-acciones.test.ts` (P19 + paridad),
-  `app/admin/expenses/__tests__/marcar-pagado-action.test.ts`,
+  `pre-cierre-por-pagar.test.ts`, `refaccion-inventario.test.ts` (P12,
+  `errorFechaAlGuardarAlta` por comportamiento con TODAS las categorías de
+  captura, `notaDirectoAvionSinAvion`), `gasto-acciones.test.ts` (P19 +
+  paridad), `app/admin/expenses/__tests__/marcar-pagado-action.test.ts`,
   `components/admin/expenses/__tests__/por-pagar-ui.test.tsx` (render de las
   notas P12/P17/P18, roles P19, historial P20 y el cableado),
   `por-pagar-pantallas.test.tsx` (pre-cierre P1/P2 renderizado, caja chica
-  por rol) y `alta-por-pagar.test.tsx`.
+  por rol), `alta-por-pagar.test.tsx` y **`alta-fecha-futura.test.tsx`**: corre
+  el `onSubmit` REAL del alta sin DOM (un envoltorio de `react-hook-form`
+  toma el `onValid` que el alta le pasa a `handleSubmit` y deja inyectar los
+  valores del formulario; `useTransition` es un testigo —`guardarGasto`
+  arranca con `startTransition`—; el `toast` es un espía) y distingue FRENO /
+  CONFIRMA / GUARDA, además de pintar el alta con la fecha de mañana y correr
+  la transición para ver el toast. Una prueba de forma (regex sobre el
+  fuente) NO basta para una guarda de negocio: el verificador dejó vivo un
+  mutante que forzaba la guarda de la categoría.
+- **Cableado por regex: leer la ETIQUETA, no un tramo del archivo**
+  (segunda revisión, P19): `[\s\S]*?prop=…[\s\S]*?\/>` cruza el cierre del
+  componente y casa con el prop de OTRO (pasó con el `rol` de
+  `<FlightSeguimientoCard>`). `etiquetasJsx(src, "Nombre")` de
+  `por-pagar-ui.test.tsx` devuelve cada etiqueta de apertura (cuenta llaves,
+  comillas y comentarios) y la prueba exige el prop en CADA uso.
 - **Pendientes conocidos**: «Resolver →» / «Ir a Nómina →» llevan a Nómina,
   que solo ven ADMIN, COORDINADOR y FACTURACION (`puedeVerNomina`): un
   ANALISTA que siga el enlace ve «no encontrado», igual que con el «Resolver
