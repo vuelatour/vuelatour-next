@@ -27,6 +27,15 @@ import {
   fmtParticipacionPct,
   fuenteParticipacionLabel,
 } from "@/components/admin/flights/participacion-aviones-nota";
+import {
+  ENCABEZADO_GASTOS_PESOS,
+  SUB_COLUMNA_USD,
+  montoPrincipal,
+  sumaCentavos,
+  textoCategoriaSinTcPesos,
+  textoUsd,
+  type MontoDoble,
+} from "@/lib/admin/reparto-pesos";
 import type {
   AvionRepartoDetalle,
   DetalleGastoGrupo,
@@ -129,11 +138,44 @@ function fmtFechaVuelo(fecha: string | null): string {
   return fecha.length <= 10 ? fmtDateOnly(fecha) : fmtDate(fecha);
 }
 
+/** Celda de dinero del reparto en pesos: pesos arriba, dólares debajo en gris. */
+function CeldaPesos({ monto }: { monto: MontoDoble }) {
+  return (
+    <>
+      {monto.principal}
+      {monto.informativo && (
+        <span
+          className={`block text-[10px] font-normal ${
+            monto.sinPesos
+              ? "text-amber-700 dark:text-amber-400"
+              : "text-muted-foreground"
+          }`}
+        >
+          {monto.informativo}
+        </span>
+      )}
+    </>
+  );
+}
+
 /**
  * "Ver desglose" expandible de la card por avión: vuelos del periodo y gastos
  * por categoría. Solo se pinta cuando el API manda `detalle`.
+ *
+ * Reparto EN PESOS (18-oct-2026, API 0.0.93): con `enPesos` lo cobrado y lo
+ * pendiente de cada vuelo y el monto de cada categoría van en pesos (con el
+ * T.C. del vuelo y los dólares debajo); la venta del avión y los otros
+ * ingresos VuelaTour solo existen en dólares y se rotulan «USD». Sin la
+ * bandera, el marcado de siempre.
  */
-export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
+export function DesgloseSection({
+  detalle,
+  enPesos = false,
+}: {
+  detalle: AvionRepartoDetalle;
+  /** Bandera raíz `reparto_en_pesos` del API (`repartoEnPesos`). */
+  enPesos?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   // Fila activa + teclado (13-oct-2026): dos instancias = dos tablas
@@ -158,6 +200,14 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
     },
     { total: 0, cobrado: 0, pendiente: 0, otros: 0, otrosPendiente: 0 },
   );
+  // Pesos (API 0.0.93): el pie SUMA en centavos lo que ya trae cada vuelo;
+  // si a alguno le faltan los pesos, el pie cae a los dólares y lo dice.
+  const pieCobradoMxn = enPesos
+    ? sumaCentavos(detalle.vuelos.map((v) => v.cobrado_avion_mxn))
+    : null;
+  const piePendienteMxn = enPesos
+    ? sumaCentavos(detalle.vuelos.filter((v) => !v.cancelado).map((v) => v.pendiente_avion_mxn))
+    : null;
   // Columna "Otros VuelaTour" solo cuando el API ya manda la partición.
   const hayOtros = detalle.vuelos.some(
     (v) => v.otros_ingresos_vuelatour_usd != null,
@@ -217,7 +267,16 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                         <TableHead>Folio</TableHead>
                         <TableHead>Fecha</TableHead>
                         <TableHead>Ruta</TableHead>
-                        <TableHead className="text-right">Venta avión</TableHead>
+                        {enPesos ? (
+                          <TableHead className="text-right">
+                            Venta avión
+                            <span className="block text-[10px] font-normal text-muted-foreground">
+                              {SUB_COLUMNA_USD}
+                            </span>
+                          </TableHead>
+                        ) : (
+                          <TableHead className="text-right">Venta avión</TableHead>
+                        )}
                         <TableHead className="text-right">Cobrado avión</TableHead>
                         <TableHead className="text-right">Pendiente avión</TableHead>
                         {hayOtros && (
@@ -287,11 +346,21 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                                     className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
                                   />
                                 )}
-                                {fmtUsd(c.venta)}
+                                {enPesos ? textoUsd(c.venta) : fmtUsd(c.venta)}
                               </span>
                             </TableCell>
                             <TableCell className="text-right font-mono text-xs">
-                              {fmtUsd(c.cobrado)}
+                              {enPesos ? (
+                                <CeldaPesos
+                                  monto={montoPrincipal(
+                                    { mxn: v.cobrado_avion_mxn, usd: c.cobrado },
+                                    true,
+                                    { tc: v.tc_pesos },
+                                  )}
+                                />
+                              ) : (
+                                fmtUsd(c.cobrado)
+                              )}
                               {v.cobros_sin_tc_mxn > 0 && (
                                 <span className="block text-[10px] text-amber-600 dark:text-amber-400">
                                   +{fmtDecimal(v.cobros_sin_tc_mxn)} MXN sin TC
@@ -309,6 +378,13 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                             <TableCell className="text-right font-mono text-xs">
                               {v.cancelado ? (
                                 <span className="text-muted-foreground">—</span>
+                              ) : enPesos ? (
+                                <CeldaPesos
+                                  monto={montoPrincipal(
+                                    { mxn: v.pendiente_avion_mxn, usd: c.pendiente },
+                                    true,
+                                  )}
+                                />
                               ) : (
                                 fmtUsd(c.pendiente)
                               )}
@@ -316,12 +392,16 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                             {hayOtros && (
                               <TableCell className="text-right font-mono text-xs text-muted-foreground">
                                 {v.otros_ingresos_vuelatour_usd != null
-                                  ? fmtUsd(v.otros_ingresos_vuelatour_usd)
+                                  ? enPesos
+                                    ? textoUsd(v.otros_ingresos_vuelatour_usd)
+                                    : fmtUsd(v.otros_ingresos_vuelatour_usd)
                                   : "—"}
                                 {(v.otros_ingresos_vuelatour_pendiente_usd ?? 0) > 0 && (
                                   <span className="block text-[10px] text-muted-foreground">
                                     · por cobrar{" "}
-                                    {fmtUsd(v.otros_ingresos_vuelatour_pendiente_usd ?? 0)}
+                                    {enPesos
+                                      ? textoUsd(v.otros_ingresos_vuelatour_pendiente_usd ?? 0)
+                                      : fmtUsd(v.otros_ingresos_vuelatour_pendiente_usd ?? 0)}
                                   </span>
                                 )}
                               </TableCell>
@@ -351,20 +431,41 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                           Total · {detalle.vuelos.length} vuelo(s)
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs font-semibold">
-                          {fmtUsd(totalVuelos.total)}
+                          {enPesos ? textoUsd(totalVuelos.total) : fmtUsd(totalVuelos.total)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs font-semibold">
-                          {fmtUsd(totalVuelos.cobrado)}
+                          {enPesos ? (
+                            <CeldaPesos
+                              monto={montoPrincipal(
+                                { mxn: pieCobradoMxn, usd: totalVuelos.cobrado },
+                                true,
+                              )}
+                            />
+                          ) : (
+                            fmtUsd(totalVuelos.cobrado)
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs font-semibold">
-                          {fmtUsd(totalVuelos.pendiente)}
+                          {enPesos ? (
+                            <CeldaPesos
+                              monto={montoPrincipal(
+                                { mxn: piePendienteMxn, usd: totalVuelos.pendiente },
+                                true,
+                              )}
+                            />
+                          ) : (
+                            fmtUsd(totalVuelos.pendiente)
+                          )}
                         </TableCell>
                         {hayOtros && (
                           <TableCell className="text-right font-mono text-xs text-muted-foreground">
-                            {fmtUsd(totalVuelos.otros)}
+                            {enPesos ? textoUsd(totalVuelos.otros) : fmtUsd(totalVuelos.otros)}
                             {totalVuelos.otrosPendiente > 0 && (
                               <span className="block text-[10px] font-normal">
-                                · por cobrar {fmtUsd(totalVuelos.otrosPendiente)}
+                                · por cobrar{" "}
+                                {enPesos
+                                  ? textoUsd(totalVuelos.otrosPendiente)
+                                  : fmtUsd(totalVuelos.otrosPendiente)}
                               </span>
                             )}
                           </TableCell>
@@ -399,7 +500,9 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                         <TableHead>Categoría</TableHead>
                         <TableHead>Grupo</TableHead>
                         <TableHead className="text-right">#</TableHead>
-                        <TableHead className="text-right">USD</TableHead>
+                        <TableHead className="text-right">
+                          {enPesos ? ENCABEZADO_GASTOS_PESOS : "USD"}
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody {...filasGastos.propsCuerpo}>
@@ -413,8 +516,14 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                             {g.sin_tc_count > 0 && (
                               <span className="mt-0.5 flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
                                 <ExclamationTriangleIcon className="h-3 w-3 shrink-0" />
-                                {g.sin_tc_count} sin TC ·{" "}
-                                {fmtDecimal(g.sin_tc_mxn)} MXN excluidos
+                                {enPesos ? (
+                                  textoCategoriaSinTcPesos(g.sin_tc_count, g.sin_tc_mxn)
+                                ) : (
+                                  <>
+                                    {g.sin_tc_count} sin TC ·{" "}
+                                    {fmtDecimal(g.sin_tc_mxn)} MXN excluidos
+                                  </>
+                                )}
                               </span>
                             )}
                             {(g.tc_oficial_count ?? 0) > 0 && (
@@ -443,7 +552,11 @@ export function DesgloseSection({ detalle }: { detalle: AvionRepartoDetalle }) {
                             {g.count}
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">
-                            {fmtUsd(g.usd)}
+                            {enPesos ? (
+                              <CeldaPesos monto={montoPrincipal({ mxn: g.mxn, usd: g.usd }, true)} />
+                            ) : (
+                              fmtUsd(g.usd)
+                            )}
                           </TableCell>
                         </FilaNavegable>
                       ))}

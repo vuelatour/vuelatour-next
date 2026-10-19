@@ -5,6 +5,9 @@ export interface RepartoSocio {
   socio_nombre: string;
   porcentaje: number;
   monto_usd: number;
+  /** ADITIVO (reparto en pesos, 18-oct-2026, API 0.0.93): el mismo reparto
+      por porcentaje sobre `saldo_disponible_mxn` (residuo en centavos). */
+  monto_mxn?: number | null;
 }
 
 /** Un vuelo del periodo dentro del desglose por avión. */
@@ -75,6 +78,13 @@ export interface DetalleVuelo {
   cierre_marca?: string | null;
   diferido_de?: string | null;
   diferido_a?: string | null;
+  /** ADITIVOS (reparto en pesos, 18-oct-2026, API 0.0.93): la parte del
+      avión cobrada / pendiente EN PESOS (round2(USD × K)) y el K usado (T.C.
+      de la cotización o el oficial del día de la cotización). null = sin
+      ningún T.C. para pasarla a pesos. */
+  cobrado_avion_mxn?: number | null;
+  pendiente_avion_mxn?: number | null;
+  tc_pesos?: number | null;
 }
 
 /** Conteo/monto de lo convertido con el TC oficial de referencia del día
@@ -102,6 +112,9 @@ export interface DetalleGastoCategoria {
       con el mismo sufijo de la clave (" (repartido)"); `categoria` sigue
       siendo el código crudo (clave de agregación, nunca se compara con esto). */
   etiqueta?: string;
+  /** ADITIVO (reparto en pesos, 18-oct-2026, API 0.0.93): la categoría en
+      pesos (MXN tal cual; USD × su T.C. o el oficial de su día). */
+  mxn?: number;
 }
 
 /**
@@ -127,6 +140,9 @@ export interface DetalleOtroIngresoAvion {
   usd: number | null;
   tc: number | null;
   tc_oficial: boolean;
+  /** ADITIVO (reparto en pesos, 18-oct-2026, API 0.0.93): neto en pesos;
+      null = ingreso en USD sin T.C. para pasarlo a pesos. */
+  mxn?: number | null;
 }
 
 /**
@@ -136,7 +152,15 @@ export interface DetalleOtroIngresoAvion {
 export interface AvionRepartoDetalle {
   vuelos: DetalleVuelo[];
   gastos_por_categoria: DetalleGastoCategoria[];
-  reserva: { horas_hr: number; tarifa_hora_usd: number; monto_usd: number };
+  reserva: {
+    horas_hr: number;
+    tarifa_hora_usd: number;
+    monto_usd: number;
+    /** ADITIVOS (reparto en pesos, 18-oct-2026, API 0.0.93): la reserva en
+        pesos y el T.C. oficial del cierre del periodo con que se pasó. */
+    monto_mxn?: number;
+    tc?: number | null;
+  };
   /** ADITIVO (13-oct-2026, API 0.0.75): los ingresos asignados a este avión
       ([] sin ingresos; ausente con un API previo). */
   otros_ingresos_avion?: DetalleOtroIngresoAvion[];
@@ -188,6 +212,13 @@ export interface AvionReparto {
     otros_ingresos_avion_sin_tc_mxn?: number;
     /** Cuántos de esos ingresos se convirtieron con el T.C. oficial del día. */
     otros_ingresos_avion_tc_oficial_count?: number;
+    /** ADITIVOS (reparto en pesos, 18-oct-2026, API 0.0.93): las mismas
+        cifras EN PESOS (lo que se transfiere a los socios). El panel no las
+        calcula: las pinta. Con la bandera raíz `reparto_en_pesos`. */
+    cobrado_mxn?: number;
+    comisiones_venta_mxn?: number;
+    pendiente_cobro_mxn?: number;
+    otros_ingresos_avion_mxn?: number;
   };
   /** Horas de tacómetro voladas en el periodo (base de la reserva). */
   horas_voladas_hr: number;
@@ -201,10 +232,24 @@ export interface AvionReparto {
     /** ADITIVO (29-ago-2026): gastos MXN sin tc_gasto convertidos con el TC
         oficial del día del gasto; ya restan en las cifras de arriba. */
     gastos_tc_oficial?: TcOficialGastos;
+    /** ADITIVOS (reparto en pesos, 18-oct-2026, API 0.0.93): gastos MXN tal
+        cual (menos TUA/extensión embebidas); USD × su T.C. o el oficial. */
+    directos_mxn?: number;
+    indirectos_mxn?: number;
+    permisos_mxn?: number;
+    otros_prorrateados_mxn?: number;
   };
   reserva_overhaul_usd: number;
   reserva_overhaul_incompleta: boolean;
   saldo_disponible_usd: number;
+  /** ADITIVOS (reparto en pesos, 18-oct-2026, API 0.0.93). `saldo_disponible_mxn`
+      = cobrado − comisiones − directos − indirectos − permisos − otros −
+      reserva + otros ingresos (todo en pesos). `pesos_sin_tc_usd` = dólares
+      que SÍ entraron al saldo USD pero no se pudieron pasar a pesos: > 0 ⇒ el
+      saldo en pesos está incompleto (se avisa). */
+  reserva_overhaul_mxn?: number;
+  saldo_disponible_mxn?: number;
+  pesos_sin_tc_usd?: number;
   reparto: RepartoSocio[];
   reparto_porcentaje_total: number;
   /** Opcional: el API viejo no lo manda; tratar siempre defensivo. */
@@ -266,6 +311,11 @@ export interface TcOficialResumen {
 }
 
 export interface ProfitSharingResult {
+  /** ADITIVO (18-oct-2026, API 0.0.93): el reparto viene EN PESOS (llaves
+      `*_mxn`). Sin ella (API ≤ 0.0.92) la pantalla es la de siempre, en
+      dólares. Fuente única de la lectura: `repartoEnPesos` de
+      `lib/admin/reparto-pesos.ts`. */
+  reparto_en_pesos?: boolean;
   externos?: ExternosResumen;
   otros_ingresos_vuelatour?: OtrosIngresosVuelatour | null;
   periodo: { desde: string; hasta: string };

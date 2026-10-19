@@ -11730,3 +11730,61 @@ el 1-sep-2026.
   inicio oficial ajustadas (`inicio-oficial-auditoria.test.ts(x)`).
 - **Orden de deploy**: pyservices → API 0.0.92 → panel.
 
+## Reparto en pesos (18-oct-2026, API 0.0.93)
+
+Pedido del cliente: «…debe venir todo en pesos porque casi siempre se les
+transfiere a los socios en pesos mexicanos, y que los dólares solo sean
+informativos pero no los que llamen primero la atención.» Contrato §2a: el API
+agrega a `GET /v1/profit-sharing` la bandera raíz `reparto_en_pesos: true` y
+llaves `*_mxn` ADITIVAS (cálculo NATIVO en pesos: venta al T.C. de la
+cotización, gastos MXN tal cual, USD a su T.C.; no es el USD × un T.C. único).
+
+- **Regla**: con la bandera, `/admin/profit-sharing` pinta PESOS como cifra
+  principal (tamaño y peso de siempre) y los dólares debajo, en
+  `text-muted-foreground` y `text-xs` («≈ $70.12 USD»). KPIs de la flota,
+  saldo de la card (encabezado y cascada), cada fila de la cascada (con su
+  «−»), la reserva (« · al T.C. 17.25» del cierre del periodo), la «Utilidad
+  del periodo» de cada socio y el desglose (cobrado/pendiente por vuelo con su
+  T.C. `tc_pesos`, monto por categoría en «MXN»). Lo que solo existe en
+  dólares (venta bruta del vuelo, deuda total del cliente, «Otros ingresos
+  VuelaTour», vuelos externos) lleva el sufijo «USD» para no leerse como pesos.
+  **El panel NO convierte ni recalcula**: el total de la flota (KPIs) y el pie
+  del desglose SUMAN en centavos lo que ya trae cada card (`sumaCentavos`); si
+  a alguno le falta la llave, el total cae a los dólares y lo dice.
+- **Monto sin pesos** (`null`: sin ningún T.C.): se pinta en dólares CON su
+  sufijo y debajo, en ámbar, «sin T.C. para pasarlo a pesos». Jamás un peso
+  inventado. `pesos_sin_tc_usd > 0` ⇒ aviso ámbar DENTRO de la cascada de ese
+  avión («$X USD no se pudieron pasar a pesos (sin tipo de cambio): el saldo en
+  pesos está incompleto.», `data-aviso-pesos-sin-tc`) y el KPI de saldo de la
+  flota dice «Incompleto en pesos: revisa el aviso del avión». El aviso va
+  dentro de la cascada a propósito: un hermano nuevo en el `CardContent`
+  correría los ids de `useId` del desglose y rompería el golden.
+- **Badges «sin TC»** con la bandera: su `title` dice que quedaron fuera del
+  dato en DÓLARES (neutral; no afirma si cuentan en pesos).
+- **Fuente única PURA**: `lib/admin/reparto-pesos.ts` — `repartoEnPesos`
+  (solo `true` estricto), `montoPrincipal({mxn, usd}, enPesos, {deduccion,
+  tc})` ⇒ `{principal, informativo, sinPesos, valor}` (sin la bandera,
+  `fmtUsd` de siempre), `sumaCentavos`, `totalFlotaMxn`, `gastosMxnDeAvion`,
+  `pesosIncompletos`, `avisoPesosSinTc` y TODOS los textos (badge de
+  pendiente, deuda, hints, tooltips, encabezados, `NOTA_REPARTO_EN_PESOS` del
+  recuadro de la página). Formatos: `fmtMxn`/`fmtUsd`/`fmtMonto`/`fmtTc` de
+  `lib/format.ts`. Ningún componente redacta estos textos.
+- **Cableado**: la página calcula `enPesos = repartoEnPesos(result)` UNA vez y
+  lo pasa a `KpiStrip` y `AvionRepartoCard` (que lo baja a `SociosSection` y
+  `DesgloseSection`); todas las props son ADITIVAS (default `false`). NO se
+  tocan `socios-por-entregar-section.tsx` ni la cuenta corriente
+  (`/admin/profit-sharing/socios/**`): siguen en dólares por decisión del
+  usuario. Ayudas de Reportes (`DETALLE_BALANCE_POR_AVION`,
+  `DESCRIPCION_CIERRE_REPARTO`) dicen que balances y reparto van en pesos; las
+  líneas de los libros (`TEXTOS_LIBRO`, copia del contrato) y el «(dólares
+  sin IVA)» del costo por hora NO cambian.
+- **Skew**: panel nuevo + API ≤ 0.0.92 (sin la bandera, aunque vengan llaves
+  `*_mxn`) ⇒ marcado BYTE A BYTE el de antes; panel previo + API 0.0.93 ⇒
+  ignora las llaves. Orden: pyservices ⇒ API ⇒ panel.
+- **Pruebas**: `lib/admin/__tests__/reparto-pesos.test.ts` (bandera,
+  principal/informativo, sumas, textos exactos) y
+  `components/admin/profit-sharing/__tests__/reparto-pesos.test.tsx` (golden
+  `reparto-pesos.golden.json` congelado ANTES del cambio con
+  `reparto-pesos.fixtures.ts`: sin bandera ⇒ idéntico; con bandera ⇒ MXN
+  primero y USD gris, reserva con T.C., socios, desglose, aviso de
+  `pesos_sin_tc_usd`, montos sin pesos, KPIs y cableado).

@@ -56,7 +56,7 @@ export const DESCRIPCION_BALANCE_POR_AVION =
  * para ir tras «Balance por avión:» dentro de «¿Qué trae cada libro?».
  */
 export const DETALLE_BALANCE_POR_AVION =
-  "libro completo de un avión en el periodo — reporte de horas (ventas, tacómetros, costos por vuelo), cobranza, combustible, gastos indirectos (incluye la parte repartida a mano), refacciones de bodega, permisos, otros ingresos asignados al avión (reembolsos, ventas) y balance con socios. Incluye la hoja de pendientes de captura para completar el mes.";
+  "libro completo de un avión en el periodo — reporte de horas (ventas, tacómetros, costos por vuelo), cobranza, combustible, gastos indirectos (incluye la parte repartida a mano), refacciones de bodega, permisos, otros ingresos asignados al avión (reembolsos, ventas) y balance con socios (en pesos; los dólares, solo de referencia). Incluye la hoja de pendientes de captura para completar el mes.";
 
 /** `aria-label` de la grilla de aviones. */
 export const ARIA_LISTA_AVIONES = "Aviones";
@@ -88,7 +88,7 @@ export function ariaVerEnPantalla(que: string): string {
 
 /** La descripción de siempre, precedida de la remisión al pre-cierre (que ahora vive justo arriba). */
 export const DESCRIPCION_CIERRE_REPARTO =
-  "Revisa primero el pre-cierre de arriba. Luego elige el mes y descarga: PDF de reparto para socios, reporte mensual por avión en Excel, libro «Dinero» y el paquete de cierre (.zip con el Excel + XML/PDF de las facturas timbradas del periodo). Los estados de cuenta del banco se anexan a mano (no se almacenan en el sistema).";
+  "Revisa primero el pre-cierre de arriba. Luego elige el mes y descarga: PDF de reparto para socios, reporte mensual por avión en Excel, libro «Dinero» y el paquete de cierre (.zip con el Excel + XML/PDF de las facturas timbradas del periodo). Los estados de cuenta del banco se anexan a mano (no se almacenan en el sistema). El reparto a socios y los balances van en pesos (MXN); los dólares, solo de referencia.";
 
 // =============================================================================
 // Catálogos que no cargaron (regla «degradar POR TARJETA», sin mentir)

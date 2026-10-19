@@ -296,3 +296,14 @@ describe("«Horas por piloto» solo se OFRECE a quien el API se lo da (ADMIN y C
     expect(parseados).toEqual([...ROLES_EXPORTAN_HORAS_PILOTO]);
   });
 });
+
+describe("balances y reparto en pesos (18-oct-2026, API 0.0.93)", () => {
+  it("las ayudas dicen que el balance con socios y el reparto van en pesos, con USD de referencia", () => {
+    expect(DETALLE_BALANCE_POR_AVION).toContain(
+      "y balance con socios (en pesos; los dólares, solo de referencia).",
+    );
+    expect(DESCRIPCION_CIERRE_REPARTO.endsWith(
+      "El reparto a socios y los balances van en pesos (MXN); los dólares, solo de referencia.",
+    )).toBe(true);
+  });
+});

@@ -10,6 +10,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { NOTA_PAGO_VENDEDOR_REPARTO } from "@/lib/admin/categorias-gasto";
 import { hintKpiOtrosIngresosAviones } from "@/lib/admin/otros-ingresos-avion";
+import {
+  HINT_SALDO_PESOS_INCOMPLETO,
+  TITULO_SALDO_PESOS_INCOMPLETO,
+  gastosMxnDeAvion,
+  hintKpiOtrosIngresosAvionesPesos,
+  hintKpiOtrosVuelatourPesos,
+  montoPrincipal,
+  pesosIncompletos,
+  textoUsd,
+  totalFlotaMxn,
+} from "@/lib/admin/reparto-pesos";
 import type {
   AvionReparto,
   OtrosIngresosVuelatour,
@@ -24,13 +35,21 @@ import type {
  * varios aviones. `otrosIngresos` (TUAs/extras/pernocta/comisión del
  * vendedor/IVA de VuelaTour) es informativo y opcional: el API previo al
  * deploy no lo manda.
+ *
+ * Reparto EN PESOS (18-oct-2026, API 0.0.93): con `enPesos` cada KPI pinta
+ * los pesos (Σ en centavos de los `*_mxn` de las cards) y los dólares debajo
+ * como dato informativo (`montoPrincipal`); sin la bandera, lo de siempre.
+ * «Otros ingresos VuelaTour» sigue en dólares (no se reparte) con su sufijo.
  */
 export function KpiStrip({
   aviones,
   otrosIngresos = null,
+  enPesos = false,
 }: {
   aviones: AvionReparto[];
   otrosIngresos?: OtrosIngresosVuelatour | null;
+  /** Bandera raíz `reparto_en_pesos` del API (`repartoEnPesos`). */
+  enPesos?: boolean;
 }) {
   const sum = (fn: (a: AvionReparto) => number) =>
     aviones.reduce((acc, a) => acc + fn(a), 0);
@@ -53,17 +72,18 @@ export function KpiStrip({
       a.gastos.otros_prorrateados_usd,
   );
   // Desglose de otros ingresos para el tooltip (la comisión solo si el API
-  // ya la manda).
+  // ya la manda). En pesos, los dólares llevan su sufijo.
+  const usdOtros = enPesos ? textoUsd : fmtUsd;
   const d = otrosIngresos?.desglose;
   const otrosDesglose = d
     ? [
-        `TUAs ${fmtUsd(d.tuas_usd)}`,
-        `extras ${fmtUsd(d.extras_usd)}`,
-        `pernocta ${fmtUsd(d.pernocta_usd)}`,
+        `TUAs ${usdOtros(d.tuas_usd)}`,
+        `extras ${usdOtros(d.extras_usd)}`,
+        `pernocta ${usdOtros(d.pernocta_usd)}`,
         ...(d.comision_usd != null
-          ? [`comisión vendedor ${fmtUsd(d.comision_usd)}`]
+          ? [`comisión vendedor ${usdOtros(d.comision_usd)}`]
           : []),
-        `IVA ${fmtUsd(d.iva_usd)}`,
+        `IVA ${usdOtros(d.iva_usd)}`,
       ].join(" · ")
     : undefined;
   const reserva = sum((a) => a.reserva_overhaul_usd);
@@ -72,6 +92,26 @@ export function KpiStrip({
   const vuelosCobrados = sum((a) => a.ingresos.vuelos_cobrados);
   const saldo = sum((a) => a.saldo_disponible_usd);
   const horas = sum((a) => a.horas_voladas_hr);
+  // Pesos (API 0.0.93): solo SUMA lo que ya trae cada card, en centavos; si a
+  // algún avión le falta la llave, el KPI cae a los dólares y lo dice.
+  const mxn = (llave: (a: AvionReparto) => number | null | undefined) =>
+    enPesos ? totalFlotaMxn(aviones, llave) : null;
+  const venta = montoPrincipal({ mxn: mxn((a) => a.ingresos.cobrado_mxn), usd: ingresos }, enPesos);
+  const gastosKpi = montoPrincipal({ mxn: mxn(gastosMxnDeAvion), usd: gastos }, enPesos);
+  const reservaKpi = montoPrincipal({ mxn: mxn((a) => a.reserva_overhaul_mxn), usd: reserva }, enPesos);
+  const pendienteKpi = montoPrincipal(
+    { mxn: mxn((a) => a.ingresos.pendiente_cobro_mxn), usd: pendiente },
+    enPesos,
+  );
+  const saldoKpi = montoPrincipal({ mxn: mxn((a) => a.saldo_disponible_mxn), usd: saldo }, enPesos);
+  const saldoPositivo = (saldoKpi.valor ?? saldo) >= 0;
+  const otrosAvionMxn = mxn((a) => a.ingresos.otros_ingresos_avion_mxn ?? 0);
+  const hintVenta =
+    enPesos && otrosAvionMxn !== null
+      ? `${vuelosCobrados} vuelo(s) cobrados${hintKpiOtrosIngresosAvionesPesos(otrosAvionMxn)}`
+      : `${vuelosCobrados} vuelo(s) cobrados${hintKpiOtrosIngresosAviones(otrosAvion)}`;
+  const tieneOtrosAvion = enPesos && otrosAvionMxn !== null ? otrosAvionMxn > 0 : otrosAvion > 0;
+  const saldoIncompleto = enPesos && aviones.some(pesosIncompletos);
   // 5 KPIs base + 1 informativo si viene el bloque; con cuenta impar el
   // último ocupa las 2 columnas del grid móvil para no dejar hueco.
   const conOtros = otrosIngresos != null;
@@ -84,32 +124,32 @@ export function KpiStrip({
       <Kpi
         icon={BanknotesIcon}
         label="Venta de aviones cobrada"
-        value={fmtUsd(ingresos)}
-        hint={`${vuelosCobrados} vuelo(s) cobrados${hintKpiOtrosIngresosAviones(otrosAvion)}`}
+        value={venta.principal}
+        informativo={venta.informativo}
+        hint={hintVenta}
         // El hint se trunca en tarjetas angostas: completo en el tooltip.
-        title={
-          otrosAvion > 0
-            ? `${vuelosCobrados} vuelo(s) cobrados${hintKpiOtrosIngresosAviones(otrosAvion)}`
-            : undefined
-        }
+        title={tieneOtrosAvion ? hintVenta : undefined}
         valueClass="text-emerald-600 dark:text-emerald-400"
       />
       <Kpi
         icon={ArrowTrendingDownIcon}
         label="Gastos del periodo"
-        value={fmtUsd(gastos)}
+        value={gastosKpi.principal}
+        informativo={gastosKpi.informativo}
         hint="Directos, indirectos, permisos y fijos"
       />
       <Kpi
         icon={WrenchScrewdriverIcon}
         label="Reserva overhaul"
-        value={fmtUsd(reserva)}
+        value={reservaKpi.principal}
+        informativo={reservaKpi.informativo}
         hint={`${fmtDecimal(horas, 1)} hr voladas`}
       />
       <Kpi
         icon={ClockIcon}
         label="Pendiente de cobro"
-        value={fmtUsd(pendiente)}
+        value={pendienteKpi.principal}
+        informativo={pendienteKpi.informativo}
         hint={`${vuelosPendientes} vuelo(s) sin cobrar`}
         valueClass={
           pendiente > 0 ? "text-amber-600 dark:text-amber-400" : undefined
@@ -118,10 +158,12 @@ export function KpiStrip({
       <Kpi
         icon={ScaleIcon}
         label="Saldo disponible total"
-        value={fmtUsd(saldo)}
-        hint="A repartir entre socios"
+        value={saldoKpi.principal}
+        informativo={saldoKpi.informativo}
+        hint={saldoIncompleto ? HINT_SALDO_PESOS_INCOMPLETO : "A repartir entre socios"}
+        title={saldoIncompleto ? TITULO_SALDO_PESOS_INCOMPLETO : undefined}
         valueClass={
-          saldo >= 0
+          saldoPositivo
             ? "text-emerald-600 dark:text-emerald-400"
             : "text-destructive"
         }
@@ -131,11 +173,13 @@ export function KpiStrip({
         <Kpi
           icon={BuildingOfficeIcon}
           label="Otros ingresos VuelaTour"
-          value={fmtUsd(otrosIngresos.cobrado_usd)}
+          value={enPesos ? textoUsd(otrosIngresos.cobrado_usd) : fmtUsd(otrosIngresos.cobrado_usd)}
           hint={
-            otrosIngresos.pendiente_usd > 0
-              ? `TUAs/extras/pernocta/comisión · no se reparten · por cobrar ${fmtUsd(otrosIngresos.pendiente_usd)}`
-              : "TUAs/extras/pernocta/comisión · no se reparten"
+            enPesos
+              ? hintKpiOtrosVuelatourPesos(otrosIngresos.pendiente_usd)
+              : otrosIngresos.pendiente_usd > 0
+                ? `TUAs/extras/pernocta/comisión · no se reparten · por cobrar ${fmtUsd(otrosIngresos.pendiente_usd)}`
+                : "TUAs/extras/pernocta/comisión · no se reparten"
           }
           title={
             otrosDesglose
@@ -152,6 +196,7 @@ function Kpi({
   icon: Icon,
   label,
   value,
+  informativo,
   hint,
   title,
   valueClass,
@@ -160,6 +205,8 @@ function Kpi({
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  /** Dato informativo bajo la cifra (los dólares del reparto en pesos). */
+  informativo?: string | null;
   hint?: string;
   /** Tooltip nativo con el detalle largo (el hint se trunca). */
   title?: string;
@@ -176,6 +223,9 @@ function Kpi({
           >
             {value}
           </p>
+          {informativo && (
+            <p className="text-xs text-muted-foreground tabular-nums">{informativo}</p>
+          )}
           {hint && (
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
               {hint}

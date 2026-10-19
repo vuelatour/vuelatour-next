@@ -14,6 +14,7 @@ import {
   TITULO_ATAJO_CUENTA_SOCIO,
   hrefCuentaSocioDesdeReparto,
 } from "@/lib/admin/reparto-pagos";
+import { montoPrincipal } from "@/lib/admin/reparto-pesos";
 import type { RepartoSocio } from "@/types/profit-sharing";
 
 /** Paleta fija del design system para distinguir socios (máx. 4 y cicla). */
@@ -37,6 +38,10 @@ function iniciales(nombre: string): string {
  * «Registrar entrega»): pedido del cliente «al lado del nombre del socio
  * puede mandar al detalle para pagar al socio». Quién ve el atajo lo decide
  * `hrefCuentaSocioDesdeReparto` (rol + usuario: un SOCIO solo la suya).
+ *
+ * Reparto EN PESOS (18-oct-2026, API 0.0.93): con `enPesos` la «Utilidad del
+ * periodo» de cada socio es el `monto_mxn` del API (lo que se le transfiere)
+ * y el `monto_usd` va debajo, en gris. La cuenta corriente sigue en dólares.
  */
 export function SociosSection({
   socios,
@@ -44,6 +49,7 @@ export function SociosSection({
   aeronaveId,
   rol = null,
   usuarioId = null,
+  enPesos = false,
 }: {
   socios: RepartoSocio[];
   porcentajeTotal: number;
@@ -51,6 +57,8 @@ export function SociosSection({
   /** Rol y usuario de quien mira (para el atajo a la cuenta del socio). */
   rol?: string | null;
   usuarioId?: string | null;
+  /** Bandera raíz `reparto_en_pesos` del API (`repartoEnPesos`). */
+  enPesos?: boolean;
 }) {
   if (socios.length === 0) {
     return (
@@ -161,14 +169,37 @@ export function SociosSection({
               <TableCell className="text-right font-mono text-xs">
                 {fmtDecimal(s.porcentaje)}%
               </TableCell>
-              <TableCell className="text-right font-mono text-sm">
-                {fmtUsd(s.monto_usd)}
-              </TableCell>
+              {enPesos ? (
+                <CeldaUtilidadPesos socio={s} />
+              ) : (
+                <TableCell className="text-right font-mono text-sm">
+                  {fmtUsd(s.monto_usd)}
+                </TableCell>
+              )}
             </TableRow>
             );
           })}
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+/** «Utilidad del periodo» en pesos: el monto en MXN y los dólares debajo. */
+function CeldaUtilidadPesos({ socio }: { socio: RepartoSocio }) {
+  const monto = montoPrincipal({ mxn: socio.monto_mxn, usd: socio.monto_usd }, true);
+  return (
+    <TableCell className="text-right font-mono text-sm">
+      {monto.principal}
+      {monto.informativo && (
+        <span
+          className={`block text-xs font-normal ${
+            monto.sinPesos ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"
+          }`}
+        >
+          {monto.informativo}
+        </span>
+      )}
+    </TableCell>
   );
 }

@@ -26,6 +26,7 @@ import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { rangoFiltro } from "@/lib/admin/url-params";
 import { puedeRegistrarEntregas, puedeVerCuentasSocios } from "@/lib/admin/reparto-pagos";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { NOTA_REPARTO_EN_PESOS, repartoEnPesos, textoUsd } from "@/lib/admin/reparto-pesos";
 import { EmptyState } from "@/components/admin/empty-state";
 import {
   Card,
@@ -114,6 +115,12 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
   );
   // Resumen del TC oficial de respaldo (aditivo: el API previo no lo manda).
   const tcOficial = result.tc_oficial ?? null;
+  // Reparto EN PESOS (18-oct-2026, API 0.0.93): pesos primero, dólares
+  // informativos. Sin la bandera (API ≤ 0.0.92), la pantalla de siempre.
+  const enPesos = repartoEnPesos(result);
+  // Los vuelos externos solo existen en dólares: con la bandera llevan su
+  // sufijo para no leerse como pesos junto a todo lo demás.
+  const usdExterno = enPesos ? textoUsd : fmtUsd;
 
   return (
     <div className="space-y-6">
@@ -148,6 +155,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
             horas de tacómetro del periodo. Descarga el PDF para socios o los
             Excel con los botones de arriba y de cada avión.
           </p>
+          {enPesos && <p>{NOTA_REPARTO_EN_PESOS}</p>}
           {(result.gastos_sin_tc?.count ?? 0) > 0 && (
             <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
               <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />
@@ -201,6 +209,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
           <KpiStrip
             aviones={result.aviones}
             otrosIngresos={result.otros_ingresos_vuelatour}
+            enPesos={enPesos}
           />
           {seccionSocios}
           <div className="grid gap-4 lg:grid-cols-2">
@@ -214,6 +223,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 rol={me.rol}
                 usuarioId={me.id}
                 cierre={result.cierre}
+                enPesos={enPesos}
               />
             ))}
           </div>
@@ -247,7 +257,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                   Cobrado
                 </p>
                 <p className="font-semibold font-mono">
-                  {fmtUsd(result.externos.cobrado_usd)}
+                  {usdExterno(result.externos.cobrado_usd)}
                 </p>
               </div>
               <div>
@@ -255,7 +265,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                   Costo del operador
                 </p>
                 <p className="font-semibold font-mono">
-                  {fmtUsd(result.externos.costo_usd)}
+                  {usdExterno(result.externos.costo_usd)}
                 </p>
               </div>
               <div>
@@ -265,7 +275,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 <p
                   className={`font-semibold font-mono ${result.externos.utilidad_usd < 0 ? "text-destructive" : ""}`}
                 >
-                  {fmtUsd(result.externos.utilidad_usd)}
+                  {usdExterno(result.externos.utilidad_usd)}
                 </p>
               </div>
             </div>
