@@ -24,7 +24,7 @@ import {
   NOTA_SIGUE_POR_PAGAR,
   chipEstadoPago,
 } from "@/lib/admin/gasto-por-pagar";
-import { MSG_INVENTARIO_FECHA_FUTURA } from "@/lib/admin/refaccion-inventario";
+import { MSG_INVENTARIO_FECHA_FUTURA, NOTA_REFACCION_POR_PAGAR_SIN_AVION } from "@/lib/admin/refaccion-inventario";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),
@@ -380,20 +380,86 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(s).toMatch(/<NotaFechaPorPagar\s+fecha=\{watch\("fecha_gasto"\)\}\s+estadoGuardado=\{estadoPagoDe\(gasto\)\}\s+conciliado=\{gastoConciliado\}\s+\/>/);
   });
 
+  /**
+   * Las etiquetas de APERTURA `<Nombre …>` / `<Nombre … />` del fuente, de su
+   * `<` a su `>` (llaves, comillas y comentarios contados: un `=>` o un `/>`
+   * dentro de un prop no la cortan). Segunda revisión del lote (P19): la regex
+   * `[\s\S]*?rol=…[\s\S]*?\/>` cruzaba el cierre del componente y casaba con
+   * el `rol` de OTRO (`<FlightSeguimientoCard>`), así que quitar el prop del
+   * de verdad seguía en verde.
+   */
+  const etiquetasJsx = (src: string, nombre: string): string[] => {
+    const salida: string[] = [];
+    for (const m of src.matchAll(new RegExp(`<${nombre}(?=[\\s/>])`, "g"))) {
+      const inicio = m.index ?? 0;
+      let i = inicio + m[0].length;
+      let llaves = 0;
+      let comilla: string | null = null;
+      for (; i < src.length; i++) {
+        const ch = src[i];
+        if (comilla) {
+          if (ch === "\\") i++;
+          else if (ch === comilla) comilla = null;
+          continue;
+        }
+        if (ch === "/" && src[i + 1] === "/") {
+          const fin = src.indexOf("\n", i);
+          i = fin < 0 ? src.length : fin;
+          continue;
+        }
+        if (ch === "/" && src[i + 1] === "*") {
+          const fin = src.indexOf("*/", i + 2);
+          i = fin < 0 ? src.length : fin + 1;
+          continue;
+        }
+        if (ch === '"' || ch === "'" || ch === "`") comilla = ch;
+        else if (ch === "{") llaves++;
+        else if (ch === "}") llaves--;
+        else if (ch === ">" && llaves === 0) break;
+      }
+      salida.push(src.slice(inicio, i + 1));
+    }
+    return salida;
+  };
+  /** Cada uso de `<nombre>` en el fuente lleva el prop (al menos un uso). */
+  const cadaUsoLleva = (src: string, nombre: string, prop: string) => {
+    const usos = etiquetasJsx(src, nombre);
+    expect(usos.length, nombre).toBeGreaterThan(0);
+    for (const uso of usos) expect(uso, nombre).toContain(prop);
+  };
+
+  it("el lector de etiquetas no cruza al componente siguiente (si cruzara, el P19 de abajo no probaría nada)", () => {
+    const src = [
+      "<A",
+      "  x={1}",
+      "  // un comentario con «comillas» y un /> suelto",
+      "  f={() => (n > 1 ? <B rol={r} /> : null)}",
+      '  t="a > b"',
+      "/>",
+      "<C rol={me?.rol ?? null} />",
+    ].join("\n");
+    const [a] = etiquetasJsx(src, "A");
+    expect(a.startsWith("<A")).toBe(true);
+    expect(a.endsWith('t="a > b"\n/>')).toBe(true);
+    expect(a).not.toContain("<C");
+    // Sin el prop en la etiqueta, falla aunque OTRA lo traiga.
+    expect(etiquetasJsx(src, "C")).toEqual(["<C rol={me?.rol ?? null} />"]);
+    expect(etiquetasJsx("<AB rol={1} />", "A")).toEqual([]);
+  });
+
   it("P19: el rol llega a «Marcar pagado» del detalle del vuelo, de Gastos y de la caja chica", () => {
-    expect(fuente("app/admin/flights/[id]/page.tsx")).toMatch(/<FlightGastosCard[\s\S]*?rol=\{me\?\.rol \?\? null\}[\s\S]*?\/>/);
-    const card = fuente("components/admin/flights/flight-gastos-card.tsx");
-    expect(card).toMatch(/<FlightGastosTable[\s\S]*?rol=\{rol\}[\s\S]*?\/>/);
+    cadaUsoLleva(fuente("app/admin/flights/[id]/page.tsx"), "FlightGastosCard", "rol={me?.rol ?? null}");
+    cadaUsoLleva(fuente("components/admin/flights/flight-gastos-card.tsx"), "FlightGastosTable", "rol={rol}");
     const tabla = fuente("components/admin/flights/flight-gastos-table.tsx");
     expect(tabla).toContain("<BotonChipPorPagar gasto={g} className=\"ml-1.5\" puedeMarcar={puedeMarcarPagado} />");
-    expect(tabla).toMatch(/<ExpenseActions[\s\S]*?rol=\{rol\}[\s\S]*?\/>/);
+    cadaUsoLleva(tabla, "ExpenseActions", "rol={rol}");
     expect(fuente("components/admin/expenses/expenses-table.tsx")).toContain(
       "puedeMarcar={puedeMarcarPagadoGasto(rol)}",
     );
     expect(fuente("components/admin/expenses/expense-actions.tsx")).toContain(
       "const porPagar = porPagarVigente(gasto) && puedeMarcarPagadoGasto(rol);",
     );
-    expect(fuente("app/admin/caja-chica/[id]/page.tsx")).toMatch(/<PorPagarCaja[\s\S]*?rol=\{me\?\.rol \?\? null\}[\s\S]*?\/>/);
+    cadaUsoLleva(fuente("app/admin/caja-chica/[id]/page.tsx"), "PorPagarCaja", "rol={me?.rol ?? null}");
   });
 
   it("P1/P2: el renglón del pre-cierre decide su destino con `resolverPrecierreGastosPorPagar` y pinta el aviso de Nómina", () => {
@@ -499,9 +565,14 @@ describe("revisión del lote: la fecha de un gasto que YA está pagado (P17, P18
         <AvisoInventarioFechaFutura fecha="2026-11-05" />
       </PorPagarProvider>,
     );
-    expect(html).toContain(esc(MSG_INVENTARIO_FECHA_FUTURA));
+    // El texto del API va COMPLETO en su propio renglón (no se toca)…
+    expect(html).toContain(`<p>${esc(MSG_INVENTARIO_FECHA_FUTURA)}</p>`);
     expect(html).toContain('role="alert"');
     expect(html).toContain("data-error-inventario-fecha-futura");
+    // …y debajo, en el suyo, la salida real sin avión (segunda revisión, NUEVO-1).
+    const iSalida = html.indexOf("<p data-salida-inventario-fecha-futura=");
+    expect(iSalida).toBeGreaterThan(html.indexOf(esc(MSG_INVENTARIO_FECHA_FUTURA)));
+    expect(html.slice(iSalida)).toContain(`>${esc(NOTA_REFACCION_POR_PAGAR_SIN_AVION)}</p>`);
     expect(
       renderToStaticMarkup(
         <PorPagarProvider capacidad={CAPACIDAD}>
