@@ -248,6 +248,10 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   `components/admin/reportes/libro-afac-edicion.tsx`; la marca «Pago de
   AFAC» del gasto, SOLO de `lib/admin/pago-afac.ts` (+ `CasillaPagoAfac` y
   `AfacRealProvider`). Ver «AFAC por vuelo (16-oct-2026, API 0.0.89)» al final.
+- Gastos «por pagar» (19-oct-2026, API 0.0.95): la capacidad, la regla de la
+  fecha de captura, el chip, «Marcar pagado», el filtro y sus textos salen
+  SOLO de `lib/admin/gasto-por-pagar.ts` (+ `PorPagarProvider`). Ver «Gastos
+  por pagar (fecha a futuro)» al final.
 - Formatos numéricos: `lib/format.ts` — `fmtUsd`, `fmtMxn`, `fmtDecimal`,
   `fmtPercent`, `fmtInt` y **`fmtTc`** (tipo de cambio: hasta 6 decimales sin
   ceros de cola; ver la sección «Tipo de cambio» más abajo). Un T.C. NUNCA se
@@ -11822,3 +11826,65 @@ cotización, gastos MXN tal cual, USD a su T.C.; no es el USD × un T.C. único)
   `reparto-pesos.fixtures.ts`: sin bandera ⇒ idéntico; con bandera ⇒ MXN
   primero y USD gris, reserva con T.C., socios, desglose, aviso de
   `pesos_sin_tc_usd`, montos sin pesos, KPIs y cableado).
+
+## Gastos por pagar (fecha a futuro) (19-oct-2026, API 0.0.95)
+
+Pedido del cliente: «que se puedan capturar gastos a futuro en la app y en el
+admin, a veces yo anoto cosas que ya sé que voy a pagar en efectivo al día
+siguiente para que no se me olvide». Decisiones (no se vuelven a preguntar):
+hasta fin de mes, todos los roles, con estado «por pagar». La fecha del gasto
+es la del PAGO: un gasto con fecha futura nace «por pagar» y se confirma con
+«Marcar pagado» (fecha real ≤ hoy). **El API decide todo** (`estado_pago`
+PAGADO | POR_PAGAR | VENCIDO, el tope, el filtro, el pre-cierre y la caja
+chica); el panel solo pinta y decide la UI.
+
+- **Capacidad** = `config.gastos_por_pagar === true` + `config.gasto_fecha_max`
+  de `/v1/me` (`capacidadPorPagarDeMe`). `AdminShell` monta
+  `PorPagarProvider`; los clientes leen `usePorPagar()`. **Sin capacidad
+  (API previo o sin la migración) TODO queda como antes**: ninguna llave
+  nueva viaja, sin nota, sin filtro, sin chip (el golden del alta lo congela
+  también CON capacidad y fecha de hoy).
+- **Fuente única PURA** `lib/admin/gasto-por-pagar.ts`: la regla de la
+  fecha de captura (`evaluarFechaGasto`: con capacidad, fecha > hoy y ≤ el
+  tope ⇒ nota EXACTA «Quedará POR PAGAR: el día que lo pagues, márcalo
+  pagado (la fecha del gasto es la del pago).»; sin la confirmación de
+  «fecha futura» hasta fin de mes (o el tope si es antes); más allá —oficina
+  hasta +30— la confirmación de siempre; sin capacidad =
+  `fechaGastoSospechosa`), el estado (`estadoPagoDe`, `porPagarVigente`),
+  el chip, el diálogo, los errores, el filtro, el pre-cierre y la caja
+  chica. `fecha-gasto.ts` ganó un `hoy` opcional (pruebas).
+- **Captura**: alta y «Verificar / editar» (cubren refacción, combustible y
+  caja chica) usan `evaluarFechaGasto(...).pideConfirmacion` en lugar de
+  `fechaGastoSospechosa` y pintan `NotaFechaPorPagar` en el campo de la
+  fecha (en «Verificar / editar» de un gasto que sigue por pagar con fecha ≤
+  hoy, dice que cambiar la fecha NO lo marca pagado). El payload no cambia:
+  el API pone `por_pagar` solo.
+- **Gastos**: chip «Por pagar · 20 oct» (ámbar) / «Vencido · 20 oct» (rojo)
+  bajo la fecha (también en «Gastos del vuelo»), como botón que abre
+  «Marcar pagado»; el menú ⋯ lo trae PRIMERO (solo con `estado_pago` ≠
+  PAGADO; vale en Combustibles, Nómina y Caja chica). Diálogo
+  (`marcar-pagado-dialog.tsx`, cargado con `next/dynamic` sin SSR: las tablas
+  no arrastran la server action): fecha del pago default hoy Cancún, `max`
+  hoy ⇒ `marcarPagadoGastoAction` (`PATCH {por_pagar:false, fecha_gasto,
+  if_updated_at}` EXACTO, valida antes de la red, revalida como «Verificar /
+  editar» solo en el éxito, nunca lanza). Errores del API tal cual;
+  `MES_CERRADO` con «Ir a Reportes»; `CONFLICTO_VERSION`, 404 o sin
+  respuesta ⇒ el texto, cerrar y `router.refresh()`.
+- **Filtro «Pago: Todos | Por pagar»** (`?por_pagar=1`, también `true`)
+  SOLO con la capacidad (`leerFiltrosGastos(get, inicio, disponible)`); viaja
+  al API y al Excel, lo conservan las pestañas (`FILTROS_URL`), cuenta para
+  «Limpiar» y tiene su vacío. La URL con `por_pagar` sin capacidad se ignora
+  y la página lo dice (`data-franja="por-pagar-ignorado"`).
+- **Pre-cierre**: renglón BLOQUEANTE `gastos_por_pagar` (lo decide el API) con
+  «Resolver →» `hrefPrecierreGastosPorPagar` = Gastos «Por pagar» del periodo
+  + el foco ámbar de sus `ids`.
+- **Caja chica** (detalle del fondo): `PorPagarCaja`, «Por pagar (aún no sale
+  de la caja)» con la lista aditiva `por_pagar[]` y `por_pagar_total` del API
+  (chip, concepto, monto, «Marcar pagado»); sin la llave no se pinta; no toca
+  saldos.
+- **Pruebas**: `lib/admin/__tests__/gasto-por-pagar.test.ts`,
+  `app/admin/expenses/__tests__/marcar-pagado-action.test.ts`,
+  `components/admin/expenses/__tests__/por-pagar-ui.test.tsx`,
+  `por-pagar-pantallas.test.tsx` y `alta-por-pagar.test.tsx`.
+- **Orden de deploy**: migración → API 0.0.95 → panel (en cualquier orden es
+  seguro: sin capacidad, nada cambia).
