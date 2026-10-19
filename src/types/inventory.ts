@@ -404,22 +404,12 @@ export interface InventarioListResponse {
 }
 
 /**
- * Renglón «Saldo inicial al 1-sep-2026» del cardex (ADITIVO 16-oct-2026, API
- * 0.0.85, inicio oficial): existencia y último precio de compra tras el
- * último movimiento ANTERIOR al inicio (el API ya no lista esos
- * movimientos). null = sin inicio o sin movimientos previos; ausente = API
- * previo. Se lee con `normalizarSaldoInicialCardex`.
+ * Ficha del artículo. Desde el 18-oct-2026 (API 0.0.92) el inventario trae
+ * TODO el historial —también julio y agosto— aunque el resto del sistema
+ * arranque el 1-sep-2026: ya no viaja el `saldo_inicial` del API 0.0.85.
  */
-export interface SaldoInicialCardexApi {
-  fecha: string;
-  etiqueta: string;
-  existencia: number;
-  costo_vigente: { moneda: string; unitario: number } | null;
-}
-
 export interface InventarioItemDetail extends InventarioItemWithStock {
   movimientos: InventarioMovimiento[];
-  saldo_inicial?: SaldoInicialCardexApi | null;
 }
 
 /** Fila del bloque COMPRAS del resumen del producto (montos en MXN). */
@@ -458,6 +448,12 @@ export interface ResumenCompra {
   total_usd?: number | null;
   fija_precio?: boolean;
   es_precio_vigente?: boolean;
+  /**
+   * ADITIVO API 0.0.92 (18-oct-2026): posición del movimiento en el cardex
+   * COMPLETO en orden cronológico (fecha, alta, id). Con él compras y ventas
+   * se mezclan en UNA lista por fecha sin adivinar el orden de un mismo día.
+   */
+  orden?: number;
 }
 
 /** Fila del bloque VENTAS del resumen del producto (montos en MXN). */
@@ -521,6 +517,36 @@ export interface ResumenVenta {
   venta_total_usd_original?: number | null;
   costo_usd_original?: number | null;
   ganancia_usd_original?: number | null;
+  /** ADITIVO API 0.0.92: ver `ResumenCompra.orden`. */
+  orden?: number;
+}
+
+/**
+ * Un MES del cardex (ADITIVO API 0.0.92, 18-oct-2026; fuente única
+ * `mesesCardexDe` del API). Todos los meses del primer movimiento al de hoy,
+ * también los que no tuvieron movimientos (el stock se arrastra). El panel
+ * NO recalcula nada: pinta lo que viene.
+ */
+export interface MesCardexResumen {
+  /** YYYY-MM. */
+  mes: string;
+  /** Existencia al ABRIR el mes. */
+  stock_inicio: number;
+  /** Unidades que entraron (compras + devoluciones + ajustes). */
+  entradas: number;
+  /** De esas, solo las compras. */
+  compras: number;
+  /** Unidades que salieron a los aviones (con precio o a costo). */
+  unidades_vendidas: number;
+  /** Existencia al CERRAR el mes (en el mes en curso, la de hoy). */
+  stock_final: number;
+  /** Movimientos del mes. */
+  movimientos: number;
+  /** Vendido y utilidad del mes en pesos; null = no hubo. */
+  vendido_mxn: number | null;
+  utilidad_mxn: number | null;
+  /** Es el mes de hoy. */
+  en_curso: boolean;
 }
 
 /** Fila del bloque RESUMEN: un día con movimiento. */
@@ -586,9 +612,10 @@ export interface DineroGenerado {
 }
 
 /**
- * GET /v1/inventory/items/:id/resumen — bloques COMPRAS | VENTAS | RESUMEN
- * por día + totales. Los calcula el API con el MISMO costo/utilidad de la
- * hoja Inventario del Balance general y del cardex Excel; el panel solo pinta.
+ * GET /v1/inventory/items/:id/resumen — compras, ventas, resumen por día,
+ * resumen por MES (`meses`, API 0.0.92) y totales. Los calcula el API con el
+ * MISMO costo/utilidad de la hoja Inventario del Balance general y del cardex
+ * Excel; el panel los pinta como UNA lista por fecha agrupada por mes.
  */
 export interface InventarioItemResumen {
   item: {
@@ -615,8 +642,11 @@ export interface InventarioItemResumen {
   precio_vigente?: PrecioVigenteFicha | null;
   dinero_generado?: DineroGenerado;
   periodo: { desde: string | null; hasta: string | null } | null;
-  /** ADITIVO API 0.0.85 (ver `SaldoInicialCardexApi`). */
-  saldo_inicial?: SaldoInicialCardexApi | null;
+  /**
+   * ADITIVO API 0.0.92: un renglón por mes del cardex (ver
+   * `MesCardexResumen`). Ausente = API previo.
+   */
+  meses?: MesCardexResumen[];
   compras: ResumenCompra[];
   ventas: ResumenVenta[];
   resumen_diario: ResumenDia[];

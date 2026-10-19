@@ -21,11 +21,7 @@ import { MovimientoButton } from "@/components/admin/inventory/movimiento-button
 import { CardexLibroButton } from "@/components/admin/inventory/cardex-libro-button";
 import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicion";
 import { MovimientosEliminadosCard } from "@/components/admin/inventory/movimientos-eliminados-card";
-import { FilaSaldoInicialCardex } from "@/components/admin/inventory/saldo-inicial-cardex";
-import {
-  normalizarSaldoInicialCardex,
-  textoSinFilasDesde,
-} from "@/lib/admin/inicio-oficial";
+import { SIN_MOVIMIENTOS_CARDEX } from "@/lib/admin/inventario-cardex-lista";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
 import { ResumenProducto } from "@/components/admin/inventory/resumen-producto";
 import { FichaPlegable } from "@/components/admin/inventory/ficha-plegable";
@@ -67,14 +63,17 @@ export const metadata: Metadata = { title: TITULOS_DETALLE.producto };
  *  1. Cabecera: nombre, categoría · marca, parte · código · ubicación, la
  *     DESCRIPCIÓN completa y la aeronave/uso en su propio renglón; botones
  *     «Registrar movimiento», «Cardex (Excel)» y «Editar».
- *  2. COMPRAS | VENTAS | RESUMEN + «Dinero generado por este producto».
+ *  2. El cardex como LISTA POR FECHA agrupada por mes (18-oct-2026: «el
+ *     Cardex del producto en forma de lista por orden de fecha») + «Dinero
+ *     generado por este producto». Todo el historial: el inventario no
+ *     lleva el piso del inicio oficial.
  *  3. Plegables CERRADOS al fondo: «Empaques y fotos» y «Cardex completo»
  *     (ahí se corrige un costo o se elimina un movimiento). Nada se pierde.
  *
  * Se QUITARON la tira de KPIs (stock actual/mínimo, costo, precio de venta,
  * valorizado) y la card «Utilidad por salida»: repetían lo que ya dicen las
- * tablas. La única señal que se conserva es «bajo el mínimo», en el pie del
- * Resumen. Todo número viene del API; aquí solo se pinta.
+ * tablas. La única señal que se conserva es «bajo el mínimo», en el pie de la
+ * lista. Todo número viene del API; aquí solo se pinta.
  */
 export default async function InventoryItemPage({
   params,
@@ -107,7 +106,7 @@ export default async function InventoryItemPage({
     const [itemRes, resumenRes, aircraftRes, providersRes, me, eliminadosRes, ubicRes] =
       await Promise.all([
         getInventarioItem(id),
-        // Bloques COMPRAS/VENTAS/RESUMEN. Tolerante: si el API aún no conoce la
+        // Cardex por fecha y por mes. Tolerante: si el API aún no conoce la
         // ruta (skew de deploy) el detalle no se cae — el bloque avisa.
         getInventarioItemResumen(id).catch(() => null),
         listAircraft({ limit: 100 }),
@@ -145,7 +144,7 @@ export default async function InventoryItemPage({
   const ubicaciones = ubicacionesRes.disponible ? ubicacionesRes.data : null;
   const { texto: descripcion, aeronaveUso } = partirDescripcion(item.descripcion);
   // El formulario de «Editar» no necesita el cardex: no se serializa al cliente.
-  const { movimientos, saldo_inicial: saldoInicialCardex, ...itemSinCardex } = item;
+  const { movimientos, ...itemSinCardex } = item;
 
   const empaques = item.empaques ?? [];
   const empaqueEscaneado =
@@ -245,8 +244,8 @@ export default async function InventoryItemPage({
         </div>
       </div>
 
-      {/* Lo único que se necesita (pedido del cliente): Compras | Ventas |
-          Resumen + «Dinero generado». Mismo costo/utilidad del balance. */}
+      {/* El cardex como lista por fecha, agrupada por mes, + «Dinero
+          generado». Mismo costo/utilidad del balance. */}
       <ResumenProducto
         resumen={resumen}
         bajoStock={item.bajo_stock}
@@ -309,16 +308,12 @@ export default async function InventoryItemPage({
         titulo={PLEGABLE_CARDEX}
         resumen={resumenPlegableCardex(movimientos.length)}
       >
+        {/* Inventario muestra TODO el historial (API 0.0.92): sin el piso
+            del inicio oficial ni renglón de saldo inicial. */}
         {movimientos.length === 0 ? (
-          <>
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              {textoSinFilasDesde(
-                normalizarSaldoInicialCardex(saldoInicialCardex),
-                "Sin movimientos todavía. Registra una entrada para dar de alta stock.",
-              )}
-            </p>
-            <FilaSaldoInicialCardex saldo={saldoInicialCardex} unidad={item.unidad} className="-mx-4" />
-          </>
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            {SIN_MOVIMIENTOS_CARDEX}
+          </p>
         ) : (
           <div className="-mx-4">
             <CardexConEdicion
@@ -329,10 +324,6 @@ export default async function InventoryItemPage({
               puedeEditarCosto={puedeEditarCosto}
               puedeEliminar={puedeEliminar}
             />
-            {/* Inicio oficial (API 0.0.85): el cardex va del más reciente
-                al más viejo y ya no trae los movimientos anteriores; su
-                saldo va AL PIE. */}
-            <FilaSaldoInicialCardex saldo={saldoInicialCardex} unidad={item.unidad} />
           </div>
         )}
 

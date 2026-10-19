@@ -8,6 +8,7 @@ import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { cn } from "@/lib/utils";
 import {
   AVISO_ENTRADAS_SIN_COSTO,
+  PERIODOS_TIENDA,
   PERIODO_TIENDA_DEFAULT,
   TITULO_TARJETA_TIENDA,
   avisoVentasSinUtilidad,
@@ -16,12 +17,9 @@ import {
   notaUtilidad,
   numeroONulo,
   partesUtilidad,
-  periodosTiendaOfrecidos,
   textoPeriodoTienda,
   type PeriodoTienda,
 } from "@/lib/admin/inventario-utilidad";
-import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
-import { todayCancun } from "@/lib/datetime";
 import { filtroUbicacionDeUrl } from "@/lib/admin/inventario-ubicacion";
 import type { TiendaResumen } from "@/types/inventory";
 
@@ -71,10 +69,9 @@ export function UtilidadTiendaCard({
   ubicacionesIds,
 }: UtilidadTiendaCardProps) {
   const sp = useSearchParams();
-  // Inicio oficial (16-oct-2026): «Todo» = desde el inicio y sin «Mes
-  // pasado» si queda entero antes. Sin inicio, como siempre.
-  const inicio = useInicioOficial();
-  const periodos = periodosTiendaOfrecidos(todayCancun(), inicio);
+  // Inventario muestra TODO el historial (18-oct-2026): sin el piso del
+  // inicio oficial, los tres periodos de siempre.
+  const periodos = PERIODOS_TIENDA;
   const margen = resumen?.margen_venta_pct ?? margenVentaPct ?? null;
   const utilidad = resumen
     ? { mxn: numeroONulo(resumen.utilidad_mxn), usd: numeroONulo(resumen.utilidad_usd) }
@@ -117,7 +114,7 @@ export function UtilidadTiendaCard({
             <p className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
               <BanknotesIcon className="h-4 w-4" aria-hidden="true" />
               {TITULO_TARJETA_TIENDA}
-              <span className="normal-case tracking-normal">· {textoPeriodoTienda(periodo, inicio)}</span>
+              <span className="normal-case tracking-normal">· {textoPeriodoTienda(periodo)}</span>
             </p>
             {partes.length === 0 ? (
               <p className="text-xl font-semibold text-muted-foreground">Sin ventas en el periodo</p>

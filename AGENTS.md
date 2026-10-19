@@ -11155,7 +11155,10 @@ historial completo.
   1-sep-2026 · Tacómetro N» AL PIE (la tabla va del más reciente al más
   viejo; mismo componente `RenglonSaldoInicial` que el cardex, aspecto de
   Caja chica). Lista vacía con saldo ⇒ «Sin lecturas desde el 1-sep-2026.».
-- **Cardex** (ficha del artículo): `saldo_inicial` del API
+- **Cardex** (ficha del artículo) — **SUPERSEDIDO el 18-oct-2026 (API
+  0.0.92)**: el inventario muestra TODO el historial y ya no hay saldo
+  inicial (ver «Inventario: todo el historial y cardex como lista por
+  fecha»). Lo que sigue es histórico: `saldo_inicial` del API
   (`normalizarSaldoInicialCardex`) ⇒ `FilaSaldoInicialCardex` al PIE del
   cardex (existencia + último precio de compra, tal cual) y arriba del
   RESUMEN por día (orden cronológico); «Dinero generado por este producto
@@ -11189,7 +11192,9 @@ historial completo.
   «Registrar ingreso», «Cobro desde abono» y «Aplicar anticipo», y en el
   aviso «Este abono cuadra con un cobro de vuelo». `vuelosCandidatos` NO
   lleva piso (un depósito de septiembre puede pagar un vuelo de agosto).
-- **Utilidad de la tienda** (revisión adversaria): el API 0.0.85 sube el
+- **Utilidad de la tienda** — **SUPERSEDIDO el 18-oct-2026**: sin piso del
+  inicio, «Todo» vuelve a ser todo el historial. Histórico (revisión
+  adversaria): el API 0.0.85 sube el
   `desde` de `tienda/resumen` aunque no se mande ⇒ «Todo» decía «todo el
   historial» y la columna de utilidad por ítem seguía de por vida. Ahora
   `rangoPeriodoTienda("todo", hoy, inicio)` = del inicio a hoy (tarjeta,
@@ -11677,3 +11682,51 @@ remanente, los totales y el bloque VUELATOUR llegan en el libro.
     «1.700,50» / «1700,50» ⇒ error (jamás se adivina la coma); ANALISTA ve la
     celda bloqueada con «Solo administración…» y el teclado no la abre; sin
     `vinculo` o sin `config.afac_real` la hoja es la MISMA (byte a byte).
+
+## Inventario: todo el historial y cardex como lista por fecha (18-oct-2026, API 0.0.92)
+
+Pedido del cliente: «En inventario si debemos mostrar lo de agosto y julio,
+solo en inventario» y «cambiar el formato del Cardex del producto en forma
+de lista por orden de fecha… con sus entradas, salidas y movimientos».
+Contrato: excepción de inventario a la invariante 86 del API (el cardex, el
+resumen, la tienda y el Excel ya no llevan el piso del inicio oficial; el
+`saldo_inicial` del 0.0.85 se retiró). El resto del sistema sigue arrancando
+el 1-sep-2026.
+
+- **Sin piso en inventario**: la tarjeta «Utilidad de la tienda» vuelve a
+  los tres periodos de siempre («Todo» = todo el historial,
+  `rangoPeriodoTienda(periodo, hoy)` sin inicio); la ficha y el cardex
+  plegable ya no pintan «Saldo inicial al 1-sep-2026» ni «(desde el
+  1-sep-2026)». `saldo-inicial-cardex.tsx` y `normalizarSaldoInicialCardex`
+  se borraron; `textoSinFilasDesde` sigue (lo usan los tacómetros).
+- **La ficha es UNA lista por fecha** (`resumen-producto.tsx`): Fecha ·
+  Movimiento (Entrada / Salida / Devolución / Ajuste con su detalle) ·
+  Entrada · Salida · Precio unitario · Total MXN · Existencia (la de
+  después del movimiento: `stock_despues` / `remanente` del API), del más
+  viejo al más nuevo, agrupada por MES con su renglón «Agosto 2026 · Stock
+  al inicio · Entradas · Vendidas · Stock al final (Stock hoy en el mes en
+  curso) · Vendido $X · utilidad +$Y». Un mes sin movimientos lo dice. Al
+  pie: «Total compras», «Total vendido» (+ lo cargado a costo) y «Hoy ·
+  utilidad acumulada» con la existencia actual y «bajo el mínimo». Siguen
+  los avisos, la línea del precio vigente, «Dinero generado» y la nota.
+- **Fuente única PURA** `lib/admin/inventario-cardex-lista.ts` (prueba
+  `__tests__/inventario-cardex-lista.test.ts`): `filasCardexPorFecha` (por
+  `orden` del API = posición en el cardex completo; API previo: por fecha y,
+  el mismo día, primero lo que entró), `gruposCardexPorMes` (un grupo por
+  cada `meses[]` del API, también vacíos; una fecha ilegible se queda con el
+  mes anterior), `etiquetaMesCardex`, `piezasMesCardex`, `textoDineroMes`,
+  `TITULO_VENDIDAS_MES` (= todas las salidas, con precio o a costo: la misma
+  nota del Excel) y los textos. **El panel no calcula stock, costo ni
+  utilidad**: ordena, agrupa y pinta lo que manda el API.
+- **Tipos ADITIVOS**: `ResumenCompra.orden?`, `ResumenVenta.orden?`,
+  `MesCardexResumen` y `InventarioItemResumen.meses?`. Con un API previo
+  (sin `orden` ni `meses`) la lista sale por fecha, agrupada por los meses
+  de las filas y sin renglón del mes.
+- **Excel** («Cardex (Excel)»): lo arma pyservices — hoja de movimientos por
+  fecha y «Resumen por mes» con stock al inicio del mes, unidades vendidas y
+  stock al final del mes. El botón solo cambió su `title`.
+- Pruebas: `inventario-cardex-lista.test.ts`, el describe «cardex como LISTA
+  POR FECHA» de `inventory/__tests__/ficha-producto.test.tsx` y las de
+  inicio oficial ajustadas (`inicio-oficial-auditoria.test.ts(x)`).
+- **Orden de deploy**: pyservices → API 0.0.92 → panel.
+

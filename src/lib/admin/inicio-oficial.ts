@@ -380,48 +380,6 @@ export function saltosDeCadena<
   });
 }
 
-/** Último precio de compra a la fecha del saldo inicial (cardex, 0.0.85). */
-export interface CostoVigenteSaldoInicial {
-  moneda: string;
-  /** En `moneda`, tal cual lo capturaron. */
-  unitario: number;
-}
-
-/** `saldo_inicial` del cardex de un artículo (0.0.85). */
-export interface SaldoInicialCardex {
-  fecha: string;
-  /** «Saldo inicial al 1-sep-2026» (del API, listo para pintar). */
-  etiqueta: string;
-  /** Existencia tras el ÚLTIMO movimiento anterior al inicio. */
-  existencia: number;
-  costo_vigente: CostoVigenteSaldoInicial | null;
-}
-
-/** Valida el `saldo_inicial` del cardex; ausente o mal formado ⇒ `null`. */
-export function normalizarSaldoInicialCardex(raw: unknown): SaldoInicialCardex | null {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as {
-    fecha?: unknown;
-    etiqueta?: unknown;
-    existencia?: unknown;
-    costo_vigente?: unknown;
-  };
-  const fecha = normalizarInicioOficial(r.fecha);
-  const existencia = Number(r.existencia);
-  if (!fecha || r.existencia == null || !Number.isFinite(existencia)) return null;
-  const etiqueta =
-    typeof r.etiqueta === "string" && r.etiqueta.trim() !== ""
-      ? r.etiqueta.trim()
-      : textoSaldoInicial(fecha);
-  let costo: CostoVigenteSaldoInicial | null = null;
-  const c = r.costo_vigente as { moneda?: unknown; unitario?: unknown } | null | undefined;
-  if (c && typeof c === "object" && typeof c.moneda === "string") {
-    const unitario = Number(c.unitario);
-    if (c.unitario != null && Number.isFinite(unitario)) costo = { moneda: c.moneda, unitario };
-  }
-  return { fecha, etiqueta, existencia, costo_vigente: costo };
-}
-
 /**
  * Lista vacía de un historial recortado: con renglón de saldo inicial dice
  * «Sin movimientos desde el 1-sep-2026.» (había historia antes); sin él, el

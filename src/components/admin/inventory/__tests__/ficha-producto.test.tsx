@@ -435,16 +435,17 @@ const texto = (html: string) =>
 // ───────────────────────── Pruebas ─────────────────────────
 
 describe("ficha del producto · API 0.0.36 (aceite 15W-50 tras la migración de T.C.)", () => {
-  it("SOLO Compras | Ventas | Resumen + «Dinero generado»: sin la tira de KPIs ni «Utilidad por salida»", async () => {
+  it("UNA lista por fecha + «Dinero generado»: sin las tres columnas, la tira de KPIs ni «Utilidad por salida»", async () => {
     api.item = item15w50();
     api.resumen = resumen15w50();
     const html = await renderPagina(ID_15W50);
-    for (const fuera of ["Stock actual", "Stock mínimo", "Costo FIFO", "Valorizado", "Utilidad por salida", "Precio de venta<"]) {
+    for (const fuera of ["Stock actual", "Stock mínimo", "Costo FIFO", "Valorizado", "Utilidad por salida", "Precio de venta<", ">Compras<", ">Ventas<", ">Resumen<", "Fecha del día"]) {
       expect(html).not.toContain(fuera);
     }
-    for (const bloque of [">Compras<", ">Ventas<", ">Resumen<", "Dinero generado por este producto"]) {
+    for (const bloque of ["Cardex del producto · por fecha", "data-cardex-lista", "Dinero generado por este producto"]) {
       expect(html).toContain(bloque);
     }
+    expect(texto(html)).toContain("Fecha Movimiento Entrada Salida Precio unitario Total MXN Existencia");
     // Con `regla_costo` la palabra «FIFO» no aparece en ningún lado.
     expect(html).not.toMatch(/FIFO/);
   });
@@ -540,7 +541,7 @@ describe("ficha del producto · API 0.0.36 (aceite 15W-50 tras la migración de 
     api.item = item15w50();
     api.resumen = resumen15w50();
     const t = texto(await renderPagina(ID_15W50));
-    expect(t).toContain("Hoy 84 cuarto (qt) +$3,252.72 MXN");
+    expect(t).toContain("Hoy · utilidad acumulada +$3,252.72 MXN 84 cuarto (qt)");
     expect(t).toContain("Vendido $16,263.61 MXN · Utilidad +$3,252.72 MXN");
     expect(t).toContain("En dólares: vendido $956.25 USD · utilidad +$191.25 USD (al T.C. de cada venta)");
     expect(t).toContain("Además se cargaron $49,749.90 MXN a costo (30 cuarto (qt), sin utilidad).");
@@ -581,7 +582,7 @@ describe("ficha del producto · API 0.0.36 (aceite 15W-50 tras la migración de 
     );
   });
 
-  it("«bajo el mínimo» en el pie del Resumen, en ámbar, SOLO con bajo_stock", async () => {
+  it("«bajo el mínimo» en el pie de la lista, en ámbar, SOLO con bajo_stock", async () => {
     api.resumen = resumen15w50();
     api.item = item15w50({ bajo_stock: true, stock: 20, stock_minimo: 30 });
     const html = await renderPagina(ID_15W50);
@@ -691,7 +692,6 @@ describe("la captura del cliente: «Aceite mineral aeronáutico SAE 50»", () =>
     );
     expect(t).toContain("$21.25 USD Precio vigente T.C. 17.0115 $3,253.45 MXN $191.25 USD");
     expect(t).toContain("Total compras 9 cuarto (qt) $3,253.45 MXN");
-    expect(t).toContain("Sin ventas todavía");
     expect(t).toContain("Todavía no se ha vendido este producto.");
     expect(t).not.toContain("sin tipo de cambio");
     expect(t).not.toContain("$0.00 MXN");
@@ -763,7 +763,7 @@ describe("API PREVIO (0.0.35, sin los aditivos): se pinta sin romper y SIN sumar
 
   it("sin resumen (el API no lo tiene): aviso, nunca «sin datos»", () => {
     expect(texto(renderToStaticMarkup(<ResumenProducto resumen={null} />))).toContain(
-      "No se pudieron cargar las compras, ventas y utilidad de este producto",
+      "No se pudieron cargar los movimientos y la utilidad de este producto",
     );
   });
 });
@@ -868,61 +868,90 @@ describe("cableado de la SALIDA (movimiento-dialog)", () => {
   });
 });
 
-describe("inicio oficial (API 0.0.85): «Saldo inicial al 1-sep-2026» del cardex", () => {
-  // Lo que manda el API cuando hubo movimientos antes del 1-sep (30 + 120
-  // entradas del fixture ⇒ 150): la existencia tras el último previo y el
-  // último precio de compra (USD 21.25). Los movimientos de julio/agosto ya
-  // NO vienen en `movimientos`.
-  const SALDO = {
-    fecha: "2026-09-01",
-    etiqueta: "Saldo inicial al 1-sep-2026",
-    existencia: 150,
-    costo_vigente: { moneda: "USD", unitario: 21.25 },
-  };
-  const soloSeptiembre = () =>
-    item15w50().movimientos.filter((m) => m.fecha_movimiento >= "2026-09-01");
+describe("cardex como LISTA POR FECHA, agrupada por mes (18-oct-2026, API 0.0.92)", () => {
+  /** El 15W-50 con lo que manda el API 0.0.92: `orden`, existencia tras cada movimiento y `meses`. */
+  function resumenConMeses(): InventarioItemResumen {
+    const r = resumen15w50();
+    const existenciaVenta: Record<string, [number, number]> = {
+      "d45dae06-7478-4f33-a412-00ae6a57e588": [1, 26],
+      "a9378a18-54e1-4259-b65a-35de6dd533c0": [2, 24],
+      "533fce35-6088-432b-b41f-a242aa471b42": [3, 0],
+      "40da8327-e60f-41aa-a061-8071ed1f9fc3": [5, 108],
+      "19b737b8-790d-4fbb-b4bb-dd3aaa7e9fd7": [6, 84],
+    };
+    return {
+      ...r,
+      compras: r.compras.map((c, i) => ({ ...c, orden: i === 0 ? 0 : 4 })),
+      ventas: r.ventas.map((v) => {
+        const [orden, remanente] = existenciaVenta[v.movimiento_id ?? ""];
+        return { ...v, orden, remanente };
+      }),
+      meses: [
+        { mes: "2026-07", stock_inicio: 0, entradas: 30, compras: 30, unidades_vendidas: 6, stock_final: 24, movimientos: 3, vendido_mxn: null, utilidad_mxn: null, en_curso: false },
+        { mes: "2026-08", stock_inicio: 24, entradas: 120, compras: 120, unidades_vendidas: 24, stock_final: 120, movimientos: 2, vendido_mxn: null, utilidad_mxn: null, en_curso: false },
+        { mes: "2026-09", stock_inicio: 120, entradas: 0, compras: 0, unidades_vendidas: 36, stock_final: 84, movimientos: 2, vendido_mxn: 16263.61, utilidad_mxn: 3252.72, en_curso: false },
+        { mes: "2026-10", stock_inicio: 84, entradas: 0, compras: 0, unidades_vendidas: 0, stock_final: 84, movimientos: 0, vendido_mxn: null, utilidad_mxn: null, en_curso: true },
+      ],
+    };
+  }
 
-  it("cardex: renglón al PIE con existencia y último precio de compra; las cifras del API tal cual", async () => {
-    api.item = item15w50({ movimientos: soloSeptiembre(), saldo_inicial: SALDO });
-    api.resumen = { ...resumen15w50(), saldo_inicial: SALDO };
+  it("del más viejo al más nuevo, con julio y agosto (el inventario no lleva el piso del inicio)", async () => {
+    api.item = item15w50();
+    api.resumen = resumenConMeses();
+    const t = texto(await renderPagina(ID_15W50));
+    const orden = [
+      "Julio 2026",
+      "Entrada 30 cuarto (qt)",
+      "Salida N4142R",
+      "Salida XB-PEV",
+      "Agosto 2026",
+      "Salida N990GG",
+      "Conteo físico VTF-INV-001",
+      "Septiembre 2026",
+      "Salida XA-VGV",
+      "Salida N4142R 24 cuarto (qt)",
+      "Octubre 2026 (en curso)",
+    ];
+    let desde = -1;
+    for (const pieza of orden) {
+      const i = t.indexOf(pieza, desde + 1);
+      expect(i, pieza).toBeGreaterThan(desde);
+      desde = i;
+    }
+    // La existencia después de cada movimiento, tal cual del API.
+    expect(t).toContain("$6,633.32 MXN A costo · sin utilidad 26 cuarto (qt)");
+    expect(t).toContain("utilidad +$2,168.48 MXN 84 cuarto (qt)");
+  });
+
+  it("renglón de cada mes: stock al inicio, entradas, vendidas, stock al final y el dinero del mes", async () => {
+    api.item = item15w50();
+    api.resumen = resumenConMeses();
     const html = await renderPagina(ID_15W50);
     const t = texto(html);
-    expect(t).toContain("Saldo inicial al 1-sep-2026 Existencia 150 cuarto (qt) Último precio de compra $21.25 USD");
-    // Va DESPUÉS de la tabla del cardex (más reciente → más viejo).
-    const cardex = html.indexOf('id="cardex"');
-    expect(cardex).toBeGreaterThan(-1);
-    expect(html.indexOf("data-saldo-inicial", cardex)).toBeGreaterThan(cardex);
-    // Resumen por día: renglón ARRIBA (orden cronológico) y «dinero generado» rotulado.
-    expect(t).toContain("Fecha del día Existencia Utilidad / pérdida (MXN) Saldo inicial al 1-sep-2026 150 cuarto (qt)");
-    expect(t).toContain("Dinero generado por este producto (desde el 1-sep-2026)");
-    // La existencia de HOY sigue siendo la del API (cardex completo).
-    expect(t).toContain("Hoy 84 cuarto (qt)");
-  });
-
-  it("todo el cardex fue antes del inicio: «Sin movimientos desde el 1-sep-2026.» + saldo (no «todavía»)", async () => {
-    api.item = item15w50({ movimientos: [], saldo_inicial: { ...SALDO, costo_vigente: null } });
-    api.resumen = resumen15w50();
-    const t = texto(await renderPagina(ID_15W50));
-    expect(t).toContain("Sin movimientos desde el 1-sep-2026.");
-    expect(t).not.toContain("Sin movimientos todavía. Registra una entrada");
-    expect(t).toContain("Saldo inicial al 1-sep-2026 Existencia 150 cuarto (qt)");
-    expect(t).not.toContain("Último precio de compra");
-  });
-
-  it("sin la llave (API 0.0.84) o null: marcado IDÉNTICO al de siempre", async () => {
-    api.item = item15w50();
-    api.resumen = resumen15w50();
-    const antes = await renderPagina(ID_15W50);
-    api.item = item15w50({ saldo_inicial: null });
-    api.resumen = { ...resumen15w50(), saldo_inicial: null };
-    const conNull = await renderPagina(ID_15W50);
-    expect(conNull).toBe(antes);
-    expect(antes).not.toContain("data-saldo-inicial");
-    expect(texto(antes)).toContain("Dinero generado por este producto ");
-    expect(antes).not.toContain("(desde el 1-sep-2026)");
-    api.item = item15w50({ movimientos: [] });
-    expect(texto(await renderPagina(ID_15W50))).toContain(
-      "Sin movimientos todavía. Registra una entrada para dar de alta stock.",
+    expect(t).toContain(
+      "Septiembre 2026 Stock al inicio 120 cuarto (qt) Entradas 0 cuarto (qt) Vendidas 36 cuarto (qt) Stock al final 84 cuarto (qt) Vendido $16,263.61 MXN · utilidad +$3,252.72 MXN",
     );
+    expect(t).toContain("Agosto 2026 Stock al inicio 24 cuarto (qt) Entradas 120 cuarto (qt) Vendidas 24 cuarto (qt) Stock al final 120 cuarto (qt)");
+    // El mes en curso dice «Stock hoy» y, sin movimientos, lo dice.
+    expect(t).toContain("Stock hoy 84 cuarto (qt) Sin movimientos en el mes.");
+    // «Vendidas» explica que cuenta todas las salidas (con precio o a costo).
+    expect(html).toMatch(/title="Todas las salidas a los aviones del mes, con precio o a costo[^"]*">Vendidas/);
+    for (const mes of ["2026-07", "2026-08", "2026-09", "2026-10"]) expect(html).toContain(`data-mes="${mes}"`);
+  });
+
+  it("sin `saldo_inicial` ni «desde el 1-sep-2026»: todo el historial", async () => {
+    api.item = item15w50();
+    api.resumen = resumenConMeses();
+    const html = await renderPagina(ID_15W50);
+    expect(html).not.toContain("data-saldo-inicial");
+    expect(html).not.toContain("desde el 1-sep-2026");
+    expect(texto(html)).toContain("Dinero generado por este producto ");
+  });
+
+  it("sin movimientos: el texto de siempre en la lista y en el cardex", async () => {
+    api.item = item15w50({ movimientos: [] });
+    api.resumen = { ...resumen15w50(), compras: [], ventas: [], meses: [] };
+    const t = texto(await renderPagina(ID_15W50));
+    expect(t).toContain("Sin movimientos todavía. Registra una entrada para dar de alta stock.");
   });
 });

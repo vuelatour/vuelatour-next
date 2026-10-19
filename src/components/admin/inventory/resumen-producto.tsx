@@ -1,3 +1,4 @@
+import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
@@ -49,10 +50,17 @@ import {
   tonoDe,
 } from "@/lib/admin/inventario-utilidad";
 import {
-  normalizarSaldoInicialCardex,
-  textoDesdeInicio,
-  textoSinFilasDesde,
-} from "@/lib/admin/inicio-oficial";
+  SIN_MOVIMIENTOS_CARDEX,
+  SIN_MOVIMIENTOS_MES,
+  TITULO_CARDEX_LISTA,
+  TITULO_VENDIDAS_MES,
+  filasCardexPorFecha,
+  gruposCardexPorMes,
+  piezasMesCardex,
+  textoDineroMes,
+  type FilaCardexLista,
+  type GrupoMesCardex,
+} from "@/lib/admin/inventario-cardex-lista";
 import type {
   InventarioItemResumen,
   MonedaInventario,
@@ -60,7 +68,8 @@ import type {
   ResumenVenta,
 } from "@/types/inventory";
 
-const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
+/** Columnas de la lista: Fecha · Movimiento · Entrada · Salida · Precio · Total · Existencia. */
+const COLUMNAS = 7;
 
 /** Verde si ganó, rojo si perdió, neutro en 0 / sin dato. */
 function claseTono(v: number | null | undefined): string {
@@ -75,8 +84,8 @@ function claseTono(v: number | null | undefined): string {
 const moneda = (m: string | null | undefined): MonedaInventario => (m === "USD" ? "USD" : "MXN");
 
 /**
- * Utilidad de un día / del total: pesos y, SOLO si quedan filas sin T.C.
- * (respaldo), la parte en dólares en su propio renglón. Jamás sumadas.
+ * Utilidad acumulada: pesos y, SOLO si quedan filas sin T.C. (respaldo), la
+ * parte en dólares en su propio renglón. Jamás sumadas.
  */
 function Utilidad({ mxn, usd }: { mxn: number | null | undefined; usd: number | null | undefined }) {
   const m = numeroONulo(mxn);
@@ -96,40 +105,45 @@ function Utilidad({ mxn, usd }: { mxn: number | null | undefined; usd: number | 
 
 interface ResumenProductoProps {
   resumen: InventarioItemResumen | null;
-  /** Del detalle del ítem: el pie del Resumen avisa «bajo el mínimo». */
+  /** Del detalle del ítem: el pie de la lista avisa «bajo el mínimo». */
   bajoStock?: boolean;
   stockMinimo?: number | null;
 }
 
 /**
- * FICHA SENCILLA del producto (pedido del cliente 25-sep-2026): SOLO los
- * bloques COMPRAS | VENTAS | RESUMEN y, debajo, «Dinero generado por este
- * producto».
+ * FICHA del producto: el CARDEX COMO LISTA POR FECHA (18-oct-2026, API
+ * 0.0.92). Pedido del cliente: «debemos cambiar el formato del Cardex del
+ * producto en forma de lista por orden de fecha, de esa forma quedan más
+ * claros los movimientos que ha tenido el producto con sus entradas, salidas
+ * y movimientos».
  *
- *  - COMPRAS = a cuánto se ha comprado: precio unitario NATIVO (con su
- *    moneda y el T.C. oficial del día de la compra) y total en pesos. El
- *    último precio de compra lleva el chip «Precio vigente».
- *  - VENTAS = historial de a cuánto se ha vendido: avión, precio unitario
- *    nativo (T.C. del día de la VENTA) y total en pesos con su utilidad.
- *  - RESUMEN = existencia por día + utilidad/pérdida en pesos.
+ * UNA tabla del movimiento más viejo al más nuevo (sustituye a las tres
+ * columnas COMPRAS | VENTAS | RESUMEN), agrupada por MES: cada mes abre con
+ * su renglón (stock al inicio, entradas, vendidas, stock al final y el
+ * dinero del mes) y lista sus entradas, salidas, devoluciones y ajustes con
+ * la existencia después de cada uno. Al pie, el total comprado, el total
+ * vendido y la existencia de hoy con la utilidad acumulada; debajo, «Dinero
+ * generado por este producto». Todo el historial (julio y agosto incluidos:
+ * el inventario no lleva el piso del inicio oficial).
  *
  * TODO viene calculado del API (`GET items/:id/resumen`, fuente única
  * `inventario-cardex.util.ts`, la MISMA del Balance general y del cardex en
- * Excel); aquí SOLO se pinta — ningún costo, T.C., utilidad ni suma entre
- * monedas. Las fechas son días Cancún (columna `date`): se pintan sin
- * desplazar el día. Con un API PREVIO (sin `regla_costo`) se pinta igual,
- * sin romper y sin sumar monedas.
+ * Excel); aquí SOLO se ordena, agrupa y pinta (`inventario-cardex-lista.ts`)
+ * — ningún costo, T.C., existencia, utilidad ni suma entre monedas. Las
+ * fechas son días Cancún (columna `date`): se pintan sin desplazar el día.
+ * Con un API PREVIO (sin `orden` ni `meses`) se ordena por fecha y los meses
+ * salen de las filas, sin su renglón.
  */
 export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProductoProps) {
   if (!resumen) {
     return (
       <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-        No se pudieron cargar las compras, ventas y utilidad de este producto. Recarga la
+        No se pudieron cargar los movimientos y la utilidad de este producto. Recarga la
         página; el cardex completo sigue abajo.
       </div>
     );
   }
-  const { item, compras, ventas, resumen_diario, totales } = resumen;
+  const { item, compras, ventas, totales } = resumen;
   const unidad = item.unidad;
   const conUnidad = (n: number) => cantidadConUnidad(n, unidad);
   const reglaNueva = !!resumen.regla_costo;
@@ -162,11 +176,9 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
   const unidadesVendidas =
     "unidades_vendidas" in totales ? numeroONulo(totales.unidades_vendidas) : totales.ventas_cant;
   const bajoMinimo = textoBajoMinimo(bajoStock, stockMinimo);
-  // Inicio oficial (API 0.0.85): compras, ventas, resumen por día y dinero
-  // generado ya vienen DESDE el inicio; la existencia de cada día y la de
-  // hoy, del cardex completo. Con movimientos anteriores llega el
-  // `saldo_inicial` (existencia al arrancar): sin él, todo como siempre.
-  const saldoInicial = normalizarSaldoInicialCardex(resumen.saldo_inicial);
+
+  const filas = filasCardexPorFecha(compras, ventas);
+  const grupos = gruposCardexPorMes(filas, resumen.meses);
 
   return (
     <section className="space-y-3">
@@ -191,237 +203,132 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.35fr)_minmax(0,0.9fr)]">
-        {/* ===================== COMPRAS ===================== */}
-        <div className="space-y-2">
-          <div className="overflow-hidden rounded-xl border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead
-                    colSpan={4}
-                    className="h-9 bg-sky-500/10 text-center text-xs font-semibold uppercase tracking-wider text-sky-700 dark:text-sky-300"
-                  >
-                    Compras
-                  </TableHead>
-                </TableRow>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-xs">Fecha</TableHead>
-                  <TableHead className="text-right text-xs">Cantidad</TableHead>
-                  <TableHead className="text-right text-xs">Precio unitario</TableHead>
-                  <TableHead className="text-right text-xs">Total MXN</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {compras.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={4}
-                      className="py-6 text-center text-sm text-muted-foreground whitespace-normal"
-                    >
-                      {textoSinFilasDesde(
-                        saldoInicial,
-                        "Sin compras registradas. Registra una entrada para dar de alta stock.",
-                        "compras",
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  compras.map((c, i) => (
-                    <FilaCompra
-                      key={c.movimiento_id ?? `${c.fecha}-${i}`}
-                      c={c}
-                      unidad={unidad}
-                      reglaNueva={reglaNueva}
-                    />
-                  ))
-                )}
-              </TableBody>
-              <TableFooter>
-                <TableRow className="hover:bg-transparent">
-                  <TableCell className="text-xs font-semibold">Total compras</TableCell>
-                  <TableCell className="text-right text-xs font-semibold tabular-nums">
-                    {totales.compras_cant != null ? conUnidad(totales.compras_cant) : "—"}
-                  </TableCell>
-                  <TableCell />
-                  <TableCell className="text-right text-xs font-semibold tabular-nums">
-                    {fmtMxn(totales.compras_mxn)}
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          </div>
-          {precioVigente && (
-            <p className="px-1 text-xs text-muted-foreground">{precioVigente}</p>
-          )}
-        </div>
-
-        {/* ===================== VENTAS ===================== */}
-        <div className="overflow-hidden rounded-xl border bg-card self-start">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead
-                  colSpan={5}
-                  className="h-9 bg-brand-600/10 text-center text-xs font-semibold uppercase tracking-wider text-brand-600"
+      <div className="overflow-hidden rounded-xl border bg-card">
+        <Table data-cardex-lista="">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead
+                colSpan={COLUMNAS}
+                className="h-9 text-xs font-semibold text-foreground"
+              >
+                {TITULO_CARDEX_LISTA}
+              </TableHead>
+            </TableRow>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="text-xs">Fecha</TableHead>
+              <TableHead className="text-xs">Movimiento</TableHead>
+              <TableHead className="text-right text-xs">Entrada</TableHead>
+              <TableHead className="text-right text-xs">Salida</TableHead>
+              <TableHead className="text-right text-xs">Precio unitario</TableHead>
+              <TableHead className="text-right text-xs">Total MXN</TableHead>
+              <TableHead className="text-right text-xs">Existencia</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {grupos.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={COLUMNAS}
+                  className="py-6 text-center text-sm text-muted-foreground whitespace-normal"
                 >
-                  Ventas
-                </TableHead>
-              </TableRow>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-xs">Fecha</TableHead>
-                <TableHead className="text-xs">Avión</TableHead>
-                <TableHead className="text-right text-xs">Cantidad</TableHead>
-                <TableHead className="text-right text-xs">Precio unitario</TableHead>
-                <TableHead className="text-right text-xs">Total MXN</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ventas.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="py-6 text-center text-sm text-muted-foreground whitespace-normal"
-                  >
-                    {textoSinFilasDesde(
-                      saldoInicial,
-                      "Sin ventas todavía. Se registran al dar salida a un avión.",
-                      "ventas",
-                    )}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                ventas.map((v, i) => (
-                  <FilaVenta key={v.movimiento_id ?? `${v.fecha}-${i}`} v={v} unidad={unidad} />
-                ))
-              )}
-            </TableBody>
-            <TableFooter>
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={2} className="text-xs font-semibold whitespace-normal">
-                  Total vendido
-                  {cargadoACosto && (
-                    <span className="block font-normal text-muted-foreground">{cargadoACosto}</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right text-xs font-semibold tabular-nums align-top">
-                  {unidadesVendidas != null ? conUnidad(unidadesVendidas) : "—"}
-                </TableCell>
-                <TableCell />
-                <TableCell className="text-right text-xs font-semibold tabular-nums align-top">
-                  {totales.ventas_mxn != null || ventasUsdSinTc == null ? fmtMxn(totales.ventas_mxn) : null}
-                  {ventasUsdSinTc != null && (
-                    <span className="block" title="Ventas en dólares sin tipo de cambio">
-                      {textoMonto(ventasUsdSinTc, "USD", { signo: false })}
-                    </span>
-                  )}
+                  {SIN_MOVIMIENTOS_CARDEX}
                 </TableCell>
               </TableRow>
-            </TableFooter>
-          </Table>
-        </div>
-
-        {/* ===================== RESUMEN ===================== */}
-        <div className="overflow-hidden rounded-xl border bg-card self-start">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead
-                  colSpan={3}
-                  className="h-9 bg-emerald-500/10 text-center text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300"
-                >
-                  Resumen
-                </TableHead>
-              </TableRow>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-xs">Fecha del día</TableHead>
-                <TableHead className="text-right text-xs">Existencia</TableHead>
-                <TableHead className="bg-emerald-500/10 text-right text-xs text-emerald-700 dark:text-emerald-300">
-                  Utilidad / pérdida (MXN)
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {/* Orden cronológico: el saldo inicial va ARRIBA, antes del
-                  primer día visible. */}
-              {saldoInicial && (
-                <TableRow data-saldo-inicial className="bg-muted/40 hover:bg-muted/40">
-                  <TableCell className="text-xs font-medium whitespace-normal">
-                    {saldoInicial.etiqueta}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {conUnidad(saldoInicial.existencia)}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              )}
-              {resumen_diario.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={3}
-                    className="py-6 text-center text-sm text-muted-foreground whitespace-normal"
-                  >
-                    {textoSinFilasDesde(saldoInicial, "Sin movimientos todavía.")}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                resumen_diario.map((d) => {
-                  const perdida =
-                    (numeroONulo(d.utilidad_mxn) ?? 0) < 0 || (numeroONulo(d.utilidad_usd) ?? 0) < 0;
-                  return (
-                    <TableRow key={d.fecha}>
-                      <TableCell className="whitespace-nowrap">{fmtDateOnly(d.fecha)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {conUnidad(d.existencia_cierre)}
-                        <span className="block text-[11px] text-muted-foreground">
-                          {d.entradas_cant > 0 ? `entró ${num(d.entradas_cant)}` : ""}
-                          {d.entradas_cant > 0 && d.salidas_cant > 0 ? " · " : ""}
-                          {d.salidas_cant > 0 ? `salió ${num(d.salidas_cant)}` : ""}
-                        </span>
-                      </TableCell>
+            ) : (
+              grupos.map((g) => (
+                <Fragment key={g.mes || "sin-fecha"}>
+                  <RenglonMes grupo={g} unidad={unidad} />
+                  {g.filas.length === 0 ? (
+                    <TableRow className="hover:bg-transparent">
                       <TableCell
-                        className={cn(
-                          "text-right font-medium tabular-nums",
-                          perdida ? "bg-red-500/10" : "bg-emerald-500/10",
-                        )}
+                        colSpan={COLUMNAS}
+                        className="py-2 text-xs text-muted-foreground whitespace-normal"
                       >
-                        <Utilidad mxn={d.utilidad_mxn} usd={d.utilidad_usd} />
+                        {SIN_MOVIMIENTOS_MES}
                       </TableCell>
                     </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-            <TableFooter>
-              <TableRow className="hover:bg-transparent">
-                <TableCell className="text-xs font-semibold">Hoy</TableCell>
-                <TableCell className="text-right text-xs font-semibold tabular-nums">
-                  {conUnidad(totales.existencia_actual)}
-                  {bajoMinimo && (
-                    <span className="block font-medium text-amber-700 dark:text-amber-400">
-                      {bajoMinimo}
-                    </span>
+                  ) : (
+                    g.filas.map((f, i) => (
+                      <FilaCardex
+                        key={claveFila(f, i)}
+                        fila={f}
+                        unidad={unidad}
+                        reglaNueva={reglaNueva}
+                      />
+                    ))
                   )}
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    "text-right text-xs font-semibold tabular-nums",
-                    (numeroONulo(totales.utilidad_mxn) ?? 0) < 0 ? "bg-red-500/10" : "bg-emerald-500/10",
-                  )}
-                >
-                  <Utilidad mxn={totales.utilidad_mxn} usd={totales.utilidad_usd} />
-                </TableCell>
-              </TableRow>
-            </TableFooter>
-          </Table>
-        </div>
+                </Fragment>
+              ))
+            )}
+          </TableBody>
+          <TableFooter>
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={2} className="text-xs font-semibold">
+                Total compras
+              </TableCell>
+              <TableCell className="text-right text-xs font-semibold tabular-nums">
+                {totales.compras_cant != null ? conUnidad(totales.compras_cant) : "—"}
+              </TableCell>
+              <TableCell />
+              <TableCell />
+              <TableCell className="text-right text-xs font-semibold tabular-nums">
+                {fmtMxn(totales.compras_mxn)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={2} className="text-xs font-semibold whitespace-normal">
+                Total vendido
+                {cargadoACosto && (
+                  <span className="block font-normal text-muted-foreground">{cargadoACosto}</span>
+                )}
+              </TableCell>
+              <TableCell />
+              <TableCell className="text-right text-xs font-semibold tabular-nums align-top">
+                {unidadesVendidas != null ? conUnidad(unidadesVendidas) : "—"}
+              </TableCell>
+              <TableCell />
+              <TableCell className="text-right text-xs font-semibold tabular-nums align-top">
+                {totales.ventas_mxn != null || ventasUsdSinTc == null ? fmtMxn(totales.ventas_mxn) : null}
+                {ventasUsdSinTc != null && (
+                  <span className="block" title="Ventas en dólares sin tipo de cambio">
+                    {textoMonto(ventasUsdSinTc, "USD", { signo: false })}
+                  </span>
+                )}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={2} className="text-xs font-semibold">
+                Hoy · utilidad acumulada
+              </TableCell>
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell
+                className={cn(
+                  "text-right text-xs font-semibold tabular-nums",
+                  (numeroONulo(totales.utilidad_mxn) ?? 0) < 0 ? "bg-red-500/10" : "bg-emerald-500/10",
+                )}
+              >
+                <Utilidad mxn={totales.utilidad_mxn} usd={totales.utilidad_usd} />
+              </TableCell>
+              <TableCell className="text-right text-xs font-semibold tabular-nums">
+                {conUnidad(totales.existencia_actual)}
+                {bajoMinimo && (
+                  <span className="block font-medium text-amber-700 dark:text-amber-400">
+                    {bajoMinimo}
+                  </span>
+                )}
+              </TableCell>
+            </TableRow>
+          </TableFooter>
+        </Table>
       </div>
 
-      <DineroGeneradoRenglon
-        dinero={dinero}
-        unidad={unidad}
-        desde={saldoInicial ? textoDesdeInicio(saldoInicial.fecha) : null}
-      />
+      {precioVigente && <p className="px-1 text-xs text-muted-foreground">{precioVigente}</p>}
+
+      <DineroGeneradoRenglon dinero={dinero} unidad={unidad} />
 
       <p className="text-xs text-muted-foreground">
         {reglaNueva ? notaFicha(margen) : NOTA_FICHA_API_PREVIO}
@@ -430,15 +337,78 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
   );
 }
 
+function claveFila(f: FilaCardexLista, i: number): string {
+  const id = f.clase === "compra" ? f.compra.movimiento_id : f.venta.movimiento_id;
+  return id ?? `${f.clase}-${f.fecha}-${i}`;
+}
+
+/**
+ * Renglón del MES: «Agosto 2026» + stock al inicio, entradas, vendidas,
+ * stock al final y el dinero del mes (números del API tal cual). Con un API
+ * previo (sin `meses`) solo la etiqueta.
+ */
+function RenglonMes({ grupo, unidad }: { grupo: GrupoMesCardex; unidad: string | null }) {
+  const m = grupo.resumen;
+  const dineroMes = m ? textoDineroMes(m) : null;
+  return (
+    <TableRow data-mes={grupo.mes} className="bg-muted/50 hover:bg-muted/50">
+      <TableCell colSpan={COLUMNAS} className="py-2 whitespace-normal">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+          <span className="text-sm font-semibold text-foreground">{grupo.etiqueta}</span>
+          {m &&
+            piezasMesCardex(m, unidad).map((p) => (
+              <span
+                key={p.titulo}
+                className="text-muted-foreground"
+                title={p.titulo === "Vendidas" ? TITULO_VENDIDAS_MES : undefined}
+              >
+                {p.titulo}{" "}
+                <b className="font-semibold tabular-nums text-foreground">{p.valor}</b>
+              </span>
+            ))}
+          {dineroMes && <span className="text-muted-foreground">{dineroMes}</span>}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function FilaCardex({
+  fila,
+  unidad,
+  reglaNueva,
+}: {
+  fila: FilaCardexLista;
+  unidad: string | null;
+  reglaNueva: boolean;
+}) {
+  const existencia = (
+    <TableCell className="text-right tabular-nums">
+      {fila.existencia != null ? (
+        cantidadConUnidad(fila.existencia, unidad)
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      )}
+    </TableCell>
+  );
+  return fila.clase === "compra" ? (
+    <FilaCompra c={fila.compra} unidad={unidad} reglaNueva={reglaNueva} existencia={existencia} />
+  ) : (
+    <FilaVenta v={fila.venta} unidad={unidad} existencia={existencia} />
+  );
+}
+
 /** Una compra (ENTRADA) o una devolución/ajuste que regresó stock. */
 function FilaCompra({
   c,
   unidad,
   reglaNueva,
+  existencia,
 }: {
   c: ResumenCompra;
   unidad: string | null;
   reglaNueva: boolean;
+  existencia: ReactNode;
 }) {
   const monedaC = moneda(c.moneda ?? c.moneda_captura);
   // Precio NATIVO (en la moneda de la compra). Con un API previo, el
@@ -448,16 +418,20 @@ function FilaCompra({
   const subTc = subTcCompra(monedaC, c.tc_usd_mxn);
   const totalNativoUsd = monedaC === "USD" ? numeroONulo(c.total) : null;
   return (
-    <TableRow>
-      <TableCell className="whitespace-normal">
-        <span className="whitespace-nowrap">{fmtDateOnly(c.fecha)}</span>
-        {c.tipo !== "ENTRADA" && (
+    <TableRow data-cardex-fila="compra">
+      <TableCell className="whitespace-nowrap align-top">{fmtDateOnly(c.fecha)}</TableCell>
+      <TableCell className="whitespace-normal align-top">
+        {c.tipo === "ENTRADA" ? (
+          <Badge variant="outline" className="border-sky-500/50 text-sky-700 dark:text-sky-300">
+            Entrada
+          </Badge>
+        ) : (
           <Badge
             variant="outline"
             className={
               c.tipo === "DEVOLUCION"
-                ? "ml-1.5 border-sky-500/50 text-sky-600"
-                : "ml-1.5 border-navy-400/50 text-muted-foreground"
+                ? "border-sky-500/50 text-sky-600"
+                : "border-navy-400/50 text-muted-foreground"
             }
           >
             {c.tipo === "DEVOLUCION" ? "Devolución" : "Ajuste"}
@@ -482,8 +456,11 @@ function FilaCompra({
           </span>
         )}
       </TableCell>
-      <TableCell className="text-right tabular-nums">{num(c.cantidad)}{unidad ? ` ${unidad}` : ""}</TableCell>
-      <TableCell className="text-right tabular-nums">
+      <TableCell className="text-right tabular-nums align-top">
+        {cantidadConUnidad(c.cantidad, unidad)}
+      </TableCell>
+      <TableCell />
+      <TableCell className="text-right tabular-nums align-top">
         {c.sin_costo ? (
           <span className="font-medium text-amber-600 dark:text-amber-500">Sin costo</span>
         ) : (
@@ -510,7 +487,7 @@ function FilaCompra({
           <span className="block text-[11px] text-muted-foreground">{SUB_NO_CAMBIA_PRECIO}</span>
         )}
       </TableCell>
-      <TableCell className="text-right tabular-nums">
+      <TableCell className="text-right tabular-nums align-top">
         {c.total_mxn != null ? fmtMxn(c.total_mxn) : <span className="text-muted-foreground">—</span>}
         {totalNativoUsd != null && (
           <span className="block text-[11px] text-muted-foreground">
@@ -518,12 +495,21 @@ function FilaCompra({
           </span>
         )}
       </TableCell>
+      {existencia}
     </TableRow>
   );
 }
 
 /** Una salida a un avión (o a toda la flota), con precio o a costo. */
-function FilaVenta({ v, unidad }: { v: ResumenVenta; unidad: string | null }) {
+function FilaVenta({
+  v,
+  unidad,
+  existencia,
+}: {
+  v: ResumenVenta;
+  unidad: string | null;
+  existencia: ReactNode;
+}) {
   // Moneda NATIVA de lo cobrado (a costo: la del costo).
   const monedaV = moneda(v.moneda ?? (v.a_costo ? v.costo_moneda : v.venta_moneda));
   const precio = v.a_costo
@@ -544,21 +530,27 @@ function FilaVenta({ v, unidad }: { v: ResumenVenta; unidad: string | null }) {
   const gMxn = numeroONulo(v.ganancia_mxn);
   const gUsd = numeroONulo(v.ganancia_usd);
   return (
-    <TableRow>
-      <TableCell className="whitespace-nowrap">{fmtDateOnly(v.fecha)}</TableCell>
-      <TableCell className="whitespace-normal">
+    <TableRow data-cardex-fila="venta">
+      <TableCell className="whitespace-nowrap align-top">{fmtDateOnly(v.fecha)}</TableCell>
+      <TableCell className="whitespace-normal align-top">
+        <Badge variant="outline" className="border-brand-600/40 text-brand-600 dark:text-brand-400">
+          Salida
+        </Badge>{" "}
         {v.vendido_a === "FLOTA" ? "Toda la flota" : v.vendido_a}
         {v.referencia && v.referencia !== "0" && (
           <span className="block text-[11px] text-muted-foreground">ref {v.referencia}</span>
         )}
       </TableCell>
-      <TableCell className="text-right tabular-nums">{num(v.cantidad)}{unidad ? ` ${unidad}` : ""}</TableCell>
-      <TableCell className="text-right tabular-nums">
+      <TableCell />
+      <TableCell className="text-right tabular-nums align-top">
+        {cantidadConUnidad(v.cantidad, unidad)}
+      </TableCell>
+      <TableCell className="text-right tabular-nums align-top">
         {precioTxt}
         {v.a_costo && <span className="block text-[11px] text-muted-foreground">a costo</span>}
         {tc && <span className="block text-[11px] text-muted-foreground">{tc}</span>}
       </TableCell>
-      <TableCell className="text-right tabular-nums">
+      <TableCell className="text-right tabular-nums align-top">
         {totalMxn != null ? fmtMxn(totalMxn) : <span className="text-muted-foreground">—</span>}
         {totalUsd != null && (
           <span className="block text-[11px] text-muted-foreground">
@@ -582,6 +574,7 @@ function FilaVenta({ v, unidad }: { v: ResumenVenta; unidad: string | null }) {
           ) : null}
         </span>
       </TableCell>
+      {existencia}
     </TableRow>
   );
 }
@@ -594,12 +587,9 @@ function FilaVenta({ v, unidad }: { v: ResumenVenta; unidad: string | null }) {
 function DineroGeneradoRenglon({
   dinero,
   unidad,
-  desde,
 }: {
   dinero: ReturnType<typeof dineroGeneradoDeTotales>;
   unidad: string | null;
-  /** «desde el 1-sep-2026» (API 0.0.85 con saldo inicial) o null. */
-  desde?: string | null;
 }) {
   const piezas = piezasDineroGenerado(dinero);
   const usd = lineaUsdOriginal(dinero.vendido_usd_original, dinero.utilidad_usd_original);
@@ -611,7 +601,6 @@ function DineroGeneradoRenglon({
     <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
         {TITULO_DINERO}
-        {desde ? ` (${desde})` : ""}
       </p>
       {sinVentas ? (
         <p className="mt-1 text-sm text-muted-foreground">{SIN_VENTAS}</p>

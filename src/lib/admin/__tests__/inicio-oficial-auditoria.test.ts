@@ -5,7 +5,6 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  normalizarSaldoInicialCardex,
   normalizarSaldoInicialTaco,
   rotuloHorasMesAnio,
   rotuloRegistradas,
@@ -22,13 +21,7 @@ import {
   opcionesMesArranque,
   validarFormCuenta,
 } from "../reparto-pagos";
-import {
-  PERIODOS_TIENDA,
-  periodoTiendaConInicio,
-  periodosTiendaOfrecidos,
-  rangoPeriodoTienda,
-  textoPeriodoTienda,
-} from "../inventario-utilidad";
+import { rangoPeriodoTienda, textoPeriodoTienda } from "../inventario-utilidad";
 
 const INICIO = "2026-09-01";
 
@@ -89,36 +82,6 @@ describe("saltosDeCadena — tacómetros del avión", () => {
     expect(normalizarSaldoInicialTaco({ fecha: INICIO, taco: "x" })).toEqual({ fecha: INICIO, taco: null });
     for (const malo of [undefined, null, {}, { fecha: "ayer" }, "2026-09-01"]) {
       expect(normalizarSaldoInicialTaco(malo)).toBeNull();
-    }
-  });
-});
-
-describe("normalizarSaldoInicialCardex", () => {
-  it("lee la llave del API tal cual (sin recalcular)", () => {
-    expect(
-      normalizarSaldoInicialCardex({
-        fecha: INICIO,
-        etiqueta: "Saldo inicial al 1-sep-2026",
-        existencia: "150",
-        costo_vigente: { moneda: "USD", unitario: 21.25, unitario_usd: 21.25 },
-      }),
-    ).toEqual({
-      fecha: INICIO,
-      etiqueta: "Saldo inicial al 1-sep-2026",
-      existencia: 150,
-      costo_vigente: { moneda: "USD", unitario: 21.25 },
-    });
-  });
-
-  it("sin etiqueta usa el texto del panel; costo mal formado ⇒ null", () => {
-    expect(
-      normalizarSaldoInicialCardex({ fecha: INICIO, existencia: 0, costo_vigente: { moneda: "MXN" } }),
-    ).toEqual({ fecha: INICIO, etiqueta: "Saldo inicial al 1-sep-2026", existencia: 0, costo_vigente: null });
-  });
-
-  it("ausente, null o roto ⇒ null (no hay renglón)", () => {
-    for (const malo of [undefined, null, {}, { fecha: INICIO }, { fecha: INICIO, existencia: "x" }, { fecha: "x", existencia: 1 }]) {
-      expect(normalizarSaldoInicialCardex(malo)).toBeNull();
     }
   });
 });
@@ -230,30 +193,13 @@ describe("cuenta de socios (agregado h)", () => {
   });
 });
 
-describe("utilidad de la tienda (revisión: el API 0.0.85 sube su `desde`)", () => {
-  it("«Todo» con inicio = del inicio a hoy (tarjeta, columna y Excel cuentan lo mismo)", () => {
-    expect(rangoPeriodoTienda("todo", "2026-10-16", INICIO)).toEqual({ desde: INICIO, hasta: "2026-10-16" });
-    expect(textoPeriodoTienda("todo", INICIO)).toBe("desde el 1-sep-2026");
-    // Los demás periodos no cambian.
-    expect(rangoPeriodoTienda("mes", "2026-10-16", INICIO)).toEqual(rangoPeriodoTienda("mes", "2026-10-16"));
-  });
-
-  it("«Mes pasado» entero antes del inicio no se ofrece y una URL vieja se ve como «Todo»", () => {
-    expect(periodosTiendaOfrecidos("2026-09-20", INICIO).map((p) => p.valor)).toEqual(["todo", "mes"]);
-    expect(periodosTiendaOfrecidos("2026-10-16", INICIO).map((p) => p.valor)).toEqual([
-      "todo",
-      "mes",
-      "mes-anterior",
-    ]);
-    expect(periodoTiendaConInicio("mes-anterior", "2026-09-20", INICIO)).toBe("todo");
-    expect(periodoTiendaConInicio("mes-anterior", "2026-10-16", INICIO)).toBe("mes-anterior");
-  });
-
-  it("sin inicio ⇒ idéntico a hoy", () => {
-    expect(rangoPeriodoTienda("todo", "2026-10-16", null)).toBeNull();
-    expect(textoPeriodoTienda("todo", null)).toBe("todo el historial");
+describe("utilidad de la tienda: SIN piso del inicio oficial (18-oct-2026, API 0.0.92)", () => {
+  it("«Todo» es todo el historial y los demás periodos no cambian", () => {
+    expect(rangoPeriodoTienda("todo", "2026-10-16")).toBeNull();
     expect(textoPeriodoTienda("todo")).toBe("todo el historial");
-    expect(periodosTiendaOfrecidos("2026-09-20", null)).toEqual([...PERIODOS_TIENDA]);
-    expect(periodoTiendaConInicio("mes-anterior", "2026-09-20", null)).toBe("mes-anterior");
+    expect(rangoPeriodoTienda("mes-anterior", "2026-09-20")).toEqual({
+      desde: "2026-08-01",
+      hasta: "2026-08-31",
+    });
   });
 });

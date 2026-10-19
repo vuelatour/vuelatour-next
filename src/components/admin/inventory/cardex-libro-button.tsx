@@ -19,9 +19,10 @@ function slug(nombre: string): string {
 }
 
 /**
- * Descarga el cardex del ítem en formato LIBRO (réplica del cuaderno del
- * cliente): bloque ENTRADAS | bloque SALIDAS con venta, remanente y ganancia
- * por salida. Mismo patrón de descarga con Bearer que el reporte de
+ * Descarga el cardex del ítem en Excel (18-oct-2026, API 0.0.92): la lista
+ * de movimientos por fecha (entradas, salidas y existencia) y el «Resumen
+ * por mes» con el stock al inicio del mes, las unidades vendidas y el stock
+ * al final del mes. Mismo patrón de descarga con Bearer que el reporte de
  * conciliación (fuente única: descargarDelApi).
  */
 export function CardexLibroButton({
@@ -49,7 +50,7 @@ export function CardexLibroButton({
       className="gap-2"
       onClick={descargar}
       disabled={loading}
-      title="Excel formato libro: bloque ENTRADAS | bloque SALIDAS con venta, remanente y ganancia por salida."
+      title="Excel del cardex: los movimientos por fecha y el resumen por mes (stock al inicio, unidades vendidas y stock al final)."
     >
       <TableCellsIcon className="h-4 w-4" />
       {loading ? "Generando…" : "Cardex (Excel)"}

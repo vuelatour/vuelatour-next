@@ -47,11 +47,9 @@ import { ordenInventarioDeUrl } from "@/lib/admin/inventario-orden";
 import { filtroUbicacionDeUrl } from "@/lib/admin/inventario-ubicacion";
 import {
   numeroONulo,
-  periodoTiendaConInicio,
   periodoTiendaDeUrl,
   rangoPeriodoTienda,
 } from "@/lib/admin/inventario-utilidad";
-import { getInicioOficial } from "@/lib/api/inicio-oficial";
 
 export const dynamic = "force-dynamic";
 
@@ -74,13 +72,11 @@ export default async function InventoryPage({
   const ordenInicial = ordenInventarioDeUrl(sp.orden);
   // La utilidad (columna + tarjeta) es del PERIODO elegido; el stock y el
   // valorizado siempre son de todo el cardex (así lo calcula el API).
-  // Inicio oficial (auditoría 16-oct-2026): «Todo» cuenta desde el inicio
-  // (el API 0.0.85 ya lo hace en la tarjeta; así la columna y el Excel
-  // coinciden) y un «Mes pasado» entero anterior se ve como «Todo».
-  const inicio = await getInicioOficial();
+  // Inventario muestra TODO el historial (18-oct-2026, API 0.0.92): sin el
+  // piso del inicio oficial; «Todo» es de verdad todo.
   const hoy = todayCancun();
-  const periodo = periodoTiendaConInicio(periodoTiendaDeUrl(sp.periodo), hoy, inicio);
-  const rango = rangoPeriodoTienda(periodo, hoy, inicio);
+  const periodo = periodoTiendaDeUrl(sp.periodo);
+  const rango = rangoPeriodoTienda(periodo, hoy);
   // Degradación POR TARJETA (21-sep-2026): tres de estas cinco llamadas no
   // tenían `.catch` y CUALQUIERA tumbaba la pantalla entera al error boundary
   // («Algo se rompió… digest») cada vez que el API se reiniciaba. Los

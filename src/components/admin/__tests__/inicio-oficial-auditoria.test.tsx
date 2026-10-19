@@ -22,7 +22,6 @@ const { ChipAntesDelInicio } = await import("../aviso-inicio-oficial");
 const { MesStatsSelector } = await import("../pilots/mes-stats-selector");
 const { AircraftKpiStrip } = await import("../aircraft/aircraft-kpi-strip");
 const { RenglonSaldoInicial } = await import("../renglon-saldo-inicial");
-const { FilaSaldoInicialCardex } = await import("../inventory/saldo-inicial-cardex");
 
 const INICIO = "2026-09-01";
 const CHIP = "De antes del inicio oficial (1-sep-2026)";
@@ -84,7 +83,7 @@ describe("b. Ficha del avión: «Horas mes / año»", () => {
   });
 });
 
-describe("c. Saldo inicial de tacómetros y cardex", () => {
+describe("c. Saldo inicial de tacómetros (el cardex ya no lo lleva)", () => {
   it("renglón sintético con las cifras del API", () => {
     const html = renderToStaticMarkup(
       <RenglonSaldoInicial
@@ -97,22 +96,13 @@ describe("c. Saldo inicial de tacómetros y cardex", () => {
     expect(html).toContain("1006.5");
   });
 
-  it("cardex: existencia y último precio; sin la llave o null ⇒ nada", () => {
-    const html = renderToStaticMarkup(
-      <FilaSaldoInicialCardex
-        saldo={{
-          fecha: INICIO,
-          etiqueta: "Saldo inicial al 1-sep-2026",
-          existencia: 12,
-          costo_vigente: { moneda: "MXN", unitario: 85 },
-        }}
-        unidad="pza"
-      />,
-    );
-    expect(html).toContain("12 pza");
-    expect(html).toContain("$85.00");
-    expect(renderToStaticMarkup(<FilaSaldoInicialCardex saldo={undefined} />)).toBe("");
-    expect(renderToStaticMarkup(<FilaSaldoInicialCardex saldo={null} />)).toBe("");
+  it("cardex: el inventario ya NO lleva saldo inicial (18-oct-2026: todo el historial)", () => {
+    const pagina = leer("../../../app/admin/inventory/[id]/page.tsx");
+    expect(pagina).not.toContain("saldo_inicial");
+    expect(pagina).not.toContain("FilaSaldoInicialCardex");
+    const ficha = leer("../inventory/resumen-producto.tsx");
+    expect(ficha).not.toContain("normalizarSaldoInicialCardex");
+    expect(ficha).not.toContain("textoDesdeInicio");
   });
 
   it("tacómetros: el salto se calcula con `saltosDeCadena` + `saldo_inicial` y el renglón va al pie", () => {
