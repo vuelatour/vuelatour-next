@@ -513,6 +513,48 @@ export interface OpcionesDesplazamiento {
 }
 
 /**
+ * El bloque VISIBLE que ocupa la coordenada `sel` (19-oct-2026): la celda
+ * misma o, si `sel` está TAPADA por una combinada (no tiene `<td>`), la
+ * combinada que la cubre. `r`/`c` = su ancla (la primera celda visible, la
+ * que pinta el `<td>`); `iFila`/`iCol` = su posición en las filas y columnas
+ * VISIBLES de la vista; `rowSpan`/`colSpan` = las de la vista (solo cuentan
+ * lo visible). `null` si la fila o la columna de `sel` no se ven. PURO.
+ */
+export interface BloqueCelda {
+  r: number;
+  c: number;
+  iFila: number;
+  iCol: number;
+  rowSpan: number;
+  colSpan: number;
+}
+
+export function bloqueDeCelda(
+  vista: Pick<HojaVista, "filas" | "columnas">,
+  sel: { r: number; c: number },
+): BloqueCelda | null {
+  const iFila = vista.filas.findIndex((f) => f.r === sel.r);
+  const iCol = vista.columnas.findIndex((x) => x.c === sel.c);
+  if (iFila < 0 || iCol < 0) return null;
+  const propia = vista.filas[iFila].celdas.find((x) => x.c === sel.c);
+  if (propia) {
+    return { r: propia.r, c: propia.c, iFila, iCol, rowSpan: propia.rowSpan, colSpan: propia.colSpan };
+  }
+  // Tapada: la combinada que la cubre está en esta fila o arriba, y a la izquierda.
+  const indiceCol = new Map(vista.columnas.map((x, i) => [x.c, i]));
+  for (let i = iFila; i >= 0; i--) {
+    for (const cv of vista.filas[i].celdas) {
+      const k = indiceCol.get(cv.c);
+      if (k === undefined || k > iCol) continue;
+      if (i + cv.rowSpan > iFila && k + cv.colSpan > iCol) {
+        return { r: cv.r, c: cv.c, iFila: i, iCol: k, rowSpan: cv.rowSpan, colSpan: cv.colSpan };
+      }
+    }
+  }
+  return { r: sel.r, c: sel.c, iFila, iCol, rowSpan: 1, colSpan: 1 };
+}
+
+/**
  * Mover la selección sobre las filas y columnas VISIBLES (una oculta se
  * salta, como en Excel). En los bordes se queda donde está. Flechas: una
  * celda. PageUp/PageDown: `filasPorPagina` filas —las que caben en la zona
@@ -521,6 +563,12 @@ export interface OpcionesDesplazamiento {
  * SIGUIENTE flecha devolvía el marco de golpe a la celda activa (revisión
  * 13-oct-2026)—. Home/End: primera/última columna de la fila; con Ctrl/⌘,
  * A1 / la última celda visible.
+ *
+ * Combinadas como en Excel (19-oct-2026; pedido del cliente: la celda
+ * seleccionada «se pierde»): la selección SIEMPRE queda en el ancla de lo
+ * que se ve. Se sale de una combinada por su BORDE (→ desde A1:C1 va a D1,
+ * ↓ desde A1:A3 va a A4) y caer en una coordenada tapada lleva a su ancla
+ * (antes quedaba en B1, sin `<td>`: el contorno desaparecía).
  */
 export function desplazarSeleccion(
   vista: Pick<HojaVista, "filas" | "columnas">,
@@ -528,28 +576,27 @@ export function desplazarSeleccion(
   tecla: TeclaNavegacionHoja,
   opciones: OpcionesDesplazamiento = {},
 ): { r: number; c: number } {
-  const iFila = vista.filas.findIndex((f) => f.r === sel.r);
-  const iCol = vista.columnas.findIndex((x) => x.c === sel.c);
-  if (iFila < 0 || iCol < 0) {
+  const bloque = bloqueDeCelda(vista, sel);
+  if (!bloque) {
     return { r: vista.filas[0]?.r ?? sel.r, c: vista.columnas[0]?.c ?? sel.c };
   }
   const ultimaFila = vista.filas.length - 1;
   const ultimaCol = vista.columnas.length - 1;
   const pagina = Math.max(1, Math.floor(opciones.filasPorPagina ?? 1));
-  let f = iFila;
-  let k = iCol;
+  let f = bloque.iFila;
+  let k = bloque.iCol;
   switch (tecla) {
     case "ArrowUp":
       f -= 1;
       break;
     case "ArrowDown":
-      f += 1;
+      f += bloque.rowSpan;
       break;
     case "ArrowLeft":
       k -= 1;
       break;
     case "ArrowRight":
-      k += 1;
+      k += bloque.colSpan;
       break;
     case "PageUp":
       f -= pagina;
@@ -568,7 +615,27 @@ export function desplazarSeleccion(
   }
   f = Math.min(ultimaFila, Math.max(0, f));
   k = Math.min(ultimaCol, Math.max(0, k));
-  return { r: vista.filas[f].r, c: vista.columnas[k].c };
+  const destino = { r: vista.filas[f].r, c: vista.columnas[k].c };
+  const llegada = bloqueDeCelda(vista, destino);
+  return llegada ? { r: llegada.r, c: llegada.c } : destino;
+}
+
+/**
+ * Las letras de columna y los números de fila que se resaltan con la celda
+ * seleccionada (19-oct-2026; como en Excel, para encontrarla de un vistazo):
+ * los de su bloque (`bloqueDeCelda`: una combinada resalta todas sus filas y
+ * columnas visibles). Sin selección o fuera de la vista: nada.
+ */
+export function encabezadosDeSeleccion(
+  vista: Pick<HojaVista, "filas" | "columnas">,
+  sel: { r: number; c: number } | null,
+): { filas: number[]; columnas: number[] } {
+  const b = sel ? bloqueDeCelda(vista, sel) : null;
+  if (!b) return { filas: [], columnas: [] };
+  return {
+    filas: vista.filas.slice(b.iFila, b.iFila + b.rowSpan).map((f) => f.r),
+    columnas: vista.columnas.slice(b.iCol, b.iCol + b.colSpan).map((x) => x.c),
+  };
 }
 
 /**

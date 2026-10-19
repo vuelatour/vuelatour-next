@@ -19,7 +19,9 @@ import {
   contenidoBarraFormulas,
   cuadriculaHoja,
   desbordaTexto,
+  bloqueDeCelda,
   desplazarSeleccion,
+  encabezadosDeSeleccion,
   esTeclaNavegacionHoja,
   estiloCeldaCss,
   filasPorPagina,
@@ -346,6 +348,66 @@ describe("desplazarSeleccion", () => {
 
   it("una selección que ya no existe (fila oculta) vuelve a la primera celda", () => {
     expect(desplazarSeleccion(vista, { r: 2, c: 1 }, "ArrowDown")).toEqual({ r: 1, c: 1 });
+  });
+});
+
+describe("la celda seleccionada no se pierde en una combinada (19-oct-2026)", () => {
+  // A1:C1 combinada (título), A3:A5 combinada (vertical), columna E oculta.
+  const vista = cuadriculaHoja(
+    hoja({
+      max_fila: 8,
+      max_col: 6,
+      columnas: [{ c: 5, oculta: true }],
+      combinadas: [
+        { r1: 1, c1: 1, r2: 1, c2: 3 },
+        { r1: 3, c1: 1, r2: 5, c2: 1 },
+      ],
+    }),
+    libro(),
+  );
+
+  it("bloqueDeCelda: la celda misma, el ancla de la combinada que la tapa, y null fuera de lo visible", () => {
+    expect(bloqueDeCelda(vista, { r: 2, c: 2 })).toEqual({ r: 2, c: 2, iFila: 1, iCol: 1, rowSpan: 1, colSpan: 1 });
+    expect(bloqueDeCelda(vista, { r: 1, c: 1 })).toEqual({ r: 1, c: 1, iFila: 0, iCol: 0, rowSpan: 1, colSpan: 3 });
+    // B1 y C1 están TAPADAS por A1:C1; A4 y A5 por A3:A5.
+    expect(bloqueDeCelda(vista, { r: 1, c: 3 })).toEqual({ r: 1, c: 1, iFila: 0, iCol: 0, rowSpan: 1, colSpan: 3 });
+    expect(bloqueDeCelda(vista, { r: 5, c: 1 })).toEqual({ r: 3, c: 1, iFila: 2, iCol: 0, rowSpan: 3, colSpan: 1 });
+    // La columna E está oculta: no hay bloque.
+    expect(bloqueDeCelda(vista, { r: 2, c: 5 })).toBeNull();
+  });
+
+  it("como en Excel: se sale de una combinada por su borde y caer en una coordenada tapada lleva a su ancla", () => {
+    // → desde A1:C1 va a D1 (antes iba a B1, sin <td>: el contorno desaparecía).
+    expect(desplazarSeleccion(vista, { r: 1, c: 1 }, "ArrowRight")).toEqual({ r: 1, c: 4 });
+    // ← desde D1 vuelve al ancla A1.
+    expect(desplazarSeleccion(vista, { r: 1, c: 4 }, "ArrowLeft")).toEqual({ r: 1, c: 1 });
+    // ↑ desde B2 entra a la combinada A1:C1 (su ancla), no a B1.
+    expect(desplazarSeleccion(vista, { r: 2, c: 2 }, "ArrowUp")).toEqual({ r: 1, c: 1 });
+    // ↓ desde A3:A5 sale por abajo, a A6; ↑ desde A6 vuelve a A3.
+    expect(desplazarSeleccion(vista, { r: 3, c: 1 }, "ArrowDown")).toEqual({ r: 6, c: 1 });
+    expect(desplazarSeleccion(vista, { r: 6, c: 1 }, "ArrowUp")).toEqual({ r: 3, c: 1 });
+    // → desde B4 (a la derecha de A3:A5) y ← regresa a la combinada: A3.
+    expect(desplazarSeleccion(vista, { r: 4, c: 2 }, "ArrowLeft")).toEqual({ r: 3, c: 1 });
+    // Una selección que quedó TAPADA (un libro nuevo con otra combinada) sale desde su bloque.
+    expect(desplazarSeleccion(vista, { r: 1, c: 2 }, "ArrowRight")).toEqual({ r: 1, c: 4 });
+    expect(desplazarSeleccion(vista, { r: 4, c: 1 }, "ArrowDown")).toEqual({ r: 6, c: 1 });
+    // La oculta se salta: → desde D2 va a F2.
+    expect(desplazarSeleccion(vista, { r: 2, c: 4 }, "ArrowRight")).toEqual({ r: 2, c: 6 });
+  });
+
+  it("en el borde de la hoja, una combinada se queda donde está; Home lleva al ancla de la primera columna", () => {
+    expect(desplazarSeleccion(vista, { r: 1, c: 1 }, "ArrowUp")).toEqual({ r: 1, c: 1 });
+    expect(desplazarSeleccion(vista, { r: 1, c: 1 }, "ArrowLeft")).toEqual({ r: 1, c: 1 });
+    expect(desplazarSeleccion(vista, { r: 4, c: 3 }, "Home")).toEqual({ r: 3, c: 1 });
+    expect(desplazarSeleccion(vista, { r: 1, c: 4 }, "Home")).toEqual({ r: 1, c: 1 });
+  });
+
+  it("encabezadosDeSeleccion: la letra y el número de la celda; una combinada resalta todas sus columnas y filas visibles", () => {
+    expect(encabezadosDeSeleccion(vista, { r: 2, c: 4 })).toEqual({ filas: [2], columnas: [4] });
+    expect(encabezadosDeSeleccion(vista, { r: 1, c: 2 })).toEqual({ filas: [1], columnas: [1, 2, 3] });
+    expect(encabezadosDeSeleccion(vista, { r: 3, c: 1 })).toEqual({ filas: [3, 4, 5], columnas: [1] });
+    expect(encabezadosDeSeleccion(vista, null)).toEqual({ filas: [], columnas: [] });
+    expect(encabezadosDeSeleccion(vista, { r: 2, c: 5 })).toEqual({ filas: [], columnas: [] });
   });
 });
 

@@ -36,6 +36,7 @@ import {
   anchoArrastrePx,
   anchoAutoajustePx,
   aplicarAnchos,
+  bloqueDeCelda,
   cajaHorizontalPx,
   celdasParaAutoajuste,
   claveAnchosHoja,
@@ -44,6 +45,7 @@ import {
   coordenadaDeReferencia,
   cuadriculaHoja,
   desplazarSeleccion,
+  encabezadosDeSeleccion,
   esTeclaNavegacionHoja,
   estiloCeldaCss,
   estiloRecorteCss,
@@ -258,6 +260,14 @@ const TramoFila = memo(
   (antes, ahora) => antes.desde === ahora.desde && antes.hasta === ahora.hasta && mismasPropsFila(antes, ahora),
 );
 
+interface PropsFilaHojaCompleta extends PropsFilaHoja {
+  /** Su número se resalta: la fila es (o está dentro de) la celda seleccionada (19-oct-2026). */
+  filaActiva: boolean;
+}
+
+const mismasPropsFilaHoja = (antes: PropsFilaHojaCompleta, ahora: PropsFilaHojaCompleta) =>
+  antes.filaActiva === ahora.filaActiva && mismasPropsFila(antes, ahora);
+
 /**
  * Las filas del cuerpo, en `memo` (revisión 14-oct-2026): cada cuadro de un
  * arrastre de manija vuelve a pintar los `<col>` y las letras, NO las celdas.
@@ -272,7 +282,7 @@ const TramoFila = memo(
  * así ninguna función memorizada se queda con la `vista` de antes (el marco
  * se movería con los anchos viejos).
  */
-const FilaHoja = memo(function FilaHoja({ fila, fijas, cSeleccionada }: PropsFilaHoja) {
+const FilaHoja = memo(function FilaHoja({ fila, fijas, cSeleccionada, filaActiva }: PropsFilaHojaCompleta) {
   const primeraLibre = fila.celdas.findIndex((cv) => !fijas.some((x) => x.c === cv.c));
   const nFijas = primeraLibre < 0 ? fila.celdas.length : primeraLibre;
   const cFija = cSeleccionada !== null && fijas.some((x) => x.c === cSeleccionada) ? cSeleccionada : null;
@@ -280,7 +290,7 @@ const FilaHoja = memo(function FilaHoja({ fila, fijas, cSeleccionada }: PropsFil
     <tr style={{ height: fila.altoPx }}>
       <th
         scope="row"
-        className={cn(fila.fija && "xl-fija-fila")}
+        className={cn(fila.fija && "xl-fija-fila", filaActiva && "xl-encabezado-activo")}
         style={fila.fija ? { top: fila.topPx ?? undefined } : undefined}
       >
         {fila.r}
@@ -296,7 +306,7 @@ const FilaHoja = memo(function FilaHoja({ fila, fijas, cSeleccionada }: PropsFil
       />
     </tr>
   );
-}, mismasPropsFila);
+}, mismasPropsFilaHoja);
 
 /**
  * Un libro de Excel EN PANTALLA (12-oct-2026): barra de fórmulas (cuadro de
@@ -410,6 +420,20 @@ export function LibroExcel({
     if (!hoja || !seleccion) return null;
     return hoja.celdas.find((x) => x.r === seleccion.r && x.c === seleccion.c) ?? null;
   }, [hoja, seleccion]);
+
+  // La celda seleccionada SE VE (19-oct-2026; pedido del cliente: «se ve muy
+  // tenue y se pierde»): el contorno va en el <td> que la pinta —el ancla de
+  // la combinada si la selección quedó en una coordenada tapada (un libro
+  // nuevo que cambió sus combinadas)— y, como en Excel, se resaltan la letra
+  // y el número de fila de su bloque (`encabezadosDeSeleccion`, puro).
+  const anclaSeleccion = useMemo(
+    () => (vista && seleccion ? bloqueDeCelda(vista, seleccion) : null),
+    [vista, seleccion],
+  );
+  const encabezadosActivos = useMemo(() => {
+    const { filas, columnas } = vista ? encabezadosDeSeleccion(vista, seleccion) : { filas: [], columnas: [] };
+    return { filas: new Set(filas), columnas: new Set(columnas) };
+  }, [vista, seleccion]);
 
   // Pantalla completa (solo con `pantalla`): el navegador es quien sabe si
   // está activa (Esc, F11 o el botón la quitan) y lo avisa con
@@ -808,7 +832,10 @@ export function LibroExcel({
                   <th
                     key={col.c}
                     scope="col"
-                    className={cn(col.fija && "xl-fija-col")}
+                    className={cn(
+                      col.fija && "xl-fija-col",
+                      encabezadosActivos.columnas.has(col.c) && "xl-encabezado-activo",
+                    )}
                     style={col.fija ? { left: col.leftPx ?? undefined } : undefined}
                     // El nombre de la letra es la letra: sin esto el lector le
                     // sumaría el de su manija («F Ajustar el ancho…»).
@@ -853,7 +880,8 @@ export function LibroExcel({
                   key={fila.r}
                   fila={fila}
                   fijas={fijas}
-                  cSeleccionada={seleccion?.r === fila.r ? seleccion.c : null}
+                  cSeleccionada={anclaSeleccion?.r === fila.r ? anclaSeleccion.c : null}
+                  filaActiva={encabezadosActivos.filas.has(fila.r)}
                 />
               ))}
             </tbody>

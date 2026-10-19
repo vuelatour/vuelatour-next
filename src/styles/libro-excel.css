@@ -12,6 +12,12 @@
   --xl-gris-fondo: #f3f3f3;
   --xl-gris-texto: #444444;
   --xl-seleccion: #217346;
+  /* La celda seleccionada y sus encabezados (19-oct-2026, «se ve muy tenue y
+     se pierde»): tinte verde translúcido sobre el relleno de la celda y el
+     verde claro de Excel para la letra y el número de fila (texto 6.9:1). */
+  --xl-seleccion-tinte: rgb(33 115 70 / 0.18);
+  --xl-encabezado-activo: #d3f0e0;
+  --xl-encabezado-activo-texto: #0e5a2f;
   border: 1px solid var(--xl-marco);
   border-radius: 6px;
   background: #ffffff;
@@ -339,9 +345,39 @@
   z-index: 3;
 }
 
+/*
+ * La celda seleccionada (19-oct-2026; pedido del cliente: «que la celda que
+ * está seleccionada se pueda ver marcada, porque se ve muy tenue y se
+ * pierde»: el contorno de 2 px se confundía con los bordes negros del libro):
+ *  - contorno de 3 px, 2 por dentro y 1 por fuera (sobre la línea de la
+ *    cuadrícula, como el de Excel). `outline` y no `border`: no mueve el
+ *    texto ni el ancho, y se pinta ENCIMA del contenido;
+ *  - tinte verde como `background-image`: se pinta sobre el `background-color`
+ *    en línea de la celda (su relleno del libro sigue debajo) y bajo el texto;
+ *  - y la letra y el número de fila resaltados (`.xl-encabezado-activo`).
+ * Ninguna de estas reglas toca el `position` (las fijas siguen sticky) ni el
+ * `box-shadow` (lo usa la celda editable del AFAC).
+ */
 .xl-celda.xl-seleccionada {
-  outline: 2px solid var(--xl-seleccion);
+  outline: 3px solid var(--xl-seleccion);
   outline-offset: -2px;
+  background-image: linear-gradient(var(--xl-seleccion-tinte), var(--xl-seleccion-tinte));
+}
+
+/* La letra de su columna y el número de su fila, como en Excel: verde claro,
+   texto verde oscuro en negrita y una raya verde hacia la celda. */
+.xl-tabla th.xl-encabezado-activo {
+  background: var(--xl-encabezado-activo);
+  color: var(--xl-encabezado-activo-texto);
+  font-weight: 700;
+}
+
+.xl-tabla thead th.xl-encabezado-activo {
+  box-shadow: inset 0 -3px 0 var(--xl-seleccion);
+}
+
+.xl-tabla tbody th.xl-encabezado-activo {
+  box-shadow: inset -3px 0 0 var(--xl-seleccion);
 }
 
 /*
@@ -462,7 +498,7 @@
   padding: 0 3px;
   border: 0;
   border-radius: 0;
-  outline: 2px solid var(--xl-seleccion);
+  outline: 3px solid var(--xl-seleccion);
   outline-offset: -2px;
   background: #ffffff;
   color: #000000;

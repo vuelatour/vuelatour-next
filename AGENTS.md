@@ -7358,10 +7358,9 @@ cambiaba `seleccion`; nada movía el marco. Solo panel.
   marco, `aria-selected` en la celda y `role=row/gridcell` (un `<table>`
   dentro de `role="grid"` es estructura ARIA inválida, preexistente)— queda
   pendiente.
-- **Pendientes**: `desplazarSeleccion` puede caer en una coordenada TAPADA por
-  una combinada (p. ej. B1 bajo A1:C1: no hay `<td>`, el contorno verde
-  desaparece y el cuadro de nombres dice «B1»; Excel salta la combinada
-  entera); el scroll la trata como 1×1. **El alto de fila es NOMINAL**: en una
+- **Pendientes**: la coordenada tapada por una combinada se resolvió el
+  19-oct-2026 (ver «La celda seleccionada se ve», abajo). **El alto de fila es
+  NOMINAL**: en una
   tabla CSS la `height` del `<tr>` es un mínimo y `.xl-celda` no acota la
   altura, así que una celda con ajuste (`wr`) cuyo texto el navegador parte
   en más renglones que los que estimó pyservices (`14 × líneas + 4`, por
@@ -7382,6 +7381,41 @@ cambiaba `seleccion`; nada movía el marco. Solo panel.
   se «salta» celdas con la tecla mantenida); PageDown dos veces y ↓ sigue
   desde ahí; hacer scroll con la rueda, cambiar de pestaña y volver
   (RefreshOnFocus), y ver que la vista NO salta a la celda activa.
+
+### La celda seleccionada se ve (19-oct-2026)
+
+Pedido del cliente con la captura de «otros gastos» (D56 seleccionada): «hacer
+que la celda que está seleccionada se pueda ver marcada, porque se ve muy
+tenue y se pierde». El contorno de 2 px se confundía con los bordes negros que
+trae el libro. Solo panel.
+
+- **Celda** (`styles/libro-excel.css`, `.xl-celda.xl-seleccionada`): contorno
+  `outline` de 3 px con `outline-offset: -2px` (2 por dentro y 1 sobre la línea
+  de la cuadrícula, como Excel) y un tinte verde translúcido como
+  `background-image` (`--xl-seleccion-tinte`, 18 %): queda ENCIMA del
+  `background-color` en línea (el relleno del libro sigue debajo) y bajo el
+  texto. Ninguna regla toca `position` (lo sticky y el «escalón» de las notas)
+  ni `box-shadow` (lo usa la celda editable del AFAC). El cuadro del costo
+  real AFAC (`.xl-editor-afac`) lleva el MISMO contorno.
+- **Letra y número de fila** (`.xl-encabezado-activo` en el `<th>` de su
+  columna y de su fila): verde claro `--xl-encabezado-activo` con texto verde
+  oscuro en negrita (6.9:1) y una raya verde de 3 px hacia la celda
+  (`box-shadow` inset), como Excel. Una combinada resalta TODAS sus letras y
+  filas visibles. Qué se resalta lo decide `encabezadosDeSeleccion`
+  (`lib/admin/libro-excel.ts`, PURO); `FilaHoja` (memo) recibe `filaActiva` y
+  compara con `mismasPropsFilaHoja` (= `filaActiva` + `mismasPropsFila`): al
+  mover la selección solo se repintan las filas que cambian.
+- **Combinadas como en Excel** (`bloqueDeCelda`, PURO): la selección SIEMPRE
+  queda en el ANCLA de lo que se ve. `desplazarSeleccion` sale de una
+  combinada por su BORDE (→ desde A1:C1 va a D1; ↓ desde A3:A5 va a A6) y una
+  coordenada tapada lleva a su ancla (↑ desde B2 entra a A1:C1). Antes la
+  selección quedaba en B1, sin `<td>`: el contorno desaparecía y el cuadro de
+  nombres decía «B1». Si un libro nuevo cambia sus combinadas y la selección
+  queda tapada, el contorno va en el `<td>` del ancla (`anclaSeleccion`).
+- Pruebas: `lib/admin/__tests__/libro-excel.test.ts` («la celda seleccionada
+  no se pierde en una combinada») y
+  `components/admin/reportes/__tests__/libro-excel.test.tsx` (letra y número
+  resaltados en el HTML de la llegada, el CSS y el cableado de `FilaHoja`).
 
 ### Desde Conciliación: el libro abre en la celda del gasto (13-oct-2026, API 0.0.75)
 

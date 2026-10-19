@@ -520,6 +520,14 @@ describe("llegada desde Conciliación (13-oct-2026, punto 5): el libro abre en l
     expect(html).toContain('data-hoja="permisos"');
   });
 
+  it("la celda seleccionada SE VE (19-oct-2026): la letra D y el número 9 van resaltados, uno de cada uno; sin selección, ninguno", () => {
+    const html = llegar(LIBRO_GASTO, UUID_GASTO);
+    expect(html).toMatch(/<th scope="col" class="xl-encabezado-activo" aria-label="D">D<button /);
+    expect(html).toMatch(/<th scope="row" class="xl-encabezado-activo">9<\/th>/);
+    expect((html.match(/xl-encabezado-activo/g) ?? []).length).toBe(2);
+    expect(renderToStaticMarkup(<LibroExcel libro={LIBRO_GASTO} pantalla />)).not.toContain("xl-encabezado-activo");
+  });
+
   it("la franja verde va ANTES de la barra, con role=status, el texto del gasto y «Quitar aviso»", () => {
     const html = llegar(LIBRO_GASTO, UUID_GASTO);
     const franja = html.match(/<div class="xl-franja"[^>]*>[\s\S]*?<\/button><\/div>/)?.[0];
@@ -912,7 +920,11 @@ describe("revisión 14-oct-2026 de la manija: filas fijas que no crecen, cuerpo 
     expect(src).toMatch(
       /const mismasPropsFila = \(antes: PropsFilaHoja, ahora: PropsFilaHoja\) =>\s*antes\.fila === ahora\.fila &&\s*antes\.cSeleccionada === ahora\.cSeleccionada &&\s*mismasColumnasFijas\(antes\.fijas, ahora\.fijas\);/,
     );
-    expect(filaHoja).toContain("}, mismasPropsFila);");
+    // FilaHoja compara además si su número va resaltado (19-oct-2026).
+    expect(filaHoja).toContain("}, mismasPropsFilaHoja);");
+    expect(src).toMatch(
+      /const mismasPropsFilaHoja = \(antes: PropsFilaHojaCompleta, ahora: PropsFilaHojaCompleta\) =>\s*antes\.filaActiva === ahora\.filaActiva && mismasPropsFila\(antes, ahora\);/,
+    );
     expect(tramoFila).toContain(
       "(antes, ahora) => antes.desde === ahora.desde && antes.hasta === ahora.hasta && mismasPropsFila(antes, ahora),",
     );
@@ -930,8 +942,9 @@ describe("revisión 14-oct-2026 de la manija: filas fijas que no crecen, cuerpo 
     }
     // El cuerpo: cada fila recibe SU columna seleccionada (las demás, null) y las fijas de la vista de hoy.
     expect(src).toContain("const fijas = useMemo(() => vista?.columnas.filter((x) => x.fija) ?? [], [vista]);");
+    // La columna seleccionada es la del ANCLA de lo que se ve (19-oct-2026).
     expect(src).toMatch(
-      /<FilaHoja\s+key=\{fila\.r\}\s+fila=\{fila\}\s+fijas=\{fijas\}\s+cSeleccionada=\{seleccion\?\.r === fila\.r \? seleccion\.c : null\}\s*\/>/,
+      /<FilaHoja\s+key=\{fila\.r\}\s+fila=\{fila\}\s+fijas=\{fijas\}\s+cSeleccionada=\{anclaSeleccion\?\.r === fila\.r \? anclaSeleccion\.c : null\}\s+filaActiva=\{encabezadosActivos\.filas\.has\(fila\.r\)\}\s*\/>/,
     );
     // Ningún <td> se pinta fuera del tramo (un solo lugar arma las celdas).
     expect((sinComentarios(src).match(/<td\b/g) ?? []).length).toBe(1);
@@ -949,5 +962,35 @@ describe("revisión 14-oct-2026 de la manija: filas fijas que no crecen, cuerpo 
     for (const [sel, cuerpo] of reglas.filter(([s]) => /\.xl-celda/.test(s) && !/::?(after|before)\b/.test(s))) {
       expect(cuerpo, sel).not.toMatch(/padding-(top|bottom)|border-top|border(-bottom)?:\s*(?!1px)\d/);
     }
+  });
+});
+
+describe("styles/libro-excel.css: la celda seleccionada se ve (19-oct-2026, «se ve muy tenue y se pierde»)", () => {
+  const css = leer("styles/libro-excel.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const regla = (sel: string) => css.match(new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+
+  it("contorno de 3 px (2 por dentro, 1 sobre la cuadrícula) y tinte verde como background-image, sin tocar position ni box-shadow", () => {
+    const r = regla(".xl-celda.xl-seleccionada");
+    expect(r).toMatch(/outline:\s*3px solid var\(--xl-seleccion\);/);
+    expect(r).toMatch(/outline-offset:\s*-2px;/);
+    expect(r).toMatch(/background-image:\s*linear-gradient\(var\(--xl-seleccion-tinte\), var\(--xl-seleccion-tinte\)\);/);
+    // El relleno del libro va en línea como background-color: el tinte no lo pisa.
+    expect(r).not.toMatch(/background(-color)?\s*:/);
+    expect(r).not.toMatch(/position\s*:/);
+    expect(r).not.toMatch(/box-shadow\s*:/);
+    expect(regla(".xl-libro")).toMatch(/--xl-seleccion-tinte:\s*rgb\(33 115 70 \/ 0\.18\);/);
+  });
+
+  it("la letra y el número de la selección: verde claro con texto verde oscuro y su raya hacia la celda; ninguna regla les cambia el position", () => {
+    expect(regla(".xl-tabla th.xl-encabezado-activo")).toMatch(/background:\s*var\(--xl-encabezado-activo\);[^}]*color:\s*var\(--xl-encabezado-activo-texto\);[^}]*font-weight:\s*700;/);
+    expect(regla(".xl-tabla thead th.xl-encabezado-activo")).toMatch(/box-shadow:\s*inset 0 -3px 0 var\(--xl-seleccion\);/);
+    expect(regla(".xl-tabla tbody th.xl-encabezado-activo")).toMatch(/box-shadow:\s*inset -3px 0 0 var\(--xl-seleccion\);/);
+    for (const sel of [".xl-tabla th.xl-encabezado-activo", ".xl-tabla thead th.xl-encabezado-activo", ".xl-tabla tbody th.xl-encabezado-activo"]) {
+      expect(regla(sel), sel).not.toMatch(/position\s*:/);
+    }
+  });
+
+  it("el cuadro del costo real AFAC lleva el MISMO contorno que la selección", () => {
+    expect(regla(".xl-editor-afac")).toMatch(/outline:\s*3px solid var\(--xl-seleccion\);[^}]*outline-offset:\s*-2px;/);
   });
 });
