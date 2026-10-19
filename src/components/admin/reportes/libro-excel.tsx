@@ -15,9 +15,21 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowPathIcon, ArrowsPointingInIcon, ArrowsPointingOutIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowPathIcon,
+  ArrowsPointingInIcon,
+  ArrowsPointingOutIcon,
+  TableCellsIcon,
+} from "@heroicons/react/24/outline";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import type { LibroExcel as LibroExcelJson } from "@/types/libro-excel";
 import {
@@ -25,9 +37,17 @@ import {
   ANCHO_NUMERACION_PX,
   ETIQUETA_ACTUALIZANDO_LIBRO,
   ETIQUETA_ACTUALIZAR_LIBRO,
+  ETIQUETA_INMOVILIZAR,
   ETIQUETA_PANTALLA_COMPLETA,
   ETIQUETA_SALIR_PANTALLA_COMPLETA,
+  INMOVILIZAR_FILA_SUPERIOR,
+  INMOVILIZAR_PRIMERA_COLUMNA,
   NOMBRE_SALIR_PANTALLA_COMPLETA,
+  OPCION_INMOVILIZAR_COLUMNA,
+  OPCION_INMOVILIZAR_DEL_LIBRO,
+  OPCION_INMOVILIZAR_FILA,
+  OPCION_MOVILIZAR,
+  SIN_INMOVILIZAR,
   TITULO_ACTUALIZAR_LIBRO,
   TITULO_MANIJA_COLUMNA,
   TITULO_PANTALLA_COMPLETA,
@@ -41,9 +61,11 @@ import {
   celdasParaAutoajuste,
   claveAnchosHoja,
   conAnchoColumna,
+  congelarHoja,
   contenidoBarraFormulas,
   coordenadaDeReferencia,
   cuadriculaHoja,
+  describirInmovilizar,
   desplazarSeleccion,
   encabezadosDeSeleccion,
   esTeclaNavegacionHoja,
@@ -51,18 +73,23 @@ import {
   estiloRecorteCss,
   filasPorPagina,
   fuenteCanvas,
+  inmovilizarDesdeSeleccion,
   limitesArrastre,
   mismasColumnasFijas,
+  mismoInmovilizar,
   nombreManijaColumna,
+  opcionInmovilizarPaneles,
   referenciaCelda,
   resolverHojaIdx,
   scrollParaVerCelda,
   textoHojas,
   tituloCelda,
+  tituloInmovilizar,
   topeAnchoColumnaPx,
   type AnchosColumnas,
   type ColumnaVista,
   type FilaVista,
+  type Inmovilizar,
   type LimitesArrastre,
 } from "@/lib/admin/libro-excel";
 import {
@@ -139,6 +166,65 @@ const CLASE_BOTON_PANTALLA_COMPLETA = "hidden sm:inline-flex cursor-pointer gap-
  * terminar avisa con un toast (un refresh de RefreshOnFocus no pasa por aquí
  * y no avisa). Bajo `sm` queda solo el ícono, con su nombre accesible.
  */
+/**
+ * «Inmovilizar» (19-oct-2026): las opciones de Excel para fijar filas y
+ * columnas en pantalla. No decide nada: lee la selección y lo vigente y
+ * entrega la elección (`undefined` = volver a lo del libro) al componente.
+ */
+function BotonInmovilizar({
+  vigente,
+  manual,
+  seleccion,
+  onElegir,
+}: {
+  /** Lo que la hoja que se PINTA tiene fijo hoy. */
+  vigente: Inmovilizar | null;
+  /** true = el operador ya sustituyó lo del libro en esta hoja. */
+  manual: boolean;
+  seleccion: Seleccion | null;
+  onElegir: (inm: Inmovilizar | undefined) => void;
+}) {
+  const desdeSeleccion = inmovilizarDesdeSeleccion(seleccion);
+  const hayFijo = !mismoInmovilizar(vigente, null);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="hidden sm:inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[min(var(--radius-md),12px)] border border-input bg-background px-2.5 text-[0.8rem] font-medium shadow-xs transition-colors hover:bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={ETIQUETA_INMOVILIZAR}
+        title={tituloInmovilizar(vigente)}
+        data-inmovilizar={describirInmovilizar(vigente)}
+      >
+        <TableCellsIcon className="h-4 w-4" aria-hidden />
+        <span>{ETIQUETA_INMOVILIZAR}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuItem className="cursor-pointer" onClick={() => onElegir(INMOVILIZAR_FILA_SUPERIOR)}>
+          {OPCION_INMOVILIZAR_FILA}
+        </DropdownMenuItem>
+        <DropdownMenuItem className="cursor-pointer" onClick={() => onElegir(INMOVILIZAR_PRIMERA_COLUMNA)}>
+          {OPCION_INMOVILIZAR_COLUMNA}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="cursor-pointer"
+          disabled={!desdeSeleccion}
+          onClick={() => desdeSeleccion && onElegir(desdeSeleccion)}
+        >
+          {opcionInmovilizarPaneles(seleccion)}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="cursor-pointer" disabled={!hayFijo} onClick={() => onElegir(SIN_INMOVILIZAR)}>
+          {OPCION_MOVILIZAR}
+        </DropdownMenuItem>
+        {manual ? (
+          <DropdownMenuItem className="cursor-pointer" onClick={() => onElegir(undefined)}>
+            {OPCION_INMOVILIZAR_DEL_LIBRO}
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function BotonActualizarLibro() {
   const router = useRouter();
   const [actualizando, iniciar] = useTransition();
@@ -381,17 +467,39 @@ export function LibroExcel({
   // revisa que la celda siga siendo del MISMO vuelo (`revisarEditorAfac`).
   const afac = useEdicionAfac(libro, hojaDelLibro);
   const puedeEditarAfac = pantalla && edicionAfac;
+  // Paneles inmovilizados desde la pantalla (19-oct-2026): por TIPO de libro
+  // y hoja, como los anchos; `undefined` = lo del libro. `congelarHoja`
+  // (puro) devuelve la MISMA hoja cuando no hay nada que cambiar, así que
+  // `cuadriculaHoja` sigue recibiendo la hoja de siempre.
+  const [inmovilizarManual, setInmovilizarManual] = useState<
+    Readonly<Partial<Record<string, Inmovilizar>>>
+  >({});
+  const claveInmovilizar = claveAnchosHoja(claveAnchos, hojaDelLibro?.nombre ?? "");
+  const inmovilizarHoja = inmovilizarManual[claveInmovilizar];
   const hoja = useMemo(
     () =>
       hojaDelLibro
-        ? prepararHojaAfac(hojaDelLibro, {
-            cambios: afac.cambios,
-            puedeEditar: puedeEditarAfac,
-            estilos: libro.estilos,
-          })
+        ? congelarHoja(
+            prepararHojaAfac(hojaDelLibro, {
+              cambios: afac.cambios,
+              puedeEditar: puedeEditarAfac,
+              estilos: libro.estilos,
+            }),
+            inmovilizarHoja,
+          )
         : null,
-    [hojaDelLibro, afac.cambios, puedeEditarAfac, libro.estilos],
+    [hojaDelLibro, afac.cambios, puedeEditarAfac, libro.estilos, inmovilizarHoja],
   );
+  const elegirInmovilizar = (inm: Inmovilizar | undefined) =>
+    setInmovilizarManual((prev) => {
+      if (inm === undefined) {
+        if (!(claveInmovilizar in prev)) return prev;
+        const copia = { ...prev };
+        delete copia[claveInmovilizar];
+        return copia;
+      }
+      return { ...prev, [claveInmovilizar]: inm };
+    });
   // Anchos que el operador ajustó con la manija (14-oct-2026), por TIPO de
   // libro (`claveAnchos`) y hoja (`claveAnchosHoja`, puro). Estado del
   // componente: sobreviven a «Actualizar datos» (router.refresh() conserva el
@@ -774,6 +882,14 @@ export function LibroExcel({
             {textoHojas(libro.hojas.length)}
           </span>
           {pantalla ? <BotonActualizarLibro /> : null}
+          {pantalla && hoja ? (
+            <BotonInmovilizar
+              vigente={hoja.inmovilizar}
+              manual={inmovilizarHoja !== undefined}
+              seleccion={seleccion}
+              onElegir={elegirInmovilizar}
+            />
+          ) : null}
           {pantalla && soportaPantallaCompleta ? (
             <Button
               type="button"

@@ -37,6 +37,20 @@ import {
   TITULO_ACTUALIZAR_LIBRO as TITULO_ACTUALIZAR,
   TOAST_LIBRO_ACTUALIZADO as TOAST_ACTUALIZADO,
   resolverHojaIdx,
+  congelarHoja,
+  describirInmovilizar,
+  inmovilizarDesdeSeleccion,
+  mismoInmovilizar,
+  opcionInmovilizarPaneles,
+  tituloInmovilizar,
+  ETIQUETA_INMOVILIZAR,
+  INMOVILIZAR_FILA_SUPERIOR,
+  OPCION_INMOVILIZAR_COLUMNA,
+  OPCION_INMOVILIZAR_DEL_LIBRO,
+  OPCION_INMOVILIZAR_FILA,
+  OPCION_INMOVILIZAR_SIN_CELDA,
+  OPCION_MOVILIZAR,
+  SIN_INMOVILIZAR,
   ANCHO_MAXIMO_COLUMNA_PX,
   ANCHO_MINIMO_COLUMNA_PX,
   HOLGURA_AUTOAJUSTE_PX,
@@ -1095,5 +1109,55 @@ describe("revisión 14-oct-2026: lo inmovilizado nunca llena el marco", () => {
     expect(anchoAutoajustePx([], 575)).toBeNull();
     expect(anchoAutoajustePx(larga, Number.NaN)).toBe(900 + 7 + HOLGURA_AUTOAJUSTE_PX);
     expect(anchoAutoajustePx(larga, 3)).toBe(ANCHO_MINIMO_COLUMNA_PX);
+  });
+});
+
+describe("inmovilizar paneles desde la pantalla (19-oct-2026)", () => {
+  it("congelarHoja: undefined o lo mismo ⇒ la MISMA hoja; distinto ⇒ copia con el inmovilizar nuevo", () => {
+    const base = hoja({ inmovilizar: { filas: 2, columnas: 1 } });
+    expect(congelarHoja(base, undefined)).toBe(base);
+    expect(congelarHoja(base, { filas: 2, columnas: 1 })).toBe(base);
+    const sin = hoja({ inmovilizar: null });
+    expect(congelarHoja(sin, SIN_INMOVILIZAR)).toBe(sin);
+    const fila = congelarHoja(sin, INMOVILIZAR_FILA_SUPERIOR);
+    expect(fila).not.toBe(sin);
+    expect(fila.inmovilizar).toEqual({ filas: 1, columnas: 0 });
+    expect(fila.celdas).toBe(sin.celdas);
+    // Movilizar lo que el libro trae fijo.
+    expect(congelarHoja(base, SIN_INMOVILIZAR).inmovilizar).toEqual({ filas: 0, columnas: 0 });
+    // Y `cuadriculaHoja` lo convierte en `fija` como siempre.
+    const v = cuadriculaHoja(congelarHoja(sin, { filas: 1, columnas: 2 }), libro());
+    expect(v.columnas.filter((c) => c.fija).map((c) => c.c)).toEqual([1, 2]);
+    expect(v.filas.filter((f) => f.fija).map((f) => f.r)).toEqual([1]);
+  });
+
+  it("desde la celda seleccionada, como Excel: B3 ⇒ filas 1–2 y columna A; A1 ⇒ nada; sin selección ⇒ nada", () => {
+    expect(inmovilizarDesdeSeleccion({ r: 3, c: 2 })).toEqual({ filas: 2, columnas: 1 });
+    expect(inmovilizarDesdeSeleccion({ r: 1, c: 4 })).toEqual({ filas: 0, columnas: 3 });
+    expect(inmovilizarDesdeSeleccion({ r: 5, c: 1 })).toEqual({ filas: 4, columnas: 0 });
+    expect(inmovilizarDesdeSeleccion({ r: 1, c: 1 })).toBeNull();
+    expect(inmovilizarDesdeSeleccion(null)).toBeNull();
+  });
+
+  it("textos: la opción con lo que fijaría, el título con lo vigente y la descripción", () => {
+    expect(describirInmovilizar(null)).toBe("nada fijo");
+    expect(describirInmovilizar({ filas: 0, columnas: 0 })).toBe("nada fijo");
+    expect(describirInmovilizar({ filas: 1, columnas: 0 })).toBe("fila 1");
+    expect(describirInmovilizar({ filas: 4, columnas: 0 })).toBe("filas 1–4");
+    expect(describirInmovilizar({ filas: 0, columnas: 1 })).toBe("columna A");
+    expect(describirInmovilizar({ filas: 2, columnas: 2 })).toBe("filas 1–2 y columnas A–B");
+    expect(opcionInmovilizarPaneles({ r: 3, c: 2 })).toBe("Inmovilizar paneles (filas 1–2 y columna A)");
+    expect(opcionInmovilizarPaneles({ r: 1, c: 1 })).toBe(OPCION_INMOVILIZAR_SIN_CELDA);
+    expect(opcionInmovilizarPaneles(null)).toBe("Inmovilizar paneles (elige una celda que no sea A1)");
+    expect(tituloInmovilizar({ filas: 2, columnas: 1 })).toBe(
+      "Fija filas o columnas para que no se muevan al desplazar, como en Excel · Hoy: filas 1–2 y columna A",
+    );
+    expect(mismoInmovilizar(null, { filas: 0, columnas: 0 })).toBe(true);
+    expect(mismoInmovilizar({ filas: 1, columnas: 0 }, { filas: 0, columnas: 1 })).toBe(false);
+    expect(ETIQUETA_INMOVILIZAR).toBe("Inmovilizar");
+    expect(OPCION_INMOVILIZAR_FILA).toBe("Inmovilizar fila superior");
+    expect(OPCION_INMOVILIZAR_COLUMNA).toBe("Inmovilizar primera columna");
+    expect(OPCION_MOVILIZAR).toBe("Movilizar paneles");
+    expect(OPCION_INMOVILIZAR_DEL_LIBRO).toBe("Como viene en el libro");
   });
 });

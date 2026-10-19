@@ -2,6 +2,7 @@ import { apiServer } from "./server";
 import type {
   Aircraft,
   AircraftMetrics,
+  AircraftOwner,
   AircraftSnapshot,
   ListResponse,
   OrdenServicioProgramada,
@@ -28,6 +29,18 @@ export function listAircraft(query: ListAircraftQuery = {}) {
 
 export function getAircraftSnapshot(id: string) {
   return apiServer<AircraftSnapshot>(`/v1/aircraft/${id}/snapshot`, {
+    cache: "no-store",
+  });
+}
+
+/**
+ * Propietarios del avión (`aeronave_socio`): los VIGENTES hoy o, con
+ * `history`, TODOS (también los regímenes ya cerrados). Lo usa la card de
+ * propietarios para el historial (19-oct-2026, invariante 95 del API).
+ */
+export function listAircraftOwners(id: string, opts: { history?: boolean } = {}) {
+  return apiServer<AircraftOwner[]>(`/v1/aircraft/${id}/owners`, {
+    searchParams: opts.history ? { history: true } : undefined,
     cache: "no-store",
   });
 }

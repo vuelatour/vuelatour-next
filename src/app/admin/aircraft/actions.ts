@@ -9,6 +9,7 @@ import {
   InsuranceFormSchema,
   OverhaulSchema,
   OwnerFormSchema,
+  OwnerPatchSchema,
   PlaneadorBaseSchema,
   PropellerFormSchema,
   ServicioProgramaEtapasSchema,
@@ -194,17 +195,28 @@ export async function createOwnerAction(
   }
 }
 
+/**
+ * Corrección de un propietario (19-oct-2026, invariante 95 del API): viaja
+ * SOLO el diff que arma la ventana (`cambiosDeFila`); un `null` en
+ * `vigente_hasta` / `notas` se CONSERVA (reabrir / vaciar), un `undefined` no
+ * viaja. Antes se mandaba el formulario entero y el API respondía 400.
+ */
 export async function updateOwnerAction(
   aircraftId: string,
   ownerId: string,
   raw: unknown,
 ): Promise<ActionResult<AircraftOwner>> {
-  const parsed = OwnerFormSchema.partial().safeParse(raw);
+  const parsed = OwnerPatchSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  const body: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(parsed.data)) {
+    if (v !== undefined) body[k] = v;
+  }
+  if (Object.keys(body).length === 0) return { ok: false, error: "No hay nada que cambiar." };
   try {
     const owner = await apiServer<AircraftOwner>(`/v1/aircraft/owners/${ownerId}`, {
       method: "PATCH",
-      body: stripEmpty(parsed.data),
+      body,
     });
     revalidateAircraft(aircraftId);
     return { ok: true, data: owner };
@@ -213,12 +225,45 @@ export async function updateOwnerAction(
   }
 }
 
+/**
+ * «Dejó de ser propietario»: cierra el régimen con su ÚLTIMO día (día de
+ * pared `AAAA-MM-DD`; sin él, el API pone HOY en Cancún). El historial se
+ * conserva.
+ */
 export async function closeOwnerAction(
+  aircraftId: string,
+  ownerId: string,
+  hasta?: string,
+): Promise<ActionResult> {
+  if (hasta !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
+    return { ok: false, error: "Elige el último día." };
+  }
+  try {
+    await apiServer(`/v1/aircraft/owners/${ownerId}`, {
+      method: "DELETE",
+      searchParams: hasta ? { hasta } : undefined,
+    });
+    revalidateAircraft(aircraftId);
+    return { ok: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * «Se agregó por error»: BORRA la fila del historial (`permanente=true`). La
+ * ventana lo confirma antes: los repartos de los meses en que figuraba
+ * cambian.
+ */
+export async function deleteOwnerAction(
   aircraftId: string,
   ownerId: string,
 ): Promise<ActionResult> {
   try {
-    await apiServer(`/v1/aircraft/owners/${ownerId}`, { method: "DELETE" });
+    await apiServer(`/v1/aircraft/owners/${ownerId}`, {
+      method: "DELETE",
+      searchParams: { permanente: true },
+    });
     revalidateAircraft(aircraftId);
     return { ok: true };
   } catch (err) {

@@ -20,10 +20,7 @@ import { AircraftImagesCard } from "@/components/admin/aircraft/aircraft-images-
 import { AircraftEngineering } from "@/components/admin/aircraft/aircraft-engineering";
 import { AircraftEditButton } from "@/components/admin/aircraft/aircraft-edit-button";
 import { AircraftFlightsCard } from "@/components/admin/aircraft/aircraft-flights-card";
-import {
-  AircraftOwnersCard,
-  type SocioOption,
-} from "@/components/admin/aircraft/aircraft-owners-card";
+import { AircraftOwnersCard } from "@/components/admin/aircraft/aircraft-owners-card";
 import {
   AircraftEngineButton,
   AircraftEngineDeleteButton,
@@ -60,13 +57,16 @@ import {
   getAircraftMetrics,
   getAircraftSnapshot,
   listAircraft,
+  listAircraftOwners,
   type AircraftMetricsDetalle,
   type CombustibleMensualResponse,
 } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
+import { getMe } from "@/lib/api/me";
 import { isApiError } from "@/lib/api/errors";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
-import { daysUntilCancun, fmtDate } from "@/lib/datetime";
+import { daysUntilCancun, fmtDate, todayCancun } from "@/lib/datetime";
+import { puedeEditarPropietarios, type UsuarioOpcion } from "@/lib/admin/propietarios";
 import type { Motor, OverhaulReserve, Propeller } from "@/types/aircraft";
 import { esUuid } from "@/lib/admin/url-params";
 import { ETIQUETA_COLOR_AVION } from "@/lib/admin/calendario-semaforo";
@@ -103,15 +103,27 @@ export default async function AircraftDetailPage({ params }: PageProps) {
   const propsSorted = [...aircraft.propellers].sort(propellerOrden);
   const reservesByMotor = new Map(aircraft.overhaul_reserves.map((r) => [r.motor_id, r]));
 
-  // Socios candidatos para asignar como propietarios. Best-effort: si falla,
-  // la tarjeta sigue funcionando para editar/cerrar los existentes.
-  let socios: SocioOption[] = [];
-  try {
-    const u = await listUsers({ estado: "ACTIVO", limit: 200 });
-    socios = u.data.map((x) => ({ id: x.id, nombre: x.nombre }));
-  } catch {
-    socios = [];
-  }
+  // Propietarios (19-oct-2026): TODOS los usuarios (los socios reales están
+  // INACTIVOS: antes solo se pedían los ACTIVOS y salían pilotos y oficina),
+  // el historial completo y el rol. Best-effort: `null` = no cargó, y la
+  // card lo DICE en vez de pintar «sin socios» / «sin historial».
+  const [usuariosPropietarios, historialPropietarios, me] = await Promise.all([
+    listUsers({ limit: 200 })
+      .then((u): UsuarioOpcion[] =>
+        u.data.map((x) => ({
+          id: x.id,
+          nombre: x.nombre,
+          rol: x.rol,
+          estado: x.estado,
+          es_empresa: x.es_empresa ?? null,
+        })),
+      )
+      .catch((): UsuarioOpcion[] | null => null),
+    listAircraftOwners(id, { history: true }).catch(() => null),
+    getMe().catch(() => null),
+  ]);
+  const hoyCancun = todayCancun();
+  const puedePropietarios = puedeEditarPropietarios(me?.rol);
 
   // Aeronaves activas: destinos posibles al trasladar un motor/hélice.
   // Best-effort: sin lista, el diálogo de traslado avisa que no hay destinos.
@@ -354,7 +366,11 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           <AircraftOwnersCard
             aircraftId={aircraft.id}
             owners={aircraft.owners}
-            socios={socios}
+            historial={historialPropietarios}
+            usuarios={usuariosPropietarios}
+            hoy={hoyCancun}
+            puedeEditar={puedePropietarios}
+            puedeCrearSocio={puedePropietarios}
           />
           <AircraftInsuranceCard aircraftId={aircraft.id} seguros={aircraft.seguros} />
         </div>

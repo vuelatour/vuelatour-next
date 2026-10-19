@@ -14,6 +14,17 @@ const RolEnum = z.enum([
 
 const EstadoEnum = z.enum(["ACTIVO", "INACTIVO", "INVITADO"]);
 
+/**
+ * Alta rápida de un SOCIO sin acceso (19-oct-2026, invariante 95 del API),
+ * desde el selector de propietarios del avión: solo el nombre y si es
+ * empresa. Rol SOCIO e INACTIVO los pone el API.
+ */
+export const SocioRapidoSchema = z.object({
+  nombre: z.string().trim().min(2, "Escribe el nombre del socio.").max(100, "Máximo 100 caracteres."),
+  es_empresa: z.boolean().optional(),
+});
+export type SocioRapidoValues = z.input<typeof SocioRapidoSchema>;
+
 export const UserFormSchema = z.object({
   nombre: z.string().min(1, "Requerido").max(100),
   rol: RolEnum,

@@ -463,6 +463,78 @@ export const TITULO_SALIR_PANTALLA_COMPLETA = "Volver al panel";
  */
 export const ETIQUETA_ACTUALIZAR_LIBRO = "Actualizar datos";
 export const ETIQUETA_ACTUALIZANDO_LIBRO = "Actualizando…";
+
+/**
+ * Inmovilizar paneles desde la pantalla (19-oct-2026). Pedido del cliente:
+ * «que en el "Excel" venga una opción para fijar una columna o fila mientras
+ * se hace scroll, como viene la función en un excel real». Las opciones son
+ * las de Excel: fila superior, primera columna, paneles en la celda
+ * seleccionada (las filas ARRIBA y las columnas a la IZQUIERDA de ella) y
+ * movilizar. Lo elegido sustituye a lo que trae el libro SOLO en pantalla
+ * (el `.xlsx` descargado no cambia) y vive por tipo de libro y hoja, como
+ * los anchos de columna; «Como viene en el libro» vuelve a lo de pyservices.
+ */
+export interface Inmovilizar {
+  filas: number;
+  columnas: number;
+}
+export const INMOVILIZAR_FILA_SUPERIOR: Inmovilizar = { filas: 1, columnas: 0 };
+export const INMOVILIZAR_PRIMERA_COLUMNA: Inmovilizar = { filas: 0, columnas: 1 };
+export const SIN_INMOVILIZAR: Inmovilizar = { filas: 0, columnas: 0 };
+export const ETIQUETA_INMOVILIZAR = "Inmovilizar";
+export const TITULO_INMOVILIZAR =
+  "Fija filas o columnas para que no se muevan al desplazar, como en Excel";
+export const OPCION_INMOVILIZAR_FILA = "Inmovilizar fila superior";
+export const OPCION_INMOVILIZAR_COLUMNA = "Inmovilizar primera columna";
+export const OPCION_MOVILIZAR = "Movilizar paneles";
+export const OPCION_INMOVILIZAR_DEL_LIBRO = "Como viene en el libro";
+export const OPCION_INMOVILIZAR_SIN_CELDA = "Inmovilizar paneles (elige una celda que no sea A1)";
+
+export function mismoInmovilizar(a: Inmovilizar | null, b: Inmovilizar | null): boolean {
+  const fa = a?.filas ?? 0;
+  const ca = a?.columnas ?? 0;
+  return fa === (b?.filas ?? 0) && ca === (b?.columnas ?? 0);
+}
+
+/** «fila 1» · «filas 1–4» · «columna A» · «filas 1–2 y columnas A–B» · «nada fijo». */
+export function describirInmovilizar(inm: Inmovilizar | null): string {
+  const filas = inm?.filas ?? 0;
+  const columnas = inm?.columnas ?? 0;
+  const partes: string[] = [];
+  if (filas > 0) partes.push(filas === 1 ? "fila 1" : `filas 1–${filas}`);
+  if (columnas > 0) {
+    partes.push(columnas === 1 ? "columna A" : `columnas A–${letraColumna(columnas)}`);
+  }
+  return partes.length ? partes.join(" y ") : "nada fijo";
+}
+
+/** Como Excel: en B3 se fijan las filas 1–2 y la columna A; en A1 no hay nada que fijar. */
+export function inmovilizarDesdeSeleccion(sel: { r: number; c: number } | null): Inmovilizar | null {
+  if (!sel) return null;
+  const inm = { filas: Math.max(0, sel.r - 1), columnas: Math.max(0, sel.c - 1) };
+  return inm.filas === 0 && inm.columnas === 0 ? null : inm;
+}
+
+export function opcionInmovilizarPaneles(sel: { r: number; c: number } | null): string {
+  const inm = inmovilizarDesdeSeleccion(sel);
+  return inm ? `Inmovilizar paneles (${describirInmovilizar(inm)})` : OPCION_INMOVILIZAR_SIN_CELDA;
+}
+
+export function tituloInmovilizar(vigente: Inmovilizar | null): string {
+  return `${TITULO_INMOVILIZAR} · Hoy: ${describirInmovilizar(vigente)}`;
+}
+
+/**
+ * La hoja con los paneles que eligió el operador. `undefined` = lo del libro
+ * (la MISMA hoja); igual a lo que ya tiene ⇒ la MISMA hoja (nada se
+ * reconstruye); si no, una copia con `inmovilizar` nuevo, que `cuadriculaHoja`
+ * convierte en `fija` / `leftPx` / `topPx` como siempre.
+ */
+export function congelarHoja(hoja: LibroExcelHoja, inmovilizar: Inmovilizar | undefined): LibroExcelHoja {
+  if (inmovilizar === undefined) return hoja;
+  if (mismoInmovilizar(hoja.inmovilizar, inmovilizar)) return hoja;
+  return { ...hoja, inmovilizar: { filas: inmovilizar.filas, columnas: inmovilizar.columnas } };
+}
 export const TITULO_ACTUALIZAR_LIBRO =
   "Vuelve a leer los datos del libro sin recargar la página: se quedan la hoja, la celda seleccionada y el desplazamiento";
 export const TOAST_LIBRO_ACTUALIZADO = "Datos actualizados";

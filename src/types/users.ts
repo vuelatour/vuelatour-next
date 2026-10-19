@@ -19,6 +19,11 @@ export interface User {
    */
   es_piloto?: boolean;
   es_piloto_externo: boolean;
+  /**
+   * Razón social (Aero Charter) en vez de persona. ADITIVO (API 0.0.97,
+   * invariante 95): el selector de propietarios del avión lo rotula «Empresa».
+   */
+  es_empresa?: boolean;
   telefono: string | null;
   /**
    * Nombre corto con el que la oficina lo conoce, para el título del evento

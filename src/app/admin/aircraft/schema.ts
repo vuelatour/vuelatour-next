@@ -172,6 +172,23 @@ export const OwnerFormSchema = z.object({
 });
 export type OwnerFormValues = z.input<typeof OwnerFormSchema>;
 
+/**
+ * Corrección de un propietario (19-oct-2026, invariante 95 del API): SOLO lo
+ * que cambió. `vigente_hasta: null` = reabrir (quitar la fecha de fin);
+ * `notas: null` = vaciarlas. Antes el panel mandaba el formulario entero y el
+ * API rechazaba `socio_id` / `vigente_desde` con 400.
+ */
+export const OwnerPatchSchema = z
+  .object({
+    socio_id: z.string().uuid("Selecciona un socio"),
+    porcentaje: z.coerce.number().min(0.001, "Mayor a 0").max(100, "Máximo 100"),
+    vigente_desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha AAAA-MM-DD"),
+    vigente_hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha AAAA-MM-DD").nullable(),
+    notas: z.string().max(2000).nullable(),
+  })
+  .partial();
+export type OwnerPatchValues = z.input<typeof OwnerPatchSchema>;
+
 // ===== Motores =====
 const PosicionMotorEnum = z.enum(["UNICO", "IZQUIERDO", "DERECHO"]);
 const TipoMotorEnum = z.enum(["PISTON", "TURBINA"]);

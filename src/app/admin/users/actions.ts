@@ -10,7 +10,7 @@ import {
   normalizarApodo,
 } from "@/lib/admin/usuario-apodo";
 import { soloCamposEnviados } from "@/lib/admin/pilotos-edicion";
-import { UserFormSchema, UserInviteSchema } from "./schema";
+import { SocioRapidoSchema, UserFormSchema, UserInviteSchema } from "./schema";
 import type { User } from "@/types/users";
 
 export interface ActionResult<T = unknown> {
@@ -18,6 +18,33 @@ export interface ActionResult<T = unknown> {
   data?: T;
   error?: string;
   fieldErrors?: Record<string, string[]>;
+  /** `code` / `details` del API cuando la falla vino de él (ADITIVOS, 19-oct-2026). */
+  code?: string;
+  details?: unknown;
+}
+
+/**
+ * Alta rápida de un SOCIO sin acceso (19-oct-2026, invariante 95 del API):
+ * `POST /v1/users/socios`. El 409 `SOCIO_YA_EXISTE` llega con su `code` y
+ * `details.usuario` para que el selector elija al existente en vez de
+ * duplicarlo. No revalida: lo llama un selector dentro de una ventana que
+ * sigue montada.
+ */
+export async function createSocioAction(raw: unknown): Promise<ActionResult<User>> {
+  const parsed = SocioRapidoSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  try {
+    const creado = await apiServer<User>("/v1/users/socios", {
+      method: "POST",
+      body: { nombre: parsed.data.nombre, es_empresa: parsed.data.es_empresa === true },
+    });
+    return { ok: true, data: creado };
+  } catch (err) {
+    if (isApiError(err)) {
+      return { ok: false, error: err.message, code: err.code ?? undefined, details: err.details };
+    }
+    return fail(err);
+  }
 }
 
 function fail<T>(err: unknown): ActionResult<T> {

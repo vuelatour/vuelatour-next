@@ -183,7 +183,9 @@ describe("cableado del libro (lectura del fuente)", () => {
 
   it("la hoja que se PINTA sale de `prepararHojaAfac` (memo) y la cuadrícula se arma igual que siempre", () => {
     expect(src).toMatch(
-      /const hoja = useMemo\(\s*\(\) =>\s*hojaDelLibro\s*\?\s*prepararHojaAfac\(hojaDelLibro, \{\s*cambios: afac\.cambios,\s*puedeEditar: puedeEditarAfac,\s*estilos: libro\.estilos,\s*\}\)\s*: null,\s*\[hojaDelLibro, afac\.cambios, puedeEditarAfac, libro\.estilos\],?\s*\);/,
+      // Desde el 19-oct-2026 la envuelve `congelarHoja` (paneles inmovilizados
+      // desde la pantalla): sin elección es la MISMA hoja de `prepararHojaAfac`.
+      /const hoja = useMemo\(\s*\(\) =>\s*hojaDelLibro\s*\?\s*congelarHoja\(\s*prepararHojaAfac\(hojaDelLibro, \{\s*cambios: afac\.cambios,\s*puedeEditar: puedeEditarAfac,\s*estilos: libro\.estilos,\s*\}\),\s*inmovilizarHoja,\s*\)\s*: null,\s*\[hojaDelLibro, afac\.cambios, puedeEditarAfac, libro\.estilos, inmovilizarHoja\],?\s*\);/,
     );
     expect(src).toContain("const puedeEditarAfac = pantalla && edicionAfac;");
     expect(src).toMatch(/^ {2}edicionAfac = false,$/m);

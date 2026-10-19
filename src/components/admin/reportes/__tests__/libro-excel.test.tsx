@@ -16,6 +16,7 @@ import {
   GROSOR_BORDE_CELDA_PX,
   TITULO_ACTUALIZAR_LIBRO,
   TITULO_MANIJA_COLUMNA,
+  describirInmovilizar,
   letraColumna,
   nombreManijaColumna,
 } from "@/lib/admin/libro-excel";
@@ -992,5 +993,53 @@ describe("styles/libro-excel.css: la celda seleccionada se ve (19-oct-2026, «se
 
   it("el cuadro del costo real AFAC lleva el MISMO contorno que la selección", () => {
     expect(regla(".xl-editor-afac")).toMatch(/outline:\s*3px solid var\(--xl-seleccion\);[^}]*outline-offset:\s*-2px;/);
+  });
+});
+
+describe("«Inmovilizar» (19-oct-2026): fijar filas o columnas como en Excel", () => {
+  const DESCARGA_I = { path: "/v1/x", filename: "libro.xlsx", label: "Descargar este libro (Excel)" };
+  const leerSrc = () => readFileSync(path.resolve(__dirname, "../libro-excel.tsx"), "utf8");
+
+  it("con `pantalla`: el disparador con nombre accesible, lo vigente del libro en el title, cursor-pointer, entre «Actualizar datos» y «Pantalla completa»", () => {
+    const html = renderToStaticMarkup(<LibroExcel libro={LIBRO} descarga={DESCARGA_I} pantalla />);
+    const boton = html.match(/<button[^>]*data-inmovilizar="[^"]*"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
+    expect(boton).toContain('aria-label="Inmovilizar"');
+    expect(boton).toContain("cursor-pointer");
+    expect(boton).toMatch(/title="Fija filas o columnas para que no se muevan al desplazar, como en Excel · Hoy: /);
+    // Lo que el libro trae fijo en su primera hoja es lo que se DICE.
+    const inm = LIBRO.hojas[0].inmovilizar;
+    const esperado = inm ? describirInmovilizar(inm) : "nada fijo";
+    expect(boton).toContain(`data-inmovilizar="${esperado}"`);
+    expect(html).toMatch(
+      /class="xl-barra-acciones">[\s\S]*?data-actualizar-libro="listo"[\s\S]*?data-inmovilizar="[^"]*"[\s\S]*?aria-label="Pantalla completa"[\s\S]*?data-descarga="libro\.xlsx"/,
+    );
+  });
+
+  it("sin la vista «pantalla» no hay botón", () => {
+    const html = renderToStaticMarkup(<LibroExcel libro={LIBRO} descarga={DESCARGA_I} />);
+    expect(html).not.toContain("data-inmovilizar");
+    expect(html).not.toContain('aria-label="Inmovilizar"');
+  });
+
+  it("cableado: la elección vive en estado por tipo de libro y hoja, entra por `congelarHoja` ANTES de `cuadriculaHoja`, y las opciones son las de Excel", () => {
+    const src = leerSrc();
+    expect(src).toMatch(/const claveInmovilizar = claveAnchosHoja\(claveAnchos, hojaDelLibro\?\.nombre \?\? ""\);/);
+    expect(src).toMatch(/const inmovilizarHoja = inmovilizarManual\[claveInmovilizar\];/);
+    expect(src).toMatch(/congelarHoja\(\s*prepararHojaAfac\(hojaDelLibro, \{/);
+    expect(src).toMatch(/\[hojaDelLibro, afac\.cambios, puedeEditarAfac, libro\.estilos, inmovilizarHoja\]/);
+    // `cuadriculaHoja` sigue recibiendo la hoja de siempre (una sola llamada).
+    expect((src.match(/cuadriculaHoja\(/g) ?? []).length).toBe(1);
+    // undefined = volver a lo del libro (se quita la llave), no un {0,0}.
+    expect(src).toMatch(/if \(inm === undefined\) \{[\s\S]*?delete copia\[claveInmovilizar\];/);
+    // El botón solo con `pantalla` y con hoja; recibe lo vigente de la hoja que se PINTA.
+    expect(src).toMatch(/\{pantalla && hoja \? \(\s*<BotonInmovilizar\s*vigente=\{hoja\.inmovilizar\}\s*manual=\{inmovilizarHoja !== undefined\}\s*seleccion=\{seleccion\}/);
+    const boton = src.slice(src.indexOf("function BotonInmovilizar"), src.indexOf("function BotonActualizarLibro"));
+    expect(boton).toMatch(/onElegir\(INMOVILIZAR_FILA_SUPERIOR\)/);
+    expect(boton).toMatch(/onElegir\(INMOVILIZAR_PRIMERA_COLUMNA\)/);
+    expect(boton).toMatch(/disabled=\{!desdeSeleccion\}/);
+    expect(boton).toMatch(/onElegir\(SIN_INMOVILIZAR\)/);
+    expect(boton).toMatch(/\{manual \? \([\s\S]*?onElegir\(undefined\)/);
+    // Sin memoria entre recargas y sin efectos: un inmovilizar guardado caería en otra hoja si pyservices cambia el libro.
+    expect(boton).not.toMatch(/localStorage|useEffect/);
   });
 });
