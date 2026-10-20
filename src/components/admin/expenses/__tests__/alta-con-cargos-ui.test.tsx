@@ -5,7 +5,10 @@
  * `conciliarConMovimientos`, `clientRequestId`, `textoExito` y `textoError`:
  *  1. SIN ellas el alta sale BYTE A BYTE igual que antes (golden congelado
  *     ANTES del cambio con el código de la base: `alta-gasto.golden.json`,
- *     botón, modo controlado, refacción, gasto general y alta del vuelo);
+ *     botón, modo controlado, refacción, gasto general y alta del vuelo;
+ *     el 20-oct-2026 se regeneró SOLO por las opciones nuevas de los
+ *     selectores: «Otros gastos directos del vuelo», «Paquetería» y
+ *     «Efectivo de la empresa (no de fondo)»);
  *  2. con ellas, sin «A Inventario/Tienda» (solo «Directo al avión» y por
  *     qué) y, en lo demás, el MISMO formulario;
  *  3. cableado por regex: las dos llaves viajan SOLO con los cargos, la

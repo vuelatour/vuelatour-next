@@ -48,7 +48,7 @@ describe("la nómina se excluye SIEMPRE de Gastos", () => {
     });
   });
 
-  it("el filtro «Categoría» ofrece las 21 restantes, en el mismo orden y sin «Nómina»", () => {
+  it("el filtro «Categoría» ofrece las 23 restantes, en el mismo orden y sin «Nómina»", () => {
     expect(CATEGORIAS_FILTRO_GASTOS_VISTA).not.toContain("NOMINA");
     expect(CATEGORIAS_FILTRO_GASTOS_VISTA).toEqual(CATEGORIAS_FILTRO_GASTO.filter((c) => c !== "NOMINA"));
     expect(CATEGORIAS_FILTRO_GASTOS_VISTA).toHaveLength(CATEGORIAS_FILTRO_GASTO.length - 1);

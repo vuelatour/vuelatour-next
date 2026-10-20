@@ -3,8 +3,9 @@
  * vive dentro del campo «Fecha del gasto» y SOLO se pinta con la capacidad y
  * una fecha futura. Sin capacidad (fuera del Provider = API previo) y también
  * CON ella mientras la fecha sea hoy, el alta sale BYTE A BYTE igual que el
- * golden congelado el 14-oct (`alta-gasto.golden.json`): la nota no corre los
- * ids de `useId` ni mueve nada del formulario.
+ * golden congelado el 14-oct (`alta-gasto.golden.json`; regenerado el 20-oct
+ * solo por las opciones nuevas de los selectores): la nota no corre los ids
+ * de `useId` ni mueve nada del formulario.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";

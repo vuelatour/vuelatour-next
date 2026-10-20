@@ -19,6 +19,9 @@ export const CategoriaEnum = z.enum([
   // gasto directo del vuelo (columna OTROS del balance del avión). El API
   // 0.0.74 la rechaza (IsEnum): el panel sale DESPUÉS del API.
   "COMISARIATO",
+  // Otros gastos directos del vuelo (20-oct-2026, API 0.0.99): columna OTROS
+  // de la fila del vuelo, como Comisariato. El API 0.0.98 la rechaza.
+  "OTROS_DIRECTOS_VUELO",
   "HOTEL",
   "TAXI",
   "REFACCION",
@@ -58,6 +61,9 @@ export const CategoriaEnum = z.enum([
   // jamás lleva vuelo ni avión; vive en Otros gastos y es repartible a mano.
   "VISITA",
   "OTRO",
+  // Paquetería (20-oct-2026, API 0.0.99): envíos de la empresa; hoja «otros
+  // gastos» del Balance general. El API 0.0.98 la rechaza.
+  "PAQUETERIA",
 ]);
 
 export const MedioPagoEnum = z.enum([
@@ -72,6 +78,9 @@ export const MedioPagoEnum = z.enum([
   // cargo automático a la cuenta; bancario. El API 0.0.74 lo rechaza
   // (IsEnum): el panel sale DESPUÉS del API.
   "DOMICILIADO",
+  // Efectivo de la empresa, no de un fondo de caja chica (20-oct-2026, API
+  // 0.0.99 + migración 20261020000003): no bancario y SOLO oficina.
+  "EFECTIVO_EMPRESA",
   // Cargo automático por salida de bodega (no es egreso bancario).
   "BODEGA",
 ]);

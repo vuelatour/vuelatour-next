@@ -115,6 +115,8 @@ export function etiquetaMedioNoBancario(medio: string | null | undefined): strin
 function pagadoCon(medio: string | null | undefined): string {
   const m = limpio(medio);
   if (m === "EFECTIVO") return "Pagado en efectivo";
+  // Espejo de `medioEnFrase` del API (20-oct-2026, invariante 97).
+  if (m === "EFECTIVO_EMPRESA") return "Pagado en efectivo de la empresa";
   if (m === MEDIO_BODEGA) return "Salida de bodega (inventario)";
   return MEDIO_PAGO_LABELS[m] ? `Pagado con ${MEDIO_PAGO_LABELS[m]}` : "Pagado con otro medio";
 }
@@ -239,6 +241,8 @@ export function etiquetaJustificacion(marcados: readonly (MarcadoConMedio | null
   let que: string;
   if (medios.length === 1 && medios[0] === "EFECTIVO") {
     que = varios ? "gastos en efectivo" : "un gasto en efectivo";
+  } else if (medios.length === 1 && medios[0] === "EFECTIVO_EMPRESA") {
+    que = varios ? "gastos en efectivo de la empresa" : "un gasto en efectivo de la empresa";
   } else if (medios.length === 1 && MEDIO_PAGO_LABELS[medios[0]]) {
     const con = `pagado${varios ? "s" : ""} con ${MEDIO_PAGO_LABELS[medios[0]]}`;
     que = varios ? `gastos ${con}` : `un gasto ${con}`;

@@ -17,6 +17,9 @@ export const MEDIO_PAGO_LABELS: Record<string, string> = {
   PERSONAL_ALE: "Personal Ale",
   // Cargo contable de inventario (salida de cardex): nunca toca el banco.
   BODEGA: "Bodega (inventario)",
+  // Efectivo de la empresa que NO sale de ningún fondo de caja chica
+  // (20-oct-2026, API 0.0.99, invariante 97): no bancario y solo oficina.
+  EFECTIVO_EMPRESA: "Efectivo de la empresa (no de fondo)",
 };
 
 /** Etiqueta legible de un medio de pago, con fallback al código crudo. */
@@ -29,6 +32,7 @@ const MEDIO_PAGO_CORTO: Record<string, string> = {
   TARJETA_CORP: "Tarjeta",
   DOMICILIADO: "Domiciliado",
   BODEGA: "Bodega",
+  EFECTIVO_EMPRESA: "Efectivo empresa",
 };
 
 /**
@@ -66,12 +70,18 @@ export function textoPagoCorto(
  * justo después de «Transferencia» — es la otra forma en que el dinero sale
  * de la cuenta sin tarjeta. Solo lo registra la oficina (el API responde 400
  * `MEDIO_SOLO_OFICINA` a piloto/mecánico/visitante).
+ *
+ * «Efectivo de la empresa (no de fondo)» (20-oct-2026, API 0.0.99 +
+ * migración 20261020000003): justo después de «Efectivo». Es el efectivo que
+ * NO sale de ningún fondo de caja chica (no afecta la caja de quien lo
+ * registra); también solo oficina.
  */
 export const MEDIOS_CAPTURA_VALUES = [
   "TRANSFERENCIA",
   "DOMICILIADO",
   "PAYWISE",
   "EFECTIVO",
+  "EFECTIVO_EMPRESA",
   "TARJETA_CORP",
   "PERSONAL_PABLO",
   "PERSONAL_ALE",
@@ -126,7 +136,18 @@ export const MEDIO_DOMICILIADO = "DOMICILIADO";
 export const AYUDA_MEDIO_DOMICILIADO =
   "Cargo automático a la cuenta (suscripción, seguro, servicio). Se concilia con el cargo del banco como una transferencia; no lleva tarjeta.";
 
-/** Ayuda del medio elegido (hoy solo «Pago domiciliado»); null = sin hint. */
+/** Código del «Efectivo de la empresa (no de fondo)» (espejo de
+ *  `MedioPago.EFECTIVO_EMPRESA` del API, 20-oct-2026). */
+export const MEDIO_EFECTIVO_EMPRESA = "EFECTIVO_EMPRESA";
+
+/** Hint bajo el selector cuando se elige «Efectivo de la empresa». */
+export const AYUDA_MEDIO_EFECTIVO_EMPRESA =
+  "Efectivo de la empresa que no sale de ningún fondo de caja chica: no afecta la caja de quien lo registra. Si se pagó con el efectivo de un fondo, elige «Efectivo».";
+
+/** Ayuda del medio elegido («Pago domiciliado» o «Efectivo de la empresa»);
+ *  null = sin hint. */
 export function ayudaMedioPago(medio: string | null | undefined): string | null {
-  return medio === MEDIO_DOMICILIADO ? AYUDA_MEDIO_DOMICILIADO : null;
+  if (medio === MEDIO_DOMICILIADO) return AYUDA_MEDIO_DOMICILIADO;
+  if (medio === MEDIO_EFECTIVO_EMPRESA) return AYUDA_MEDIO_EFECTIVO_EMPRESA;
+  return null;
 }

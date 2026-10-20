@@ -6,12 +6,17 @@
  * viene en método de pago algo que diga Pago domiciliado». Cargo automático
  * a la cuenta (suscripciones, seguros, servicios): BANCARIO, se concilia
  * como una transferencia, sin tarjeta, solo lo registra la oficina.
+ *
+ * 20-oct-2026 (API 0.0.99, migración 20261020000003): «Efectivo de la empresa
+ * (no de fondo)» (`EFECTIVO_EMPRESA`): efectivo que no sale de ningún fondo de
+ * caja chica; no bancario y solo oficina.
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AYUDA_MEDIO_DOMICILIADO,
+  AYUDA_MEDIO_EFECTIVO_EMPRESA,
   MEDIO_DOMICILIADO,
   MEDIO_PAGO_LABELS,
   MEDIOS_CAPTURA,
@@ -25,7 +30,7 @@ import {
 } from "@/lib/admin/medios-pago";
 import { GastoCreateSchema, MedioPagoEnum } from "@/app/admin/expenses/schema";
 
-/** Enum `public.medio_pago` de prod con la migración 20261013000009 (8 valores). */
+/** Enum `public.medio_pago` de prod con la migración 20261020000003 (9 valores). */
 const ENUM_PROD = [
   "EFECTIVO",
   "TARJETA_CORP",
@@ -35,6 +40,7 @@ const ENUM_PROD = [
   "BODEGA",
   "PAYWISE",
   "DOMICILIADO",
+  "EFECTIVO_EMPRESA",
 ];
 
 describe("selector de medios de pago", () => {
@@ -44,12 +50,16 @@ describe("selector de medios de pago", () => {
       "DOMICILIADO",
       "PAYWISE",
       "EFECTIVO",
+      "EFECTIVO_EMPRESA",
       "TARJETA_CORP",
       "PERSONAL_PABLO",
       "PERSONAL_ALE",
     ]);
     expect(MEDIOS_CAPTURA.map((m) => m.value)).toEqual([...MEDIOS_CAPTURA_VALUES]);
     expect(MEDIOS_CAPTURA.find((m) => m.value === "DOMICILIADO")?.label).toBe("Pago domiciliado");
+    expect(MEDIOS_CAPTURA.find((m) => m.value === "EFECTIVO_EMPRESA")?.label).toBe(
+      "Efectivo de la empresa (no de fondo)",
+    );
   });
 
   it("verificación = captura + BODEGA al final", () => {
@@ -78,11 +88,15 @@ describe("selector de medios de pago", () => {
     expect(r.success).toBe(true);
   });
 
-  it("ayuda: solo con «Pago domiciliado»", () => {
+  it("ayuda: solo con «Pago domiciliado» y «Efectivo de la empresa»", () => {
     expect(AYUDA_MEDIO_DOMICILIADO).toBe(
       "Cargo automático a la cuenta (suscripción, seguro, servicio). Se concilia con el cargo del banco como una transferencia; no lleva tarjeta.",
     );
     expect(ayudaMedioPago("DOMICILIADO")).toBe(AYUDA_MEDIO_DOMICILIADO);
+    expect(AYUDA_MEDIO_EFECTIVO_EMPRESA).toBe(
+      "Efectivo de la empresa que no sale de ningún fondo de caja chica: no afecta la caja de quien lo registra. Si se pagó con el efectivo de un fondo, elige «Efectivo».",
+    );
+    expect(ayudaMedioPago("EFECTIVO_EMPRESA")).toBe(AYUDA_MEDIO_EFECTIVO_EMPRESA);
     for (const m of ["TRANSFERENCIA", "TARJETA_CORP", "EFECTIVO", "", null, undefined]) {
       expect(ayudaMedioPago(m), String(m)).toBeNull();
     }
@@ -118,10 +132,8 @@ describe("BODEGA no viaja al API", () => {
   });
 
   // Repo hermano del API (solo en el workspace local; en Vercel se omite).
-  const DTO = path.resolve(
-    __dirname,
-    "../../../../../vuelatour-api/src/modules/expenses/dto/expenses.dto.ts",
-  );
+  const API_DIR = process.env.VUELATOUR_API_DIR ?? path.resolve(__dirname, "../../../../../vuelatour-api");
+  const DTO = path.resolve(API_DIR, "src/modules/expenses/dto/expenses.dto.ts");
   const fuente = existsSync(DTO) ? readFileSync(DTO, "utf8") : null;
   it.skipIf(!fuente)("paridad: el enum `MedioPago` del DTO del API == los medios de captura", () => {
     const src = fuente ?? "";
@@ -137,7 +149,7 @@ describe("BODEGA no viaja al API", () => {
   // `MEDIO_PAGO_LABEL` del API (`common/medio-pago.util.ts`, columna PAGO de
   // los balances) dice lo MISMO que el panel: paridad manual que ahora vigila
   // el test cuando el repo hermano está al lado.
-  const UTIL = path.resolve(__dirname, "../../../../../vuelatour-api/src/common/medio-pago.util.ts");
+  const UTIL = path.resolve(API_DIR, "src/common/medio-pago.util.ts");
   const util = existsSync(UTIL) ? readFileSync(UTIL, "utf8") : null;
   it.skipIf(!util)("paridad: `MEDIO_PAGO_LABEL` del API == `MEDIO_PAGO_LABELS` del panel", () => {
     const src = util ?? "";
@@ -157,13 +169,14 @@ describe("BODEGA no viaja al API", () => {
  * con la convención de Conciliación («Tarjeta ****2865»).
  */
 describe("textoPagoCorto", () => {
-  it("los 8 medios: texto corto y title largo", () => {
+  it("los 9 medios: texto corto y title largo", () => {
     const casos: Array<[string, string, string]> = [
       ["EFECTIVO", "Efectivo", "Efectivo"],
       ["TARJETA_CORP", "Tarjeta", "Tarjeta corporativa"],
       ["TRANSFERENCIA", "Transferencia", "Transferencia"],
       ["PAYWISE", "Paywise", "Paywise"],
       ["DOMICILIADO", "Domiciliado", "Pago domiciliado"],
+      ["EFECTIVO_EMPRESA", "Efectivo empresa", "Efectivo de la empresa (no de fondo)"],
       ["PERSONAL_PABLO", "Personal Pablo", "Personal Pablo"],
       ["PERSONAL_ALE", "Personal Ale", "Personal Ale"],
       ["BODEGA", "Bodega", "Bodega (inventario)"],

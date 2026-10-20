@@ -124,7 +124,9 @@ describe("medios: qué toca el banco y qué no (espejo de MEDIOS_BANCARIOS del A
     for (const m of ["TARJETA_CORP", "TRANSFERENCIA", "PAYWISE", "DOMICILIADO"]) {
       expect(esMedioNoBancario(m), m).toBe(false);
     }
-    for (const m of ["EFECTIVO", "PERSONAL_PABLO", "PERSONAL_ALE", "BODEGA"]) expect(esMedioNoBancario(m)).toBe(true);
+    for (const m of ["EFECTIVO", "EFECTIVO_EMPRESA", "PERSONAL_PABLO", "PERSONAL_ALE", "BODEGA"]) {
+      expect(esMedioNoBancario(m), m).toBe(true);
+    }
     // Vacío o ausente no es «no bancario» (no se inventa).
     expect(esMedioNoBancario(null)).toBe(false);
     expect(esMedioNoBancario("  ")).toBe(false);
@@ -222,6 +224,9 @@ describe("textos del interruptor, la insignia y el campo (los del contrato)", ()
       "Pagado en efectivo: no pasó por el banco. Se puede vincular escribiendo por qué; su medio de pago no cambia.",
     );
     expect(tituloBadgeCandidatoNoBancario("PERSONAL_PABLO")).toMatch(/^Pagado con Personal Pablo: no pasó por el banco\./);
+    expect(tituloBadgeCandidatoNoBancario("EFECTIVO_EMPRESA")).toMatch(
+      /^Pagado en efectivo de la empresa: no pasó por el banco\./,
+    );
   });
 
   it("el campo: pregunta, ayuda y ejemplo del cliente", () => {
@@ -237,6 +242,9 @@ describe("textos del interruptor, la insignia y el campo (los del contrato)", ()
     expect(
       etiquetaJustificacion([efectivo(G27, "2026-09-27"), efectivo(G28, "2026-09-28", { medio_pago: "PERSONAL_ALE" })]),
     ).toBe("¿Por qué se vinculan gastos que no se pagaron por el banco a este cargo?");
+    expect(etiquetaJustificacion([efectivo(G27, "2026-09-27", { medio_pago: "EFECTIVO_EMPRESA" })])).toBe(
+      "¿Por qué se vincula un gasto en efectivo de la empresa a este cargo?",
+    );
     expect(AYUDA_JUSTIFICACION).toBe(
       "No cambia el medio de pago ni la caja del piloto; la razón queda anotada en el cargo y en el gasto.",
     );

@@ -307,13 +307,13 @@ describe("hojaDestinoGasto: a qué hoja cae CON LO ELEGIDO (sin pistas falsas)",
     expect(hojaDestinoGasto(AV, false, false)).toBe(esperado);
   });
 
-  it("empresa = las 5 del destino «Otros gastos» (sincronizada con el API, sin cambio)", () => {
+  it("empresa = las 6 del destino «Otros gastos» (sincronizada con el API; Paquetería desde el 20-oct-2026)", () => {
     const porDestino = Object.entries(DESTINO_POR_DEFECTO)
       .filter(([, d]) => d === "Otros gastos (Balance general VuelaTour)")
       .map(([c]) => c)
       .sort();
     expect([...CATEGORIAS_EMPRESA].sort()).toEqual(porDestino);
-    expect([...CATEGORIAS_EMPRESA].sort()).toEqual(["FIJO", "GASOLINA", "NOMINA", "OTRO", "VISITA"]);
+    expect([...CATEGORIAS_EMPRESA].sort()).toEqual(["FIJO", "GASOLINA", "NOMINA", "OTRO", "PAQUETERIA", "VISITA"]);
     expect(CATEGORIAS_EMPRESA.has(VT)).toBe(false);
     expect(CATEGORIAS_EMPRESA.has(AV)).toBe(false);
   });
@@ -406,7 +406,7 @@ describe("tablero de Gastos y reparto: textos de la «(avión)»", () => {
 
   it("renglón de gastos de la EMPRESA: dice todo lo que suma el API (categorías de empresa, «(VuelaTour)» y remanentes)", () => {
     expect(textoTableroGastosEmpresa(4250.3)).toBe(
-      "$4,250.30 en gastos de la empresa VuelaTour: categorías de empresa (Otros gastos VuelaTour, Nómina, Gasolina (vehículos), Gasto fijo y Visita), «Comisión del vendedor (VuelaTour)» y remanentes de repartos. No se imputan a aeronaves.",
+      "$4,250.30 en gastos de la empresa VuelaTour: categorías de empresa (Otros gastos VuelaTour, Nómina, Gasolina (vehículos), Gasto fijo, Visita y Paquetería), «Comisión del vendedor (VuelaTour)» y remanentes de repartos. No se imputan a aeronaves.",
     );
     // La «(avión)» NO está ahí: tiene su propio renglón.
     expect(textoTableroGastosEmpresa(1)).not.toContain(ETIQUETA_AV);
@@ -511,7 +511,7 @@ describe("tabla canónica de COMISARIATO (== API == app)", () => {
     expect([...CATEGORIAS_REPARTIBLES].sort()).toEqual(
       ["FIJO", "GASOLINA", "INDIRECTO", "NOMINA", "OTRO", "VISITA"],
     );
-    expect([...CATEGORIAS_EMPRESA].sort()).toEqual(["FIJO", "GASOLINA", "NOMINA", "OTRO", "VISITA"]);
+    expect([...CATEGORIAS_EMPRESA].sort()).toEqual(["FIJO", "GASOLINA", "NOMINA", "OTRO", "PAQUETERIA", "VISITA"]);
   });
 
   it("no exige vuelo a TODOS los roles: la oficina la captura suelta (solo el piloto la liga a fuerza, en el API)", () => {
@@ -570,10 +570,10 @@ describe("tabla canónica de COMISARIATO (== API == app)", () => {
   });
 });
 
-describe("paridad del enum de categorías (22 valores con Comisariato)", () => {
-  it("el zod, las etiquetas y los destinos tienen EXACTAMENTE los mismos 22 códigos", () => {
+describe("paridad del enum de categorías (24 valores con Otros directos del vuelo y Paquetería)", () => {
+  it("el zod, las etiquetas y los destinos tienen EXACTAMENTE los mismos 24 códigos", () => {
     const enumZod = [...(CategoriaEnum.options as readonly string[])].sort();
-    expect(enumZod).toHaveLength(22);
+    expect(enumZod).toHaveLength(24);
     expect(Object.keys(CATEGORIA_GASTO_LABELS).sort()).toEqual(enumZod);
     expect(Object.keys(DESTINO_POR_DEFECTO).sort()).toEqual(enumZod);
     // Toda categoría que se ofrece pasa el enum (las 3 legado/de verificación
@@ -585,7 +585,10 @@ describe("paridad del enum de categorías (22 valores con Comisariato)", () => {
 
   // Repo hermano del API (solo existe en el workspace local): etiquetas y
   // destinos IDÉNTICOS byte a byte (`common/categoria-gasto.util.ts`).
-  const API = path.resolve(__dirname, "../../../../../vuelatour-api/src/common/categoria-gasto.util.ts");
+  const API = path.resolve(
+    process.env.VUELATOUR_API_DIR ?? path.resolve(__dirname, "../../../../../vuelatour-api"),
+    "src/common/categoria-gasto.util.ts",
+  );
   const fuenteApi = existsSync(API) ? readFileSync(API, "utf8") : null;
   const tablaApi = (nombre: string): Record<string, string> => {
     const ini = (fuenteApi ?? "").indexOf(`export const ${nombre}`);
@@ -613,7 +616,7 @@ describe("paridad del enum de categorías (22 valores con Comisariato)", () => {
 /**
  * Tabla única de Gastos (14-oct-2026): «Falta avión» en la columna «Avión ·
  * vuelo» es ESPEJO de la bandeja de pendientes del API, y el filtro
- * «Categoría» ofrece las 22.
+ * «Categoría» ofrece las 24.
  */
 describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)", () => {
   it("las de empresa + INDIRECTO + PERSONAL_DUENO + la comisión (VuelaTour); SIN la «(avión)»", () => {
@@ -624,6 +627,7 @@ describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)"
       "INDIRECTO",
       "NOMINA",
       "OTRO",
+      "PAQUETERIA",
       "PERSONAL_DUENO",
       "VISITA",
     ]);
@@ -641,11 +645,16 @@ describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)"
     expect(categoriaLlevaAvion("REFACCION")).toBe(true);
     expect(categoriaLlevaAvion("COMISARIATO")).toBe(true);
     expect(categoriaLlevaAvion("otro")).toBe(true);
-    expect(Object.keys(CATEGORIA_GASTO_LABELS).filter((c) => categoriaLlevaAvion(c))).toHaveLength(14);
+    expect(categoriaLlevaAvion("OTROS_DIRECTOS_VUELO")).toBe(true);
+    expect(categoriaLlevaAvion("PAQUETERIA")).toBe(false);
+    expect(Object.keys(CATEGORIA_GASTO_LABELS).filter((c) => categoriaLlevaAvion(c))).toHaveLength(15);
   });
 
   // Repo hermano del API (solo en el workspace local).
-  const API = path.resolve(__dirname, "../../../../../vuelatour-api/src/common/categoria-gasto.util.ts");
+  const API = path.resolve(
+    process.env.VUELATOUR_API_DIR ?? path.resolve(__dirname, "../../../../../vuelatour-api"),
+    "src/common/categoria-gasto.util.ts",
+  );
   const fuenteApi = existsSync(API) ? readFileSync(API, "utf8") : null;
 
   it.skipIf(!fuenteApi)("PARIDAD: los literales del API = CATEGORIAS_SIN_AVION menos las de empresa", () => {
@@ -665,9 +674,9 @@ describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)"
 });
 
 describe("filtro «Categoría» de Gastos (CATEGORIAS_FILTRO_GASTO)", () => {
-  it("las 22 sin repetir = llaves de CATEGORIA_GASTO_LABELS, en el orden de captura + ATERRIZAJE, FIJO, VISITA", () => {
-    expect(CATEGORIAS_FILTRO_GASTO).toHaveLength(22);
-    expect(new Set(CATEGORIAS_FILTRO_GASTO).size).toBe(22);
+  it("las 24 sin repetir = llaves de CATEGORIA_GASTO_LABELS, en el orden de captura + ATERRIZAJE, FIJO, VISITA", () => {
+    expect(CATEGORIAS_FILTRO_GASTO).toHaveLength(24);
+    expect(new Set(CATEGORIAS_FILTRO_GASTO).size).toBe(24);
     expect([...CATEGORIAS_FILTRO_GASTO].sort()).toEqual(Object.keys(CATEGORIA_GASTO_LABELS).sort());
     expect(CATEGORIAS_FILTRO_GASTO).toEqual([...CATEGORIAS_CAPTURA, "ATERRIZAJE", "FIJO", "VISITA"]);
     // Las opciones salen de la MISMA función de la captura (etiqueta + destino).

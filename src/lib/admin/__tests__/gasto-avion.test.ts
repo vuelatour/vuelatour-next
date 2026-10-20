@@ -46,12 +46,12 @@ const gasto = (over: Partial<Gasto> = {}): G => ({
   ...over,
 });
 
-const VUELATOUR_SIN_AVION = ["OTRO", "GASOLINA", "FIJO", "VISITA", "COMISION_VENDEDOR", "INDIRECTO"];
+const VUELATOUR_SIN_AVION = ["OTRO", "GASOLINA", "FIJO", "VISITA", "PAQUETERIA", "COMISION_VENDEDOR", "INDIRECTO"];
 
-describe("estadoAvionGasto · sin avión ni reparto (las 22 categorías)", () => {
-  it("empresa, comisión (VuelaTour) e INDIRECTO ⇒ «VuelaTour»; PERSONAL_DUENO ⇒ «Personal»; NOMINA ⇒ «Sin repartir»; las 14 restantes ⇒ «Falta avión»", () => {
+describe("estadoAvionGasto · sin avión ni reparto (las 24 categorías)", () => {
+  it("empresa, comisión (VuelaTour) e INDIRECTO ⇒ «VuelaTour»; PERSONAL_DUENO ⇒ «Personal»; NOMINA ⇒ «Sin repartir»; las 15 restantes ⇒ «Falta avión»", () => {
     const todas = Object.keys(CATEGORIA_GASTO_LABELS);
-    expect(todas).toHaveLength(22);
+    expect(todas).toHaveLength(24);
     const faltan: string[] = [];
     for (const categoria of todas) {
       const e = estadoAvionGasto(gasto({ categoria }));
@@ -68,10 +68,10 @@ describe("estadoAvionGasto · sin avión ni reparto (las 22 categorías)", () =>
       // Invariante: «Falta avión» ⇔ la categoría lleva avión (la regla del API).
       expect(e.tipo === "FALTA", categoria).toBe(categoriaLlevaAvion(categoria));
     }
-    expect(faltan).toHaveLength(14);
+    expect(faltan).toHaveLength(15);
     // A propósito, igual que el API: la «(avión)», los servicios del avión,
     // la refacción y el comisariato sin avión SÍ son pendientes.
-    for (const c of ["COMISION_VENDEDOR_AVION", "SERVICIOS", "REFACCION", "COMISARIATO"]) {
+    for (const c of ["COMISION_VENDEDOR_AVION", "SERVICIOS", "REFACCION", "COMISARIATO", "OTROS_DIRECTOS_VUELO"]) {
       expect(faltan, c).toContain(c);
     }
   });

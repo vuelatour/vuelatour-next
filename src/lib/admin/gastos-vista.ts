@@ -89,7 +89,7 @@ export interface FiltrosGastos {
  * IGNORA, nunca viaja al API ni provoca un 400 que tumbe la pantalla):
  *  - `f`: pendientes | duplicados; cualquier otra cosa ⇒ «todos».
  *  - `aeronave_id` y `piloto`: solo uuid.
- *  - `categoria`: una de las 22 (`CATEGORIAS_FILTRO_GASTO`), exacta; «NOMINA»
+ *  - `categoria`: una de las 24 (`CATEGORIAS_FILTRO_GASTO`), exacta; «NOMINA»
  *    se IGNORA y marca `nominaIgnorada` (la nómina vive en su módulo).
  *  - `medio`: los de captura (BODEGA no se filtra).
  *  - `desde`/`hasta`: `rangoFiltro` (día o ISO; invertido se corrige).
@@ -230,7 +230,7 @@ export const CAMPO_EXCLUIR_CATEGORIA = "excluir_categoria";
 /** Los campos que un API previo no conoce (la descarga del Excel los suelta en el 400). */
 export const CAMPOS_OPCIONALES_GASTOS: readonly string[] = [CAMPO_EXCLUIR_CATEGORIA];
 
-/** Las categorías del filtro de Gastos: las 22 sin «Nómina». */
+/** Las categorías del filtro de Gastos: las 24 sin «Nómina». */
 export const CATEGORIAS_FILTRO_GASTOS_VISTA: readonly string[] = CATEGORIAS_FILTRO_GASTO.filter(
   (c) => c !== CATEGORIA_FUERA_DE_GASTOS,
 );
