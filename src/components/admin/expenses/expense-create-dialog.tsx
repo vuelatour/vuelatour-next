@@ -42,6 +42,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CuentaGastoSelector } from "@/components/admin/expenses/cuenta-gasto-selector";
+import { ProveedorSelector } from "@/components/admin/expenses/proveedor-selector";
+import {
+  ETIQUETA_CAMPO_CUENTA,
+  HINT_CUENTA,
+  cuentaParaAlta,
+  medioLlevaCuenta,
+} from "@/lib/admin/cuentas-gasto";
 import {
   createGastoAction,
   buscarVuelosCercanosAction,
@@ -231,6 +239,9 @@ function emptyValues(defaults?: {
     // TRANSFERENCIA y el valor viajaba sin que nadie lo eligiera.
     medio_pago: "",
     tarjeta_terminacion: "",
+    // Cuenta de donde salió (20-oct-2026): solo con transferencia, pago
+    // domiciliado o Paywise; vacía = sin indicar.
+    cuenta_bancaria_id: "",
     estatus_comprobante: COMPROBANTE_SIN,
     estatus_facturacion: "PENDIENTE",
     aeronave_id: defaults?.aeronaveId ?? "",
@@ -971,6 +982,8 @@ export function ExpenseCreateDialog({
           // cambiar la categoría no viaja). «» = sin dato: el API lo rellena
           // con el del avión.
           tipo_combustible: values.categoria === "GAS" ? values.tipo_combustible : "",
+          // La cuenta SOLO viaja con un medio que la lleva (invariante 98).
+          cuenta_bancaria_id: cuentaParaAlta(values.medio_pago, values.cuenta_bancaria_id) ?? "",
           foto_url: fotoPath,
           // La lectura de la IA + las hojas 2..N (`fotos_adicionales`).
           valor_ia_extraido: valorIaConHojas(
@@ -1966,7 +1979,10 @@ export function ExpenseCreateDialog({
                   placeholder={MSG_MEDIO_REQUERIDO}
                 />
               </Field>
-              {watch("medio_pago") === "TARJETA_CORP" && (
+              {/* Tarjeta o cuenta comparten el MISMO hueco de la rejilla a
+                  propósito: un hijo nuevo correría los ids de `useId` del
+                  avión de al lado (golden del alta). */}
+              {watch("medio_pago") === "TARJETA_CORP" ? (
                 <Field
                   label="¿Con qué tarjeta?"
                   hint="vacío = la asignada a quien captura"
@@ -1987,7 +2003,20 @@ export function ExpenseCreateDialog({
                     placeholder="Automática"
                   />
                 </Field>
-              )}
+              ) : medioLlevaCuenta(watch("medio_pago")) ? (
+                // Cuenta de donde salió (20-oct-2026, API 0.0.100): `key`
+                // por medio ⇒ al pasar a Paywise se sugiere su cuenta.
+                <Field label={ETIQUETA_CAMPO_CUENTA} hint={HINT_CUENTA}>
+                  <CuentaGastoSelector
+                    key={watch("medio_pago")}
+                    medio={watch("medio_pago")}
+                    value={watch("cuenta_bancaria_id") ?? ""}
+                    onChange={(v) =>
+                      setValue("cuenta_bancaria_id", v, { shouldDirty: true })
+                    }
+                  />
+                </Field>
+              ) : null}
               {watch("categoria") !== "PERSONAL_DUENO" &&
                 watch("categoria") !== "GASOLINA" &&
                 watch("categoria") !== "VISITA" && (
@@ -2206,11 +2235,12 @@ export function ExpenseCreateDialog({
             )}
 
             <Field label="Proveedor">
-              <SearchableSelect
-                options={providers.map((p) => ({ value: p.id, label: p.nombre }))}
+              {/* Alta y corrección en línea (20-oct-2026, API 0.0.100) para
+                  la oficina; sin permiso, el selector de siempre. */}
+              <ProveedorSelector
+                providers={providers}
                 value={watch("proveedor_id")}
                 onChange={(v) => setValue("proveedor_id", v)}
-                placeholder="Sin proveedor"
               />
             </Field>
 

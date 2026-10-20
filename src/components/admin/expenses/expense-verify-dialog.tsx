@@ -58,6 +58,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CuentaGastoSelector } from "@/components/admin/expenses/cuenta-gasto-selector";
+import { ProveedorSelector } from "@/components/admin/expenses/proveedor-selector";
+import {
+  ETIQUETA_CAMPO_CUENTA,
+  HINT_CUENTA,
+  cuentaParaPatch,
+  medioLlevaCuenta,
+} from "@/lib/admin/cuentas-gasto";
 import {
   assignVueloGastoAction,
   buscarVuelosCercanosAction,
@@ -1472,6 +1480,19 @@ export function ExpenseVerifyDialog({
       // p. ej. a EFECTIVO tronaba el PATCH con 500 (23514).
       if (values.medio_pago !== "TARJETA_CORP") {
         payload.tarjeta_terminacion = null;
+      }
+      // Cuenta de donde salió (20-oct-2026, API 0.0.100): viaja SOLO si se
+      // cambió en ESTE diálogo (contra la base de la sesión); con un medio
+      // que no la lleva y una cuenta guardada, null (el API también la
+      // limpia).
+      {
+        const cuenta = cuentaParaPatch(
+          values.medio_pago,
+          values.cuenta_bancaria_id,
+          baseForm.cuenta_bancaria_id ?? null,
+        );
+        if (cuenta === undefined) delete payload.cuenta_bancaria_id;
+        else payload.cuenta_bancaria_id = cuenta;
       }
       // Reparto entre aviones (R13/R14, 14-oct-2026): un gasto repartido no
       // lleva vuelo (el PATCH lo desliga ANTES del PUT) ni avión individual.
@@ -2926,7 +2947,8 @@ export function ExpenseVerifyDialog({
                 placeholder="Medio"
               />
             </Field>
-            {watch("medio_pago") === "TARJETA_CORP" && (
+            {/* Tarjeta o cuenta comparten el MISMO hueco de la rejilla. */}
+            {watch("medio_pago") === "TARJETA_CORP" ? (
               /* El server sella la tarjeta ASIGNADA al capturador; aquí
                  oficina ve/corrige con cuál se pagó de verdad. */
               <Field label="Tarjeta corp.">
@@ -2940,13 +2962,24 @@ export function ExpenseVerifyDialog({
                   placeholder="Sin registrar"
                 />
               </Field>
-            )}
+            ) : medioLlevaCuenta(watch("medio_pago")) ? (
+              // Cuenta de donde salió (20-oct-2026, API 0.0.100).
+              <Field label={ETIQUETA_CAMPO_CUENTA} hint={HINT_CUENTA}>
+                <CuentaGastoSelector
+                  key={watch("medio_pago")}
+                  medio={watch("medio_pago")}
+                  value={watch("cuenta_bancaria_id") ?? ""}
+                  onChange={(v) => setValue("cuenta_bancaria_id", v)}
+                  actualId={gasto.cuenta_bancaria_id ?? null}
+                />
+              </Field>
+            ) : null}
             <Field label="Proveedor">
-              <SearchableSelect
-                options={providers.map((p) => ({ value: p.id, label: p.nombre }))}
+              {/* Alta y corrección en línea (20-oct-2026, API 0.0.100). */}
+              <ProveedorSelector
+                providers={providers}
                 value={watch("proveedor_id")}
                 onChange={(v) => setValue("proveedor_id", v)}
-                placeholder="Sin proveedor"
               />
             </Field>
           </div>
@@ -3202,6 +3235,7 @@ function defaults(g: Gasto): GastoVerifyValues {
     categoria: g.categoria,
     tarjeta_terminacion: g.tarjeta_terminacion ?? "",
     medio_pago: g.medio_pago,
+    cuenta_bancaria_id: g.cuenta_bancaria_id ?? "",
     estatus_comprobante: g.estatus_comprobante,
     // Gastos previos a la migración: sin campo = Pendiente (conservador).
     estatus_facturacion: g.estatus_facturacion ?? "PENDIENTE",

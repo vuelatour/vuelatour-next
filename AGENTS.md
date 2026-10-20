@@ -12038,3 +12038,73 @@ chica); el panel solo pinta y decide la UI.
   visual en navegador (diálogos en portal).
 - **Orden de deploy**: migración → API 0.0.95 → panel (en cualquier orden es
   seguro: sin capacidad, nada cambia).
+
+## Cuenta y proveedor en línea desde el gasto (20-oct-2026, API 0.0.100)
+
+Puntos 2 y 5 de la lista del cliente del 20-oct-2026: «cuando registramos un
+gasto y eliges transferencia que se pueda elegir de cuál banco o cuenta
+bancaria … salió la transferencia, y si no existe alguna que se pueda agregar
+desde esa parte sin salir a otra pantalla … la cuenta de paywise entraría en
+estas opciones» y «la forma rápida y ágil desde el select de proveedores de
+poder crear y editar alguno sin salir a otra página». Decisión: toda la
+oficina (ADMIN, FACTURACION, COORDINADOR) agrega cuentas y agrega/corrige
+proveedores desde el gasto; editar o dar de baja una cuenta y dar de baja un
+proveedor siguen en sus pantallas. Contrato: invariante 98 del API
+(migración `20261020000004`: `gasto.cuenta_bancaria_id`).
+
+- **Fuentes únicas (PURAS, con prueba)**: `lib/admin/cuentas-gasto.ts`
+  (`MEDIOS_CON_CUENTA` = TRANSFERENCIA, DOMICILIADO, PAYWISE — espejo del API
+  con prueba de paridad —, roles, etiqueta «HSBC Pesos · MXN» / «Paywise ·
+  pasarela» / «… · ****2006», opciones con «Sin indicar» al frente y «＋
+  Agregar cuenta…» al final, `cuentaSugeridaParaMedio` (Paywise ⇒ la ÚNICA
+  pasarela activa), `cuentaParaAlta`, `cuentaParaPatch` (solo si cambió
+  contra la base de la sesión; con un medio sin cuenta y una guardada,
+  null), el formulario del alta rápida con los límites del DTO, el cuerpo
+  del POST y los textos) y `lib/admin/proveedores-gasto.ts` (roles,
+  `normalizarNombreProveedor` = espejo del API, aviso de nombre repetido
+  antes de mandar, cuerpo del POST o del PATCH con solo lo que cambió —
+  vaciar ⇒ null —, textos).
+- **Permisos**: `CatalogosGastoProvider` (lo monta `AdminShell` con
+  `me.rol`) ⇒ `usePuedeAgregarCuenta()` / `usePuedeEditarProveedor()`.
+  Fuera del Provider (tests) es null ⇒ los selectores de siempre: el golden
+  del alta NO cambió.
+- **Componentes**: `expenses/cuenta-gasto-selector.tsx` (lee
+  `listCuentasGastoAction` → `GET /v1/bank-accounts/opciones`, sin número ni
+  CLABE, al montarse; mientras lee, deshabilitado «Cargando las cuentas…»;
+  si falla, «No se pudieron cargar las cuentas…» + «Reintentar», jamás «no
+  hay cuentas»; con Paywise y el campo vacío elige la pasarela;
+  `CuentaRapidaDialog` anidado sobre el formulario) y
+  `expenses/proveedor-selector.tsx` (sin permiso: EXACTAMENTE el
+  `SearchableSelect` de siempre, sin envoltura; con permiso: «＋ Agregar
+  proveedor…» al final y el lápiz «Editar proveedor» con el proveedor
+  elegido; copia local del catálogo con el patrón base/lista; el 409
+  `PROVEEDOR_DUPLICADO` elige el existente).
+- **Alta y «Verificar / editar»**: la cuenta va en el MISMO hueco de la
+  rejilla que «¿Con qué tarjeta?» (ternario: un hijo nuevo correría los ids
+  de `useId` del avión de al lado), con `key` por medio. El alta manda
+  `cuenta_bancaria_id: cuentaParaAlta(...)`; Verificar, `cuentaParaPatch`
+  contra `baseForm` (la llave no viaja si no cambió). Schemas zod con la
+  llave (sin ella zod la tiraba).
+- **Server actions** (`app/admin/expenses/actions.ts`, al final, NO
+  revalidan: las llama un diálogo abierto): `listCuentasGastoAction`,
+  `crearCuentaGastoAction`, `obtenerProveedorAction`,
+  `guardarProveedorGastoAction`; validan antes de la red, nunca lanzan y
+  conservan code/status/details.
+- **Gastos**: el renglón bajo el monto dice «Transferencia · HSBC Pesos»
+  (`textoPagoCorto(medio, terminación, alias)`, title «Transferencia desde
+  HSBC Pesos»).
+- **Conciliación**: el cruce automático NO liga un gasto a un cargo de OTRA
+  cuenta (lo decide el API); «Vincular gasto» pinta «de HSBC Pesos» en la
+  línea del candidato y, si la cuenta no es la del cargo, el aviso ámbar
+  `avisoCuentaDistinta` («El gasto dice que salió de HSBC Pesos, no de la
+  cuenta de este cargo.») — a mano se puede vincular. «¿No está el gasto?
+  Créalo» (un cargo o la suma) prellena la cuenta del cargo (salvo con
+  tarjeta). La hoja «Banco» de un gasto sin conciliar acota «Buscar el
+  cargo en Conciliación» a la cuenta capturada.
+- **Skew**: con un API ≤ 0.0.99 `GET /bank-accounts/opciones` responde 404 ⇒
+  el selector dice que no cargaron las cuentas y se guarda sin cuenta; el
+  alta con cuenta rebotaría por `forbidNonWhitelisted` (por eso el API va
+  antes que el panel).
+- Pruebas: `lib/admin/__tests__/cuentas-gasto.test.ts`,
+  `proveedores-gasto.test.ts` y
+  `components/admin/expenses/__tests__/catalogos-en-linea.test.tsx`.

@@ -636,6 +636,8 @@ export interface GastoCandidatoConciliacion {
   notas?: string | null;
   notas_primera_linea?: string | null;
   tarjeta_terminacion?: string | null;
+  /** Cuenta capturada en el gasto (API 0.0.100): «de HSBC Pesos». */
+  cuenta_alias?: string | null;
   matricula?: string | null;
   vuelo_folio?: number | null;
   medio_pago?: string | null;
@@ -731,6 +733,8 @@ function lineaDescripcionCandidato(
   const piezaTc = opts.sinTc ? null : (g.tc_cruce?.texto ?? (tc > 0 ? `T.C. ${tc.toFixed(2)}` : null));
   const partes = [
     g.tarjeta_terminacion ? `Tarjeta ****${g.tarjeta_terminacion}` : null,
+    // Cuenta de donde salió (20-oct-2026, API 0.0.100).
+    g.cuenta_alias ? `de ${g.cuenta_alias}` : null,
     rotularFolio(g.folio_comprobante),
     g.lugar ?? null,
     nota && nota !== g.lugar ? nota : null,
@@ -845,4 +849,21 @@ export function diaMas(dia: string, n: number): string {
   const d = new Date(`${dia}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * CUENTA DEL GASTO ≠ CUENTA DEL CARGO (20-oct-2026, API 0.0.100, invariante 98
+ * del API): el cruce automático no los liga solos; a mano sí se puede (la
+ * persona decide), con este aviso. null si no aplica (sin cuenta capturada o
+ * es la misma).
+ */
+export function avisoCuentaDistinta(
+  g: { cuenta_bancaria_id?: string | null; cuenta_alias?: string | null },
+  cuentaDelCargo: string | null | undefined,
+): string | null {
+  if (!g.cuenta_bancaria_id || !cuentaDelCargo || g.cuenta_bancaria_id === cuentaDelCargo) return null;
+  const alias = (g.cuenta_alias ?? "").trim();
+  return alias
+    ? `El gasto dice que salió de ${alias}, no de la cuenta de este cargo.`
+    : "El gasto dice que salió de otra cuenta, no de la de este cargo.";
 }

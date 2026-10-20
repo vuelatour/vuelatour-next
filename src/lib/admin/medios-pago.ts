@@ -46,14 +46,26 @@ const MEDIO_PAGO_CORTO: Record<string, string> = {
 export function textoPagoCorto(
   medio: string | null | undefined,
   terminacion?: string | null,
+  /** Cuenta de donde salió (20-oct-2026, API 0.0.100): «Transferencia ·
+   *  HSBC Pesos». Solo con transferencia, domiciliado o Paywise. */
+  cuentaAlias?: string | null,
 ): { texto: string; title: string } | null {
   if (!medio) return null;
   const largo = medioPagoLabel(medio);
   const corto = MEDIO_PAGO_CORTO[medio] ?? largo;
   const term = medio === "TARJETA_CORP" ? (terminacion ?? "").trim() : "";
   const cola = term ? ` ****${term}` : "";
-  return { texto: `${corto}${cola}`, title: `${largo}${cola}` };
+  const alias = MEDIOS_LLEVAN_CUENTA.has(medio) ? (cuentaAlias ?? "").trim() : "";
+  const cuenta = alias ? ` · ${alias}` : "";
+  return {
+    texto: `${corto}${cola}${cuenta}`,
+    title: `${largo}${cola}${alias ? ` desde ${alias}` : ""}`,
+  };
 }
+
+/** Espejo local de `MEDIOS_CON_CUENTA` (`cuentas-gasto.ts`) sin importarlo
+ *  (este módulo lo importa el schema de zod). */
+const MEDIOS_LLEVAN_CUENTA = new Set(["TRANSFERENCIA", "DOMICILIADO", "PAYWISE"]);
 
 /**
  * Medios que la oficina puede ELEGIR al capturar un gasto nuevo, en el orden

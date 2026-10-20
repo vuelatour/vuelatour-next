@@ -70,7 +70,9 @@ export function pareceCargoRecurrente(descripcion: string | null | undefined): b
  * transferencia. La oficina lo revisa antes de guardar (NOTA_PRELLENADO).
  */
 export function prefillGastoDesdeCargo(
-  mov: Pick<MovimientoBancario, "monto" | "fecha" | "descripcion" | "referencia">,
+  mov: Pick<MovimientoBancario, "monto" | "fecha" | "descripcion" | "referencia"> & {
+    cuenta_bancaria_id?: string | null;
+  },
   monedaCuenta: string | null | undefined,
 ): Partial<GastoCreateValues> {
   const monto = centavos(Math.abs(numeroDe(mov.monto)));
@@ -85,6 +87,9 @@ export function prefillGastoDesdeCargo(
     fecha_gasto: (mov.fecha ?? "").slice(0, 10),
     medio_pago: recurrente ? MEDIO_DOMICILIADO : terminacion ? "TARJETA_CORP" : "TRANSFERENCIA",
     tarjeta_terminacion: terminacion ?? "",
+    // Cuenta de donde salió (20-oct-2026, API 0.0.100): la del cargo, salvo
+    // con tarjeta (la tarjeta no lleva cuenta en el gasto).
+    ...(!terminacion && mov.cuenta_bancaria_id ? { cuenta_bancaria_id: mov.cuenta_bancaria_id } : {}),
     notas,
   };
 }

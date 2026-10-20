@@ -459,7 +459,11 @@ export function accionesPendiente(r: ConciliacionDeGasto): AccionesPendiente | n
     g.medio_pago === "PAYWISE"
       ? cuentaUnica((r.ultimos_movimientos ?? []).filter((u) => u?.cuenta?.tipo === "PASARELA").map((u) => u.cuenta.id))
       : null;
-  const cuenta = parcial ? cuentaUnica(cargos.map((c) => c.cuenta?.id)) : cuentaPaywise;
+  // La cuenta capturada en el gasto (API 0.0.100, invariante 98) acota la
+  // búsqueda: el cruce automático solo busca el pago en esa cuenta.
+  const cuenta = parcial
+    ? cuentaUnica(cargos.map((c) => c.cuenta?.id))
+    : (g.cuenta_bancaria_id ?? cuentaPaywise);
   const faltante = parcial ? (r.vista?.faltante ?? null) : null;
   const dia = g.fecha_gasto && esDiaValido(g.fecha_gasto) ? fmtDateOnly(g.fecha_gasto) : null;
   const mxn = g.moneda === "MXN";

@@ -430,6 +430,11 @@ export interface GastoCandidato {
       `gastos-candidatos` y `sugerir`), misma fuente única que
       `MovimientoGasto.folio_comprobante`. Lo rotula `descripcionCandidatoGasto`. */
   folio_comprobante?: string | null;
+  /** ADITIVOS (20-oct-2026, API 0.0.100, invariante 98): la cuenta de donde
+      la oficina dijo que salió el pago. Si NO es la del cargo, el cruce
+      automático no lo liga solo; a mano sí (el diálogo lo avisa). */
+  cuenta_bancaria_id?: string | null;
+  cuenta_alias?: string | null;
   /** ADITIVO (6-oct-2026, API 0.0.63): el gasto NO pasó por el banco
       (EFECTIVO, PERSONAL_*; BODEGA jamás viaja). Solo llega con
       `incluir_no_bancarios=true`, DESPUÉS de los bancarios; vincularlo exige
@@ -1305,6 +1310,9 @@ export interface ConciliacionDeGasto {
     lugar: string | null;
     notas_primera_linea: string | null;
     folio_comprobante: string | null;
+    /** ADITIVOS (API 0.0.100, invariante 98): la cuenta capturada. */
+    cuenta_bancaria_id?: string | null;
+    cuenta_alias?: string | null;
   };
   estado: EstadoBancoApi;
   fuente: "PUENTE" | "ESPEJO";

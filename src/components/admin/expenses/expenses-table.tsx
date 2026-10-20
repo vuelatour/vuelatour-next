@@ -441,7 +441,7 @@ export function ExpensesTable({
             );
           }
           const g = f.gasto;
-          const pago = textoPagoCorto(g.medio_pago, g.tarjeta_terminacion);
+          const pago = textoPagoCorto(g.medio_pago, g.tarjeta_terminacion, g.cuenta?.alias);
           const propina = textoPropinaGasto(g.propina, g.moneda);
           return (
             <>

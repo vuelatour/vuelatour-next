@@ -38,6 +38,7 @@ import {
   motivoPendienteDe,
   textoConfianza,
   tituloDescripcionCandidatoGasto,
+  avisoCuentaDistinta,
 } from "@/lib/admin/conciliacion-auto";
 import {
   BOTON_CANCELAR,
@@ -1253,6 +1254,19 @@ function SelectorGastos({
                                 {lineaTc.texto}
                               </span>
                             )}
+                            {/* Cuenta del gasto ≠ la del cargo (API 0.0.100):
+                                el cruce automático no los liga; a mano sí. */}
+                            {(() => {
+                              const aviso = avisoCuentaDistinta(c, movimiento.cuenta_bancaria_id);
+                              return aviso ? (
+                                <span
+                                  data-cuenta-distinta=""
+                                  className="block text-[11px] text-amber-700 dark:text-amber-400"
+                                >
+                                  {aviso}
+                                </span>
+                              ) : null;
+                            })()}
                             {coincide && textoFactura && (
                               <span
                                 className="block text-xs text-emerald-600 dark:text-emerald-400"

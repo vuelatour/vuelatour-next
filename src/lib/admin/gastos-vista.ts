@@ -652,7 +652,7 @@ export function textoBusquedaGasto(g: Gasto): string {
     distintivoOrigen(g.origen)?.etiqueta ?? "",
     g.tarjeta_terminacion ?? "",
     medioPagoLabel(g.medio_pago),
-    textoPagoCorto(g.medio_pago, g.tarjeta_terminacion)?.texto ?? "",
+    textoPagoCorto(g.medio_pago, g.tarjeta_terminacion, g.cuenta?.alias)?.texto ?? "",
     Number(g.monto).toFixed(2),
     fmtMonto(g.monto, g.moneda),
     g.folio_ticket ?? "",

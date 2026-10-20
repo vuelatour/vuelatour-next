@@ -48,6 +48,11 @@ export interface Gasto {
   proveedor_id: string | null;
   medio_pago: string;
   tarjeta_terminacion: string | null;
+  /** ADITIVO (API 0.0.100, invariante 98): la cuenta de donde salió el pago
+   *  (solo transferencia, pago domiciliado o Paywise). Ausente = API previo. */
+  cuenta_bancaria_id?: string | null;
+  /** Embed de la lista (`cuenta:cuenta_bancaria!cuenta_bancaria_id(...)`). */
+  cuenta?: { alias: string; banco?: string | null; moneda?: string | null; tipo?: string | null } | null;
   /** Folio/remisión del ticket (llave anti-duplicados; puede venir de la IA). */
   folio_ticket: string | null;
   /** Detalle de cargas de combustible (categoria GAS). */

@@ -751,7 +751,9 @@ function aliasDeCuentas(r: CargosResumen, aliasPorCuenta?: Readonly<Record<strin
  * vuelo y proveedor los elige la oficina.
  */
 export function prefillGastoDesdeCargos(
-  cargos: readonly Pick<MovimientoBancario, "fecha" | "descripcion" | "monto">[],
+  cargos: readonly (Pick<MovimientoBancario, "fecha" | "descripcion" | "monto"> & {
+    cuenta_bancaria_id?: string | null;
+  })[],
   resumen: CargosResumen,
   aliasPorCuenta?: Readonly<Record<string, string>> | null,
 ): Partial<GastoCreateValues> {
@@ -766,6 +768,13 @@ export function prefillGastoDesdeCargos(
     ...(fecha ? { fecha_gasto: fecha } : {}),
     medio_pago: recurrentes ? MEDIO_DOMICILIADO : terminacion ? "TARJETA_CORP" : "TRANSFERENCIA",
     tarjeta_terminacion: terminacion ?? "",
+    // Cuenta de donde salió (20-oct-2026, API 0.0.100): la de los cargos si
+    // TODOS son de la misma y el medio la lleva (no con tarjeta).
+    ...(() => {
+      const cuentas = new Set(cargos.map((c) => c.cuenta_bancaria_id ?? ""));
+      const unica = cuentas.size === 1 ? [...cuentas][0] : "";
+      return !terminacion && unica ? { cuenta_bancaria_id: unica } : {};
+    })(),
     notas: notasDeCargos(cargos, aliasDeCuentas(resumen, aliasPorCuenta), resumen.moneda),
   };
 }

@@ -39,6 +39,17 @@ import {
   type ResultadoSubidaFacturas,
 } from "@/lib/admin/facturas-gasto";
 import { cuerpoMarcarPagado, validarMarcarPagado } from "@/lib/admin/gasto-por-pagar";
+import {
+  cuerpoCuentaRapida,
+  erroresCuentaRapida,
+  type FormCuentaRapida,
+  type OpcionCuentaGasto,
+} from "@/lib/admin/cuentas-gasto";
+import {
+  cuerpoProveedorRapido,
+  erroresProveedorRapido,
+  type FormProveedorRapido,
+} from "@/lib/admin/proveedores-gasto";
 import { GastoCreateSchema, GastoVerifySchema } from "./schema";
 import type { EstatusFacturacion } from "@/lib/admin/facturacion-estatus";
 import { listAircraft } from "@/lib/api/aircraft";
@@ -1391,5 +1402,111 @@ export async function marcarPagadoGastoAction(
   } catch (err) {
     if (isApiError(err)) return failConCodigo<Gasto>(err);
     return { ok: false, error: err instanceof Error ? err.message : "Error desconocido", code: "SIN_CONEXION" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CATÁLOGOS EN LÍNEA DESDE EL GASTO (20-oct-2026, API 0.0.100, invariante 98
+// del API): la cuenta de donde salió el pago y el proveedor se eligen, se
+// agregan y (el proveedor) se corrigen sin salir del formulario. NO
+// revalidan: las llama un diálogo que sigue abierto (el selector actualiza su
+// copia local del catálogo). Nunca lanzan; conservan code/status/details.
+// ---------------------------------------------------------------------------
+
+function failCatalogo<T>(err: unknown): ActionResult<T> {
+  if (isApiError(err)) {
+    return {
+      ok: false,
+      error: err.message,
+      code: err.code,
+      status: err.status,
+      details: err.details,
+    };
+  }
+  return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
+}
+
+/** Opciones del selector «Cuenta de donde salió» (sin número ni CLABE). */
+export async function listCuentasGastoAction(): Promise<ActionResult<OpcionCuentaGasto[]>> {
+  try {
+    const r = await apiServer<{ data: OpcionCuentaGasto[] }>("/v1/bank-accounts/opciones", {
+      cache: "no-store",
+    });
+    return { ok: true, data: r.data ?? [] };
+  } catch (err) {
+    return failCatalogo(err);
+  }
+}
+
+/** Alta rápida de una cuenta bancaria desde el gasto. */
+export async function crearCuentaGastoAction(
+  form: FormCuentaRapida,
+): Promise<ActionResult<OpcionCuentaGasto>> {
+  const errores = erroresCuentaRapida(form);
+  const primero = Object.values(errores)[0];
+  if (primero) return { ok: false, error: primero, code: "ENTRADA_INVALIDA", status: 400 };
+  try {
+    const r = await apiServer<Record<string, unknown>>("/v1/bank-accounts", {
+      method: "POST",
+      body: cuerpoCuentaRapida(form),
+    });
+    const numero = typeof r.numero_cuenta === "string" ? r.numero_cuenta.replace(/\D/g, "") : "";
+    return {
+      ok: true,
+      data: {
+        id: String(r.id),
+        alias: String(r.alias ?? form.alias.trim()),
+        banco: (r.banco as string | null) ?? null,
+        moneda: (r.moneda as string | null) ?? null,
+        tipo: (r.tipo as string | null) ?? form.tipo,
+        razon_social: (r.razon_social as string | null) ?? null,
+        activa: r.activa !== false,
+        terminacion: numero.length >= 4 ? numero.slice(-4) : null,
+      },
+    };
+  } catch (err) {
+    return failCatalogo(err);
+  }
+}
+
+/** Ficha de un proveedor para corregirlo desde el gasto. */
+export async function obtenerProveedorAction(
+  id: string,
+): Promise<ActionResult<Record<string, unknown>>> {
+  if (!esUuid(id)) return { ok: false, error: "Proveedor inválido.", status: 400 };
+  try {
+    const r = await apiServer<Record<string, unknown>>(`/v1/providers/${id}`, {
+      cache: "no-store",
+    });
+    return { ok: true, data: r };
+  } catch (err) {
+    return failCatalogo(err);
+  }
+}
+
+/** Alta rápida (sin `id`) o corrección (con `id`, solo lo que cambió). */
+export async function guardarProveedorGastoAction(input: {
+  id?: string | null;
+  form: FormProveedorRapido;
+  base?: FormProveedorRapido | null;
+}): Promise<ActionResult<{ id: string; nombre: string }>> {
+  const errores = erroresProveedorRapido(input.form, [], input.id ?? null);
+  const primero = Object.values(errores)[0];
+  if (primero) return { ok: false, error: primero, code: "ENTRADA_INVALIDA", status: 400 };
+  if (input.id && !esUuid(input.id)) {
+    return { ok: false, error: "Proveedor inválido.", status: 400 };
+  }
+  try {
+    const cuerpo = cuerpoProveedorRapido(input.form, input.id ? (input.base ?? null) : null);
+    if (input.id && Object.keys(cuerpo).length === 0) {
+      return { ok: true, data: { id: input.id, nombre: input.form.nombre.trim() } };
+    }
+    const r = await apiServer<Record<string, unknown>>(
+      input.id ? `/v1/providers/${input.id}` : "/v1/providers",
+      { method: input.id ? "PATCH" : "POST", body: cuerpo },
+    );
+    return { ok: true, data: { id: String(r.id), nombre: String(r.nombre ?? input.form.nombre.trim()) } };
+  } catch (err) {
+    return failCatalogo(err);
   }
 }

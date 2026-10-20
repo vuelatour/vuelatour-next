@@ -152,6 +152,9 @@ export const GastoVerifySchema = z.object({
     .nullable()
     .optional()
     .or(z.literal("")),
+  // Cuenta de donde salió el pago (20-oct-2026, API 0.0.100). null =
+  // quitarla (sobrevive a stripEmpty); "" se descarta.
+  cuenta_bancaria_id: z.string().uuid().nullable().optional().or(z.literal("")),
   estatus_comprobante: EstatusEnum.optional(),
   estatus_facturacion: FacturacionEnum.optional(),
   // null explícito = DESLIGAR (sobrevive a stripEmpty; "" se descarta).
@@ -251,6 +254,10 @@ export const GastoCreateSchema = z.object({
     .regex(/^\d{4}$/, "La tarjeta son 4 dígitos")
     .optional()
     .or(z.literal("")),
+  // Cuenta de donde salió el pago (20-oct-2026, API 0.0.100): solo con
+  // transferencia, pago domiciliado o Paywise (el diálogo no la manda con
+  // otro medio). "" = sin indicar.
+  cuenta_bancaria_id: z.string().uuid().optional().or(z.literal("")),
   estatus_comprobante: EstatusEnum.optional(),
   estatus_facturacion: FacturacionEnum.optional(),
   aeronave_id: z.string().uuid().optional().or(z.literal("")),
@@ -329,6 +336,8 @@ export type GastoCreateValues = {
   fecha_gasto: string;
   medio_pago: string;
   tarjeta_terminacion: string;
+  /** Cuenta de donde salió (transferencia, domiciliado o Paywise). */
+  cuenta_bancaria_id: string;
   estatus_comprobante: string;
   estatus_facturacion: string;
   aeronave_id: string;
@@ -357,6 +366,8 @@ export type GastoVerifyValues = {
   /** Con TARJETA_CORP: con cuál tarjeta se pagó (el server la sella al
    *  capturar; oficina la corrige aquí). */
   tarjeta_terminacion: string;
+  /** Cuenta de donde salió (transferencia, domiciliado o Paywise). */
+  cuenta_bancaria_id: string;
   estatus_comprobante: string;
   estatus_facturacion: string;
   aeronave_id: string;

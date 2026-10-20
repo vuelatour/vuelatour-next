@@ -160,6 +160,7 @@ function valores(over: Partial<GastoCreateValues>): GastoCreateValues {
     fecha_gasto: HOY,
     medio_pago: "EFECTIVO",
     tarjeta_terminacion: "",
+    cuenta_bancaria_id: "",
     estatus_comprobante: "SIN_COMPROBANTE",
     estatus_facturacion: "PENDIENTE",
     aeronave_id: "",

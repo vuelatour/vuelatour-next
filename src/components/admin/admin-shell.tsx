@@ -6,6 +6,7 @@ import { NotificationsProvider } from "./notifications/notifications-provider";
 import { InicioOficialProvider } from "./inicio-oficial-provider";
 import { AfacRealProvider } from "./afac-real-provider";
 import { PorPagarProvider } from "./por-pagar-provider";
+import { CatalogosGastoProvider } from "./catalogos-gasto-provider";
 import { inicioOficialDeMe } from "@/lib/admin/inicio-oficial";
 import { puedeEditarAfacReal } from "@/lib/admin/libro-afac";
 import { capacidadPorPagarDeMe } from "@/lib/admin/gasto-por-pagar";
@@ -26,6 +27,9 @@ export function AdminShell({ me, children }: AdminShellProps) {
         {/* Gastos por pagar (19-oct-2026, API 0.0.95): sin
             `config.gastos_por_pagar` ⇒ sin capacidad ⇒ todo como antes. */}
         <PorPagarProvider capacidad={capacidadPorPagarDeMe(me)}>
+        {/* Cuenta y proveedor en línea desde el gasto (20-oct-2026, API
+            0.0.100): el rol decide si se ofrece agregar/corregir. */}
+        <CatalogosGastoProvider rol={me.rol ?? null}>
         <NotificationsProvider currentUserId={me.id}>
           <div className="min-h-screen bg-background">
             {/* Sidebar desktop fija */}
@@ -42,6 +46,7 @@ export function AdminShell({ me, children }: AdminShellProps) {
             </div>
           </div>
         </NotificationsProvider>
+        </CatalogosGastoProvider>
         </PorPagarProvider>
       </AfacRealProvider>
     </InicioOficialProvider>
