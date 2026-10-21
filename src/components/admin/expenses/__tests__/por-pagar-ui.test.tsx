@@ -24,7 +24,6 @@ import {
   NOTA_SIGUE_POR_PAGAR,
   chipEstadoPago,
 } from "@/lib/admin/gasto-por-pagar";
-import { MSG_INVENTARIO_FECHA_FUTURA, NOTA_REFACCION_POR_PAGAR_SIN_AVION } from "@/lib/admin/refaccion-inventario";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),
@@ -79,7 +78,7 @@ afterAll(() => vi.useRealTimers());
 
 const { ChipEstadoPagoGasto, BotonChipPorPagar, BotonMarcarPagado } = await import("../marcar-pagado");
 const { MarcarPagadoDialog } = await import("../marcar-pagado-dialog");
-const { NotaFechaPorPagar, AvisoInventarioFechaFutura } = await import("../nota-por-pagar");
+const { NotaFechaPorPagar } = await import("../nota-por-pagar");
 const { PorPagarProvider } = await import("@/components/admin/por-pagar-provider");
 const { ExpensesTable } = await import("../expenses-table");
 const { FlightGastosTable } = await import("@/components/admin/flights/flight-gastos-table");
@@ -350,27 +349,28 @@ describe("cableado (regex sobre los fuentes)", () => {
     expect(s).toContain("const capacidadFecha = capacidadFechaCaptura(capacidadPorPagar, { conCargos });");
     expect(s).toContain("<NotaFechaPorPagar fecha={fechaGasto} conCargos={conCargos} />");
     const submit = s.slice(s.indexOf("const onSubmit = handleSubmit("), s.indexOf("const fechaIaOtroAnio"));
-    // La regla es PURA (`errorFechaAlGuardarAlta`, probada por comportamiento
-    // en `refaccion-inventario.test.ts`): aquí solo el cableado y el ORDEN.
-    const iError = submit.indexOf("const errorFecha = errorFechaAlGuardarAlta({");
+    // La regla es PURA (`errorFechaFuturaConCargos`, `gasto-por-pagar.ts`):
+    // aquí solo el cableado y el ORDEN. Desde el 21-oct-2026 ya no hay freno
+    // por la refacción (es un gasto normal): SOLO frenan los cargos.
+    const iError = submit.indexOf(
+      "const errorFecha = conCargos ? errorFechaFuturaConCargos(values.fecha_gasto, capacidadPorPagar) : null;",
+    );
     const iToast = submit.indexOf("toast.error(errorFecha);");
     const iConfirma = submit.indexOf("evaluarFechaGasto(values.fecha_gasto, capacidadFecha)");
     expect(iError).toBeGreaterThan(-1);
-    expect(submit.slice(iError, iToast)).toMatch(
-      /conCargos,\s*categoria: values\.categoria,\s*destino: refDestino,\s*fecha: values\.fecha_gasto,\s*capacidad: capacidadPorPagar,/,
-    );
+    expect(submit).not.toContain("errorFechaAlGuardarAlta");
     // El freno va ANTES de la confirmación de fecha (y de `guardarGasto`).
     expect(iToast).toBeGreaterThan(iError);
     expect(iConfirma).toBeGreaterThan(iToast);
     expect(submit.slice(iToast, iConfirma)).toMatch(/toast\.error\(errorFecha\);\s*return;/);
   });
 
-  it("P12: la refacción «A Inventario/Tienda» con fecha futura no se guarda; el aviso va AL FINAL del bloque", () => {
+  it("P12 (retirado el 21-oct-2026): la refacción es un gasto normal, sin bloque `inventario` ni aviso propio de fecha", () => {
     const s = fuente("components/admin/expenses/expense-create-dialog.tsx");
-    expect(s).toMatch(/errorFechaAlGuardarAlta\(\{\s*conCargos,\s*categoria: values\.categoria,\s*destino: refDestino,\s*fecha: values\.fecha_gasto,\s*capacidad: capacidadPorPagar,\s*\}\)/);
-    // Último hijo del fragmento del destino INVENTARIO: un hijo nuevo antes
-    // correría los ids de `useId` de los campos (el golden del alta).
-    expect(s).toMatch(/<AvisoInventarioFechaFutura fecha=\{fechaGasto\} \/>\s*<\/>\s*\)\}/);
+    expect(s).not.toContain("AvisoInventarioFechaFutura");
+    expect(s).not.toContain("inventario:");
+    expect(s).not.toContain("refaccion-inventario");
+    expect(fuente("components/admin/expenses/nota-por-pagar.tsx")).not.toContain("AvisoInventarioFechaFutura");
   });
 
   it("P18: «Verificar / editar» de un conciliado evalúa la fecha sin capacidad y la nota lo sabe", () => {
@@ -516,7 +516,7 @@ describe("cableado (regex sobre los fuentes)", () => {
   });
 });
 
-describe("revisión del lote: la fecha de un gasto que YA está pagado (P17, P18) y la refacción a Inventario (P12)", () => {
+describe("revisión del lote: la fecha de un gasto que YA está pagado (P17, P18)", () => {
   it("P17: con cargos del banco y fecha futura, el ERROR (nunca «Quedará POR PAGAR»)", () => {
     const html = renderToStaticMarkup(
       <PorPagarProvider capacidad={CAPACIDAD}>
@@ -557,30 +557,6 @@ describe("revisión del lote: la fecha de un gasto que YA está pagado (P17, P18
         </PorPagarProvider>,
       ),
     ).toContain(NOTA_QUEDARA_POR_PAGAR);
-  });
-
-  it("P12: el aviso de la refacción a Inventario/Tienda con fecha futura: texto EXACTO del API; con hoy o sin capacidad, nada", () => {
-    const html = renderToStaticMarkup(
-      <PorPagarProvider capacidad={CAPACIDAD}>
-        <AvisoInventarioFechaFutura fecha="2026-11-05" />
-      </PorPagarProvider>,
-    );
-    // El texto del API va COMPLETO en su propio renglón (no se toca)…
-    expect(html).toContain(`<p>${esc(MSG_INVENTARIO_FECHA_FUTURA)}</p>`);
-    expect(html).toContain('role="alert"');
-    expect(html).toContain("data-error-inventario-fecha-futura");
-    // …y debajo, en el suyo, la salida real sin avión (segunda revisión, NUEVO-1).
-    const iSalida = html.indexOf("<p data-salida-inventario-fecha-futura=");
-    expect(iSalida).toBeGreaterThan(html.indexOf(esc(MSG_INVENTARIO_FECHA_FUTURA)));
-    expect(html.slice(iSalida)).toContain(`>${esc(NOTA_REFACCION_POR_PAGAR_SIN_AVION)}</p>`);
-    expect(
-      renderToStaticMarkup(
-        <PorPagarProvider capacidad={CAPACIDAD}>
-          <AvisoInventarioFechaFutura fecha="2026-10-19" />
-        </PorPagarProvider>,
-      ),
-    ).toBe("");
-    expect(renderToStaticMarkup(<AvisoInventarioFechaFutura fecha="2026-11-05" />)).toBe("");
   });
 });
 

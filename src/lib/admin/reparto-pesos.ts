@@ -44,6 +44,18 @@ export function repartoEnPesos(
   return data?.reparto_en_pesos === true;
 }
 
+/**
+ * ¿El reparto es LA CASCADA DEL BALANCE (20-oct-2026, API 0.0.101,
+ * invariante 99)? Solo `true` estricto. Con ella la provisión AFAC resta y la
+ * reserva de overhaul SOLO se informa; sin ella (API previo) la reserva
+ * resta como siempre y no hay fila de AFAC.
+ */
+export function repartoComoBalance(
+  data: { reparto_como_balance?: boolean | null } | null | undefined,
+): boolean {
+  return data?.reparto_como_balance === true;
+}
+
 // =============================================================================
 // Monto principal / informativo
 // =============================================================================
@@ -149,14 +161,22 @@ export function totalFlotaMxn(
   return sumaCentavos(aviones.map(llave));
 }
 
-/** Gastos del avión en pesos con la MISMA cascada del KPI en dólares. */
-export function gastosMxnDeAvion(a: AvionReparto): number | null {
+/**
+ * Gastos del avión en pesos con la MISMA cascada del KPI en dólares. Con
+ * `conAfac` (cascada del balance, API 0.0.101) la provisión AFAC también
+ * cuenta como gasto del periodo.
+ */
+export function gastosMxnDeAvion(
+  a: AvionReparto,
+  opts: { conAfac?: boolean } = {},
+): number | null {
   return sumaCentavos([
     a.ingresos.comisiones_venta_mxn,
     a.gastos.directos_mxn,
     a.gastos.indirectos_mxn,
     a.gastos.permisos_mxn,
     a.gastos.otros_prorrateados_mxn,
+    ...(opts.conAfac ? [a.afac_reservado_mxn] : []),
   ]);
 }
 
@@ -186,7 +206,11 @@ export const TITULO_SALDO_PESOS_INCOMPLETO =
 
 /** Renglón del recuadro informativo de la página. */
 export const NOTA_REPARTO_EN_PESOS =
-  "Montos en pesos (MXN), que es como se transfiere a los socios; los dólares van en gris solo como referencia. «Pagos a socios» sigue en dólares.";
+  "Montos en pesos (MXN), que es como se transfiere a los socios; los dólares van en gris solo como referencia. «Pagos a socios» también está en pesos.";
+
+/** Renglón del recuadro con la cascada del balance (API 0.0.101). */
+export const NOTA_REPARTO_COMO_BALANCE =
+  "Mismas cuentas que el balance del avión: la provisión AFAC resta del saldo y la reserva de overhaul no se resta, solo se informa cuánto debe guardar cada socio (se le descuenta únicamente a quien así se configuró). Abre el detalle de cada avión para ver gasto por gasto.";
 
 /** Cola del hint del KPI «Venta de aviones cobrada» en pesos; '' sin otros ingresos. */
 export function hintKpiOtrosIngresosAvionesPesos(mxn: number | null): string {

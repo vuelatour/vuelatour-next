@@ -95,7 +95,6 @@ import { MSG_OPCION_NO_ACTIVA, MSG_SIN_PERMISO_CONCILIAR } from "../conciliacion
 import { MEDIOS_BANCARIOS_CONCILIACION } from "../conciliacion-no-bancario";
 import { TEXTO_BUSCANDO_DUPLICADOS } from "../gasto-desde-cargo";
 import { MEDIO_PAGO_LABELS } from "../medios-pago";
-import { NOTA_INVENTARIO_NO_DESDE_CARGOS } from "../refaccion-inventario";
 import type {
   CandidatoGastoPorSuma,
   CargosGastosCandidatosResponse,
@@ -1171,7 +1170,11 @@ describe("paso 4 · paridad con el API (si el repo hermano está al lado)", () =
     const ctrl = leerApi("modules/expenses/expenses.controller.ts");
     if (!util || !dto || !servicio || !ctrl) return;
     expect(util).toContain(`'${MSG_LLAVE_CAPTURA_REQUERIDA}'`);
-    expect(util).toContain(`'${NOTA_INVENTARIO_NO_DESDE_CARGOS}'`);
+    // El 400 INVENTARIO_NO_DESDE_CARGOS sigue en el API (bloque `inventario`
+    // deprecado el 21-oct-2026); el panel ya no lo manda ni lo traduce.
+    expect(util).toContain(
+      "'Una refacción que entra a Inventario/Tienda no se registra desde varios cargos: regístrala en Gastos y vincula los cargos después.'",
+    );
     expect(util).toContain("'Esa captura ya registró un gasto con otros datos: búscalo en Gastos antes de volver a intentarlo.'");
     expect(util).toContain("export const PREFIJO_NO_SE_REGISTRO = 'No se registró el gasto: ';");
     expect(dto).toContain("conciliar_con_movimientos?: string[];");

@@ -286,20 +286,8 @@ export const GastoCreateSchema = z.object({
    *  Solo se manda cuando es true. */
   permitir_fecha_antigua: z.boolean().optional(),
   notas: z.string().max(2000).optional().or(z.literal("")),
-  /** REFACCIÓN a Inventario/Tienda (12-oct-2026, API 0.0.72, invariante 57):
-   *  solo al crear; lo arma `payloadInventario` (lib/admin/refaccion-inventario). */
-  inventario: z
-    .object({
-      item_id: z.string().uuid().optional(),
-      nombre: z.string().max(200).optional(),
-      numero_parte: z.string().max(50).optional(),
-      categoria: z.string().max(50).optional(),
-      cantidad: z.number().positive(),
-      precio_venta: z.number().min(0),
-      precio_venta_moneda: z.enum(["MXN", "USD"]),
-      vender_al_avion: z.boolean().optional(),
-    })
-    .optional(),
+  // Sin `inventario` desde el 21-oct-2026 (invariante 101 del API): una
+  // refacción es un gasto normal; la bodega se alimenta desde Compras.
   /** «Créalo por la suma» (Conciliación, 14-oct-2026, API 0.0.77, invariante
    *  76 del API): los 2..50 cargos del banco que paga este gasto; el API lo
    *  crea SIN auto-cruce y se los liga en la MISMA petición (si la liga

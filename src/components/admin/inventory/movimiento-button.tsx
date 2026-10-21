@@ -24,6 +24,8 @@ interface MovimientoButtonProps {
   margenVentaPct?: number | null;
   /** ¿Ya tiene una compra con costo? Texto de la ENTRADA sin costo (undefined = no se sabe). */
   tieneCostoVigente?: boolean;
+  /** T.C. oficial de hoy: la salida se cobra en pesos (un precio en USD se sugiere convertido). */
+  tcHoy?: number | null;
 }
 
 export function MovimientoButton({ initialEmpaqueId, autoOpen, ...props }: MovimientoButtonProps) {

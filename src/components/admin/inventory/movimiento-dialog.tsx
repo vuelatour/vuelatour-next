@@ -26,17 +26,28 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createMovimientoAction } from "@/app/admin/inventory/actions";
+import { entradaDesdeGastoAction } from "@/app/admin/inventory/compras/actions";
+import { GastoCandidatoSelector } from "@/components/admin/inventory/compras/gasto-candidato-selector";
+import {
+  ETIQUETA_VINCULAR_GASTO_ENTRADA,
+  HINT_VINCULAR_GASTO_ENTRADA,
+  textoCostoDesdeGasto,
+  toastEntradaDesdeGasto,
+} from "@/lib/admin/compras-estado";
 import { montoTxt } from "@/lib/admin/inventario-eliminar";
 import {
   ETIQUETA_A_COSTO,
   HINT_A_COSTO,
   HINT_PARA_FLOTA,
+  NOTA_VENTA_EN_PESOS,
   PLACEHOLDER_A_COSTO,
   hintAvionSalida,
   hintVentaSalida,
   placeholderVenta,
+  textoEquivalenteUsdVenta,
   textoSalidaRegistrada,
   ventaDelFormulario,
+  ventaInicialSalida,
 } from "@/lib/admin/inventario-salida";
 import {
   HINT_TC_OPCIONAL,
@@ -55,6 +66,7 @@ import {
 } from "@/lib/admin/inventario-entrada-inicial";
 import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
 import { Field } from "@/components/admin/form-field";
+import type { GastoCandidatoCompra } from "@/types/compras";
 import type { InventarioEmpaque } from "@/types/inventory";
 
 const TIPOS = [
@@ -100,6 +112,12 @@ interface MovimientoDialogProps {
    * `undefined` = no se sabe (API previo) ⇒ el texto cubre los dos casos.
    */
   tieneCostoVigente?: boolean;
+  /**
+   * T.C. oficial de hoy (21-oct-2026): la SALIDA se cobra en pesos; un precio
+   * de ficha en dólares se sugiere en pesos con él (y el equivalente USD se
+   * pinta como referencia). null = sin dato.
+   */
+  tcHoy?: number | null;
 }
 
 /** Entrada sin costo esperando confirmación: el cuerpo YA armado (USD 0). */
@@ -123,8 +141,14 @@ export function MovimientoDialog({
   initialEmpaqueId,
   margenVentaPct,
   tieneCostoVigente,
+  tcHoy = null,
 }: MovimientoDialogProps) {
   const [pending, startTransition] = useTransition();
+  // ENTRADA vinculada a un gasto YA registrado (21-oct-2026, invariante 101
+  // del API): el API arma la compra de una línea con ese gasto como costo y
+  // la recibe; aquí no se teclea costo.
+  const [vincularGasto, setVincularGasto] = useState(false);
+  const [gasto, setGasto] = useState<GastoCandidatoCompra | null>(null);
   // ENTRADA con el costo vacío o en 0 (28-sep-2026, revisión adversaria):
   // antes un «0» tecleado registraba la entrada SIN costo en silencio. Ahora
   // se pregunta, igual que en el alta del producto. Abierta/cerrada va aparte
@@ -148,6 +172,9 @@ export function MovimientoDialog({
       ? initialEmpaqueId
       : "";
 
+  // Venta inicial de la SALIDA: en PESOS; un precio en USD se sugiere
+  // convertido con el T.C. de hoy (la nota lo dice).
+  const ventaInicial = ventaInicialSalida({ precioVenta, precioVentaMoneda, tcHoy });
   const {
     register,
     handleSubmit,
@@ -156,15 +183,17 @@ export function MovimientoDialog({
     setValue,
     formState: { errors },
   } = useForm<MovimientoFormValues>({
-    defaultValues: defaults(initialTipo, preseleccionado, precioVenta, precioVentaMoneda),
+    defaultValues: defaults(initialTipo, preseleccionado, ventaInicial),
   });
 
   useEffect(() => {
     if (!open) return;
-    reset(defaults(initialTipo, preseleccionado, precioVenta, precioVentaMoneda));
+    reset(defaults(initialTipo, preseleccionado, ventaInicialSalida({ precioVenta, precioVentaMoneda, tcHoy })));
     setSinCosto(null);
     setSinCostoAbierto(false);
-  }, [open, reset, initialTipo, preseleccionado, precioVenta, precioVentaMoneda]);
+    setVincularGasto(false);
+    setGasto(null);
+  }, [open, reset, initialTipo, preseleccionado, precioVenta, precioVentaMoneda, tcHoy]);
 
   const tipo = watch("tipo");
   const esSalida = tipo === "SALIDA";
@@ -213,6 +242,32 @@ export function MovimientoDialog({
     };
     const matricula = aircraft.find((a) => a.id === values.aeronave_id)?.matricula ?? null;
 
+    // ENTRADA vinculada a un gasto ya registrado: la compra de una línea la
+    // arma y recibe el API (costo = monto del gasto ÷ unidades).
+    if (values.tipo === "ENTRADA" && vincularGasto) {
+      if (!gasto) {
+        toast.error("Elige el gasto que pagó esta pieza (o desmarca «Vincular con un gasto»).");
+        return;
+      }
+      const cantidad = Number(payload.cantidad);
+      if (!(cantidad > 0)) {
+        toast.error("Captura cuántas unidades entran (mayor a 0).");
+        return;
+      }
+      const tcTxt = String(values.tc_usd_mxn ?? "").trim();
+      registrarDesdeGasto({
+        gasto_id: gasto.id,
+        item_id: itemId,
+        cantidad,
+        ...(values.fecha_movimiento ? { fecha: values.fecha_movimiento } : {}),
+        ...(values.referencia?.trim() ? { referencia: values.referencia.trim() } : {}),
+        ...(values.notas?.trim() ? { notas: values.notas.trim() } : {}),
+        ...(values.proveedor_id ? { proveedor_id: values.proveedor_id } : {}),
+        ...(gasto.moneda === "MXN" && tcTxt !== "" && Number(tcTxt) > 0 ? { tc_usd_mxn: Number(tcTxt) } : {}),
+      });
+      return;
+    }
+
     // ENTRADA sin costo = decisión EXPLÍCITA (misma regla que el alta,
     // `clasificarCostoEntrada`): vacío o 0 ⇒ se PREGUNTA y viaja como USD 0
     // (sin pesos ni T.C.); un costo tan chico que se guardaría en $0 es error.
@@ -245,6 +300,20 @@ export function MovimientoDialog({
     }
     registrar(cuerpo, { matricula, paraFlota: values.para_flota === true });
   });
+
+  const registrarDesdeGasto = (input: Parameters<typeof entradaDesdeGastoAction>[0]) => {
+    startTransition(async () => {
+      const result = await entradaDesdeGastoAction(input);
+      if (result.ok && result.data) {
+        const t = toastEntradaDesdeGasto(result.data);
+        if (t.tipo === "success") toast.success(t.titulo);
+        else toast.warning(t.titulo, { description: t.descripcion, duration: 12000 });
+        onOpenChange(false);
+      } else {
+        toast.error(result.error ?? "No se pudo registrar la entrada");
+      }
+    });
+  };
 
   const registrar = (
     cuerpo: Record<string, unknown>,
@@ -291,6 +360,11 @@ export function MovimientoDialog({
   const esEntrada = tipo === "ENTRADA";
   const costoMxnReg = register("costo_unitario_mxn");
   const costoUsdReg = register("costo_unitario_usd");
+  // Con un gasto vinculado el costo no se teclea (lo da el gasto).
+  const costoDesdeGasto = esEntrada && vincularGasto && !!gasto;
+  const equivalenteUsd = esSalida
+    ? textoEquivalenteUsdVenta({ venta: watch("venta_unitaria"), moneda: watch("venta_moneda"), tcHoy })
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -368,7 +442,17 @@ export function MovimientoDialog({
             {esSalida ? (
               <Field
                 label="Precio de venta unitario"
-                hint={aCosto ? HINT_A_COSTO : hintVentaSalida(margenVentaPct)}
+                hint={
+                  aCosto ? (
+                    HINT_A_COSTO
+                  ) : (
+                    <>
+                      {hintVentaSalida(margenVentaPct)} {NOTA_VENTA_EN_PESOS}
+                      {ventaInicial.nota && <span className="block" data-nota-venta-pesos>{ventaInicial.nota}</span>}
+                      {equivalenteUsd && <span className="block" data-equivalente-usd>{equivalenteUsd}</span>}
+                    </>
+                  )
+                }
                 error={errors.venta_unitaria?.message}
               >
                 <div className="flex gap-2">
@@ -397,6 +481,10 @@ export function MovimientoDialog({
                     {...register("venta_unitaria")}
                   />
                 </div>
+              </Field>
+            ) : costoDesdeGasto ? (
+              <Field label="Costo unitario" hint={textoCostoDesdeGasto(gasto)}>
+                <Input value={`${gasto.moneda} · lo da el gasto`} disabled readOnly data-costo-desde-gasto />
               </Field>
             ) : (
               <Field
@@ -462,7 +550,7 @@ export function MovimientoDialog({
           {/* T.C. OPCIONAL (API 0.0.36, 25-sep-2026): vacío = el T.C. oficial
               del día de la compra, el mismo de las cotizaciones. En dólares
               no se captura: se convierte solo con ese T.C. */}
-          {!esSalida && watch("moneda") === "MXN" && (
+          {!esSalida && (costoDesdeGasto ? gasto.moneda === "MXN" : watch("moneda") === "MXN") && (
             <Field
               label="Tipo de cambio (MXN por USD)"
               hint={HINT_TC_OPCIONAL}
@@ -478,8 +566,31 @@ export function MovimientoDialog({
               />
             </Field>
           )}
-          {!esSalida && watch("moneda") === "USD" && (
+          {!esSalida && !costoDesdeGasto && watch("moneda") === "USD" && (
             <p className="-mt-2 text-xs text-muted-foreground">{NOTA_TC_USD}</p>
+          )}
+
+          {/* ENTRADA vinculada a un gasto YA registrado (21-oct-2026): «ya
+              registramos el gasto; cuando llegue, vincular». */}
+          {esEntrada && (
+            <div className="space-y-2 rounded-lg border border-border p-3" data-vincular-gasto-entrada>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={vincularGasto}
+                  onChange={(e) => {
+                    setVincularGasto(e.target.checked);
+                    if (!e.target.checked) setGasto(null);
+                  }}
+                  className="h-4 w-4 cursor-pointer accent-brand-600"
+                />
+                <span>
+                  {ETIQUETA_VINCULAR_GASTO_ENTRADA}{" "}
+                  <span className="text-xs text-muted-foreground">{HINT_VINCULAR_GASTO_ENTRADA}</span>
+                </span>
+              </label>
+              {vincularGasto && <GastoCandidatoSelector value={gasto?.id ?? ""} onChange={setGasto} soloMercancia />}
+            </div>
           )}
 
           {esSalida && (
@@ -645,8 +756,7 @@ export function MovimientoDialog({
 function defaults(
   tipo: MovimientoFormValues["tipo"] = "ENTRADA",
   empaqueId = "",
-  precioVenta?: number | null,
-  precioVentaMoneda?: "MXN" | "USD" | null,
+  venta: { venta_unitaria: string; venta_moneda: "MXN" | "USD" } = { venta_unitaria: "", venta_moneda: "MXN" },
 ): MovimientoFormValues {
   return {
     tipo,
@@ -660,12 +770,12 @@ function defaults(
     costo_unitario_usd: "",
     costo_unitario_mxn: "",
     tc_usd_mxn: "",
-    // Prellenado con el precio de venta del ítem: en SALIDA el avión paga
-    // este precio (editable). Vacío = el API aplica el precio del producto o
-    // el último precio de compra + margen de la tienda; «a costo» es la
-    // casilla de abajo.
-    venta_unitaria: precioVenta != null && precioVenta > 0 ? String(precioVenta) : "",
-    venta_moneda: precioVentaMoneda ?? "MXN",
+    // Prellenado con el precio de venta del ítem EN PESOS (21-oct-2026,
+    // `ventaInicialSalida`): en SALIDA el avión paga este precio (editable).
+    // Vacío = el API aplica el precio del producto o el último precio de
+    // compra + margen de la tienda; «a costo» es la casilla de abajo.
+    venta_unitaria: venta.venta_unitaria,
+    venta_moneda: venta.venta_moneda,
     a_costo: false,
     aeronave_id: "",
     proveedor_id: "",

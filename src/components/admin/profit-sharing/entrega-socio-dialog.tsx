@@ -31,6 +31,7 @@ import {
   BOTON_REGISTRAR_ADELANTO,
   BOTON_REVISAR_MONTO,
   ETIQUETA_REGISTRAR_ENTREGA,
+  ETIQUETA_TC_PAGO,
   FACTURA_FOLIO_MAX,
   METODOS_PAGO_SOCIO,
   NOTAS_PAGO_MAX,
@@ -56,6 +57,7 @@ import {
   piezasPago,
   textoMesEnCurso,
   textoPorEntregarHoy,
+  textoPreviewEntrega,
   validarFormPago,
   type ContextoEntrega,
   type ContextoRegistro,
@@ -129,10 +131,13 @@ export function BotonRegistrarEntrega({
 
 /**
  * «Registrar entrega» / «Editar entrega» a un socio. El alta llega prellenada
- * (monto = lo por entregar del API, USD, hoy Cancún, entregó = yo); el
- * MÉTODO se elige siempre. Un 409 PAGO_EXCEDE_SALDO se convierte en la
- * confirmación del ADELANTO, que reintenta con `aceptar_exceso` y el MISMO
- * `client_request_id`. Tras registrar, el diálogo ofrece adjuntar el
+ * (monto = lo por entregar del API EN PESOS, MXN, el T.C. oficial de hoy,
+ * hoy Cancún, entregó = yo); el MÉTODO se elige siempre. El T.C. es
+ * obligatorio en las DOS monedas (API 0.0.101: en dólares dice cuántos
+ * pesos descuenta — se enseña «Descuenta $X MXN» antes de confirmar —; en
+ * pesos, el dólar informativo). Un 409 PAGO_EXCEDE_SALDO se convierte en
+ * la confirmación del ADELANTO, que reintenta con `aceptar_exceso` y el
+ * MISMO `client_request_id`. Tras registrar, el diálogo ofrece adjuntar el
  * comprobante (del navegador directo al API).
  *
  * Mientras GUARDA o SUBE no se cierra (ni con la X, ni Esc, ni clic fuera):
@@ -199,13 +204,15 @@ export function FormularioEntrega({
     pago
       ? formDePago(pago)
       : formInicialAlta({
-          porEntregarUsd: contexto.porEntregarUsd,
+          porEntregarMxn: contexto.porEntregarMxn,
           hoy: hoyLocal,
           meId: registro.me.id,
           mesSugerido: contexto.mesSugerido,
+          avionSugerido: contexto.avionSugerido ?? null,
+          tcOficial: registro.tcOficial,
         }),
   );
-  // Lo que el alta prellenó (lo por entregar en USD); en la edición no aplica.
+  // Lo que el alta prellenó (lo por entregar EN PESOS); en la edición no aplica.
   const montoPrellenado = pago ? null : inicial.monto;
   const [form, setForm] = useState<FormPagoSocio>(inicial);
   // Idempotencia: UN id por apertura; el reintento (red o «Registrar como
@@ -266,8 +273,9 @@ export function FormularioEntrega({
     setErrorGeneral(null);
   };
 
-  // Moneda: en el alta, pasar a MXN sin tocar el monto lo VACÍA (el
-  // prellenado está en DÓLARES), prellena el T.C. oficial y lleva el foco.
+  // Moneda: en el alta, pasar a USD sin tocar el monto lo VACÍA (el
+  // prellenado está en PESOS), prellena el T.C. oficial si falta y lleva el
+  // foco.
   const cambiarMoneda = (moneda: MonedaPagoSocio) => {
     const nuevo = formAlCambiarMoneda(form, moneda, montoPrellenado, registro.tcOficial);
     setForm(nuevo);
@@ -368,12 +376,15 @@ export function FormularioEntrega({
     : `Editar entrega a ${contexto.socio.nombre}`;
   const hintMonto = hintMontoPago({
     moneda: form.moneda,
-    porEntregarUsd: contexto.porEntregarUsd,
+    porEntregarMxn: contexto.porEntregarMxn,
     alta,
   });
   // La parte del mes EN CURSO de lo por entregar todavía cambia: se dice
   // junto al número (números del API; aquí no se resta nada).
-  const enCurso = alta ? textoMesEnCurso(contexto.mesEnCursoUsd, contexto.mesEnCurso) : null;
+  const enCurso = alta ? textoMesEnCurso(contexto.mesEnCursoMxn, contexto.mesEnCurso) : null;
+  // «Descuenta $X MXN» (USD) / «≈ $X USD» (MXN): espejo de la regla del API,
+  // solo para verlo antes de confirmar; el API lo recalcula al guardar.
+  const preview = textoPreviewEntrega(form);
   // Una fecha antes del arranque (un dedazo de año) sí descuenta del saldo
   // pero no sale en los movimientos desde el arranque: se dice ANTES.
   const avisoFecha = avisoFechaAntesDelArranque(form.fecha_pago, contexto.cuentaDesdeMes);
@@ -392,7 +403,7 @@ export function FormularioEntrega({
           {alta ? (
             <>
               <span className="font-medium text-foreground" data-por-entregar-hoy>
-                {textoPorEntregarHoy(contexto.porEntregarUsd)}
+                {textoPorEntregarHoy(contexto.porEntregarMxn)}
               </span>
               {enCurso && (
                 <span className="mt-0.5 block text-xs" data-mes-en-curso>
@@ -425,33 +436,43 @@ export function FormularioEntrega({
             etiqueta="Moneda de la entrega"
             valor={form.moneda}
             opciones={[
-              { value: "USD", etiqueta: "USD" },
               { value: "MXN", etiqueta: "MXN" },
+              { value: "USD", etiqueta: "USD" },
             ]}
             onCambiar={(v) => cambiarMoneda(v as MonedaPagoSocio)}
           />
         </div>
 
-        {form.moneda === "MXN" && (
-          <div className="sm:col-span-2">
-            <Field
-              label="Tipo de cambio USD/MXN"
-              required
-              error={errores.tc}
-              hint={hintTcPago({ tc: form.tc, tcOficial: registro.tcOficial, hoy: hoyLocal })}
+        {/* T.C. en las DOS monedas (API 0.0.101): la cuenta es en pesos. */}
+        <div className="sm:col-span-2">
+          <Field
+            label={ETIQUETA_TC_PAGO}
+            required
+            error={errores.tc}
+            hint={hintTcPago({ tc: form.tc, tcOficial: registro.tcOficial, hoy: hoyLocal, moneda: form.moneda })}
+          >
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="0.000001"
+              min={0}
+              placeholder="18.50"
+              value={form.tc}
+              onChange={(e) => cambiar("tc", e.target.value)}
+            />
+          </Field>
+          {preview && (
+            <p
+              className={cn(
+                "mt-1 text-xs",
+                form.moneda === "USD" ? "font-medium text-foreground" : "text-muted-foreground",
+              )}
+              data-preview-entrega={form.moneda}
             >
-              <Input
-                type="number"
-                inputMode="decimal"
-                step="0.000001"
-                min={0}
-                placeholder="18.50"
-                value={form.tc}
-                onChange={(e) => cambiar("tc", e.target.value)}
-              />
-            </Field>
-          </div>
-        )}
+              {preview}
+            </p>
+          )}
+        </div>
 
         <Field
           label="Fecha de la entrega"
@@ -625,7 +646,7 @@ export function PasoComprobante({
   const [error, setError] = useState<string | null>(null);
   const [adjunto, setAdjunto] = useState(Boolean(resultado.pago.comprobante_path));
   const p = piezasPago(resultado.pago);
-  const saldo = resultado.cuenta?.por_entregar_usd;
+  const saldo = resultado.cuenta?.por_entregar_mxn;
 
   const subir = async (file: File) => {
     const motivo = motivoComprobanteInvalido(file);

@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import { NOTA_PAGO_VENDEDOR_REPARTO } from "@/lib/admin/categorias-gasto";
 import { hintKpiOtrosIngresosAviones } from "@/lib/admin/otros-ingresos-avion";
+import { TEXTO_RESERVA_NO_RESTA } from "@/lib/admin/reparto-avion";
 import {
   HINT_SALDO_PESOS_INCOMPLETO,
   TITULO_SALDO_PESOS_INCOMPLETO,
@@ -45,11 +46,15 @@ export function KpiStrip({
   aviones,
   otrosIngresos = null,
   enPesos = false,
+  comoBalance = false,
 }: {
   aviones: AvionReparto[];
   otrosIngresos?: OtrosIngresosVuelatour | null;
   /** Bandera raíz `reparto_en_pesos` del API (`repartoEnPesos`). */
   enPesos?: boolean;
+  /** Bandera raíz `reparto_como_balance` (API 0.0.101): la provisión AFAC
+   *  cuenta en «Gastos del periodo» y la reserva es solo informativa. */
+  comoBalance?: boolean;
 }) {
   const sum = (fn: (a: AvionReparto) => number) =>
     aviones.reduce((acc, a) => acc + fn(a), 0);
@@ -62,14 +67,16 @@ export function KpiStrip({
   // Misma cascada que la card: comisiones_venta_usd trae la parte del avión
   // de la comisión bancaria (regla de septiembre 2026, API 0.0.65) + los
   // pagos «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74); vale 0
-  // si no hay nada que restar.
+  // si no hay nada que restar. Con la cascada del balance (API 0.0.101) la
+  // provisión AFAC también es un gasto del periodo.
   const gastos = sum(
     (a) =>
       (a.ingresos.comisiones_venta_usd ?? 0) +
       a.gastos.directos_usd +
       a.gastos.indirectos_usd +
       a.gastos.permisos_usd +
-      a.gastos.otros_prorrateados_usd,
+      a.gastos.otros_prorrateados_usd +
+      (comoBalance ? (a.afac_reservado_usd ?? 0) : 0),
   );
   // Desglose de otros ingresos para el tooltip (la comisión solo si el API
   // ya la manda). En pesos, los dólares llevan su sufijo.
@@ -97,7 +104,10 @@ export function KpiStrip({
   const mxn = (llave: (a: AvionReparto) => number | null | undefined) =>
     enPesos ? totalFlotaMxn(aviones, llave) : null;
   const venta = montoPrincipal({ mxn: mxn((a) => a.ingresos.cobrado_mxn), usd: ingresos }, enPesos);
-  const gastosKpi = montoPrincipal({ mxn: mxn(gastosMxnDeAvion), usd: gastos }, enPesos);
+  const gastosKpi = montoPrincipal(
+    { mxn: mxn((a) => gastosMxnDeAvion(a, { conAfac: comoBalance })), usd: gastos },
+    enPesos,
+  );
   const reservaKpi = montoPrincipal({ mxn: mxn((a) => a.reserva_overhaul_mxn), usd: reserva }, enPesos);
   const pendienteKpi = montoPrincipal(
     { mxn: mxn((a) => a.ingresos.pendiente_cobro_mxn), usd: pendiente },
@@ -136,14 +146,15 @@ export function KpiStrip({
         label="Gastos del periodo"
         value={gastosKpi.principal}
         informativo={gastosKpi.informativo}
-        hint="Directos, indirectos, permisos y fijos"
+        hint={comoBalance ? "Directos, indirectos, permisos, fijos y provisión AFAC" : "Directos, indirectos, permisos y fijos"}
       />
       <Kpi
         icon={WrenchScrewdriverIcon}
-        label="Reserva overhaul"
+        label={comoBalance ? "Reserva a guardar" : "Reserva overhaul"}
         value={reservaKpi.principal}
         informativo={reservaKpi.informativo}
-        hint={`${fmtDecimal(horas, 1)} hr voladas`}
+        hint={comoBalance ? `no se resta · ${fmtDecimal(horas, 1)} hr voladas` : `${fmtDecimal(horas, 1)} hr voladas`}
+        title={comoBalance ? TEXTO_RESERVA_NO_RESTA : undefined}
       />
       <Kpi
         icon={ClockIcon}

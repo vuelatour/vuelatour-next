@@ -22,6 +22,7 @@ import { todayCancun } from "@/lib/datetime";
 import {
   AYUDA_SALDO_INICIAL,
   ETIQUETA_CONFIGURAR_CUENTA,
+  ETIQUETA_SALDO_INICIAL,
   NOTAS_CUENTA_MAX,
   TEXTO_CUENTA_NO_CONFIGURADA,
   TEXTO_FALLO_RED_CUENTA,
@@ -41,8 +42,9 @@ import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
 import type { CuentaSocio } from "@/types/reparto-pagos";
 
 /**
- * «Configurar cuenta» de un socio: mes de arranque + saldo inicial + notas
- * (`PUT /v1/profit-sharing/socios/:id/cuenta`, ADMIN/FACTURACION). Sin
+ * «Configurar cuenta» de un socio: mes de arranque + saldo inicial EN PESOS
+ * (API 0.0.101) + notas (`PUT /v1/profit-sharing/socios/:id/cuenta`,
+ * ADMIN/FACTURACION). Sin
  * configurar, el API arranca la cuenta en septiembre 2026 con saldo 0.
  * Cambiar una cuenta YA configurada pide confirmación (el saldo del socio se
  * recalcula). Mientras guarda no se cierra.
@@ -213,7 +215,7 @@ export function FormularioCuenta({
             searchPlaceholder="Buscar mes…"
           />
         </Field>
-        <Field label="Saldo inicial (USD)" required error={errores.saldo_inicial} hint={AYUDA_SALDO_INICIAL}>
+        <Field label={ETIQUETA_SALDO_INICIAL} required error={errores.saldo_inicial} hint={AYUDA_SALDO_INICIAL}>
           <Input
             type="number"
             inputMode="decimal"

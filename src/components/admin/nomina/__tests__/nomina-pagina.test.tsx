@@ -45,7 +45,6 @@ vi.mock("@/app/admin/expenses/actions", () => ({
   createGastoAction: async () => ({ ok: false }),
   buscarVuelosCercanosAction: async () => ({ ok: true, data: [] }),
   leerFacturaIAAction: async () => ({ ok: false }),
-  listArticulosRefaccionAction: async () => ({ ok: true, data: [] }),
   listAvionesActivosAction: async () => ({ ok: false }),
   marcarFacturacionAction: async () => ({ ok: true }),
 }));

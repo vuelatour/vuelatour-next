@@ -242,17 +242,22 @@ describe("tablero de Gastos y reparto (cableado de la «(avión)»)", () => {
     expect(pagina).not.toContain("(remanentes de repartos: no se imputan a aeronaves)");
   });
 
+  // 20-oct-2026: la cascada se mudó de la card a `lib/admin/reparto-avion.ts`
+  // (filas) + `cascada-avion.tsx` (marcado); la card y la pantalla del avión
+  // la comparten.
   it("la cascada del reparto usa el sublabel de la fuente única (sin «provisión»)", () => {
-    const card = leer("src/components/admin/profit-sharing/avion-reparto-card.tsx");
-    expect(card).toContain("sublabel={SUBLABEL_COMISIONES_REPARTO}");
-    expect(card).not.toMatch(/provisión del vendedor/);
-    expect(leer("src/components/admin/profit-sharing/kpi-strip.tsx")).not.toMatch(/provisi/);
+    const cascada = leer("src/lib/admin/reparto-avion.ts");
+    expect(cascada).toContain("{ sublabel: SUBLABEL_COMISIONES_REPARTO }");
+    expect(cascada).not.toMatch(/provisión del vendedor/);
+    expect(leer("src/components/admin/profit-sharing/avion-reparto-card.tsx")).not.toMatch(/provisión del vendedor/);
+    // «Provisión AFAC» sí existe desde el API 0.0.101 (cascada del balance); la del vendedor, no.
+    expect(leer("src/components/admin/profit-sharing/kpi-strip.tsx")).not.toMatch(/provisi(?!ón AFAC)/);
   });
 
   it("los tooltips de «Otros ingresos VuelaTour» dicen quién paga con la nota única (sin «egreso de VuelaTour» a secas)", () => {
-    const card = leer("src/components/admin/profit-sharing/avion-reparto-card.tsx");
+    const cascada = leer("src/components/admin/profit-sharing/cascada-avion.tsx");
     const kpi = leer("src/components/admin/profit-sharing/kpi-strip.tsx");
-    for (const fuente of [card, kpi]) {
+    for (const fuente of [cascada, kpi]) {
       expect(fuente).toContain("${NOTA_PAGO_VENDEDOR_REPARTO}");
       expect(fuente).not.toContain("la comisión se paga al vendedor desde VuelaTour");
       expect(fuente).not.toContain("su pago al vendedor, egreso de VuelaTour");

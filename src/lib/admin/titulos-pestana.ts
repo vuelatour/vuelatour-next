@@ -218,6 +218,8 @@ export const TITULOS_DETALLE = {
   piloto: "Piloto",
   socio: "Socio",
   balanceAvion: "Balance del avión",
+  repartoAvion: "Reparto del avión",
+  historicoAvion: "Histórico del avión",
 } as const;
 
 /** «Tipo #folio · contexto»; sin folio, solo el tipo (genérico). */
@@ -368,16 +370,20 @@ export function tituloEstadisticas(pestana?: PestanaEstadisticas | null): string
   return conPestana(TITULOS_SECCION.estadisticas, pestana ? PESTANAS_ESTADISTICAS[pestana] : null);
 }
 
-/** Pestañas de Compras (`?f=`): «Abiertas» es el default. */
-export type FiltroCompras = "abiertas" | "recibidas" | "todas";
+/**
+ * Pestañas de Compras (`?f=`, 21-oct-2026): «Por recibir» es el default. Qué
+ * compra cae en cada una lo decide `lib/admin/compras-estado.ts`.
+ */
+export type FiltroCompras = "por-recibir" | "sin-gasto" | "completas" | "todas";
 
 export const PESTANAS_COMPRAS: Readonly<Record<FiltroCompras, string>> = {
-  abiertas: "Abiertas",
-  recibidas: "Recibidas",
+  "por-recibir": "Por recibir",
+  "sin-gasto": "Sin gasto",
+  completas: "Completas",
   todas: "Todas",
 };
 
-/** «Compras · Abiertas» (default) · «Compras · Recibidas» · «Compras» (Todas). */
+/** «Compras · Por recibir» (default) · «Compras · Sin gasto» · «Compras · Completas» · «Compras» (Todas). */
 export function tituloCompras(filtro?: FiltroCompras | null): string {
   return conPestana(
     TITULOS_PAGINA.compras,
@@ -492,6 +498,23 @@ export function tituloBalance(
 /** «Reparto de utilidades · 1–14 oct 2026». */
 export function tituloReparto(desde: unknown, hasta: unknown): string {
   return unirTitulo(TITULOS_SECCION.reparto, periodoCorto(desde, hasta));
+}
+
+/**
+ * Pantalla de UN avión en el reparto (20-oct-2026): «Reparto N621TX ·
+ * septiembre 2026» · «Reparto N621TX» · «Reparto del avión» (genérico sin
+ * matrícula, lo que se ve mientras carga).
+ */
+export function tituloRepartoAvion(matricula?: unknown, desde?: unknown, hasta?: unknown): string {
+  const m = textoParaTitulo(matricula, MAX_MATRICULA);
+  if (!m) return TITULOS_DETALLE.repartoAvion;
+  return unirTitulo(`Reparto ${m}`, periodoCorto(desde, hasta));
+}
+
+/** Histórico mes a mes de UN avión: «Histórico N621TX» · «Histórico del avión». */
+export function tituloHistoricoAvion(matricula?: unknown): string {
+  const m = textoParaTitulo(matricula, MAX_MATRICULA);
+  return m ? `Histórico ${m}` : TITULOS_DETALLE.historicoAvion;
 }
 
 /** «Calendario · octubre 2026» (mes 1–12); mes o año inválidos ⇒ «Calendario». */

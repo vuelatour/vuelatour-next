@@ -6,7 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { fmtUsd } from "@/lib/format";
+import { fmtMxn } from "@/lib/format";
 import {
   ETIQUETA_COLUMNA_ENTREGADO_POR_FECHA,
   etiquetaMes,
@@ -50,12 +50,12 @@ export function ResumenMesesCuenta({ meses }: { meses: ResumenMesCuenta[] }) {
                 : m.por_avion
                     .map(
                       (a) =>
-                        `${a.aeronave.matricula} ${fmtPct(a.porcentaje)} · ${fmtUsd(a.monto_usd)}`,
+                        `${a.aeronave.matricula} ${fmtPct(a.porcentaje)} · ${fmtMxn(a.monto_mxn)}`,
                     )
                     .join(" | ")}
             </TableCell>
-            <TableCell className="text-right font-mono text-sm">{fmtUsd(m.utilidad_usd)}</TableCell>
-            <TableCell className="text-right font-mono text-sm">{fmtUsd(m.entregado_usd)}</TableCell>
+            <TableCell className="text-right font-mono text-sm">{fmtMxn(m.utilidad_mxn)}</TableCell>
+            <TableCell className="text-right font-mono text-sm">{fmtMxn(m.entregado_mxn)}</TableCell>
           </TableRow>
         ))}
       </TableBody>

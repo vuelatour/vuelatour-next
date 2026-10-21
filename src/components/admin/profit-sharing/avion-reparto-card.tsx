@@ -1,11 +1,11 @@
 import Link from "next/link";
 import {
-  ChevronRightIcon,
+  ArrowRightIcon,
   ClockIcon,
-  ExclamationTriangleIcon,
   PaperAirplaneIcon,
 } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -13,38 +13,30 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
-import { DesgloseSection } from "./desglose-section";
 import { CierreRepartoAvion } from "./cierre-reparto-aviso";
 import type { CierrePeriodoAditivo } from "@/types/cierres";
 import { SociosSection } from "./socios-section";
+import { CascadaAvion } from "./cascada-avion";
+import { cn } from "@/lib/utils";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import {
-  NOTA_PAGO_VENDEDOR_REPARTO,
-  SUBLABEL_COMISIONES_REPARTO,
-} from "@/lib/admin/categorias-gasto";
-import {
-  ETIQUETA_FILA_OTROS_INGRESOS_AVION,
-  SUBLABEL_OTROS_INGRESOS_AVION,
   TITULO_BADGE_OTROS_INGRESOS_SIN_TC,
   TITULO_BADGE_OTROS_INGRESOS_TC_OFICIAL,
   textoBadgeOtrosIngresosSinTc,
   textoBadgeOtrosIngresosTcOficial,
-  tituloOtrosIngresosAvion,
 } from "@/lib/admin/otros-ingresos-avion";
 import {
   TITULO_OTROS_INGRESOS_SIN_TC_PESOS,
-  avisoPesosSinTc,
-  montoPrincipal,
-  pesosIncompletos,
   textoBadgePendientePesos,
   textoDeudaTotalPesos,
-  textoPorCobrarUsd,
-  textoUsd,
   tituloBadgePendientePesos,
   tituloGastosSinTcPesos,
-  tituloOtrosIngresosAvionPesos,
-  type MontoDoble,
 } from "@/lib/admin/reparto-pesos";
+import {
+  ETIQUETA_VER_DETALLE_AVION,
+  hrefRepartoAvion,
+  saldoCascada,
+} from "@/lib/admin/reparto-avion";
 import type { AvionReparto } from "@/types/profit-sharing";
 
 const AMBAR =
@@ -54,19 +46,19 @@ const INFO =
   "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30";
 
 /**
- * Card de reparto por avión: cascada del saldo (las filas SUMAN el saldo),
- * reparto a socios, desglose expandible y descarga del balance del avión en
- * Excel. Lo cobrado al cliente por la comisión del vendedor es ingreso de
- * VuelaTour (28-ago-2026); al avión solo le restan, en «Comisiones», su parte
- * de la comisión bancaria (regla sep-2026) y los pagos capturados como
- * «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74). La fila solo se
- * pinta si el API manda algo que restar.
+ * Card RESUMEN de un avión en el reparto (20-oct-2026, API 0.0.101): el
+ * detalle vive en `/admin/profit-sharing/aviones/[id]` («Ver detalle del
+ * avión →»). Aquí: matrícula, modelo, saldo disponible, los avisos de
+ * siempre, la cascada (con la fila «Provisión AFAC» y la reserva de
+ * overhaul DEBAJO del saldo, informativa: ya no resta), un renglón por
+ * socio con lo que recibe, los vuelos de este avión que pasan / vienen por
+ * el cierre de mes y la descarga del balance en Excel. El desglose vuelo
+ * por vuelo y gasto por gasto se fue a la pantalla del avión.
  *
  * Reparto EN PESOS (18-oct-2026, API 0.0.93): con `enPesos` el saldo, cada
- * fila de la cascada y la utilidad de cada socio pintan los PESOS que manda
- * el API y los dólares debajo, en gris (`montoPrincipal`); la reserva dice
- * su T.C. y, si hubo dólares sin T.C., un aviso ámbar dice que el saldo en
- * pesos está incompleto. Sin la bandera, el marcado de siempre.
+ * fila de la cascada y lo de cada socio pintan los PESOS que manda el API y
+ * los dólares debajo, en gris (`montoPrincipal`). Sin la bandera, dólares.
+ * Sin `comoBalance` (API ≤ 0.0.100) la reserva resta como siempre.
  */
 export function AvionRepartoCard({
   avion,
@@ -77,6 +69,7 @@ export function AvionRepartoCard({
   usuarioId = null,
   cierre = null,
   enPesos = false,
+  comoBalance = false,
 }: {
   avion: AvionReparto;
   desde: string;
@@ -93,21 +86,13 @@ export function AvionRepartoCard({
   cierre?: CierrePeriodoAditivo | null;
   /** Bandera raíz `reparto_en_pesos` del API (`repartoEnPesos`). */
   enPesos?: boolean;
+  /** Bandera raíz `reparto_como_balance` del API (`repartoComoBalance`). */
+  comoBalance?: boolean;
 }) {
-  // Pesos (API 0.0.93): solo con la bandera; sin ella, ningún monto cambia.
-  const pesos = (
-    mxn: number | null | undefined,
-    usd: number,
-    opts?: { deduccion?: boolean; tc?: number | null },
-  ): MontoDoble | undefined => (enPesos ? montoPrincipal({ mxn, usd }, true, opts) : undefined);
-  const saldo = montoPrincipal(
-    { mxn: avion.saldo_disponible_mxn, usd: avion.saldo_disponible_usd },
-    enPesos,
-  );
-  const positivo = (enPesos ? (saldo.valor ?? avion.saldo_disponible_usd) : avion.saldo_disponible_usd) >= 0;
+  const saldo = saldoCascada(avion, enPesos);
+  const positivo = (saldo.valor ?? avion.saldo_disponible_usd) >= 0;
   const totalVuelos =
     avion.ingresos.vuelos_cobrados + avion.ingresos.vuelos_pendientes;
-  const detalle = avion.detalle ?? null;
   // Deuda COMPLETA del cliente (venta + otros VuelaTour) cuando supera el
   // pendiente del avión: informativo, para no confundir "lo que falta cobrar"
   // con "lo que falta del avión". Solo si el API ya manda el bruto.
@@ -115,23 +100,20 @@ export function AvionRepartoCard({
   const muestraDeudaTotal =
     pendienteBruto != null &&
     pendienteBruto > avion.ingresos.pendiente_cobro_usd;
-
-  // Sublabel de la reserva: fórmula exacta si el API manda el detalle,
-  // si no, al menos las horas voladas que la originan.
-  const reservaSub = detalle
-    ? `${fmtDecimal(detalle.reserva.horas_hr, 1)} hr × ${fmtUsd(detalle.reserva.tarifa_hora_usd)}/hr`
-    : avion.horas_voladas_hr > 0
-      ? `${fmtDecimal(avion.horas_voladas_hr, 1)} hr voladas`
-      : undefined;
+  const hrefDetalle = hrefRepartoAvion(avion.aeronave.id, { desde, hasta });
 
   return (
     <Card>
       <CardHeader className="border-b">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-xl font-semibold tracking-tight">
+            <Link
+              href={hrefDetalle}
+              className="font-mono text-xl font-semibold tracking-tight underline-offset-2 hover:underline"
+              title={ETIQUETA_VER_DETALLE_AVION}
+            >
               {avion.aeronave.matricula}
-            </p>
+            </Link>
             <p className="truncate text-sm text-muted-foreground">
               {avion.aeronave.modelo}
             </p>
@@ -145,9 +127,9 @@ export function AvionRepartoCard({
                   : "text-destructive"
               }`}
             >
-              {enPesos ? saldo.principal : fmtUsd(avion.saldo_disponible_usd)}
+              {saldo.principal}
             </p>
-            {enPesos && saldo.informativo && (
+            {saldo.informativo && (
               <p className="text-xs text-muted-foreground tabular-nums">{saldo.informativo}</p>
             )}
           </div>
@@ -285,169 +267,9 @@ export function AvionRepartoCard({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Cascada del saldo: estas filas suman EXACTO el saldo disponible. */}
-        <div className="space-y-1 text-sm">
-          <CascadaRow
-            label="Venta del avión cobrada"
-            value={avion.ingresos.cobrado_usd}
-            pesos={pesos(avion.ingresos.cobrado_mxn, avion.ingresos.cobrado_usd)}
-            ingreso
-          />
-          {/* Otros ingresos ASIGNADOS a este avión (13-oct-2026, API
-              0.0.75): reembolsos y ventas registrados en Ingresos con el
-              avión, netos de comisión. SUMAN al saldo (el API ya los
-              incluye); la venta NO se mezcla. Con 0 o un API previo, la
-              fila no se pinta y la cascada sigue sumando el saldo. */}
-          {(avion.ingresos.otros_ingresos_avion_usd ?? 0) > 0 && (
-            <CascadaRow
-              label={ETIQUETA_FILA_OTROS_INGRESOS_AVION}
-              sublabel={SUBLABEL_OTROS_INGRESOS_AVION}
-              value={avion.ingresos.otros_ingresos_avion_usd ?? 0}
-              pesos={pesos(
-                avion.ingresos.otros_ingresos_avion_mxn,
-                avion.ingresos.otros_ingresos_avion_usd ?? 0,
-              )}
-              title={tituloOtrosIngresosAvion(detalle?.otros_ingresos_avion)}
-              tituloPesos={
-                enPesos ? tituloOtrosIngresosAvionPesos(detalle?.otros_ingresos_avion) : undefined
-              }
-              ingreso
-            />
-          )}
-          {/* El avión absorbe su parte de la comisión bancaria de sus cobros
-              (regla de septiembre 2026, API 0.0.65) y los pagos capturados
-              como «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74;
-              sin pago capturado no resta nada del vendedor).
-              `comisiones_venta_usd > 0` también puede venir de un mes
-              ANTERIOR a la regla si el avión cargó un pago «(avión)»; con 0
-              la fila no se pinta. */}
-          {(avion.ingresos.comisiones_venta_usd ?? 0) > 0 && (
-            <CascadaRow
-              label="Comisiones (banco + vendedor)"
-              sublabel={SUBLABEL_COMISIONES_REPARTO}
-              value={avion.ingresos.comisiones_venta_usd}
-              pesos={pesos(avion.ingresos.comisiones_venta_mxn, avion.ingresos.comisiones_venta_usd, {
-                deduccion: true,
-              })}
-              deduccion
-            />
-          )}
-          <CascadaRow
-            label="Gastos directos"
-            value={avion.gastos.directos_usd}
-            pesos={pesos(avion.gastos.directos_mxn, avion.gastos.directos_usd, { deduccion: true })}
-            deduccion
-          />
-          <CascadaRow
-            label="Gastos indirectos"
-            value={avion.gastos.indirectos_usd}
-            pesos={pesos(avion.gastos.indirectos_mxn, avion.gastos.indirectos_usd, { deduccion: true })}
-            deduccion
-          />
-          <CascadaRow
-            label="Permisos"
-            value={avion.gastos.permisos_usd}
-            pesos={pesos(avion.gastos.permisos_mxn, avion.gastos.permisos_usd, { deduccion: true })}
-            deduccion
-          />
-          <CascadaRow
-            label="Fijos (prorrateo + reparto manual)"
-            value={avion.gastos.otros_prorrateados_usd}
-            pesos={pesos(avion.gastos.otros_prorrateados_mxn, avion.gastos.otros_prorrateados_usd, {
-              deduccion: true,
-            })}
-            deduccion
-          />
-          <CascadaRow
-            label="Reserva overhaul"
-            sublabel={reservaSub}
-            value={avion.reserva_overhaul_usd}
-            pesos={pesos(avion.reserva_overhaul_mxn, avion.reserva_overhaul_usd, {
-              deduccion: true,
-              tc: detalle?.reserva.tc,
-            })}
-            deduccion
-          />
-          {enPesos ? (
-            <div className="flex items-start justify-between gap-3 border-t border-border pt-1.5 font-semibold">
-              <span>Saldo disponible</span>
-              <span className="text-right">
-                <span
-                  className={`block font-mono tabular-nums ${
-                    positivo
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-destructive"
-                  }`}
-                >
-                  {saldo.principal}
-                </span>
-                {saldo.informativo && (
-                  <span className="block text-xs font-normal text-muted-foreground tabular-nums">
-                    {saldo.informativo}
-                  </span>
-                )}
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between border-t border-border pt-1.5 font-semibold">
-              <span>Saldo disponible</span>
-              <span
-                className={`font-mono tabular-nums ${
-                  positivo
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-destructive"
-                }`}
-              >
-                {fmtUsd(avion.saldo_disponible_usd)}
-              </span>
-            </div>
-          )}
-          {/* Reparto en pesos: dólares que entraron al saldo USD pero no se
-              pudieron pasar a pesos (sin ningún T.C.). Se DICE: el saldo en
-              pesos está incompleto. */}
-          {enPesos && pesosIncompletos(avion) && (
-            <p
-              data-aviso-pesos-sin-tc=""
-              className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs font-normal text-amber-700 dark:text-amber-400"
-            >
-              <ExclamationTriangleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              {avisoPesosSinTc(avion.pesos_sin_tc_usd ?? 0)}
-            </p>
-          )}
-          {/* Informativo (fuera de la cascada): TUAs/extras/pernocta/comisión
-              del vendedor/IVA son ingresos de VuelaTour, no del avión — no se
-              reparten. Solo si el API ya lo manda. El PAGO al vendedor ya no
-              es «egreso de VuelaTour» a secas (13-oct-2026): depende de la
-              categoría del gasto real (NOTA_PAGO_VENDEDOR_REPARTO). */}
-          {avion.ingresos.otros_ingresos_vuelatour_usd != null && (
-            <div
-              className="flex items-baseline justify-between gap-3 pt-1 text-xs text-muted-foreground"
-              title={`Ingresos de VuelaTour cobrados en vuelos de este avión: TUAs, extras, pernocta y comisión del vendedor (con su IVA). No entran al saldo del avión ni al reparto. ${NOTA_PAGO_VENDEDOR_REPARTO}`}
-            >
-              <span>
-                Otros ingresos VuelaTour (TUAs/extras/pernocta/comisión) — no se
-                reparten
-                {(avion.ingresos.otros_ingresos_vuelatour_pendiente_usd ?? 0) > 0 && (
-                  <span className="ml-1.5 text-[11px] text-muted-foreground/70">
-                    {enPesos ? (
-                      textoPorCobrarUsd(avion.ingresos.otros_ingresos_vuelatour_pendiente_usd)
-                    ) : (
-                      <>
-                        · por cobrar{" "}
-                        {fmtUsd(avion.ingresos.otros_ingresos_vuelatour_pendiente_usd)}
-                      </>
-                    )}
-                  </span>
-                )}
-              </span>
-              <span className="font-mono tabular-nums">
-                {enPesos
-                  ? textoUsd(avion.ingresos.otros_ingresos_vuelatour_usd)
-                  : fmtUsd(avion.ingresos.otros_ingresos_vuelatour_usd)}
-              </span>
-            </div>
-          )}
-        </div>
+        {/* Cascada del saldo: estas filas suman EXACTO el saldo disponible;
+            con la cascada del balance la reserva va debajo, informativa. */}
+        <CascadaAvion avion={avion} enPesos={enPesos} comoBalance={comoBalance} compacta />
 
         <SociosSection
           socios={avion.reparto}
@@ -456,11 +278,10 @@ export function AvionRepartoCard({
           rol={rol}
           usuarioId={usuarioId}
           enPesos={enPesos}
+          comoBalance={comoBalance}
         />
 
         <CierreRepartoAvion cierre={cierre} matricula={avion.aeronave.matricula} />
-
-        {detalle && <DesgloseSection detalle={detalle} enPesos={enPesos} />}
       </CardContent>
 
       <CardFooter className="justify-between gap-2">
@@ -475,103 +296,14 @@ export function AvionRepartoCard({
           <span />
         )}
         <Link
-          href={`/admin/aircraft/${avion.aeronave.id}`}
-          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          href={hrefDetalle}
+          className={cn(buttonVariants({ variant: "default", size: "sm" }), "cursor-pointer gap-1")}
+          data-accion="ver-detalle-avion"
         >
-          Ver avión <ChevronRightIcon className="h-3.5 w-3.5" />
+          {ETIQUETA_VER_DETALLE_AVION}
+          <ArrowRightIcon className="h-3.5 w-3.5" aria-hidden />
         </Link>
       </CardFooter>
     </Card>
-  );
-}
-
-/**
- * Fila de la cascada. Las deducciones se muestran con signo "−" explícito;
- * el valor viene SIEMPRE positivo del API y aquí solo se pinta.
- */
-function CascadaRow({
-  label,
-  sublabel,
-  value,
-  pesos,
-  title,
-  tituloPesos,
-  ingreso,
-  deduccion,
-}: {
-  label: string;
-  sublabel?: string;
-  value: number;
-  /** Reparto en pesos: la cifra en pesos (con su «−») y los dólares debajo.
-   *  Sin ella, la fila de siempre en dólares. */
-  pesos?: MontoDoble;
-  /** Tooltip con el detalle (p. ej. los ingresos del avión, uno por renglón). */
-  title?: string;
-  /** El mismo tooltip con los montos en pesos (solo con `pesos`). */
-  tituloPesos?: string;
-  ingreso?: boolean;
-  deduccion?: boolean;
-}) {
-  if (pesos) {
-    return (
-      <div className="flex items-start justify-between gap-3" title={tituloPesos ?? title}>
-        <span className="text-muted-foreground">
-          {label}
-          {sublabel && (
-            <span className="ml-1.5 text-[11px] text-muted-foreground/70">
-              {sublabel}
-            </span>
-          )}
-        </span>
-        <span className="shrink-0 text-right">
-          <span
-            className={`block font-mono tabular-nums ${
-              ingreso
-                ? "text-emerald-600 dark:text-emerald-400"
-                : pesos.valor === 0
-                  ? "text-muted-foreground"
-                  : ""
-            }`}
-          >
-            {pesos.principal}
-          </span>
-          {pesos.informativo && (
-            <span
-              className={`block text-xs tabular-nums ${
-                pesos.sinPesos
-                  ? "text-amber-700 dark:text-amber-400"
-                  : "text-muted-foreground"
-              }`}
-            >
-              {pesos.informativo}
-            </span>
-          )}
-        </span>
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-baseline justify-between gap-3" title={title}>
-      <span className="text-muted-foreground">
-        {label}
-        {sublabel && (
-          <span className="ml-1.5 text-[11px] text-muted-foreground/70">
-            {sublabel}
-          </span>
-        )}
-      </span>
-      <span
-        className={`font-mono tabular-nums ${
-          ingreso
-            ? "text-emerald-600 dark:text-emerald-400"
-            : value === 0
-              ? "text-muted-foreground"
-              : ""
-        }`}
-      >
-        {deduccion ? "−" : ""}
-        {fmtUsd(value)}
-      </span>
-    </div>
   );
 }

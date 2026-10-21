@@ -59,6 +59,11 @@ import {
   tonoMarcaCierre,
   ultimoDiaCorto,
   validarMotivoReabrir,
+  puedeQuedarseEnMes,
+  textoQuedarseEnMes,
+  tituloVuelosQueSeQuedan,
+  notaQuedarseEnMes,
+  idsVistosEnPrevia,
 } from "@/lib/admin/cierre-mes";
 import type { MesCierre, PreviaCierre } from "@/types/cierres";
 
@@ -654,8 +659,9 @@ describe("revisión adversaria (16-oct-2026): el texto del API gana y nada se co
     expect(decidirRespuestaCerrar({ ok: true, data: { diferidos: [{}, {}, {}, {}, {}] } }, "2026-09")).toEqual({
       tipo: "exito",
       diferidos: 5,
+      incluidos: 0,
     });
-    expect(decidirRespuestaCerrar({ ok: true, data: {} }, "2026-09")).toEqual({ tipo: "exito", diferidos: 0 });
+    expect(decidirRespuestaCerrar({ ok: true, data: {} }, "2026-09")).toEqual({ tipo: "exito", diferidos: 0, incluidos: 0 });
     const cambio = decidirRespuestaCerrar(
       { ok: false, status: 409, code: "PREVIA_CAMBIO", error: "La lista cambió…", details: { previa: PREVIA_SEP } },
       "2026-09",
@@ -668,5 +674,60 @@ describe("revisión adversaria (16-oct-2026): el texto del API gana y nada se co
     ).toEqual({ tipo: "error", texto: "La lista cambió…" });
     // ok sin data (respuesta vacía) NO es éxito: no se pinta «cerrado» sin confirmación del API.
     expect(decidirRespuestaCerrar({ ok: true, data: null }, "2026-09").tipo).toBe("error");
+  });
+});
+
+describe("INCLUIR EN EL MES (21-oct-2026): los cobrados después del corte se quedan", () => {
+  const v = (motivo: string, fecha: string | null = "2026-10-02") =>
+    ({ id: "v", motivo, fecha_cobro_posterior: fecha }) as unknown as import("@/types/cierres").VueloDiferido;
+  it("solo COBRO_POSTERIOR puede quedarse", () => {
+    expect(puedeQuedarseEnMes(v("COBRO_POSTERIOR"))).toBe(true);
+    expect(puedeQuedarseEnMes(v("COBRO_PARCIAL"))).toBe(false);
+    expect(puedeQuedarseEnMes(v("SIN_COBRO"))).toBe(false);
+    expect(puedeQuedarseEnMes({ motivo: null })).toBe(false);
+  });
+  it("textos: la casilla, el título de la tabla y la nota", () => {
+    expect(textoQuedarseEnMes("2026-09", v("COBRO_POSTERIOR"))).toBe("Se queda en septiembre 2026 (ya se cobró el 2-oct)");
+    expect(textoQuedarseEnMes("2026-09", v("COBRO_POSTERIOR", null))).toBe(
+      "Se queda en septiembre 2026 (ya se cobró después del corte)",
+    );
+    expect(tituloVuelosQueSeQuedan("2026-09")).toBe("Se quedan en septiembre 2026 (cobrados después del corte)");
+    expect(notaQuedarseEnMes("2026-09", "2026-10")).toContain("pueden quedarse en septiembre 2026");
+  });
+  it("idsVistosEnPrevia = pasan + se quedan (lo que el API compara en PREVIA_CAMBIO); sin la llave, solo pasan", () => {
+    const base = { vuelos_que_pasan: [{ id: "a" }, { id: "b" }] } as unknown as import("@/types/cierres").PreviaCierre;
+    expect(idsVistosEnPrevia(base)).toEqual(["a", "b"]);
+    expect(idsVistosEnPrevia({ ...base, vuelos_incluidos: [{ id: "c" }] as never })).toEqual(["a", "b", "c"]);
+  });
+  it("normalizarPrevia lee vuelos_incluidos y totales.incluidos; API previo ⇒ [] y 0", () => {
+    const con = normalizarPrevia({
+      periodo: "2026-09",
+      listo: true,
+      vuelos_que_pasan: [],
+      vuelos_incluidos: [{ id: "c", motivo: "COBRO_POSTERIOR" }, { sin_id: true }],
+      totales: { incluidos: 1 },
+    });
+    expect(con?.vuelos_incluidos?.map((x) => x.id)).toEqual(["c"]);
+    expect(con?.totales.incluidos).toBe(1);
+    const sin = normalizarPrevia({ periodo: "2026-09", listo: true });
+    expect(sin?.vuelos_incluidos).toEqual([]);
+    expect(sin?.totales.incluidos).toBe(0);
+  });
+  it("toast y decisión: cuentan los que se quedaron", () => {
+    expect(textoToastCerrado("2026-09", 2, "2026-10", 1)).toBe(
+      "Septiembre 2026 cerrado. 2 vuelos pasan a octubre 2026. 1 vuelo cobrado después del corte se queda en septiembre 2026.",
+    );
+    expect(textoToastCerrado("2026-09", 0, "2026-10", 2)).toContain("2 vuelos cobrados después del corte se quedan en septiembre 2026.");
+    expect(textoToastCerrado("2026-09", 2, "2026-10")).toBe(textoToastCerrado("2026-09", 2, "2026-10", 0));
+    expect(decidirRespuestaCerrar({ ok: true, data: { diferidos: [{}], incluidos: [{}, {}] } }, "2026-09")).toEqual({
+      tipo: "exito",
+      diferidos: 1,
+      incluidos: 2,
+    });
+    expect(decidirRespuestaCerrar({ ok: true, data: { diferidos: [] } }, "2026-09")).toEqual({
+      tipo: "exito",
+      diferidos: 0,
+      incluidos: 0,
+    });
   });
 });

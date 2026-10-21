@@ -311,6 +311,13 @@ export interface AircraftOwner {
   vigente_desde: string;
   vigente_hasta: string | null;
   notas: string | null;
+  /**
+   * RESERVA DE OVERHAUL POR SOCIO (ADITIVO, 20-oct-2026, API 0.0.101,
+   * invariante 99): true = su parte de la reserva del periodo se le
+   * DESCUENTA de la utilidad (VuelaTour la retiene); false/ausente = solo se
+   * le informa cuánto debe guardar. Se cambia con `PATCH /owners/:id`.
+   */
+  descontar_reserva_overhaul?: boolean | null;
   usuario: {
     nombre: string;
     es_empresa: boolean;

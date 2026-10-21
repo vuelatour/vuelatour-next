@@ -3,27 +3,33 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
-import { listGastos } from "@/lib/api/expenses-server";
 import { listCompras } from "@/lib/api/compras-server";
-import { todayCancun } from "@/lib/datetime";
-import {
-  esCategoriaCompra,
-  type CompraCreateInput,
-  type CompraDetalle,
-  type CompraListItem,
-  type CompraRol,
-  type CompraUpdateInput,
+import type {
+  CompraConGastoRegistrado,
+  CompraCreateInput,
+  CompraDetalle,
+  CompraListItem,
+  CompraRol,
+  CompraUpdateInput,
+  EntradaDesdeGastoInput,
+  EntradaDesdeGastoResultado,
+  GastosCandidatosQuery,
+  GastosCandidatosResponse,
+  RegistrarGastoCompraInput,
 } from "@/types/compras";
-import type { Gasto } from "@/types/expenses";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
   data?: T;
   error?: string;
+  /** HTTP del API cuando falló (aditivo, 21-oct-2026). */
+  status?: number;
+  /** `code` ESTABLE del API (p. ej. COMPRA_GASTO_YA_REGISTRADO): la UI decide por él, nunca por el texto. */
+  code?: string;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message };
+  if (isApiError(err)) return { ok: false, error: err.message, status: err.status, code: err.code };
   return { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
 }
 
@@ -40,7 +46,7 @@ function revalidateCompra(id?: string) {
   revalidatePath("/admin/flights", "layout");
 }
 
-/** Alta de compra (vacía, o a partir de la factura de mercancía = gasto). */
+/** Alta de compra («Registrar compra»: pedida, sin recibir; o a partir de la factura de mercancía = gasto). */
 export async function createCompraAction(
   input: CompraCreateInput = {},
 ): Promise<ActionResult<CompraDetalle>> {
@@ -93,7 +99,7 @@ export async function updateCompraAction(
   }
 }
 
-/** Liga un gasto existente como pago de la compra con su rol. */
+/** «Vincular gasto ya registrado»: liga un gasto existente como pago de la compra con su rol. */
 export async function addPagoCompraAction(
   id: string,
   input: { gasto_id: string; rol: CompraRol },
@@ -104,6 +110,30 @@ export async function addPagoCompraAction(
       body: input,
     });
     revalidateCompra(id);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * «Registrar gasto» (21-oct-2026, API 0.0.102, invariante 101 del API): el
+ * API crea UN gasto de Refacción por el total de la factura de mercancía
+ * (líneas + cargos impresos) en la moneda de la compra, ligado a ella. El
+ * T.C. es obligatorio (lo valida el API: 15–25). 409
+ * `COMPRA_GASTO_YA_REGISTRADO` si ya lo tenía.
+ */
+export async function registrarGastoCompraAction(
+  id: string,
+  input: RegistrarGastoCompraInput,
+): Promise<ActionResult<CompraConGastoRegistrado>> {
+  try {
+    const data = await apiServer<CompraConGastoRegistrado>(`/v1/compras/${id}/registrar-gasto`, {
+      method: "POST",
+      body: input,
+    });
+    revalidateCompra(id);
+    revalidatePath("/admin/caja-chica", "layout");
     return { ok: true, data };
   } catch (err) {
     return fail(err);
@@ -172,7 +202,7 @@ export async function recibirCompraAction(
   }
 }
 
-/** Solo ABIERTA: los pagos vuelven a ser gastos sueltos. */
+/** Solo ABIERTA (sin entradas en bodega): los pagos vuelven a ser gastos sueltos. */
 export async function deleteCompraAction(id: string): Promise<ActionResult> {
   try {
     await apiServer(`/v1/compras/${id}`, { method: "DELETE" });
@@ -183,7 +213,29 @@ export async function deleteCompraAction(id: string): Promise<ActionResult> {
   }
 }
 
-// ===== Lecturas para selectores (diálogos del panel) =====
+/**
+ * Entrada de inventario VINCULADA a un gasto ya registrado (21-oct-2026,
+ * invariante 101): el API arma la compra de una línea con ese gasto como
+ * mercancía (costo = monto ÷ unidades) y la recibe. `recibida: false` = la
+ * compra quedó abierta con el gasto ligado (los avisos dicen por qué).
+ */
+export async function entradaDesdeGastoAction(
+  input: EntradaDesdeGastoInput,
+): Promise<ActionResult<EntradaDesdeGastoResultado>> {
+  try {
+    const data = await apiServer<EntradaDesdeGastoResultado>("/v1/compras/entrada-desde-gasto", {
+      method: "POST",
+      body: input,
+    });
+    revalidateCompra(data.compra.id);
+    revalidatePath(`/admin/inventory/${input.item_id}`);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ===== Lecturas para selectores (diálogos del panel; NO revalidan) =====
 
 /** Compras ABIERTAS para "Agregar a una compra abierta". */
 export async function listComprasAbiertasAction(): Promise<ActionResult<CompraListItem[]>> {
@@ -195,45 +247,20 @@ export async function listComprasAbiertasAction(): Promise<ActionResult<CompraLi
   }
 }
 
-export interface GastoCandidato {
-  id: string;
-  fecha_gasto: string | null;
-  categoria: string;
-  monto: string;
-  moneda: "MXN" | "USD";
-  proveedor: string | null;
-  descripcion: string | null;
-  medio_pago: string;
-}
-
 /**
- * Gastos SIN compra de los últimos 60 días (candidatos a pago de una
- * compra). Se filtra aquí `compra_id` nulo: el API filtra por compra_id
- * concreto, no por ausencia. Solo categorías de compra (fuente única
- * `esCategoriaCompra`): GAS, VISITA, PERSONAL_DUENO… no son pagos de compra.
+ * Gastos SIN compra que pueden ser pago de una (selector «Vincular gasto ya
+ * registrado»): los filtra el API (`GET /v1/compras/gastos-candidatos`) por
+ * ventana de fechas, búsqueda libre, proveedor y, si se pide, solo los que
+ * pueden ser la factura de mercancía.
  */
-export async function listGastosSinCompraAction(): Promise<ActionResult<GastoCandidato[]>> {
+export async function listGastosCandidatosCompraAction(
+  query: GastosCandidatosQuery = {},
+): Promise<ActionResult<GastosCandidatosResponse>> {
   try {
-    const hasta = todayCancun();
-    const desde = new Date(`${hasta}T12:00:00Z`);
-    desde.setUTCDate(desde.getUTCDate() - 60);
-    const res = await listGastos({
-      desde: desde.toISOString().slice(0, 10),
-      hasta,
-      limit: 200,
+    const data = await apiServer<GastosCandidatosResponse>("/v1/compras/gastos-candidatos", {
+      searchParams: query as Record<string, string | number | boolean | undefined>,
+      cache: "no-store",
     });
-    const data = res.data
-      .filter((g: Gasto) => !g.compra_id && esCategoriaCompra(g.categoria))
-      .map((g) => ({
-        id: g.id,
-        fecha_gasto: g.fecha_gasto,
-        categoria: g.categoria,
-        monto: g.monto,
-        moneda: g.moneda,
-        proveedor: g.proveedor?.nombre ?? null,
-        descripcion: (g.notas ?? "").split("\n")[0].trim() || null,
-        medio_pago: g.medio_pago,
-      }));
     return { ok: true, data };
   } catch (err) {
     return fail(err);

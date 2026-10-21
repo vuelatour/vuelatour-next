@@ -1,13 +1,26 @@
 import type { CierrePeriodoAditivo } from "./cierres";
+import type { PagoSocio } from "./reparto-pagos";
 
 export interface RepartoSocio {
   socio_id: string;
   socio_nombre: string;
   porcentaje: number;
+  /** Lo que se le ENTREGA en dólares (= `utilidad_usd` − `reserva_usd` si
+      `descuenta_reserva`; si no, = `utilidad_usd`). */
   monto_usd: number;
-  /** ADITIVO (reparto en pesos, 18-oct-2026, API 0.0.93): el mismo reparto
-      por porcentaje sobre `saldo_disponible_mxn` (residuo en centavos). */
+  /** ADITIVO (reparto en pesos, 18-oct-2026, API 0.0.93): lo que se le
+      entrega EN PESOS (residuo mayor en centavos sobre el saldo en pesos). */
   monto_mxn?: number | null;
+  /** ADITIVOS (cascada del balance, 20-oct-2026, API 0.0.101, invariante
+      99): su parte del saldo ANTES de la reserva, su parte de la reserva de
+      overhaul («lo que debe guardar») y si VuelaTour se la DESCUENTA
+      (`aeronave_socio.descontar_reserva_overhaul`) o solo se le informa.
+      Ausentes con un API previo. */
+  utilidad_usd?: number | null;
+  utilidad_mxn?: number | null;
+  reserva_usd?: number | null;
+  reserva_mxn?: number | null;
+  descuenta_reserva?: boolean | null;
 }
 
 /** Un vuelo del periodo dentro del desglose por avión. */
@@ -85,6 +98,13 @@ export interface DetalleVuelo {
   cobrado_avion_mxn?: number | null;
   pendiente_avion_mxn?: number | null;
   tc_pesos?: number | null;
+  /** ADITIVOS (provisión AFAC, 20-oct-2026, API 0.0.101): horas COBRADAS de
+      la parte de este avión, la provisión AFAC del vuelo (tarifa × horas) y
+      el T.C. de costos con que se pasó a pesos. */
+  horas_cobradas_avion_hr?: number | null;
+  afac_reservado_avion_usd?: number | null;
+  afac_reservado_avion_mxn?: number | null;
+  tc_costos?: number | null;
 }
 
 /** Conteo/monto de lo convertido con el TC oficial de referencia del día
@@ -94,7 +114,43 @@ export interface TcOficialGastos {
   monto_mxn: number;
 }
 
-export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO" | 'FIJO';
+export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO" | "FIJO";
+
+/**
+ * Un gasto del avión TAL CUAL se sumó en la cascada (pantalla por avión,
+ * 20-oct-2026, API 0.0.101, invariante 99): `GET /v1/profit-sharing/aviones/:id`
+ * → `avion.detalle.gastos[]`. `grupo` EXCLUIDO = no resta (su `clave` dice
+ * por qué: TUA, pago al vendedor, pago de AFAC, categoría de empresa…).
+ * `usd`/`mxn` son lo que ENTRÓ a la cascada (ya sin TUA/extensión
+ * embebidas: `descontado_mxn`); null = sin ningún T.C. para convertirlo.
+ */
+export interface FilaGastoDetalle {
+  id: string;
+  /** Día `YYYY-MM-DD` del gasto (null sin fecha). */
+  fecha: string | null;
+  /** Código crudo de la categoría. */
+  categoria: string;
+  /** Etiqueta es-MX de la categoría. */
+  etiqueta: string;
+  /** Clave con que se acumuló en `gastos_por_categoria` (en EXCLUIDO, el motivo). */
+  clave: string;
+  grupo: DetalleGastoGrupo;
+  concepto: string | null;
+  vuelo: { id: string; folio: number | null } | null;
+  /** Monto original en su moneda. */
+  monto: number;
+  moneda: string;
+  /** T.C. capturado en el gasto (null = sin T.C. propio). */
+  tc: number | null;
+  /** TUA / extensión de horario embebidas que se le quitaron antes de sumar. */
+  descontado_mxn: number;
+  usd: number | null;
+  mxn: number | null;
+  /** El dólar salió con el T.C. oficial del día del gasto. */
+  tc_oficial: boolean;
+  /** Parcial de un reparto manual entre aviones. */
+  es_reparto_parcial: boolean;
+}
 
 /** Gastos del avión agrupados por categoría (para el desglose expandible). */
 export interface DetalleGastoCategoria {
@@ -164,6 +220,19 @@ export interface AvionRepartoDetalle {
   /** ADITIVO (13-oct-2026, API 0.0.75): los ingresos asignados a este avión
       ([] sin ingresos; ausente con un API previo). */
   otros_ingresos_avion?: DetalleOtroIngresoAvion[];
+  /** ADITIVO (provisión AFAC, 20-oct-2026, API 0.0.101): la aportación AFAC
+      de la ficha del avión × las horas COBRADAS del periodo (la misma
+      columna «PERMISO AFAC (PROVISIÓN)» del balance). RESTA del saldo. */
+  afac?: {
+    tarifa_usd_hr: number;
+    horas_cobradas_hr: number;
+    monto_usd: number;
+    monto_mxn: number | null;
+  } | null;
+  /** ADITIVO (pantalla por avión, API 0.0.101): gasto por gasto, SOLO en
+      `GET /v1/profit-sharing/aviones/:id` (el compute de la lista no lo
+      manda). */
+  gastos?: FilaGastoDetalle[];
 }
 
 export interface AvionReparto {
@@ -250,6 +319,17 @@ export interface AvionReparto {
   reserva_overhaul_mxn?: number;
   saldo_disponible_mxn?: number;
   pesos_sin_tc_usd?: number;
+  /** ADITIVOS (cascada del balance, 20-oct-2026, API 0.0.101, invariante
+      99): la PROVISIÓN AFAC que resta del saldo (tarifa de la ficha × horas
+      cobradas) y la reserva de overhaul que VuelaTour RETIENE a los socios
+      que la descuentan (Σ `reparto[].reserva_*` con `descuenta_reserva`).
+      Con la bandera raíz `reparto_como_balance` la reserva YA NO resta del
+      saldo: `saldo = cobrado − comisiones − directos − indirectos − permisos
+      − fijos − afac + otros ingresos`. Ausentes con un API previo. */
+  afac_reservado_usd?: number | null;
+  afac_reservado_mxn?: number | null;
+  reserva_retenida_usd?: number | null;
+  reserva_retenida_mxn?: number | null;
   reparto: RepartoSocio[];
   reparto_porcentaje_total: number;
   /** Opcional: el API viejo no lo manda; tratar siempre defensivo. */
@@ -316,6 +396,13 @@ export interface ProfitSharingResult {
       dólares. Fuente única de la lectura: `repartoEnPesos` de
       `lib/admin/reparto-pesos.ts`. */
   reparto_en_pesos?: boolean;
+  /** ADITIVO (20-oct-2026, API 0.0.101, invariante 99): el reparto es LA
+      CASCADA DEL BALANCE — INDIRECTO cuenta, la provisión AFAC resta y la
+      reserva de overhaul SOLO se informa (se descuenta por socio solo a
+      quien lo pidió). Sin ella (API previo) la reserva resta como siempre.
+      Fuente única de la lectura: `repartoComoBalance` de
+      `lib/admin/reparto-pesos.ts`. */
+  reparto_como_balance?: boolean;
   externos?: ExternosResumen;
   otros_ingresos_vuelatour?: OtrosIngresosVuelatour | null;
   periodo: { desde: string; hasta: string };
@@ -329,4 +416,120 @@ export interface ProfitSharingResult {
   /** ADITIVO (cierre de mes, 16-oct-2026, API 0.0.88): estado del mes y los
       vuelos que salen / entran / pasarían. Ausente con un API previo. */
   cierre?: CierrePeriodoAditivo | null;
+}
+
+// =============================================================================
+// PANTALLA POR AVIÓN (20-oct-2026, API 0.0.101, invariante 99)
+// =============================================================================
+
+/**
+ * Un socio del avión en `GET /v1/profit-sharing/aviones/:id` (todo EN PESOS;
+ * los dólares, informativos): su % del saldo, su parte de la reserva, si se
+ * le descuenta, lo que se le entrega, lo ENTREGADO «corresponde a» este
+ * avión en los meses del periodo y lo que falta. Rol SOCIO: solo el suyo.
+ */
+export interface SocioAvionDetalle {
+  socio_id: string;
+  socio_nombre: string;
+  porcentaje: number;
+  utilidad_mxn: number;
+  reserva_mxn: number;
+  descuenta_reserva: boolean;
+  /** Lo que se le entrega (utilidad − reserva si la descuenta). */
+  monto_mxn: number;
+  entregado_mxn: number;
+  /** = monto − entregado (puede ser negativo: se le entregó de más). */
+  por_entregar_mxn: number;
+  monto_usd: number;
+  reserva_usd: number;
+}
+
+/** `GET /v1/profit-sharing/aviones/:aeronaveId?desde&hasta`. */
+export interface AvionDetalleRespuesta {
+  periodo: { desde: string; hasta: string };
+  reparto_en_pesos?: boolean;
+  reparto_como_balance?: boolean;
+  /** El mismo objeto de `aviones[i]` del compute, con `detalle.gastos[]`. */
+  avion: AvionReparto;
+  socios: SocioAvionDetalle[];
+  /** Entregas «corresponde a» este avión en los meses del periodo (más
+      reciente primero; un SOCIO solo las suyas). */
+  entregas: PagoSocio[];
+  cierre?: CierrePeriodoAditivo | null;
+  tc_oficial?: TcOficialResumen | null;
+  gastos_sin_tc?: { count: number; monto_mxn: number } | null;
+}
+
+/** Un socio en UN mes del histórico. */
+export interface RepartoMesSocio {
+  socio_id: string;
+  socio_nombre: string;
+  porcentaje: number;
+  utilidad_mxn: number;
+  reserva_mxn: number;
+  descuenta_reserva: boolean;
+  monto_mxn: number;
+  entregado_mxn: number;
+}
+
+/** Un mes de `GET /v1/profit-sharing/aviones/:id/historico` (todo EN PESOS). */
+export interface MesHistoricoAvion {
+  /** `YYYY-MM`. */
+  mes: string;
+  en_curso: boolean;
+  horas_voladas_hr: number;
+  vuelos: number;
+  cobrado_mxn: number;
+  pendiente_cobro_mxn: number;
+  comisiones_mxn: number;
+  directos_mxn: number;
+  indirectos_mxn: number;
+  permisos_mxn: number;
+  /** Fijos prorrateados (+ reparto manual). */
+  otros_mxn: number;
+  afac_mxn: number;
+  otros_ingresos_mxn: number;
+  saldo_mxn: number;
+  /** Reserva de overhaul INFORMATIVA (no resta). */
+  reserva_mxn: number;
+  reserva_retenida_mxn: number;
+  entregado_mxn: number;
+  pesos_sin_tc_usd: number;
+  saldo_usd: number;
+  reparto: RepartoMesSocio[];
+  /** Estado del cierre del mes (ABIERTO / CERRADO / REABIERTO); ausente sin la migración. */
+  cierre_estado?: string | null;
+}
+
+/** Las mismas llaves numéricas del mes, sumadas en el rango. */
+export type TotalesHistoricoAvion = Omit<
+  MesHistoricoAvion,
+  "mes" | "en_curso" | "reparto" | "cierre_estado"
+>;
+
+export interface SocioHistoricoAvion {
+  socio_id: string;
+  socio_nombre: string;
+  /** Σ de lo que se le entrega (`monto_mxn`) en los meses del rango. */
+  generado_mxn: number;
+  reserva_mxn: number;
+  entregado_mxn: number;
+  por_entregar_mxn: number;
+}
+
+/** `GET /v1/profit-sharing/aviones/:aeronaveId/historico?desde=AAAA-MM&hasta=AAAA-MM`. */
+export interface AvionHistoricoRespuesta {
+  aeronave: { id: string; matricula: string; modelo: string };
+  /** `YYYY-MM`. */
+  desde: string;
+  hasta: string;
+  /** `YYYY-MM` del mes en curso (Cancún). */
+  mes_actual: string;
+  reparto_en_pesos?: boolean;
+  reparto_como_balance?: boolean;
+  /** Los meses futuros no vienen. */
+  meses: MesHistoricoAvion[];
+  totales: TotalesHistoricoAvion;
+  socios: SocioHistoricoAvion[];
+  entregas: PagoSocio[];
 }

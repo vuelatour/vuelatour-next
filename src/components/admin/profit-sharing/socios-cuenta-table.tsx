@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { claseFilaResaltada, conjuntoResaltado } from "@/lib/admin/pre-cierre-resolver";
-import { fmtUsd } from "@/lib/format";
+import { fmtMxn } from "@/lib/format";
 import {
   ETIQUETA_COLUMNA_SALDO,
   ETIQUETA_VER_CUENTA,
@@ -36,9 +36,9 @@ import { BotonConfigurarCuenta } from "./cuenta-socio-dialog";
 /**
  * Tabla de «Pagos a socios» (`/admin/profit-sharing/socios`): una fila por
  * socio con lo que ha GENERADO, lo ENTREGADO, lo POR ENTREGAR, su estado y
- * la última entrega. Todo lo calcula el API (`GET /v1/profit-sharing/socios`);
- * la tabla solo pinta. Tabla de RESUMEN (con totales) ⇒ primitivos de
- * `ui/table`, no `DataTable`.
+ * la última entrega, todo EN PESOS (API 0.0.101). Todo lo calcula el API
+ * (`GET /v1/profit-sharing/socios`); la tabla solo pinta. Tabla de RESUMEN
+ * (con totales) ⇒ primitivos de `ui/table`, no `DataTable`.
  */
 export function SociosCuentaTable({
   socios,
@@ -75,8 +75,8 @@ export function SociosCuentaTable({
       </TableHeader>
       <TableBody>
         {socios.map((s) => {
-          const enCurso = textoMesEnCurso(s.mes_en_curso_usd, hastaMes);
-          const adelantado = marcaSaldoAdelantado(s.estado, s.por_entregar_usd);
+          const enCurso = textoMesEnCurso(s.mes_en_curso_mxn, hastaMes);
+          const adelantado = marcaSaldoAdelantado(s.estado, s.por_entregar_mxn);
           return (
             <TableRow
               key={s.socio.id}
@@ -118,7 +118,7 @@ export function SociosCuentaTable({
                 )}
               </TableCell>
               <TableCell className="text-right align-top font-mono text-sm">
-                {fmtUsd(s.generado_usd)}
+                {fmtMxn(s.generado_mxn)}
                 {enCurso && (
                   <span className="mt-0.5 block whitespace-normal font-sans text-[10px] text-muted-foreground">
                     {enCurso}
@@ -126,15 +126,15 @@ export function SociosCuentaTable({
                 )}
               </TableCell>
               <TableCell className="text-right align-top font-mono text-sm">
-                {fmtUsd(s.entregado_usd)}
+                {fmtMxn(s.entregado_mxn)}
               </TableCell>
               <TableCell
                 className={cn(
                   "text-right align-top font-mono text-sm font-semibold",
-                  claseTextoSaldo(s.estado, s.por_entregar_usd),
+                  claseTextoSaldo(s.estado, s.por_entregar_mxn),
                 )}
               >
-                {fmtUsd(s.por_entregar_usd)}
+                {fmtMxn(s.por_entregar_mxn)}
                 {adelantado && (
                   <span className="mt-0.5 block font-sans text-[10px] font-normal" data-marca-adelantado>
                     {adelantado}
@@ -142,7 +142,7 @@ export function SociosCuentaTable({
                 )}
               </TableCell>
               <TableCell className="align-top">
-                <EstadoCuentaBadge estado={s.estado} saldoUsd={s.por_entregar_usd} />
+                <EstadoCuentaBadge estado={s.estado} saldoMxn={s.por_entregar_mxn} />
               </TableCell>
               <TableCell className="min-w-[10rem] whitespace-normal align-top text-xs text-muted-foreground">
                 {textoUltimoPago(s.ultimo_pago)}
@@ -182,19 +182,19 @@ export function SociosCuentaTable({
           <TableRow>
             <TableCell className="text-sm font-semibold">Total</TableCell>
             <TableCell className="text-right font-mono text-sm font-semibold">
-              {fmtUsd(totales.generado_usd)}
+              {fmtMxn(totales.generado_mxn)}
             </TableCell>
             <TableCell className="text-right font-mono text-sm font-semibold">
-              {fmtUsd(totales.entregado_usd)}
+              {fmtMxn(totales.entregado_mxn)}
             </TableCell>
             <TableCell
               className="text-right font-mono text-sm font-semibold"
               title="Suma de los saldos a favor de los socios. Un adelanto no compensa lo que se le debe a otro socio: va aparte."
             >
-              {fmtUsd(totales.por_entregar_usd)}
-              {(totales.adelantado_usd ?? 0) > 0 && (
+              {fmtMxn(totales.por_entregar_mxn)}
+              {(totales.adelantado_mxn ?? 0) > 0 && (
                 <span className="mt-0.5 block font-sans text-[10px] font-normal text-sky-700 dark:text-sky-300">
-                  adelantado {fmtUsd(totales.adelantado_usd)}
+                  adelantado {fmtMxn(totales.adelantado_mxn)}
                 </span>
               )}
             </TableCell>

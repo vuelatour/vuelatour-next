@@ -9,14 +9,15 @@ import { estiloEstadoCuenta } from "@/lib/admin/reparto-pagos";
  */
 export function EstadoCuentaBadge({
   estado,
-  saldoUsd,
+  saldoMxn,
   className,
 }: {
   estado: string | null | undefined;
-  saldoUsd: number;
+  /** El saldo EN PESOS (solo para el espejo de un estado desconocido). */
+  saldoMxn: number;
   className?: string;
 }) {
-  const e = estiloEstadoCuenta(estado, saldoUsd);
+  const e = estiloEstadoCuenta(estado, saldoMxn);
   return (
     <Badge
       variant="outline"

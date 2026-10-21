@@ -3,12 +3,11 @@ import type { ConciliacionAlCrear } from "./conciliacion";
 import type { FacturaDeGasto } from "@/lib/admin/facturas-gasto";
 
 /**
- * REFACCIÓN A INVENTARIO/TIENDA (12-oct-2026, API 0.0.72, invariante 57):
- * lo que pasó con la pieza tras el alta (compra → recibir → precio → salida).
- * Viaja SOLO en la respuesta de `POST /v1/expenses` con `inventario`. `error`
- * = la etapa que falló (lo hecho antes se conserva; el gasto nunca se borra)
- * y `avisos` dice qué hacer. Se lee SIEMPRE por
- * `lib/admin/refaccion-inventario.ts#toastRefaccionInventario`.
+ * @deprecated Desde el 21-oct-2026 (API 0.0.102, invariante 101) el panel NO
+ * manda el bloque `inventario` en el alta: una refacción es un gasto normal y
+ * la bodega se alimenta desde Compras. El API conserva la respuesta por
+ * compatibilidad; el tipo se queda solo para leerla si algún cliente viejo la
+ * provocara.
  */
 export interface GastoInventarioResultado {
   item_id: string | null;

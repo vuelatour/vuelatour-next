@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { cn } from "@/lib/utils";
-import { fmtUsd } from "@/lib/format";
+import { fmtMxn } from "@/lib/format";
 import {
   AYUDA_SECCION_POR_ENTREGAR,
   ETIQUETA_COLUMNA_SALDO_ACUMULADO,
@@ -46,10 +46,11 @@ export const TITULO_SECCION_POR_ENTREGAR = "Socios · por entregar";
 
 /**
  * «Socios · por entregar» en el Reparto de utilidades (cuenta corriente,
- * 1-oct-2026): por socio, lo que GENERÓ en el periodo mostrado (la suma de
- * sus renglones en las tarjetas de abajo) y su saldo ACUMULADO por entregar
- * (del API, `GET /v1/profit-sharing/socios`), con «Registrar entrega» y «Ver
- * cuenta». Se pinta con cualquier periodo (ya no exige un mes completo).
+ * 1-oct-2026): por socio, lo que GENERÓ en el periodo mostrado (la suma EN
+ * PESOS de sus renglones en las tarjetas de abajo) y su saldo ACUMULADO por
+ * entregar (del API, `GET /v1/profit-sharing/socios`, en pesos desde el
+ * 0.0.101), con «Registrar entrega» y «Ver cuenta». Se pinta con cualquier
+ * periodo (ya no exige un mes completo).
  */
 export function SociosPorEntregarSection({
   carga,
@@ -137,21 +138,23 @@ export function SociosPorEntregarSection({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filas.map(({ resumen: r, genero_periodo_usd }) => {
-                const adelantado = marcaSaldoAdelantado(r.estado, r.por_entregar_usd);
+              {filas.map(({ resumen: r, genero_periodo_mxn }) => {
+                const adelantado = marcaSaldoAdelantado(r.estado, r.por_entregar_mxn);
                 return (
                   <TableRow key={r.socio.id} data-socio-por-entregar={r.socio.id}>
                     <TableCell className="min-w-[10rem] whitespace-normal text-sm font-medium">
                       {r.socio.nombre}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm">{fmtUsd(genero_periodo_usd)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {genero_periodo_mxn === null ? "—" : fmtMxn(genero_periodo_mxn)}
+                    </TableCell>
                     <TableCell
                       className={cn(
                         "text-right font-mono text-sm font-semibold",
-                        claseTextoSaldo(r.estado, r.por_entregar_usd),
+                        claseTextoSaldo(r.estado, r.por_entregar_mxn),
                       )}
                     >
-                      {fmtUsd(r.por_entregar_usd)}
+                      {fmtMxn(r.por_entregar_mxn)}
                       {adelantado && (
                         <span className="mt-0.5 block font-sans text-[10px] font-normal" data-marca-adelantado>
                           {adelantado}
@@ -159,7 +162,7 @@ export function SociosPorEntregarSection({
                       )}
                     </TableCell>
                     <TableCell>
-                      <EstadoCuentaBadge estado={r.estado} saldoUsd={r.por_entregar_usd} />
+                      <EstadoCuentaBadge estado={r.estado} saldoMxn={r.por_entregar_mxn} />
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap justify-end gap-1">

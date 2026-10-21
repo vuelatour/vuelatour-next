@@ -4,8 +4,13 @@ import { esErrorDeNext, type Degradaciones } from "./degradar";
 import { listUsers } from "./users-server";
 import { getTipoCambioOficial } from "./tipo-cambio-server";
 import { todayCancun } from "@/lib/datetime";
-import type { ProfitSharingResult } from "@/types/profit-sharing";
+import type {
+  AvionDetalleRespuesta,
+  AvionHistoricoRespuesta,
+  ProfitSharingResult,
+} from "@/types/profit-sharing";
 import type { EstadoCuentaRespuesta, SociosCuentaRespuesta } from "@/types/reparto-pagos";
+import { normalizarAvionDetalle, normalizarAvionHistorico } from "@/lib/admin/reparto-avion";
 import {
   CODIGO_RANGO_INVALIDO,
   clasificarFalloCarga,
@@ -196,4 +201,94 @@ export async function getContextoRegistro(
       .map((u) => ({ id: u.id, nombre: u.nombre })),
     tcOficial,
   };
+}
+
+// =============================================================================
+// PANTALLA POR AVIÓN (20-oct-2026, API 0.0.101, invariante 99)
+// =============================================================================
+
+/** El 404 propio del endpoint por avión (un uuid que no es de la flota activa). */
+const CODIGO_AERONAVE_NO_EXISTE = "AERONAVE_NO_EXISTE";
+
+/**
+ * Reparto de UN avión con el detalle gasto por gasto, los socios (con lo
+ * entregado / por entregar DE ESE AVIÓN) y las entregas del periodo
+ * (`GET /v1/profit-sharing/aviones/:id?desde&hasta`). NUNCA lanza (salvo el
+ * control de flujo de Next): mismos estados que las cuentas de los socios —
+ * `no-existe` (id que no es uuid o 404 `AERONAVE_NO_EXISTE`), `no-disponible`
+ * (API previo: 404 «Cannot GET»), `sin-permiso` (401/403) y `error` (red,
+ * 500, el 502/503 de un deploy tras los reintentos del fetcher).
+ */
+export async function getAvionDetalle(
+  aeronaveId: string,
+  periodo: { desde: string; hasta: string },
+): Promise<CargaCuentas<AvionDetalleRespuesta>> {
+  if (!esUuid(aeronaveId)) return { estado: "no-existe" };
+  try {
+    const raw = await apiServer<unknown>(`/v1/profit-sharing/aviones/${aeronaveId}`, {
+      searchParams: { desde: periodo.desde, hasta: periodo.hasta },
+      cache: "no-store",
+    });
+    const datos = normalizarAvionDetalle(raw);
+    if (!datos) {
+      console.error("[admin] respuesta inesperada del reparto del avión", raw);
+      return { estado: "error" };
+    }
+    return { estado: "ok", datos };
+  } catch (err) {
+    if (isApiError(err) && err.status === 404 && err.code === CODIGO_AERONAVE_NO_EXISTE) {
+      return { estado: "no-existe" };
+    }
+    return fallo(err, "el reparto del avión");
+  }
+}
+
+/**
+ * Histórico mes a mes de UN avión
+ * (`GET /v1/profit-sharing/aviones/:id/historico?desde=YYYY-MM&hasta=YYYY-MM`).
+ * Sin filtro el API usa su default (del inicio oficial al mes en curso). Un
+ * rango que el API rechaza (400 `RANGO_INVALIDO`) se vuelve a pedir UNA vez
+ * SIN filtro y se marca `filtroIgnorado` («Reintentar» repetiría el 400).
+ */
+export async function getAvionHistorico(
+  aeronaveId: string,
+  filtro: { desde?: string; hasta?: string } = {},
+): Promise<CargaCuentas<AvionHistoricoRespuesta>> {
+  if (!esUuid(aeronaveId)) return { estado: "no-existe" };
+  const desde = esMesValido(filtro.desde) ? filtro.desde : undefined;
+  const hasta = esMesValido(filtro.hasta) ? filtro.hasta : undefined;
+  const carga = await leerHistorico(aeronaveId, { desde, hasta });
+  if ("rangoInvalido" in carga) {
+    if (!desde && !hasta) return { estado: "error" };
+    const sinFiltro = await leerHistorico(aeronaveId, {});
+    if ("rangoInvalido" in sinFiltro) return { estado: "error" };
+    return sinFiltro.estado === "ok" ? { ...sinFiltro, filtroIgnorado: true } : sinFiltro;
+  }
+  return carga;
+}
+
+async function leerHistorico(
+  aeronaveId: string,
+  filtro: { desde?: string; hasta?: string },
+): Promise<CargaCuentas<AvionHistoricoRespuesta> | { rangoInvalido: true }> {
+  try {
+    const raw = await apiServer<unknown>(`/v1/profit-sharing/aviones/${aeronaveId}/historico`, {
+      searchParams: { desde: filtro.desde, hasta: filtro.hasta },
+      cache: "no-store",
+    });
+    const datos = normalizarAvionHistorico(raw);
+    if (!datos) {
+      console.error("[admin] respuesta inesperada del histórico del avión", raw);
+      return { estado: "error" };
+    }
+    return { estado: "ok", datos };
+  } catch (err) {
+    if (isApiError(err) && err.status === 400 && err.code === CODIGO_RANGO_INVALIDO) {
+      return { rangoInvalido: true };
+    }
+    if (isApiError(err) && err.status === 404 && err.code === CODIGO_AERONAVE_NO_EXISTE) {
+      return { estado: "no-existe" };
+    }
+    return fallo(err, "el histórico del avión");
+  }
 }

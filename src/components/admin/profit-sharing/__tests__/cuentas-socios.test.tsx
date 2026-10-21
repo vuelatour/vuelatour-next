@@ -89,17 +89,18 @@ const REGISTRO: ContextoRegistro = { usuarios: [ALE], me: ALE, hoy: "2026-10-01"
 
 const fila = (over: Partial<ResumenCuentaSocio>): ResumenCuentaSocio => ({
   socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-  cuenta: { cuenta_desde: "2026-09", saldo_inicial_usd: 0, notas: null, configurada: true },
-  generado_usd: 1602.04,
-  mes_en_curso_usd: 206.1,
-  entregado_usd: 3783.78,
-  por_entregar_usd: -2181.74,
+  cuenta: { cuenta_desde: "2026-09", saldo_inicial_mxn: 0, notas: null, configurada: true },
+  generado_mxn: 1602.04,
+  mes_en_curso_mxn: 206.1,
+  entregado_mxn: 3783.78,
+  por_entregar_mxn: -2181.74,
   estado: "ADELANTADO",
   ultimo_pago: {
     id: "9a9a0000-0000-4000-8000-000000000001",
     fecha_pago: "2026-10-01",
     monto: 70000,
     moneda: "MXN",
+    monto_mxn: 70000,
     monto_usd: 3783.78,
     metodo: "EFECTIVO",
   },
@@ -112,11 +113,11 @@ const SOCIOS: ResumenCuentaSocio[] = [
   fila({}),
   fila({
     socio: { id: ACC, nombre: "Aero Charter Cancun S.A. de C.V." },
-    cuenta: { cuenta_desde: "2026-09", saldo_inicial_usd: 0, notas: null, configurada: false },
-    generado_usd: 586.7,
-    mes_en_curso_usd: 0,
-    entregado_usd: 0,
-    por_entregar_usd: 586.7,
+    cuenta: { cuenta_desde: "2026-09", saldo_inicial_mxn: 0, notas: null, configurada: false },
+    generado_mxn: 586.7,
+    mes_en_curso_mxn: 0,
+    entregado_mxn: 0,
+    por_entregar_mxn: 586.7,
     estado: "POR_ENTREGAR",
     ultimo_pago: null,
     aviones: [{ id: N4142R, matricula: "N4142R", porcentaje: 29, vigente: true }],
@@ -124,10 +125,10 @@ const SOCIOS: ResumenCuentaSocio[] = [
   }),
   fila({
     socio: { id: SAAB, nombre: "Alexander E. Saab" },
-    generado_usd: 40.46,
-    mes_en_curso_usd: 0,
-    entregado_usd: 40.46,
-    por_entregar_usd: 0,
+    generado_mxn: 40.46,
+    mes_en_curso_mxn: 0,
+    entregado_mxn: 40.46,
+    por_entregar_mxn: 0,
     estado: "AL_CORRIENTE",
     ultimo_pago: null,
     aviones: [{ id: N4142R, matricula: "N4142R", porcentaje: 2, vigente: true }],
@@ -135,10 +136,10 @@ const SOCIOS: ResumenCuentaSocio[] = [
 ];
 
 const TOTALES = {
-  generado_usd: 2229.2,
-  entregado_usd: 3824.24,
-  por_entregar_usd: 586.7,
-  adelantado_usd: 2181.74,
+  generado_mxn: 2229.2,
+  entregado_mxn: 3824.24,
+  por_entregar_mxn: 586.7,
+  adelantado_mxn: 2181.74,
   socios_por_entregar: 1,
   socios_adelantados: 1,
 };
@@ -157,13 +158,14 @@ describe("«Pagos a socios» (lista de cuentas)", () => {
 
   it("un saldo ADELANTADO conserva el signo y lleva la marca «adelantado» en azul (solo ese renglón)", () => {
     expect((html.match(/data-marca-adelantado/g) ?? []).length).toBe(1);
-    expect(html).toMatch(/text-sky-700[^"]*"[^>]*>-\$2,181\.74<span[^>]*data-marca-adelantado[^>]*>adelantado<\/span>/);
+    expect(html).toMatch(/text-sky-700[^"]*"[^>]*>-\$2,181\.74 MXN<span[^>]*data-marca-adelantado[^>]*>adelantado<\/span>/);
   });
 
-  it("montos del API por socio, el mes en curso dicho y el estatus con su color", () => {
-    expect(html).toContain("$1,602.04");
-    expect(html).toContain("incluye $206.10 de Octubre 2026 (en curso: cambia día con día)");
-    expect(html).toContain("-$2,181.74");
+  it("montos del API por socio EN PESOS (dice MXN), el mes en curso dicho y el estatus con su color", () => {
+    expect(html).toContain("$1,602.04 MXN");
+    expect(html).toContain("incluye $206.10 MXN de Octubre 2026 (en curso: cambia día con día)");
+    expect(html).toContain("-$2,181.74 MXN");
+    expect(html).not.toMatch(/\$[\d,.]+ USD/);
     expect(html).toContain('data-estado-cuenta="ADELANTADO"');
     expect(html).toContain('data-estado-cuenta="POR_ENTREGAR"');
     expect(html).toContain('data-estado-cuenta="AL_CORRIENTE"');
@@ -233,6 +235,7 @@ describe("estado de cuenta: movimientos con saldo corrido", () => {
     moneda: "MXN",
     tc_usd_mxn: 18.5,
     monto_usd: 3783.78,
+    monto_mxn: 70000,
     utilidad_snapshot_usd: null,
     saldo_snapshot_usd: 1395.94,
     fecha_pago: "2026-10-01",
@@ -251,16 +254,16 @@ describe("estado de cuenta: movimientos con saldo corrido", () => {
     aeronave: null,
   };
   const MOVS: MovimientoCuenta[] = [
-    { fecha: "2026-09-01", tipo: "SALDO_INICIAL", concepto: "Arranque de la cuenta (saldo inicial $0)", mes: "2026-09", aeronave: null, porcentaje: null, cargo_usd: 0, abono_usd: 0, saldo_usd: 0, en_curso: false, pago: null },
-    { fecha: "2026-09-30", tipo: "UTILIDAD", concepto: "Utilidad sep 2026 · N4142R 69 %", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, cargo_usd: 1395.94, abono_usd: 0, saldo_usd: 1395.94, en_curso: false, pago: null },
-    { fecha: "2026-10-01", tipo: "ENTREGA", concepto: "Adelanto a cuenta · Efectivo · $70,000 MXN a T.C. 18.5", mes: null, aeronave: null, porcentaje: null, cargo_usd: 0, abono_usd: 3783.78, saldo_usd: -2387.84, en_curso: false, pago: ENTREGA },
-    { fecha: "2026-10-05", tipo: "ENTREGA", concepto: "Entrega · Transferencia · corresponde a sep 2026 · N4142R", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: null, cargo_usd: 0, abono_usd: 10, saldo_usd: -2397.84, en_curso: false, pago: { ...ENTREGA, id: "9a9a0000-0000-4000-8000-000000000002", mes: "2026-09", aeronave_id: N4142R, aeronave: { id: N4142R, matricula: "N4142R" }, monto: 10, moneda: "USD", tc_usd_mxn: null, monto_usd: 10, metodo: "TRANSFERENCIA", comprobante_path: null, comprobante_url: null, notas: null } },
-    { fecha: "2026-10-31", tipo: "UTILIDAD", concepto: "Utilidad oct 2026 · N4142R 69 %", mes: "2026-10", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, cargo_usd: -120.5, abono_usd: 0, saldo_usd: -2518.34, en_curso: true, pago: null },
+    { fecha: "2026-09-01", tipo: "SALDO_INICIAL", concepto: "Arranque de la cuenta (saldo inicial $0)", mes: "2026-09", aeronave: null, porcentaje: null, cargo_mxn: 0, abono_mxn: 0, saldo_mxn: 0, en_curso: false, pago: null },
+    { fecha: "2026-09-30", tipo: "UTILIDAD", concepto: "Utilidad sep 2026 · N4142R 69 %", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, cargo_mxn: 1395.94, abono_mxn: 0, saldo_mxn: 1395.94, en_curso: false, pago: null },
+    { fecha: "2026-10-01", tipo: "ENTREGA", concepto: "Adelanto a cuenta · Efectivo · $70,000 MXN a T.C. 18.5", mes: null, aeronave: null, porcentaje: null, cargo_mxn: 0, abono_mxn: 3783.78, saldo_mxn: -2387.84, en_curso: false, pago: ENTREGA },
+    { fecha: "2026-10-05", tipo: "ENTREGA", concepto: "Entrega · Transferencia · corresponde a sep 2026 · N4142R", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: null, cargo_mxn: 0, abono_mxn: 10, saldo_mxn: -2397.84, en_curso: false, pago: { ...ENTREGA, id: "9a9a0000-0000-4000-8000-000000000002", mes: "2026-09", aeronave_id: N4142R, aeronave: { id: N4142R, matricula: "N4142R" }, monto: 10, moneda: "USD", tc_usd_mxn: null, monto_usd: 10, monto_mxn: 185, metodo: "TRANSFERENCIA", comprobante_path: null, comprobante_url: null, notas: null } },
+    { fecha: "2026-10-31", tipo: "UTILIDAD", concepto: "Utilidad oct 2026 · N4142R 69 %", mes: "2026-10", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, cargo_mxn: -120.5, abono_mxn: 0, saldo_mxn: -2518.34, en_curso: true, pago: null },
   ];
   const CONTEXTO: ContextoEntrega = {
     socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-    porEntregarUsd: -2518.34,
-    mesEnCursoUsd: -120.5,
+    porEntregarMxn: -2518.34,
+    mesEnCursoMxn: -120.5,
     mesEnCurso: "2026-10",
     aviones: [],
     cuentaDesdeMes: "2026-09",
@@ -276,13 +279,14 @@ describe("estado de cuenta: movimientos con saldo corrido", () => {
     expect(html).toContain("Generó: la utilidad de sus aviones cada mes");
   });
 
-  it("utilidad por mes y avión, el saldo corrido del API y el mes en curso marcado (pérdida en rojo)", () => {
+  it("utilidad por mes y avión, el saldo corrido del API EN PESOS y el mes en curso marcado (pérdida en rojo)", () => {
     expect(html).toContain("Utilidad sep 2026 · N4142R 69 %");
-    expect(html).toContain("$1,395.94");
-    expect(html).toContain("-$2,387.84");
+    expect(html).toContain("$1,395.94 MXN");
+    expect(html).toContain("-$2,387.84 MXN");
     expect((html.match(/data-en-curso/g) ?? []).length).toBe(1);
     expect(html).toContain(">en curso</span>");
-    expect(html).toMatch(/text-destructive[^>]*>-\$120\.50</);
+    expect(html).toMatch(/text-destructive[^>]*>-\$120\.50 MXN</);
+    expect(html).toContain("Todo en pesos (MXN).");
   });
 
   it("la entrega: monto con T.C., método, entregó, recibió, factura, referencia, «corresponde a», notas y comprobante", () => {
@@ -304,8 +308,12 @@ describe("estado de cuenta: movimientos con saldo corrido", () => {
   });
 
   it("el saldo corrido negativo (adelantado) va en azul y el positivo en ámbar", () => {
-    expect(html).toMatch(/text-sky-700[^"]*"[^>]*>-\$2,387\.84</);
-    expect(html).toMatch(/text-amber-700[^"]*"[^>]*>\$1,395\.94</);
+    expect(html).toMatch(/text-sky-700[^"]*"[^>]*>-\$2,387\.84 MXN</);
+    expect(html).toMatch(/text-amber-700[^"]*"[^>]*>\$1,395\.94 MXN</);
+  });
+
+  it("una entrega en DÓLARES dice los pesos que descontó («$10 USD = $185.00 MXN»)", () => {
+    expect(html).toContain("$10 USD = $185.00 MXN");
   });
 
   it("oficina: «Editar», «Eliminar» y reemplazar el comprobante, con la manita", () => {
@@ -331,8 +339,8 @@ describe("estado de cuenta: movimientos con saldo corrido", () => {
     const h = renderToStaticMarkup(
       <ResumenMesesCuenta
         meses={[
-          { mes: "2026-09", utilidad_usd: 1395.94, en_curso: false, por_avion: [{ aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, monto_usd: 1395.94 }], entregado_usd: 0 },
-          { mes: "2026-10", utilidad_usd: -120.5, en_curso: true, por_avion: [], entregado_usd: 3783.78 },
+          { mes: "2026-09", utilidad_mxn: 1395.94, en_curso: false, por_avion: [{ aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, monto_mxn: 1395.94 }], entregado_mxn: 0 },
+          { mes: "2026-10", utilidad_mxn: -120.5, en_curso: true, por_avion: [], entregado_mxn: 3783.78 },
         ]}
       />,
     );
@@ -346,7 +354,7 @@ describe("estado de cuenta: movimientos con saldo corrido", () => {
   });
 
   it("badge del estado: «Adelantado» en azul", () => {
-    const h = renderToStaticMarkup(<EstadoCuentaBadge estado="ADELANTADO" saldoUsd={-2387.84} />);
+    const h = renderToStaticMarkup(<EstadoCuentaBadge estado="ADELANTADO" saldoMxn={-2387.84} />);
     expect(h).toContain(">Adelantado<");
     expect(h).toContain("sky");
   });
@@ -355,10 +363,13 @@ describe("estado de cuenta: movimientos con saldo corrido", () => {
 describe("Reparto de utilidades: «Socios · por entregar»", () => {
   const AVIONES: { reparto: RepartoSocio[] }[] = [
     {
+      // `monto_mxn` = lo que se le entrega EN PESOS (API 0.0.101): es lo que
+      // suma «Generó en…»; `monto_usd` es lo que pinta la tabla por avión
+      // sin la bandera de pesos.
       reparto: [
-        { socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 69, monto_usd: 1395.94 },
-        { socio_id: ACC, socio_nombre: "Aero Charter Cancun S.A. de C.V.", porcentaje: 29, monto_usd: 586.7 },
-        { socio_id: SAAB, socio_nombre: "Alexander E. Saab", porcentaje: 2, monto_usd: 40.46 },
+        { socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 69, monto_usd: 1395.94, monto_mxn: 1395.94 },
+        { socio_id: ACC, socio_nombre: "Aero Charter Cancun S.A. de C.V.", porcentaje: 29, monto_usd: 586.7, monto_mxn: 586.7 },
+        { socio_id: SAAB, socio_nombre: "Alexander E. Saab", porcentaje: 2, monto_usd: 40.46, monto_mxn: 40.46 },
       ],
     },
   ];
@@ -367,15 +378,28 @@ describe("Reparto de utilidades: «Socios · por entregar»", () => {
     datos: { disponible: true, hasta_mes: "2026-10", socios: SOCIOS, totales: TOTALES },
   };
 
-  it("con un mes completo: «Generó en Septiembre 2026» (lo de las tarjetas) y el saldo ACUMULADO", () => {
+  it("con un mes completo: «Generó en Septiembre 2026» (lo de las tarjetas, en pesos) y el saldo ACUMULADO en pesos", () => {
     const html = renderToStaticMarkup(
       <SociosPorEntregarSection carga={ok} aviones={AVIONES} desde="2026-09-01" hasta="2026-09-30" puedeRegistrar registro={REGISTRO} />,
     );
     const ths = (html.match(/<th[^>]*>([^<]*)<\/th>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, ""));
     expect(ths).toEqual(["Socio", "Generó en Septiembre 2026", "Saldo por entregar (acumulado)", "Estatus", "Acciones"]);
     expect(html).toContain("Socios · por entregar");
-    expect(html).toContain("$1,395.94");
-    expect(html).toContain("-$2,181.74");
+    expect(html).toContain("$1,395.94 MXN");
+    expect(html).toContain("-$2,181.74 MXN");
+    // Un socio cuyo renglón del reparto no trae pesos (API previo): «—», nunca un peso a medias.
+    const sinPesos = renderToStaticMarkup(
+      <SociosPorEntregarSection
+        carga={ok}
+        aviones={[{ reparto: [{ ...AVIONES[0].reparto[0], monto_mxn: undefined }] }]}
+        desde="2026-09-01"
+        hasta="2026-09-30"
+        puedeRegistrar={false}
+        registro={REGISTRO}
+      />,
+    );
+    expect(sinPesos).not.toContain("$1,395.94 MXN");
+    expect(sinPesos).toMatch(/<td[^>]*>—<\/td>/);
     expect((html.match(/data-marca-adelantado[^>]*>adelantado</g) ?? []).length).toBe(1);
     expect((html.match(/data-accion="registrar-entrega-socio"/g) ?? []).length).toBe(3);
     expect((html.match(/data-accion="ver-cuenta-socio"/g) ?? []).length).toBe(3);
@@ -412,7 +436,7 @@ describe("Reparto de utilidades: «Socios · por entregar»", () => {
     }
   });
 
-  it("la tabla por avión vuelve a «Socio · % · Utilidad del periodo» (sin Pagado/Pendiente/Estatus)", () => {
+  it("la tabla por avión es «Socio · % · Utilidad del periodo» (sin Pagado/Pendiente/Estatus); con la cascada del balance la columna es «A recibir»", () => {
     const html = renderToStaticMarkup(
       <SociosSection socios={AVIONES[0].reparto} porcentajeTotal={100} aeronaveId={N4142R} />,
     );
@@ -420,6 +444,14 @@ describe("Reparto de utilidades: «Socios · por entregar»", () => {
     expect(ths).toEqual(["Socio", "%", "Utilidad del periodo"]);
     expect(html).toContain("$1,395.94");
     expect(html).not.toMatch(/Pagado|Pendiente|Estatus|Registrar/);
+    const balance = renderToStaticMarkup(
+      <SociosSection socios={AVIONES[0].reparto} porcentajeTotal={100} aeronaveId={N4142R} comoBalance />,
+    );
+    expect((balance.match(/<th[^>]*>([^<]*)<\/th>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, ""))).toEqual([
+      "Socio",
+      "%",
+      "A recibir",
+    ]);
   });
 
   it("tabla por avión: el NOMBRE del socio es un atajo a su cuenta («Ver cuenta ›») para quien lee cuentas; un SOCIO solo ve el suyo; sin permiso, texto plano", () => {
@@ -472,35 +504,35 @@ describe("piezas de las páginas (renderizadas de verdad)", () => {
   it("KPIs de un socio ADELANTADO: «Adelantado (a favor de VuelaTour)» con el monto SIN signo y el mes en curso dicho", () => {
     const h = renderToStaticMarkup(
       <KpisCuenta
-        totales={{ generado_usd: 1602.04, mes_en_curso_usd: 206.1, entregado_usd: 3989.88, por_entregar_usd: -2387.84, estado: "ADELANTADO" }}
+        totales={{ generado_mxn: 1602.04, mes_en_curso_mxn: 206.1, entregado_mxn: 3989.88, por_entregar_mxn: -2387.84, estado: "ADELANTADO" }}
         mesEnCurso="2026-10"
       />,
     );
     expect(kpis(h)).toEqual(["Generado", "Entregado", "Adelantado (a favor de VuelaTour)", "Estatus"]);
-    expect(h).toMatch(/data-kpi-saldo="adelantado"[^>]*>\$2,387\.84</);
+    expect(h).toMatch(/data-kpi-saldo="adelantado"[^>]*>\$2,387\.84 MXN</);
     expect(h).not.toContain("-$2,387.84");
     expect(h).not.toContain("Por entregar hoy");
     expect(h).toContain(">Adelantado<");
-    expect((h.match(/incluye \$206\.10 de Octubre 2026/g) ?? []).length).toBe(2);
+    expect((h.match(/incluye \$206\.10 MXN de Octubre 2026/g) ?? []).length).toBe(2);
   });
 
   it("KPIs POR_ENTREGAR: «Por entregar hoy» con su monto en ámbar", () => {
     const h = renderToStaticMarkup(
       <KpisCuenta
-        totales={{ generado_usd: 1395.94, mes_en_curso_usd: 0, entregado_usd: 0, por_entregar_usd: 1395.94, estado: "POR_ENTREGAR" }}
+        totales={{ generado_mxn: 1395.94, mes_en_curso_mxn: 0, entregado_mxn: 0, por_entregar_mxn: 1395.94, estado: "POR_ENTREGAR" }}
         mesEnCurso="2026-10"
       />,
     );
     expect(kpis(h)).toEqual(["Generado", "Entregado", "Por entregar hoy", "Estatus"]);
-    expect(h).toMatch(/text-amber-700[^"]*"[^>]*data-kpi-saldo="por-entregar"[^>]*>\$1,395\.94</);
+    expect(h).toMatch(/text-amber-700[^"]*"[^>]*data-kpi-saldo="por-entregar"[^>]*>\$1,395\.94 MXN</);
     expect(h).not.toContain("incluye");
   });
 
-  it("KPIs de la lista «Pagos a socios»", () => {
+  it("KPIs de la lista «Pagos a socios», en pesos", () => {
     const h = renderToStaticMarkup(<KpisCuentasSocios totales={TOTALES} />);
     expect(kpis(h)).toEqual(["Por entregar (todos)", "Adelantado (todos)", "Socios con saldo por entregar", "Socios adelantados"]);
-    expect(h).toContain("$586.70");
-    expect(h).toContain("$2,181.74");
+    expect(h).toContain("$586.70 MXN");
+    expect(h).toContain("$2,181.74 MXN");
   });
 
   it("banner de cuenta sin configurar POR ROL: oficina recibe la instrucción; SOCIO/ANALISTA un texto informativo", () => {

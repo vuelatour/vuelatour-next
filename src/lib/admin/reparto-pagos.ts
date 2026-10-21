@@ -17,14 +17,24 @@
  * los renglones del pre-cierre.
  *
  * Qué NO vive aquí: el dinero. Utilidad por mes, generado, entregado, por
- * entregar, saldo corrido, estado y el equivalente en USD de una entrega en
- * pesos los calcula el API. `estadoCuentaSocio` es un ESPEJO solo para
- * pintar un estado que el panel no reconoce; `generadoPorSocioEnPeriodo`
- * solo SUMA lo que ya pintan las tarjetas del reparto (en centavos).
+ * entregar, saldo corrido, estado y los pesos de una entrega en dólares los
+ * calcula el API. `estadoCuentaSocio` es un ESPEJO solo para pintar un
+ * estado que el panel no reconoce; `generadoPorSocioEnPeriodo` solo SUMA lo
+ * que ya pintan las tarjetas del reparto (en centavos); `previewEntregaPesos`
+ * es un ESPEJO de `montoMxnDePago` del API para que el operador vea cuántos
+ * pesos descontará una entrega en dólares ANTES de confirmar (el API lo
+ * recalcula al guardar).
+ *
+ * **TODO EN PESOS (20-oct-2026, API 0.0.101, invariante 99).** Pedido del
+ * cliente: «todo ponlo en Pesos, porque aquí en pagos a socios dice en
+ * dólares y pagamos realmente en pesos, entonces que todo sea en pesos y diga
+ * MXN». La cuenta corriente viaja en `*_mxn`; los dólares de una entrega son
+ * informativos. Toda entrega lleva T.C. (en USD: cuántos pesos descuenta; en
+ * MXN: su dólar informativo).
  */
 
 import { fmtDateTime, fmtDateOnly } from "@/lib/datetime";
-import { fmtMonto, fmtTc, fmtUsd } from "@/lib/format";
+import { fmtMonto, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { esDiaValido, esUuid } from "@/lib/admin/url-params";
 import {
   mesInicio,
@@ -313,19 +323,19 @@ export const TEXTO_FILTRO_MESES_IGNORADO =
 // Estado de la cuenta (el estado VIENE del API; esto solo pinta)
 // =============================================================================
 
-/** Tolerancia del API (como los cobros): $1.00 USD. */
-export const TOLERANCIA_SALDO_USD = 1;
+/** Tolerancia del API (como los cobros): $1.00 MXN (`TOLERANCIA_CUENTA_MXN`). */
+export const TOLERANCIA_SALDO_MXN = 1;
 
 const centavos = (n: number) => Math.round((Number(n) || 0) * 100);
 
 /**
  * ESPEJO del `estadoCuenta` del API, SOLO para pintar un estado que el panel
- * no reconoce. Jamás decide dinero: |saldo| ≤ $1 ⇒ AL_CORRIENTE; > $1 ⇒
+ * no reconoce. Jamás decide dinero: |saldo| ≤ $1 MXN ⇒ AL_CORRIENTE; > $1 ⇒
  * POR_ENTREGAR; < −$1 ⇒ ADELANTADO.
  */
-export function estadoCuentaSocio(saldoUsd: number): EstadoCuentaSocio {
-  const s = centavos(saldoUsd);
-  const tol = TOLERANCIA_SALDO_USD * 100;
+export function estadoCuentaSocio(saldoMxn: number): EstadoCuentaSocio {
+  const s = centavos(saldoMxn);
+  const tol = TOLERANCIA_SALDO_MXN * 100;
   if (s > tol) return "POR_ENTREGAR";
   if (s < -tol) return "ADELANTADO";
   return "AL_CORRIENTE";
@@ -352,7 +362,7 @@ export const ESTADOS_CUENTA_SOCIO: Record<EstadoCuentaSocio, EstiloEstadoCuenta>
     etiqueta: "Al corriente",
     clase: CLASE_VERDE,
     tono: "verde",
-    titulo: "Se le ha entregado lo que ha generado (tolerancia de $1 USD).",
+    titulo: "Se le ha entregado lo que ha generado (tolerancia de $1 MXN).",
   },
   POR_ENTREGAR: {
     etiqueta: "Por entregar",
@@ -376,9 +386,9 @@ function esEstadoConocido(e: unknown): e is EstadoCuentaSocio {
 /** Estilo del estado: el del API manda; uno desconocido se pinta con el espejo. */
 export function estiloEstadoCuenta(
   estado: string | null | undefined,
-  saldoUsd: number,
+  saldoMxn: number,
 ): EstiloEstadoCuenta & { estado: EstadoCuentaSocio } {
-  const e = esEstadoConocido(estado) ? estado : estadoCuentaSocio(saldoUsd);
+  const e = esEstadoConocido(estado) ? estado : estadoCuentaSocio(saldoMxn);
   return { estado: e, ...ESTADOS_CUENTA_SOCIO[e] };
 }
 
@@ -386,8 +396,8 @@ export function estiloEstadoCuenta(
  * Color del NÚMERO del saldo según el estado (no según un umbral propio):
  * ámbar por entregar, azul adelantado, normal al corriente.
  */
-export function claseTextoSaldo(estado: string | null | undefined, saldoUsd: number): string {
-  const { tono } = estiloEstadoCuenta(estado, saldoUsd);
+export function claseTextoSaldo(estado: string | null | undefined, saldoMxn: number): string {
+  const { tono } = estiloEstadoCuenta(estado, saldoMxn);
   if (tono === "ambar") return "text-amber-700 dark:text-amber-400";
   if (tono === "azul") return "text-sky-700 dark:text-sky-300";
   return "";
@@ -398,8 +408,8 @@ export function claseTextoSaldo(estado: string | null | undefined, saldoUsd: num
  * estado por renglón: el color sale del ESPEJO (`estadoCuentaSocio`, la misma
  * tolerancia de $1 del API). Solo pinta; el número es el del API.
  */
-export function claseTextoSaldoCorrido(saldoUsd: number): string {
-  return claseTextoSaldo(null, saldoUsd);
+export function claseTextoSaldoCorrido(saldoMxn: number): string {
+  return claseTextoSaldo(null, saldoMxn);
 }
 
 export const ETIQUETA_KPI_POR_ENTREGAR_HOY = "Por entregar hoy";
@@ -409,18 +419,18 @@ export const ETIQUETA_KPI_ADELANTADO = "Adelantado (a favor de VuelaTour)";
  * KPI del saldo de UN socio. Con la cuenta ADELANTADA el KPI no dice «Por
  * entregar hoy −$2,387.84» (se leía como una deuda con signo raro): dice
  * «Adelantado (a favor de VuelaTour)» con el monto en positivo — las mismas
- * palabras que el diálogo («Adelantado: $X USD a favor de VuelaTour»). El
- * estado es el del API; el monto es su `por_entregar_usd` sin el signo.
+ * palabras que el diálogo («Adelantado: $X MXN a favor de VuelaTour»). El
+ * estado es el del API; el monto es su `por_entregar_mxn` sin el signo.
  */
 export function kpiSaldoCuenta(
   estado: string | null | undefined,
-  saldoUsd: number,
+  saldoMxn: number,
 ): { etiqueta: string; monto: number; adelantado: boolean } {
-  const e = estiloEstadoCuenta(estado, saldoUsd).estado;
+  const e = estiloEstadoCuenta(estado, saldoMxn).estado;
   if (e === "ADELANTADO") {
-    return { etiqueta: ETIQUETA_KPI_ADELANTADO, monto: Math.abs(Number(saldoUsd) || 0), adelantado: true };
+    return { etiqueta: ETIQUETA_KPI_ADELANTADO, monto: Math.abs(Number(saldoMxn) || 0), adelantado: true };
   }
-  return { etiqueta: ETIQUETA_KPI_POR_ENTREGAR_HOY, monto: Number(saldoUsd) || 0, adelantado: false };
+  return { etiqueta: ETIQUETA_KPI_POR_ENTREGAR_HOY, monto: Number(saldoMxn) || 0, adelantado: false };
 }
 
 /** Columna del saldo en las tablas de socios (conserva el signo). */
@@ -434,9 +444,9 @@ export const ETIQUETA_COLUMNA_SALDO_ACUMULADO = "Saldo por entregar (acumulado)"
  */
 export function marcaSaldoAdelantado(
   estado: string | null | undefined,
-  saldoUsd: number,
+  saldoMxn: number,
 ): string | null {
-  return estiloEstadoCuenta(estado, saldoUsd).estado === "ADELANTADO" ? "adelantado" : null;
+  return estiloEstadoCuenta(estado, saldoMxn).estado === "ADELANTADO" ? "adelantado" : null;
 }
 
 // =============================================================================
@@ -480,10 +490,10 @@ export const TEXTO_ERROR_CARGA_CUENTAS =
   "No se pudieron cargar las cuentas de los socios. Pulsa Reintentar; si sigue igual, avisa a sistemas.";
 
 export const AYUDA_PAGOS_SOCIOS =
-  "Cuenta corriente de cada socio: lo que ha generado con las utilidades de sus aviones, lo que se le ha entregado y lo que falta por entregar. Un adelanto deja el saldo en negativo y se descuenta de sus próximas utilidades.";
+  "Cuenta corriente de cada socio, en pesos (MXN): lo que ha generado con las utilidades de sus aviones, lo que se le ha entregado y lo que falta por entregar. Un adelanto deja el saldo en negativo y se descuenta de sus próximas utilidades.";
 
 export const AYUDA_SECCION_POR_ENTREGAR =
-  "Lo que generó cada socio en el periodo mostrado y su saldo acumulado por entregar (de toda su cuenta, no solo del periodo).";
+  "Lo que generó cada socio en el periodo mostrado y su saldo acumulado por entregar (de toda su cuenta, no solo del periodo), en pesos (MXN).";
 
 export const ETIQUETA_REGISTRAR_ENTREGA = "Registrar entrega";
 export const ETIQUETA_VER_CUENTA = "Ver cuenta";
@@ -494,23 +504,23 @@ export function etiquetaRegistrarEntrega(socio: string): string {
   return `${ETIQUETA_REGISTRAR_ENTREGA} a ${socio}`;
 }
 
-/** «Por entregar hoy: $1,395.94 USD» o, con saldo a favor, «Adelantado…». */
-export function textoPorEntregarHoy(porEntregarUsd: number | null | undefined): string {
-  if (porEntregarUsd == null || !Number.isFinite(Number(porEntregarUsd))) {
+/** «Por entregar hoy: $25,825.89 MXN» o, con saldo a favor, «Adelantado…». */
+export function textoPorEntregarHoy(porEntregarMxn: number | null | undefined): string {
+  if (porEntregarMxn == null || !Number.isFinite(Number(porEntregarMxn))) {
     return "Por entregar hoy: no se pudo leer (el servidor lo revisa al guardar).";
   }
-  const c = centavos(Number(porEntregarUsd));
-  if (c < -TOLERANCIA_SALDO_USD * 100) {
-    return `Adelantado: ${fmtUsd(-c / 100)} USD a favor de VuelaTour (no hay nada por entregar).`;
+  const c = centavos(Number(porEntregarMxn));
+  if (c < -TOLERANCIA_SALDO_MXN * 100) {
+    return `Adelantado: ${fmtMxn(-c / 100)} a favor de VuelaTour (no hay nada por entregar).`;
   }
-  return `Por entregar hoy: ${fmtUsd(Math.max(0, c) / 100)} USD`;
+  return `Por entregar hoy: ${fmtMxn(Math.max(0, c) / 100)}`;
 }
 
-/** «incluye $206.10 de Octubre 2026 (en curso)» (null si es 0). */
-export function textoMesEnCurso(mesEnCursoUsd: number, mes: string | null): string | null {
-  if (centavos(mesEnCursoUsd) === 0) return null;
+/** «incluye $3,812.85 MXN de Octubre 2026 (en curso)» (null si es 0). */
+export function textoMesEnCurso(mesEnCursoMxn: number, mes: string | null): string | null {
+  if (centavos(mesEnCursoMxn) === 0) return null;
   const nombre = mes ? etiquetaMes(mes) : "el mes en curso";
-  return `incluye ${fmtUsd(mesEnCursoUsd)} de ${nombre} (en curso: cambia día con día)`;
+  return `incluye ${fmtMxn(mesEnCursoMxn)} de ${nombre} (en curso: cambia día con día)`;
 }
 
 /**
@@ -536,15 +546,19 @@ export function etiquetaMetodoPagoSocio(m: string | null | undefined): string {
 }
 
 /**
- * Monto de una entrega tal como se entregó: «$1,000 USD» o, en pesos,
- * «$70,000 MXN · T.C. 18.5 · ≈ $3,783.78 USD» (el equivalente lo calculó el
- * API: `monto_usd`).
+ * Monto de una entrega tal como se entregó. En pesos: «$70,000 MXN · T.C.
+ * 18.5 · ≈ $3,783.78 USD» (el dólar informativo lo calculó el API:
+ * `monto_usd`). En dólares dice los PESOS que descontó de la cuenta (API
+ * 0.0.101: `monto_mxn`): «$1,000 USD = $18,500.00 MXN».
  */
 export function textoMontoPago(
-  pago: Pick<PagoSocio, "monto" | "moneda" | "tc_usd_mxn" | "monto_usd">,
+  pago: Pick<PagoSocio, "monto" | "moneda" | "tc_usd_mxn" | "monto_usd" | "monto_mxn">,
 ): string {
   const base = fmtMonto(pago.monto, pago.moneda);
-  if (pago.moneda !== "MXN") return base;
+  if (pago.moneda !== "MXN") {
+    const mxn = Number(pago.monto_mxn);
+    return Number.isFinite(mxn) && mxn > 0 ? `${base} = ${fmtMxn(mxn)}` : base;
+  }
   const tc = fmtTc(pago.tc_usd_mxn);
   return [base, tc ? `T.C. ${tc}` : null, `≈ ${fmtUsd(pago.monto_usd)} USD`]
     .filter(Boolean)
@@ -627,12 +641,18 @@ export function piezasPago(pago: PagoSocio): {
   };
 }
 
-/** «01 oct 2026 · $1,000 USD · Transferencia» (o «Sin entregas»). */
+/**
+ * «01 oct 2026 · $70,000 MXN · Efectivo» (o «Sin entregas»). Una entrega en
+ * dólares dice sus pesos: «01 oct 2026 · $1,000 USD = $18,500.00 MXN · …».
+ */
 export function textoUltimoPago(u: UltimoPagoSocio | null | undefined): string {
   if (!u) return "Sin entregas";
-  return [fmtDateOnly(u.fecha_pago), fmtMonto(u.monto, u.moneda), etiquetaMetodoPagoSocio(u.metodo)].join(
-    " · ",
-  );
+  const mxn = Number(u.monto_mxn);
+  const monto =
+    u.moneda !== "MXN" && Number.isFinite(mxn) && mxn > 0
+      ? `${fmtMonto(u.monto, u.moneda)} = ${fmtMxn(mxn)}`
+      : fmtMonto(u.monto, u.moneda);
+  return [fmtDateOnly(u.fecha_pago), monto, etiquetaMetodoPagoSocio(u.metodo)].join(" · ");
 }
 
 /** Nombre accesible del botón del comprobante de UNA entrega. */
@@ -662,16 +682,16 @@ export function etiquetaTipoMovimiento(tipo: string | null | undefined): string 
 
 /**
  * Importes de un movimiento para sus dos columnas, con la convención del
- * API: `cargo_usd` SUMA a lo por entregar («Generó (+)»: utilidad —negativa
- * en un mes con pérdida— o saldo inicial a su favor) y `abono_usd` RESTA
+ * API: `cargo_mxn` SUMA a lo por entregar («Generó (+)»: utilidad —negativa
+ * en un mes con pérdida— o saldo inicial a su favor) y `abono_mxn` RESTA
  * («Entregado (−)»: entregas o saldo inicial ya adelantado). Tal cual; 0 ⇒
  * null (celda vacía, no «$0»).
  */
 export function importesMovimiento(
-  m: Pick<MovimientoCuenta, "abono_usd" | "cargo_usd">,
+  m: Pick<MovimientoCuenta, "abono_mxn" | "cargo_mxn">,
 ): { suma: number | null; resta: number | null } {
-  const c = centavos(m.cargo_usd);
-  const a = centavos(m.abono_usd);
+  const c = centavos(m.cargo_mxn);
+  const a = centavos(m.abono_mxn);
   return { suma: c !== 0 ? c / 100 : null, resta: a !== 0 ? a / 100 : null };
 }
 
@@ -690,7 +710,7 @@ export const ETIQUETA_COLUMNA_ENTREGADO_POR_FECHA = "Entregado (por fecha de ent
 
 /** Leyenda de las columnas del estado de cuenta. */
 export const AYUDA_COLUMNAS_CUENTA =
-  "Generó: la utilidad de sus aviones cada mes (negativa si el avión tuvo pérdida). Entregado: lo que se le dio. Saldo: lo que queda por entregarle; en negativo, lo que se le adelantó.";
+  "Todo en pesos (MXN). Generó: la utilidad de sus aviones cada mes (negativa si el avión tuvo pérdida). Entregado: lo que se le dio (una entrega en dólares cuenta por sus pesos al T.C. del día). Saldo: lo que queda por entregarle; en negativo, lo que se le adelantó.";
 
 // =============================================================================
 // Confirmaciones
@@ -706,11 +726,17 @@ export function detalleExcesoSaldo(details: unknown): DetalleExcesoSaldo | null 
     const x = Number(v);
     return Number.isFinite(x) ? x : null;
   };
-  const porEntregar = n("por_entregar_usd");
-  const monto = n("monto_usd");
-  const exceso = n("exceso_usd");
+  const porEntregar = n("por_entregar_mxn");
+  const monto = n("monto_mxn");
+  const exceso = n("exceso_mxn");
   if (porEntregar == null || monto == null || exceso == null) return null;
-  return { por_entregar_usd: porEntregar, monto_usd: monto, exceso_usd: exceso };
+  return {
+    por_entregar_mxn: porEntregar,
+    monto_mxn: monto,
+    exceso_mxn: exceso,
+    mes_en_curso_mxn: n("mes_en_curso_mxn"),
+    saldo_despues_mxn: n("saldo_despues_mxn"),
+  };
 }
 
 export const BOTON_REGISTRAR_ADELANTO = "Registrar como adelanto";
@@ -718,9 +744,11 @@ export const BOTON_GUARDAR_ADELANTO = "Guardar como adelanto";
 export const BOTON_REVISAR_MONTO = "Revisar el monto";
 
 /**
- * Texto de la confirmación del ADELANTO (409 PAGO_EXCEDE_SALDO). Los tres
- * números son del API: lo que vale la entrega en USD, lo que había por
- * entregar y el exceso (= el saldo que queda a favor de VuelaTour).
+ * Texto de la confirmación del ADELANTO (409 PAGO_EXCEDE_SALDO), EN PESOS.
+ * Los números son del API: lo que la entrega descuenta en pesos, lo que
+ * había por entregar de los meses CERRADOS (si el mes en curso ya lleva
+ * algo, se dice que no cuenta) y el exceso (= el saldo que queda a favor de
+ * VuelaTour).
  */
 export function confirmacionAdelanto(
   details: unknown,
@@ -735,14 +763,18 @@ export function confirmacionAdelanto(
       descripcion: `Esta entrega supera lo que hay por entregar al socio. Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour. ${verbo}`,
     };
   }
-  const porEntregar = Math.max(0, d.por_entregar_usd);
+  const porEntregar = Math.max(0, d.por_entregar_mxn);
+  const curso =
+    d.mes_en_curso_mxn != null && centavos(d.mes_en_curso_mxn) !== 0
+      ? `, sin contar el mes en curso: ${fmtMxn(d.mes_en_curso_mxn)}`
+      : "";
   return {
     titulo,
-    descripcion: `Esta entrega de ${fmtUsd(d.monto_usd)} USD supera lo que hay por entregar (${fmtUsd(
+    descripcion: `Esta entrega de ${fmtMxn(d.monto_mxn)} supera lo que hay por entregar (${fmtMxn(
       porEntregar,
-    )} USD). Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour por ${fmtUsd(
-      d.exceso_usd,
-    )} USD. ${verbo}`,
+    )}${curso}). Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour por ${fmtMxn(
+      d.exceso_mxn,
+    )}. ${verbo}`,
   };
 }
 
@@ -843,7 +875,9 @@ const MENSAJES_RESPALDO: Record<string, string> = {
   CUENTA_DESDE_FUERA_DE_RANGO:
     "La cuenta puede arrancar como máximo 36 meses atrás. Si hubo repartos antes, súmalos en el saldo inicial.",
   SALDO_INICIAL_INVALIDO:
-    "Revisa el saldo inicial: un número en dólares con máximo 2 decimales (negativo si ya se le había adelantado).",
+    "Revisa el saldo inicial: un número en pesos (MXN) con máximo 2 decimales (negativo si ya se le había adelantado).",
+  TC_REQUERIDO:
+    "Captura el tipo de cambio: en dólares dice cuántos pesos descuenta de la cuenta; en pesos, su equivalente informativo en dólares.",
   [CODIGO_SOCIO_AJENO]:
     "Esa persona no es socia del avión elegido en «Corresponde a». Elige otro avión o déjalo en «Sin avión».",
   TC_FUERA_DE_RANGO: "Revisa el tipo de cambio: está fuera del rango razonable.",
@@ -983,6 +1017,20 @@ function socioRef(v: unknown): SocioRef | null {
   };
 }
 
+/**
+ * Pesos que descuenta una entrega: la llave `monto_mxn` del API (0.0.101).
+ * Respaldo SOLO para una fila vieja sin la llave, con la MISMA regla del API
+ * (`aPagoSocio`): MXN ⇒ su monto; USD con T.C. ⇒ monto × T.C.; si no, 0.
+ */
+function montoMxnDeFila(p: Record<string, unknown>): number {
+  const directo = numONull(p.monto_mxn);
+  if (directo != null) return directo;
+  const monto = num(p.monto);
+  if (p.moneda === "MXN") return monto;
+  const tc = numONull(p.tc_usd_mxn);
+  return tc != null && tc > 0 ? round2(monto * tc) : 0;
+}
+
 /** Tipos numéricos sanos (PostgREST puede mandar `numeric` como texto). */
 export function normalizarPago(raw: unknown): PagoSocio | null {
   const p = obj(raw);
@@ -995,9 +1043,11 @@ export function normalizarPago(raw: unknown): PagoSocio | null {
     mes: mesDeFecha(texto(p.mes)) ?? mesDeFecha(texto(p.periodo)),
     monto: num(p.monto),
     monto_usd: num(p.monto_usd),
+    monto_mxn: montoMxnDeFila(p),
     tc_usd_mxn: numONull(p.tc_usd_mxn),
     utilidad_snapshot_usd: numONull(p.utilidad_snapshot_usd),
     saldo_snapshot_usd: numONull(p.saldo_snapshot_usd),
+    saldo_snapshot_mxn: numONull(p.saldo_snapshot_mxn),
     entregado_por: texto(p.entregado_por),
     referencia: texto(p.referencia),
     recibido_por: texto(p.recibido_por),
@@ -1018,7 +1068,8 @@ function normalizarCuenta(raw: unknown): CuentaSocio {
   const c = obj(raw) ?? {};
   return {
     cuenta_desde: mesDeFecha(texto(c.cuenta_desde)) ?? MES_CUENTA_DEFAULT,
-    saldo_inicial_usd: num(c.saldo_inicial_usd),
+    saldo_inicial_mxn: num(c.saldo_inicial_mxn),
+    saldo_inicial_usd: numONull(c.saldo_inicial_usd),
     notas: texto(c.notas),
     configurada: c.configurada === true,
     updated_at: texto(c.updated_at),
@@ -1037,6 +1088,7 @@ function normalizarUltimoPago(raw: unknown): UltimoPagoSocio | null {
     fecha_pago: typeof u.fecha_pago === "string" ? u.fecha_pago.slice(0, 10) : "",
     monto: num(u.monto),
     moneda: typeof u.moneda === "string" ? u.moneda : "USD",
+    monto_mxn: montoMxnDeFila(u),
     monto_usd: num(u.monto_usd),
     metodo: typeof u.metodo === "string" ? u.metodo : "",
   };
@@ -1068,10 +1120,11 @@ export function normalizarResumen(raw: unknown): ResumenCuentaSocio | null {
   return {
     socio,
     cuenta: normalizarCuenta(r.cuenta),
-    generado_usd: num(r.generado_usd),
-    mes_en_curso_usd: num(r.mes_en_curso_usd),
-    entregado_usd: num(r.entregado_usd),
-    por_entregar_usd: num(r.por_entregar_usd),
+    generado_mxn: num(r.generado_mxn),
+    mes_en_curso_mxn: num(r.mes_en_curso_mxn),
+    entregado_mxn: num(r.entregado_mxn),
+    por_entregar_mxn: num(r.por_entregar_mxn),
+    por_entregar_cerrado_mxn: numONull(r.por_entregar_cerrado_mxn),
     estado: typeof r.estado === "string" ? r.estado : "",
     ultimo_pago: normalizarUltimoPago(r.ultimo_pago),
     aviones: normalizarAviones(r.aviones),
@@ -1083,10 +1136,10 @@ function normalizarTotales(raw: unknown): TotalesCuentasSocios | null {
   const t = obj(raw);
   if (!t) return null;
   return {
-    generado_usd: num(t.generado_usd),
-    entregado_usd: num(t.entregado_usd),
-    por_entregar_usd: num(t.por_entregar_usd),
-    adelantado_usd: num(t.adelantado_usd),
+    generado_mxn: num(t.generado_mxn),
+    entregado_mxn: num(t.entregado_mxn),
+    por_entregar_mxn: num(t.por_entregar_mxn),
+    adelantado_mxn: num(t.adelantado_mxn),
     socios_por_entregar: num(t.socios_por_entregar),
     socios_adelantados: num(t.socios_adelantados),
   };
@@ -1119,9 +1172,9 @@ function normalizarMovimiento(raw: unknown): MovimientoCuenta | null {
     mes: mesDeFecha(texto(m.mes)),
     aeronave: aeronaveRef(m.aeronave),
     porcentaje: numONull(m.porcentaje),
-    cargo_usd: num(m.cargo_usd),
-    abono_usd: num(m.abono_usd),
-    saldo_usd: num(m.saldo_usd),
+    cargo_mxn: num(m.cargo_mxn),
+    abono_mxn: num(m.abono_mxn),
+    saldo_mxn: num(m.saldo_mxn),
     en_curso: m.en_curso === true,
     pago: normalizarPago(m.pago),
   };
@@ -1133,16 +1186,16 @@ function normalizarMes(raw: unknown): ResumenMesCuenta | null {
   if (!m || !mes) return null;
   return {
     mes,
-    utilidad_usd: num(m.utilidad_usd),
+    utilidad_mxn: num(m.utilidad_mxn),
     en_curso: m.en_curso === true,
-    entregado_usd: num(m.entregado_usd),
+    entregado_mxn: num(m.entregado_mxn),
     por_avion: Array.isArray(m.por_avion)
       ? m.por_avion
           .map((a) => {
             const x = obj(a);
             const aeronave = aeronaveRef(x?.aeronave);
             if (!x || !aeronave) return null;
-            return { aeronave, porcentaje: num(x.porcentaje), monto_usd: num(x.monto_usd) };
+            return { aeronave, porcentaje: num(x.porcentaje), monto_mxn: num(x.monto_mxn) };
           })
           .filter((a): a is NonNullable<typeof a> => a !== null)
       : [],
@@ -1162,7 +1215,7 @@ export function normalizarEstadoCuenta(raw: unknown): EstadoCuentaRespuesta | nu
     cuenta: normalizarCuenta(r.cuenta),
     desde: mesDeFecha(texto(r.desde)) ?? "",
     hasta: mesDeFecha(texto(r.hasta)) ?? "",
-    saldo_anterior_usd: num(r.saldo_anterior_usd),
+    saldo_anterior_mxn: num(r.saldo_anterior_mxn),
     movimientos: Array.isArray(r.movimientos)
       ? r.movimientos.map(normalizarMovimiento).filter((m): m is MovimientoCuenta => m !== null)
       : [],
@@ -1170,18 +1223,19 @@ export function normalizarEstadoCuenta(raw: unknown): EstadoCuentaRespuesta | nu
       ? r.por_mes.map(normalizarMes).filter((m): m is ResumenMesCuenta => m !== null)
       : [],
     totales: {
-      generado_usd: num(t.generado_usd),
-      mes_en_curso_usd: num(t.mes_en_curso_usd),
-      entregado_usd: num(t.entregado_usd),
-      por_entregar_usd: num(t.por_entregar_usd),
+      generado_mxn: num(t.generado_mxn),
+      mes_en_curso_mxn: num(t.mes_en_curso_mxn),
+      entregado_mxn: num(t.entregado_mxn),
+      por_entregar_mxn: num(t.por_entregar_mxn),
+      por_entregar_cerrado_mxn: numONull(t.por_entregar_cerrado_mxn),
       estado: typeof t.estado === "string" ? t.estado : "",
     },
     aviones: normalizarAviones(r.aviones),
     rango: rango
       ? {
-          generado_usd: num(rango.generado_usd),
-          entregado_usd: num(rango.entregado_usd),
-          saldo_final_usd: num(rango.saldo_final_usd),
+          generado_mxn: num(rango.generado_mxn),
+          entregado_mxn: num(rango.entregado_mxn),
+          saldo_final_mxn: num(rango.saldo_final_mxn),
         }
       : null,
     avisos: textos(r.avisos),
@@ -1239,11 +1293,11 @@ export interface UsuarioEntrega {
  */
 export interface ContextoEntrega {
   socio: { id: string; nombre: string };
-  /** null = no se pudo leer (el API decide al guardar). */
-  porEntregarUsd: number | null;
-  /** Parte de `porEntregarUsd` que es utilidad del mes EN CURSO (todavía
+  /** EN PESOS. null = no se pudo leer (el API decide al guardar). */
+  porEntregarMxn: number | null;
+  /** Parte de `porEntregarMxn` que es utilidad del mes EN CURSO (todavía
       cambia): el diálogo lo dice junto a «Por entregar hoy». Del API. */
-  mesEnCursoUsd: number;
+  mesEnCursoMxn: number;
   /** `YYYY-MM` del mes en curso (null = no se sabe: «el mes en curso»). */
   mesEnCurso: string | null;
   aviones: AvionDeSocio[];
@@ -1252,6 +1306,9 @@ export interface ContextoEntrega {
   /** «Corresponde al mes» prellenado: el mes COMPLETO que se ve en el
       Reparto (p. ej. «Mes pasado»). null = «Sin mes (a cuenta)». */
   mesSugerido: string | null;
+  /** «Corresponde al avión» prellenado (pantalla por avión, 20-oct-2026):
+      el uuid del avión que se está viendo. null = «Sin avión». */
+  avionSugerido?: string | null;
 }
 
 /** Lo que la pantalla que abre el diálogo sabe además del renglón. */
@@ -1260,6 +1317,8 @@ export interface ExtrasContextoEntrega {
   mesEnCurso?: string | null;
   /** Mes COMPLETO del periodo que se está viendo (Reparto con «Mes pasado»). */
   mesSugerido?: string | null;
+  /** Avión que se está viendo (pantalla por avión): prellena «Corresponde al avión». */
+  avionSugerido?: string | null;
 }
 
 export function contextoEntrega(
@@ -1268,19 +1327,20 @@ export function contextoEntrega(
 ): ContextoEntrega {
   return {
     socio: { id: r.socio.id, nombre: r.socio.nombre },
-    porEntregarUsd: r.por_entregar_usd,
-    mesEnCursoUsd: Number(r.mes_en_curso_usd) || 0,
+    porEntregarMxn: r.por_entregar_mxn,
+    mesEnCursoMxn: Number(r.mes_en_curso_mxn) || 0,
     mesEnCurso: esMesValido(extras.mesEnCurso) ? extras.mesEnCurso : null,
     aviones: r.aviones,
     cuentaDesdeMes: mesDeFecha(r.cuenta.cuenta_desde) ?? MES_CUENTA_DEFAULT,
     mesSugerido: esMesValido(extras.mesSugerido) ? extras.mesSugerido : null,
+    avionSugerido: esUuid(extras.avionSugerido) ? (extras.avionSugerido as string) : null,
   };
 }
 
 /**
  * El mismo contexto desde el ESTADO DE CUENTA: sus `totales` son los de
  * TODA la cuenta HOY (aunque el filtro de meses sea otro), así que su
- * `por_entregar_usd` es el «por entregar hoy» del diálogo.
+ * `por_entregar_mxn` es el «por entregar hoy» del diálogo.
  */
 export function contextoEntregaDeEstadoCuenta(
   e: EstadoCuentaRespuesta,
@@ -1288,12 +1348,13 @@ export function contextoEntregaDeEstadoCuenta(
 ): ContextoEntrega {
   return {
     socio: { id: e.socio.id, nombre: e.socio.nombre },
-    porEntregarUsd: e.totales.por_entregar_usd,
-    mesEnCursoUsd: Number(e.totales.mes_en_curso_usd) || 0,
+    porEntregarMxn: e.totales.por_entregar_mxn,
+    mesEnCursoMxn: Number(e.totales.mes_en_curso_mxn) || 0,
     mesEnCurso: esMesValido(extras.mesEnCurso) ? extras.mesEnCurso : null,
     aviones: e.aviones ?? [],
     cuentaDesdeMes: mesDeFecha(e.cuenta.cuenta_desde) ?? MES_CUENTA_DEFAULT,
     mesSugerido: esMesValido(extras.mesSugerido) ? extras.mesSugerido : null,
+    avionSugerido: esUuid(extras.avionSugerido) ? (extras.avionSugerido as string) : null,
   };
 }
 
@@ -1403,27 +1464,32 @@ export interface ContextoRegistro {
 }
 
 /**
- * Lo que GENERÓ cada socio en el periodo de la página del reparto: la SUMA
- * (en centavos) de su `monto_usd` en las tarjetas de los aviones — los
- * mismos números que ya están en pantalla, no un cálculo nuevo.
+ * Lo que GENERÓ cada socio en el periodo de la página del reparto, EN PESOS:
+ * la SUMA (en centavos) de su `monto_mxn` (lo que se le entrega) en las
+ * tarjetas de los aviones — los mismos números que ya están en pantalla, no
+ * un cálculo nuevo. Si a algún renglón del socio le falta el peso (API
+ * previo), su total es `null`: jamás un peso a medias.
  */
 export function generadoPorSocioEnPeriodo(
   aviones: readonly Pick<AvionReparto, "reparto">[],
-): Map<string, number> {
-  const c = new Map<string, number>();
+): Map<string, number | null> {
+  const c = new Map<string, number | null>();
   for (const a of aviones) {
     for (const s of a.reparto ?? []) {
-      c.set(s.socio_id, (c.get(s.socio_id) ?? 0) + centavos(s.monto_usd));
+      const previo: number | null = c.has(s.socio_id) ? (c.get(s.socio_id) ?? null) : 0;
+      const mxn = typeof s.monto_mxn === "number" && Number.isFinite(s.monto_mxn) ? s.monto_mxn : null;
+      c.set(s.socio_id, previo === null || mxn === null ? null : previo + centavos(mxn));
     }
   }
-  return new Map([...c].map(([k, v]) => [k, v / 100]));
+  return new Map([...c].map(([k, v]) => [k, v === null ? null : v / 100]));
 }
 
 /** Renglón de «Socios · por entregar» del reparto. */
 export interface FilaSocioPorEntregar {
   resumen: ResumenCuentaSocio;
-  /** Lo que generó en el periodo mostrado (0 si no tiene socios ahí). */
-  genero_periodo_usd: number;
+  /** Lo que generó en el periodo mostrado, en pesos (0 si no tiene socios
+      ahí; null si al API le faltó algún peso). */
+  genero_periodo_mxn: number | null;
 }
 
 /**
@@ -1433,9 +1499,12 @@ export interface FilaSocioPorEntregar {
  */
 export function filasSociosPorEntregar(
   socios: readonly ResumenCuentaSocio[],
-  generado: ReadonlyMap<string, number>,
+  generado: ReadonlyMap<string, number | null>,
 ): FilaSocioPorEntregar[] {
-  return socios.map((r) => ({ resumen: r, genero_periodo_usd: generado.get(r.socio.id) ?? 0 }));
+  return socios.map((r) => ({
+    resumen: r,
+    genero_periodo_mxn: generado.has(r.socio.id) ? (generado.get(r.socio.id) ?? null) : 0,
+  }));
 }
 
 /** Cuántos socios del resumen están en el default (sin configurar). */
@@ -1563,27 +1632,38 @@ export function leerNumero(v: string): number {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
+/** T.C. oficial como texto del formulario («18.456789»); sin dato, "". */
+function textoTcOficial(tcOficial: number | null | undefined): string {
+  return tcOficial != null && Number.isFinite(tcOficial) && tcOficial > 0
+    ? String(round6(tcOficial))
+    : "";
+}
+
 /**
- * Prellenado del alta: monto = POR ENTREGAR del API (si es positivo), USD,
- * fecha de hoy (Cancún), «Entregó» = quien registra, sin avión y el mes
- * SUGERIDO (el mes completo que se ve en el Reparto) o «Sin mes (a
- * cuenta)». El MÉTODO NO se prellena: un medio de pago por defecto se cuela
- * sin que nadie lo revise (regla del 3-sep-2026 en gastos).
+ * Prellenado del alta (EN PESOS, API 0.0.101): monto = POR ENTREGAR del API
+ * (si es positivo), MXN, el T.C. oficial de HOY (sin dato, vacío), fecha de
+ * hoy (Cancún), «Entregó» = quien registra, el avión SUGERIDO (la pantalla
+ * por avión) o «Sin avión», y el mes SUGERIDO (el mes completo que se ve en
+ * el Reparto) o «Sin mes (a cuenta)». El MÉTODO NO se prellena: un medio de
+ * pago por defecto se cuela sin que nadie lo revise (regla del 3-sep-2026 en
+ * gastos).
  */
 export function formInicialAlta(p: {
-  porEntregarUsd: number | null | undefined;
+  porEntregarMxn: number | null | undefined;
   hoy: string;
   meId: string | null | undefined;
   mesSugerido?: string | null;
+  avionSugerido?: string | null;
+  tcOficial?: number | null;
 }): FormPagoSocio {
-  const porEntregar = Number(p.porEntregarUsd);
+  const porEntregar = Number(p.porEntregarMxn);
   return {
     monto:
-      p.porEntregarUsd != null && Number.isFinite(porEntregar) && round2(porEntregar) > 0
+      p.porEntregarMxn != null && Number.isFinite(porEntregar) && round2(porEntregar) > 0
         ? round2(porEntregar).toFixed(2)
         : "",
-    moneda: "USD",
-    tc: "",
+    moneda: "MXN",
+    tc: textoTcOficial(p.tcOficial),
     fecha_pago: p.hoy,
     metodo: "",
     entregado_por_id: p.meId ?? "",
@@ -1596,17 +1676,17 @@ export function formInicialAlta(p: {
       esMesValido(p.mesSugerido) && p.mesSugerido <= (mesActual(p.hoy) ?? "")
         ? p.mesSugerido
         : SIN_MES,
-    aeronave_id: SIN_AVION,
+    aeronave_id: esUuid(p.avionSugerido) ? (p.avionSugerido as string) : SIN_AVION,
   };
 }
 
 /**
  * Cambio de MONEDA. En el ALTA el monto llega prellenado con lo por entregar
- * en DÓLARES: si el operador pasa a MXN sin haberlo tocado, ese número ya no
- * significa nada y se VACÍA; al volver a USD con el campo vacío se restaura.
- * Al pasar a MXN con el T.C. vacío se prellena el T.C. oficial de HOY (si el
- * panel lo tiene). Un monto tecleado nunca se toca. En la EDICIÓN
- * (`montoPrellenado` null) solo cambia la moneda.
+ * EN PESOS: si el operador pasa a USD sin haberlo tocado, ese número ya no
+ * significa nada y se VACÍA; al volver a MXN con el campo vacío se restaura.
+ * El T.C. hace falta en las DOS monedas: si está vacío se prellena el
+ * oficial de HOY (si el panel lo tiene). Un monto o un T.C. tecleados nunca
+ * se tocan. En la EDICIÓN (`montoPrellenado` null) solo cambia la moneda.
  */
 export function formAlCambiarMoneda(
   form: FormPagoSocio,
@@ -1618,16 +1698,10 @@ export function formAlCambiarMoneda(
   const prellenado = (montoPrellenado ?? "").trim();
   const monto = form.monto.trim();
   let out: FormPagoSocio = { ...form, moneda };
-  if (prellenado && moneda === "MXN" && monto === prellenado) out = { ...out, monto: "" };
-  if (prellenado && moneda === "USD" && monto === "") out = { ...out, monto: prellenado };
-  if (
-    moneda === "MXN" &&
-    form.tc.trim() === "" &&
-    tcOficial != null &&
-    Number.isFinite(tcOficial) &&
-    tcOficial > 0
-  ) {
-    out = { ...out, tc: String(round6(tcOficial)) };
+  if (prellenado && moneda === "USD" && monto === prellenado) out = { ...out, monto: "" };
+  if (prellenado && moneda === "MXN" && monto === "") out = { ...out, monto: prellenado };
+  if (form.tc.trim() === "" && textoTcOficial(tcOficial)) {
+    out = { ...out, tc: textoTcOficial(tcOficial) };
   }
   return out;
 }
@@ -1640,35 +1714,96 @@ export function etiquetaMontoPago(moneda: MonedaPagoSocio): string {
 /** Ayuda bajo el monto del ALTA. */
 export function hintMontoPago(p: {
   moneda: MonedaPagoSocio;
-  porEntregarUsd: number | null | undefined;
+  porEntregarMxn: number | null | undefined;
   alta: boolean;
 }): string | null {
   if (!p.alta) return null;
-  const porEntregar = Number(p.porEntregarUsd);
-  const con = p.porEntregarUsd != null && Number.isFinite(porEntregar) && round2(porEntregar) > 0;
-  if (p.moneda === "MXN") {
+  const porEntregar = Number(p.porEntregarMxn);
+  const con = p.porEntregarMxn != null && Number.isFinite(porEntregar) && round2(porEntregar) > 0;
+  if (p.moneda === "USD") {
     return con
-      ? `Captura el monto en pesos; por entregar ${fmtUsd(porEntregar)} USD.`
-      : "Captura el monto en pesos.";
+      ? `Captura el monto en dólares; por entregar ${fmtMxn(porEntregar)}. Con el T.C. se sabe cuántos pesos descuenta.`
+      : "Captura el monto en dólares. Con el T.C. se sabe cuántos pesos descuenta.";
   }
-  return con ? `Prellenado con lo que hay por entregar: ${fmtUsd(porEntregar)} USD.` : null;
+  return con ? `Prellenado con lo que hay por entregar: ${fmtMxn(porEntregar)}.` : null;
 }
 
-/** Ayuda del T.C. (dice de dónde salió el prellenado). */
-export function hintTcPago(p: { tc: string; tcOficial: number | null; hoy: string }): string {
-  const base = "La entrega descuenta su equivalente en dólares (monto ÷ T.C.); el sistema lo calcula al guardar.";
+/** Etiqueta del campo del T.C. (obligatorio en las dos monedas). */
+export const ETIQUETA_TC_PAGO = "Tipo de cambio USD/MXN";
+
+/**
+ * Ayuda del T.C. según la moneda (la cuenta es en pesos): en dólares dice
+ * cuántos PESOS descuenta; en pesos solo da el dólar informativo. Si el
+ * valor es el oficial de hoy, lo dice.
+ */
+export function hintTcPago(p: {
+  tc: string;
+  tcOficial: number | null;
+  hoy: string;
+  moneda?: MonedaPagoSocio;
+}): string {
+  const base =
+    p.moneda === "USD"
+      ? "La cuenta del socio es en pesos: la entrega descuenta monto × T.C. (el sistema lo calcula al guardar)."
+      : "Solo para el dato informativo en dólares (monto ÷ T.C.); la cuenta descuenta los pesos tal cual.";
   if (p.tcOficial != null && p.tc.trim() !== "" && round6(leerNumero(p.tc)) === round6(p.tcOficial)) {
     return `T.C. oficial de referencia de hoy (${fmtDateOnly(p.hoy)}) — puedes editarlo. ${base}`;
   }
   return base;
 }
 
+/**
+ * ESPEJO de `montoMxnDePago` / `montoUsdDePago` del API (invariante 99) SOLO
+ * para que el operador vea, ANTES de confirmar, cuántos pesos descontará una
+ * entrega en dólares («Descuenta $18,500.00 MXN») o el dólar informativo de
+ * una en pesos. El API lo recalcula al guardar; este número no se manda.
+ * null si falta el monto o el T.C.
+ */
+export function previewEntregaPesos(
+  form: Pick<FormPagoSocio, "monto" | "moneda" | "tc">,
+): { descuentaMxn: number; informativoUsd: number } | null {
+  const monto = leerNumero(form.monto);
+  const tc = round6(leerNumero(form.tc));
+  if (!Number.isFinite(monto) || monto <= 0 || !Number.isFinite(tc) || tc <= 0) return null;
+  if (form.moneda === "USD") {
+    return { descuentaMxn: round2(monto * tc), informativoUsd: round2(monto) };
+  }
+  return { descuentaMxn: round2(monto), informativoUsd: round2(monto / tc) };
+}
+
+/** «Descuenta de la cuenta: $18,500.00 MXN» / «≈ $3,783.78 USD (informativo)». */
+export function textoPreviewEntrega(
+  form: Pick<FormPagoSocio, "monto" | "moneda" | "tc">,
+): string | null {
+  const p = previewEntregaPesos(form);
+  if (!p) return null;
+  return form.moneda === "USD"
+    ? `Descuenta de la cuenta: ${fmtMxn(p.descuentaMxn)} (monto × T.C.).`
+    : `≈ ${fmtUsd(p.informativoUsd)} USD (informativo).`;
+}
+
+/**
+ * T.C. de una entrega guardada: en MXN el persistido (`tc_usd_mxn`); en USD
+ * el API no lo persiste (queda implícito en `monto_mxn ÷ monto`, regla del
+ * contrato), así que se lee de ahí. null si no se puede saber.
+ */
+export function tcDePago(
+  pago: Pick<PagoSocio, "monto" | "moneda" | "tc_usd_mxn" | "monto_mxn">,
+): number | null {
+  if (pago.moneda === "MXN") return pago.tc_usd_mxn != null ? round6(Number(pago.tc_usd_mxn)) : null;
+  const monto = Number(pago.monto);
+  const mxn = Number(pago.monto_mxn);
+  if (!Number.isFinite(monto) || monto <= 0 || !Number.isFinite(mxn) || mxn <= 0) return null;
+  return round6(mxn / monto);
+}
+
 /** Formulario de edición con lo que ya tiene la entrega. */
 export function formDePago(pago: PagoSocio): FormPagoSocio {
+  const tc = tcDePago(pago);
   return {
     monto: String(pago.monto),
     moneda: pago.moneda === "MXN" ? "MXN" : "USD",
-    tc: pago.tc_usd_mxn != null ? String(pago.tc_usd_mxn) : "",
+    tc: tc != null ? String(tc) : "",
     fecha_pago: pago.fecha_pago,
     metodo: METODOS_PAGO_SOCIO.some((m) => m.value === pago.metodo)
       ? (pago.metodo as MetodoPagoSocio)
@@ -1692,11 +1827,14 @@ export function validarFormPago(form: FormPagoSocio, hoy: string): ErroresFormPa
   } else if (monto > MONTO_MAX) {
     e.monto = "El monto es demasiado grande.";
   }
-  if (form.moneda === "MXN") {
-    const tc = leerNumero(form.tc);
-    if (!Number.isFinite(tc) || tc <= 0) {
-      e.tc = "Captura el tipo de cambio de la entrega en pesos.";
-    }
+  // T.C. en las DOS monedas (API 0.0.101): en USD sin él no se sabe cuántos
+  // pesos descuenta; en MXN da el dólar informativo.
+  const tc = leerNumero(form.tc);
+  if (!Number.isFinite(tc) || tc <= 0) {
+    e.tc =
+      form.moneda === "USD"
+        ? "Captura el tipo de cambio: dice cuántos pesos descuenta esta entrega en dólares."
+        : "Captura el tipo de cambio del día (para el dato informativo en dólares).";
   }
   if (!esDiaValido(form.fecha_pago)) {
     e.fecha_pago = "Elige la fecha en que se entregó.";
@@ -1748,10 +1886,11 @@ export function payloadAltaPago(
     socio_id: ctx.socio_id,
     monto: round2(leerNumero(form.monto)),
     moneda: form.moneda,
+    // Obligatorio en las dos monedas (API 0.0.101).
+    tc_usd_mxn: round6(leerNumero(form.tc)),
     fecha_pago: form.fecha_pago,
     metodo: form.metodo as MetodoPagoSocio,
   };
-  if (form.moneda === "MXN") out.tc_usd_mxn = round6(leerNumero(form.tc));
   // «Entregó» = quien registra es el default del API: solo viaja otro.
   if (form.entregado_por_id && form.entregado_por_id !== ctx.meId) {
     out.entregado_por_id = form.entregado_por_id;
@@ -1771,9 +1910,10 @@ export function payloadAltaPago(
 }
 
 /**
- * Cuerpo del `PATCH`: SOLO lo que cambió. Pasar a USD manda
- * `tc_usd_mxn: null`; vaciar un texto opcional manda `null` (quitarlo); el
- * «corresponde a» en «Sin mes» / «Sin avión» manda `null`.
+ * Cuerpo del `PATCH`: SOLO lo que cambió. El T.C. viaja si cambió o si
+ * cambió la moneda (el API lo exige en las dos); vaciar un texto opcional
+ * manda `null` (quitarlo); el «corresponde a» en «Sin mes» / «Sin avión»
+ * manda `null`.
  */
 export function cambiosPago(pago: PagoSocio, form: FormPagoSocio): PatchPagoSocioPayload {
   const out: PatchPagoSocioPayload = {};
@@ -1781,12 +1921,10 @@ export function cambiosPago(pago: PagoSocio, form: FormPagoSocio): PatchPagoSoci
   if (Number.isFinite(monto) && monto !== round2(Number(pago.monto))) out.monto = monto;
   const monedaAntes = pago.moneda === "MXN" ? "MXN" : "USD";
   if (form.moneda !== monedaAntes) out.moneda = form.moneda;
-  if (form.moneda === "MXN") {
-    const tc = round6(leerNumero(form.tc));
-    const tcAntes = pago.tc_usd_mxn != null ? round6(Number(pago.tc_usd_mxn)) : null;
-    if (Number.isFinite(tc) && (tc !== tcAntes || form.moneda !== monedaAntes)) out.tc_usd_mxn = tc;
-  } else if (pago.tc_usd_mxn != null) {
-    out.tc_usd_mxn = null;
+  const tc = round6(leerNumero(form.tc));
+  const tcAntes = tcDePago(pago);
+  if (Number.isFinite(tc) && tc > 0 && (tc !== tcAntes || form.moneda !== monedaAntes)) {
+    out.tc_usd_mxn = tc;
   }
   if (form.fecha_pago !== pago.fecha_pago) out.fecha_pago = form.fecha_pago;
   if (form.metodo && form.metodo !== pago.metodo) out.metodo = form.metodo;
@@ -1885,7 +2023,7 @@ export type ErroresFormCuenta = Partial<Record<keyof FormCuentaSocio, string>>;
 export function formDeCuenta(cuenta: CuentaSocio): FormCuentaSocio {
   return {
     cuenta_desde: mesDeFecha(cuenta.cuenta_desde) ?? MES_CUENTA_DEFAULT,
-    saldo_inicial: String(round2(Number(cuenta.saldo_inicial_usd) || 0)),
+    saldo_inicial: String(round2(Number(cuenta.saldo_inicial_mxn) || 0)),
     notas: cuenta.notas ?? "",
   };
 }
@@ -1929,8 +2067,8 @@ export function payloadCuenta(form: FormCuentaSocio): ConfigurarCuentaPayload {
   const notas = form.notas.trim();
   return {
     cuenta_desde: form.cuenta_desde,
-    // -0 viaja como 0.
-    saldo_inicial_usd: saldo === 0 ? 0 : saldo,
+    // EN PESOS (API 0.0.101). -0 viaja como 0.
+    saldo_inicial_mxn: saldo === 0 ? 0 : saldo,
     notas: notas ? notas : null,
   };
 }
@@ -1941,14 +2079,17 @@ export function cuentaCambia(cuenta: CuentaSocio, form: FormCuentaSocio): boolea
   return (
     !cuenta.configurada ||
     p.cuenta_desde !== (mesDeFecha(cuenta.cuenta_desde) ?? "") ||
-    centavos(p.saldo_inicial_usd) !== centavos(cuenta.saldo_inicial_usd) ||
+    centavos(p.saldo_inicial_mxn) !== centavos(cuenta.saldo_inicial_mxn) ||
     (p.notas ?? "") !== (cuenta.notas ?? "").trim()
   );
 }
 
+/** Etiqueta del campo del saldo inicial (la cuenta es en pesos). */
+export const ETIQUETA_SALDO_INICIAL = "Saldo inicial (MXN)";
+
 /** Ayuda del saldo inicial (qué significa el signo). */
 export const AYUDA_SALDO_INICIAL =
-  "Positivo: lo que se le debía al socio al arrancar la cuenta. Negativo: lo que ya se le había adelantado de más. 0 si estaba al corriente.";
+  "En pesos (MXN). Positivo: lo que se le debía al socio al arrancar la cuenta. Negativo: lo que ya se le había adelantado de más. 0 si estaba al corriente.";
 
 /**
  * Confirmación al CAMBIAR una cuenta ya configurada: el saldo del socio se
@@ -1963,9 +2104,9 @@ export function confirmacionCambiarCuenta(
     titulo: "¿Cambiar la cuenta de este socio?",
     descripcion: `La cuenta de ${socioNombre} arrancará en ${etiquetaMes(
       p.cuenta_desde,
-    )} con saldo inicial de ${fmtUsd(
-      p.saldo_inicial_usd,
-    )} USD. Su saldo por entregar se recalcula; las entregas registradas no cambian.`,
+    )} con saldo inicial de ${fmtMxn(
+      p.saldo_inicial_mxn,
+    )}. Su saldo por entregar se recalcula; las entregas registradas no cambian.`,
     boton: "Sí, cambiar la cuenta",
   };
 }
@@ -2004,11 +2145,11 @@ export function notaPreCierreSocios(clave: string, mes: string | null | undefine
 
 /**
  * Renglones del aviso: «Mauricio Roque · por entregar hasta Septiembre
- * 2026: $1,395.94 USD» / «Mauricio Roque · adelantado hoy: $2,387.84 USD».
- * Montos del API (`por_entregar_usd` = saldo con las utilidades HASTA el
- * mes del cierre; el adelanto es el de HOY); el «y N más» sale del `count`
- * (la lista viene topada en 50). `mes` = `item.mes` del API o, si no lo
- * manda, el mes del periodo del pre-cierre.
+ * 2026: $25,825.89 MXN» / «Mauricio Roque · adelantado hoy: $44,175.04 MXN».
+ * Montos del API EN PESOS (`por_entregar_mxn` = saldo con las utilidades
+ * HASTA el mes del cierre; el adelanto es el de HOY); el «y N más» sale del
+ * `count` (la lista viene topada en 50). `mes` = `item.mes` del API o, si
+ * no lo manda, el mes del periodo del pre-cierre.
  */
 export function lineasPreCierreSocios(
   socios: readonly PreCierreSocioCuenta[] | null | undefined,
@@ -2028,8 +2169,8 @@ export function lineasPreCierreSocios(
   const lineas = lista.slice(0, max).map((s, i) => {
     const nombreSocio =
       typeof s.socio === "string" ? s.socio : (s.socio?.nombre ?? "").trim() || "Socio";
-    const saldo = numONull(s.por_entregar_usd);
-    const adelanto = numONull(s.adelantado_usd);
+    const saldo = numONull(s.por_entregar_mxn);
+    const adelanto = numONull(s.adelantado_mxn);
     const monto = adelantados
       ? adelanto != null
         ? Math.abs(adelanto)
@@ -2037,7 +2178,7 @@ export function lineasPreCierreSocios(
           ? Math.abs(saldo)
           : null
       : saldo;
-    const texto = monto != null ? `${nombreSocio} · ${etiqueta}: ${fmtUsd(monto)} USD` : nombreSocio;
+    const texto = monto != null ? `${nombreSocio} · ${etiqueta}: ${fmtMxn(monto)}` : nombreSocio;
     const id = typeof s.socio === "object" && s.socio ? s.socio.id : nombreSocio;
     return { key: `${clave}-${id}-${i}`, texto };
   });

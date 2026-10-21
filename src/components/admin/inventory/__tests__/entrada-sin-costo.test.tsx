@@ -41,6 +41,10 @@ vi.mock("@/app/admin/inventory/actions", () => ({
   updateItemAction: vi.fn(),
 }));
 vi.mock("@/lib/storage/inventario-fotos", () => ({ uploadInventarioFoto: vi.fn() }));
+vi.mock("@/app/admin/inventory/compras/actions", () => ({
+  entradaDesdeGastoAction: vi.fn(),
+  listGastosCandidatosCompraAction: vi.fn(async () => ({ ok: true, data: { data: [], total: 0, truncado: false, ventana: {} } })),
+}));
 // El diálogo de Base UI se monta en un portal (no existe en el render del
 // server): aquí se pinta en línea, abierto o cerrado según `open`.
 vi.mock("@/components/ui/dialog", () => {

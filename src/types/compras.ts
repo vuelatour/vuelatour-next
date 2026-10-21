@@ -10,6 +10,13 @@ export type CompraEstado = "ABIERTA" | "RECIBIDA";
 export type CompraMoneda = "USD" | "MXN";
 /** Qué pagó cada gasto ligado a la compra. */
 export type CompraRol = "MERCANCIA" | "ENVIO" | "IMPUESTOS" | "OTRO";
+/**
+ * ¿La compra ya tiene su GASTO? (21-oct-2026, API 0.0.102, invariante 101
+ * del API). Lo deriva el API de los pagos ligados: SIN_GASTO (ninguno),
+ * PARCIAL (solo envío/impuestos, o la factura de mercancía no cubre las
+ * líneas) o REGISTRADO. Ausente = API previo.
+ */
+export type CompraGastoEstado = "SIN_GASTO" | "PARCIAL" | "REGISTRADO";
 
 /** numeric de Postgres: el API puede devolverlo como string. */
 export type Numeric = number | string;
@@ -83,11 +90,106 @@ export interface CompraListItem {
   total: Numeric;
   total_mxn: Numeric | null;
   total_usd: Numeric | null;
+  /** ADITIVOS (API 0.0.102, invariante 101): qué le falta a la compra. */
+  recibida_at?: string | null;
+  tc_usd_mxn?: Numeric | null;
+  /** Líneas + cargos impresos en la factura = el gasto que la paga. */
+  total_factura?: Numeric;
+  gasto_estado?: CompraGastoEstado;
+  /** Lo ligado como mercancía (moneda de la compra); null = sin T.C., no se sabe. */
+  gasto_mercancia?: Numeric | null;
+  /** Lo que falta de la factura cuando el gasto es PARCIAL. */
+  gasto_faltante?: Numeric | null;
 }
 
 export interface CompraListResponse {
   data: CompraListItem[];
   count: number;
+}
+
+/** Gasto candidato a pago de una compra (`GET /v1/compras/gastos-candidatos`). */
+export interface GastoCandidatoCompra {
+  id: string;
+  /** Día Cancún. */
+  fecha_gasto: string;
+  categoria: string;
+  monto: number;
+  moneda: "MXN" | "USD";
+  tc_gasto: number | null;
+  medio_pago: string | null;
+  folio_ticket: string | null;
+  descripcion: string | null;
+  proveedor: { id: string; nombre: string } | null;
+  conciliado: boolean;
+  rol_sugerido: CompraRol;
+  /** ¿Puede ser la factura de MERCANCÍA? (REFACCION, OTRO, OPERACIONES). */
+  puede_mercancia: boolean;
+}
+
+export interface GastosCandidatosResponse {
+  data: GastoCandidatoCompra[];
+  /** Cuántos cumplían el filtro (la respuesta se corta en `limite`). */
+  total: number;
+  /** La ventana tenía más filas de las que el API lee (500): afina las fechas. */
+  truncado: boolean;
+  ventana: { desde: string; hasta: string };
+}
+
+export interface GastosCandidatosQuery {
+  q?: string;
+  desde?: string;
+  hasta?: string;
+  proveedor_id?: string;
+  solo_mercancia?: boolean;
+  limite?: number;
+}
+
+/** `POST /v1/compras/:id/registrar-gasto` (el monto lo calcula el API). */
+export interface RegistrarGastoCompraInput {
+  tc_usd_mxn: number;
+  fecha_gasto: string;
+  medio_pago: string;
+  tarjeta_terminacion?: string;
+  cuenta_bancaria_id?: string;
+  proveedor_id?: string;
+  folio_ticket?: string;
+  notas?: string;
+  client_request_id?: string;
+}
+
+/** Respuesta de «Registrar gasto»: el detalle fresco + el gasto creado. */
+export interface CompraConGastoRegistrado extends CompraDetalle {
+  gasto_registrado: {
+    id: string;
+    monto: number;
+    moneda: string;
+    tc_gasto: number | null;
+    fecha_gasto: string | null;
+    medio_pago: string | null;
+    estado_pago: string | null;
+  };
+  /** El T.C. capturado quedó también en la compra (no tenía y sigue abierta). */
+  tc_compra_fijado: boolean;
+}
+
+/** `POST /v1/compras/entrada-desde-gasto`. */
+export interface EntradaDesdeGastoInput {
+  gasto_id: string;
+  item_id: string;
+  cantidad: number;
+  fecha?: string;
+  referencia?: string;
+  tc_usd_mxn?: number;
+  proveedor_id?: string;
+  notas?: string;
+}
+
+export interface EntradaDesdeGastoResultado {
+  compra: CompraDetalle;
+  /** false = la compra quedó ABIERTA con el gasto ligado; `avisos` dice por qué. */
+  recibida: boolean;
+  entrada_id: string | null;
+  avisos: string[];
 }
 
 export interface CompraCargoFactura {
@@ -142,6 +244,11 @@ export interface CompraResumen {
   total_usd: Numeric | null;
   total_mxn: Numeric | null;
   avisos: string[];
+  /** ADITIVOS (API 0.0.102, invariante 101): ver `CompraListItem`. */
+  total_factura?: Numeric;
+  gasto_estado?: CompraGastoEstado;
+  gasto_mercancia?: Numeric | null;
+  gasto_faltante?: Numeric | null;
 }
 
 /** GET /v1/compras/:id. */
@@ -193,6 +300,8 @@ export interface CompraCreateInput {
   tc_usd_mxn?: number;
   notas?: string;
   lineas?: CompraLineaInput[];
+  /** Cargos impresos en la factura (API 0.0.102); `[]` = ninguno. */
+  cargos_factura?: Array<{ concepto: string; monto: number }>;
 }
 
 /**

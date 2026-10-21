@@ -8,10 +8,12 @@ import { getCompra } from "@/lib/api/compras-server";
 import { listInventario } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
 import { signFuelPhotos } from "@/lib/api/expenses-server";
+import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { getMe } from "@/lib/api/me";
 import { fmtDateOnly, fmtDateTime } from "@/lib/datetime";
-import { CompraEstadoBadge } from "@/components/admin/inventory/compras/compra-badges";
+import { GastoCompraBadge, RecepcionBadge } from "@/components/admin/inventory/compras/compra-badges";
 import { CompraActions } from "@/components/admin/inventory/compras/compra-actions";
+import { CompraPasos } from "@/components/admin/inventory/compras/compra-pasos";
 import { CompraHeaderCard } from "@/components/admin/inventory/compras/compra-header-card";
 import { CompraResumenCard } from "@/components/admin/inventory/compras/compra-resumen-card";
 import {
@@ -46,11 +48,13 @@ export default async function CompraDetallePage({
   let providers: { id: string; nombre: string }[];
   let items: ItemOption[];
   let rolUsuario: string | null = null;
+  let tcOficialHoy: number | null = null;
   try {
     // La COMPRA es el dato de la pantalla; proveedores e ítems solo llenan
     // los selectores de sus diálogos: degradan con aviso. El rol (de `/me`,
-    // ya cacheado por el layout) decide el clic del badge «Banco».
-    const [compraRes, providersRes, itemsRes, me] = await Promise.all([
+    // ya cacheado por el layout) decide el clic del badge «Banco». El T.C.
+    // oficial de hoy es solo la SUGERENCIA de «Registrar gasto» (best-effort).
+    const [compraRes, providersRes, itemsRes, me, tcHoy] = await Promise.all([
       getCompra(id),
       degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
         data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
@@ -59,9 +63,11 @@ export default async function CompraDetallePage({
         data: [] as Awaited<ReturnType<typeof listInventario>>["data"],
       }),
       getMe().catch(() => null),
+      getTipoCambioOficial(),
     ]);
     compra = compraRes;
     rolUsuario = me?.rol ?? null;
+    tcOficialHoy = tcHoy;
     providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
     items = itemsRes.data.map((i) => ({
       id: i.id,
@@ -92,10 +98,13 @@ export default async function CompraDetallePage({
 
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-sm text-muted-foreground">Bodega · Compra</p>
-          <h1 className="flex items-center gap-3 text-2xl md:text-3xl font-semibold tracking-tight">
+          <p className="text-sm text-muted-foreground">Inventario/Tienda · Compra</p>
+          <h1 className="flex flex-wrap items-center gap-3 text-2xl md:text-3xl font-semibold tracking-tight">
             Compra #{compra.folio}
-            <CompraEstadoBadge estado={compra.estado} />
+            <span className="flex flex-wrap gap-2">
+              <RecepcionBadge compra={compra} />
+              <GastoCompraBadge compra={{ ...compra.resumen, moneda: compra.moneda, n_pagos: compra.pagos.length }} />
+            </span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {compra.proveedor?.nombre ?? "Sin proveedor"} · {fmtDateOnly(compra.fecha)}
@@ -103,8 +112,11 @@ export default async function CompraDetallePage({
             {compra.recibida_at ? ` · Recibida ${fmtDateTime(compra.recibida_at)}` : ""}
           </p>
         </div>
-        <CompraActions compra={compra} />
+        <CompraActions compra={compra} providers={providers} tcOficialHoy={tcOficialHoy} />
       </div>
+
+      {/* Registrada → Recibida en bodega → Gasto registrado: qué falta. */}
+      <CompraPasos compra={compra} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">

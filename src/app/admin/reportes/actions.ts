@@ -49,10 +49,21 @@ function fail<T>(err: unknown): ActionResult<T> {
   return { ok: false, error: SIN_CONEXION, code: "SIN_CONEXION" };
 }
 
-/** La previa (`GET /v1/cierres/:periodo/previa`) para el diálogo «Cerrar <mes>». */
-export async function previaCierreAction(periodo: string): Promise<ActionResult<PreviaCierre>> {
+const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Solo UUIDs (lo demás se descarta: jamás un 400 por basura en la URL). */
+function idsLimpios(ids: string[] | undefined): string[] {
+  return (ids ?? []).filter((id) => typeof id === "string" && RE_UUID.test(id));
+}
+
+/**
+ * La previa (`GET /v1/cierres/:periodo/previa`) para el diálogo «Cerrar <mes>».
+ * `incluir` (21-oct-2026): los vuelos que la oficina marcó para quedarse en
+ * el mes; la previa vuelve recalculada con ellos adentro.
+ */
+export async function previaCierreAction(periodo: string, incluir?: string[]): Promise<ActionResult<PreviaCierre>> {
   if (!esMesValido(periodo)) return { ok: false, error: PERIODO_INVALIDO };
-  const carga: CargaCierres<PreviaCierre> = await getPreviaCierre(periodo);
+  const carga: CargaCierres<PreviaCierre> = await getPreviaCierre(periodo, idsLimpios(incluir));
   if (carga.estado === "ok") return { ok: true, data: carga.datos };
   if (carga.estado === "sin-permiso") {
     return { ok: false, error: "Tu usuario no puede revisar el cierre del mes.", code: "SIN_PERMISO", status: 403 };
@@ -60,16 +71,27 @@ export async function previaCierreAction(periodo: string): Promise<ActionResult<
   return { ok: false, error: textoCargaCierres(carga.estado) ?? SIN_CONEXION, code: carga.estado.toUpperCase() };
 }
 
-/** `POST /v1/cierres/:periodo` con los ids que el diálogo mostró (`vuelos_esperados`). */
+/**
+ * `POST /v1/cierres/:periodo` con los ids que el diálogo mostró
+ * (`vuelos_esperados` = los que pasan + los que se quedan) y, desde el
+ * 21-oct-2026, `incluir_vuelos`: los cobrados después del corte que la
+ * oficina deja en el mes (solo viaja si hay alguno).
+ */
 export async function cerrarMesAction(
   periodo: string,
   vuelosEsperados: string[],
+  incluirVuelos?: string[],
 ): Promise<ActionResult<ResultadoCerrarMes>> {
   if (!esMesValido(periodo)) return { ok: false, error: PERIODO_INVALIDO };
+  const incluir = idsLimpios(incluirVuelos);
   try {
     const data = await apiServer<ResultadoCerrarMes>(`/v1/cierres/${periodo}`, {
       method: "POST",
-      body: { confirmar: true, vuelos_esperados: vuelosEsperados },
+      body: {
+        confirmar: true,
+        vuelos_esperados: vuelosEsperados,
+        ...(incluir.length > 0 ? { incluir_vuelos: incluir } : {}),
+      },
     });
     revalidarCierre();
     return { ok: true, data };

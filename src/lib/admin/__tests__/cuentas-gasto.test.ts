@@ -210,8 +210,8 @@ describe("Conciliación con la cuenta del gasto (API 0.0.100)", () => {
       alertas: [],
       ultimos_movimientos: [],
     } as never);
-    const buscar = a?.enlaces?.find?.((e: { href: string }) => e.href.includes("f=pendientes"))?.href
-      ?? JSON.stringify(a);
+    // `buscar` es el enlace a pendientes (±30 días con el monto), `conciliados` el otro.
+    const buscar = a?.buscar?.href ?? JSON.stringify(a);
     expect(buscar).toContain("cuenta=11111111-1111-4111-8111-111111111111");
   });
 });

@@ -61,10 +61,18 @@ describe("botones «Cerrar <mes>» / «Reabrir mes»", () => {
 
 describe("cableado del diálogo de cierre (las reglas viven en lib/admin/cierre-mes.ts, con su test)", () => {
   const src = leer("src/components/admin/reportes/cierre-mes-acciones.tsx");
-  it("manda los ids que se VIERON (vuelos_esperados) y decide con decidirRespuestaCerrar", () => {
-    expect(src).toMatch(/cerrarMesAction\(\s*mes,\s*previa\.vuelos_que_pasan\.map\(\(v\) => v\.id\),?\s*\)/);
+  it("manda los ids que se VIERON (vuelos_esperados = pasan + se quedan) y los que se quedan (incluir); decide con decidirRespuestaCerrar", () => {
+    expect(src).toMatch(/cerrarMesAction\(\s*mes,\s*idsVistosEnPrevia\(previa\),\s*incluir,?\s*\)/);
     expect(src).toContain("decidirRespuestaCerrar(r, mes)");
     expect(src).toMatch(/d\.tipo === "previa_nueva"[\s\S]*setEntiendo\(false\)/);
+  });
+  it("INCLUIR EN EL MES (21-oct-2026): la casilla «Se queda» solo para COBRO_POSTERIOR, relee la previa con `incluir` y el toast cuenta los que se quedaron", () => {
+    expect(src).toContain("puedeQuedarseEnMes(v)");
+    expect(src).toMatch(/previaCierreAction\(mes, incluir\)/);
+    expect(src).toMatch(/\}, \[mes, incluir\]\);/);
+    expect(src).toContain("vuelos_incluidos");
+    expect(src).toContain("textoToastCerrado(mes, d.diferidos, destino, d.incluidos)");
+    expect(src).toContain('data-quedarse={v.id}');
   });
   it("confirmar exige puedeConfirmarCierre (previa lista + casilla) y no hay otro camino al POST", () => {
     expect(src).toContain("disabled={!puedeConfirmar || enviando}");

@@ -8,9 +8,11 @@
  *     botón, modo controlado, refacción, gasto general y alta del vuelo;
  *     el 20-oct-2026 se regeneró SOLO por las opciones nuevas de los
  *     selectores: «Otros gastos directos del vuelo», «Paquetería» y
- *     «Efectivo de la empresa (no de fondo)»);
- *  2. con ellas, sin «A Inventario/Tienda» (solo «Directo al avión» y por
- *     qué) y, en lo demás, el MISMO formulario;
+ *     «Efectivo de la empresa (no de fondo)»; el 21-oct-2026, porque la
+ *     refacción dejó de tener el bloque «¿A dónde va la refacción?»:
+ *     ahora es un gasto normal con una nota, invariante 101 del API);
+ *  2. con ellas, la refacción pinta la MISMA nota que sin ellas (ya no hay
+ *     destino que forzar) y, en lo demás, el MISMO formulario;
  *  3. cableado por regex: las dos llaves viajan SOLO con los cargos, la
  *     llamada con los cargos va con `.catch` (nunca al error boundary), el
  *     aviso de éxito y la caja roja de quien lo montó, y no se cierra a
@@ -25,11 +27,7 @@ import type { ReactNode } from "react";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
-import {
-  NOTA_ELIGE_AVION_REFACCION,
-  NOTA_INVENTARIO_NO_DESDE_CARGOS,
-  notaRefaccionDesdeCargos,
-} from "@/lib/admin/refaccion-inventario";
+import { NOTA_REFACCION_CON_AVION, NOTA_REFACCION_SIN_AVION } from "@/lib/admin/refaccion-alta";
 
 vi.mock("sonner", () => ({
   toast: Object.assign(() => {}, { error: () => {}, success: () => {}, info: () => {}, warning: () => {} }),
@@ -38,7 +36,6 @@ vi.mock("@/app/admin/expenses/actions", () => ({
   createGastoAction: async () => ({ ok: false }),
   buscarVuelosCercanosAction: async () => ({ ok: true, data: [] }),
   leerFacturaIAAction: async () => ({ ok: false }),
-  listArticulosRefaccionAction: async () => ({ ok: true, data: [] }),
   listAvionesActivosAction: async () => ({ ok: false }),
 }));
 vi.mock("@/app/admin/users/actions", () => ({
@@ -126,12 +123,16 @@ describe("sin las props nuevas: el alta de SIEMPRE (golden del 14-oct, antes del
     ).toBe(GOLDEN.boton_primario);
   });
 
-  it("modo controlado con título y contexto, refacción (con «A Inventario/Tienda»), gasto general y alta del vuelo: idénticos", () => {
+  it("modo controlado con título y contexto, refacción (gasto normal con su nota), gasto general y alta del vuelo: idénticos", () => {
     expect(
       abierta({ titulo: "Crear el gasto con la suma de 2 cargos", contexto: "Contexto de prueba." }),
     ).toBe(GOLDEN.operaciones);
     expect(abierta({ defaultCategoria: "REFACCION" })).toBe(GOLDEN.refaccion);
-    expect(GOLDEN.refaccion).toContain(">A Inventario/Tienda</button>");
+    // 21-oct-2026: ya no hay «¿A dónde va la refacción?» ni «A Inventario/Tienda».
+    expect(GOLDEN.refaccion).not.toContain("A Inventario/Tienda");
+    expect(GOLDEN.refaccion).not.toContain("aria-pressed");
+    expect(GOLDEN.refaccion).toContain("data-refaccion-nota");
+    expect(GOLDEN.refaccion).toContain(esc(NOTA_REFACCION_SIN_AVION));
     expect(abierta({ defaultCategoria: "OTRO" })).toBe(GOLDEN.otro);
     expect(
       abierta({
@@ -153,25 +154,25 @@ describe("con los cargos («Créalo por la suma»)", () => {
     expect(abierta(conCargos)).not.toContain("data-error-alta-cargos");
   });
 
-  it("refacción: SIN «A Inventario/Tienda»; solo «Directo al avión» y por qué", () => {
+  it("refacción con los cargos: un gasto normal con la MISMA nota (sin avión / con avión), sin sub-formulario de bodega", () => {
     const h = abierta({ defaultCategoria: "REFACCION", ...conCargos });
     expect(h).not.toContain("A Inventario/Tienda</button>");
     expect(h).not.toContain("aria-pressed");
-    expect(h).toContain("data-refaccion-solo-avion");
-    expect(h).toMatch(/data-refaccion-solo-avion="true">Directo al avión<\/span>/);
-    expect(h).toContain(esc(notaRefaccionDesdeCargos(false)));
-    expect(notaRefaccionDesdeCargos(false)).toBe(`${NOTA_ELIGE_AVION_REFACCION} ${NOTA_INVENTARIO_NO_DESDE_CARGOS}`);
+    expect(h).not.toContain("data-refaccion-solo-avion");
+    expect(h).toContain("data-refaccion-nota");
+    expect(h).toContain(esc(NOTA_REFACCION_SIN_AVION));
     // Ni el sub-formulario de la bodega ni «o pásala a Inventario/Tienda».
     expect(h).not.toContain("pásala a Inventario/Tienda");
     expect(h).not.toContain("Precio de venta");
-    // Con avión (alta desde el vuelo): la nota de «Directo al avión» + por qué no a la bodega.
+    // Con avión (alta desde el vuelo): la nota del avión.
     const v = abierta({
       defaultVueloId: "b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
       defaultAeronaveId: "e1a85e5b-9eaa-4367-9920-68d5d78883e8",
       defaultCategoria: "REFACCION",
       ...conCargos,
     });
-    expect(v).toContain(esc(notaRefaccionDesdeCargos(true)));
+    expect(v).toContain(esc(NOTA_REFACCION_CON_AVION));
+    expect(v).not.toContain(esc(NOTA_REFACCION_SIN_AVION));
   });
 });
 
@@ -190,7 +191,9 @@ describe("cableado (regex sobre el fuente)", () => {
     expect(alta).toMatch(
       /\.\.\.\(conCargos\s*\?\s*\{\s*conciliar_con_movimientos: \[\.\.\.\(conciliarConMovimientos \?\? \[\]\)\],\s*client_request_id: clientRequestId,\s*\}\s*:\s*\{\}\),/,
     );
-    expect(alta).toMatch(/\.\.\.\(inventarioPayload \? \{ inventario: inventarioPayload \} : \{\}\),/);
+    // El bloque `inventario` (deprecado en el API) ya no existe en el alta.
+    expect(alta).not.toContain("inventario:");
+    expect(alta).not.toContain("inventarioPayload");
     // UNA sola llamada al alta: la de siempre.
     expect(alta.split("createGastoAction(").length - 1).toBe(1);
   });
@@ -200,15 +203,11 @@ describe("cableado (regex sobre el fuente)", () => {
     expect(alta).toMatch(/const sinConexionAlta = \(\): ActionResult<Gasto> & \{ repartoError\?: string \} => \(\{\s*ok: false,\s*code: "SIN_CONEXION",/);
   });
 
-  it("refacción con los cargos: siempre «Directo al avión» (el segmento de siempre queda intacto sin ellos)", () => {
-    expect(alta).toContain('const refDestino: DestinoRefaccion = conCargos ? "AVION" : refDestinoElegido;');
-    expect(alta).toMatch(/\{conCargos \? \(\s*\/\/[^\n]*\n\s*<span className="text-xs font-medium" data-refaccion-solo-avion>/);
-    // Sin avión: con los cargos, «Elige el avión…»; sin ellos, la nota de
-    // `notaDirectoAvionSinAvion` (con fecha futura, la salida real del día
-    // del pago; probada por comportamiento en `refaccion-inventario.test.ts`).
-    expect(alta).toMatch(
-      /toast\.error\(\s*conCargos\s*\?\s*NOTA_ELIGE_AVION_REFACCION\s*:\s*notaDirectoAvionSinAvion\(\{ fecha: values\.fecha_gasto, capacidad: capacidadPorPagar \}\),?\s*\);/,
-    );
+  it("refacción: ningún destino que forzar (con o sin cargos, la misma nota de `refaccion-alta`)", () => {
+    expect(alta).not.toContain("refDestino");
+    expect(alta).not.toContain("DestinoRefaccion");
+    expect(alta).toContain('from "@/lib/admin/refaccion-alta"');
+    expect(alta).toMatch(/\{esRefaccion && \(\s*<p[\s\S]*?data-refaccion-nota[\s\S]*?\{notaRefaccionAlta\(\{ conAvion: !!avionSel \}\)\}/);
   });
 
   it("éxito: el aviso de quien lo montó; error: la caja roja con SU texto y el alta sigue abierta", () => {

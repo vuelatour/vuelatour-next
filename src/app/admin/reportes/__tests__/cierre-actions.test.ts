@@ -60,6 +60,19 @@ describe("cerrarMesAction", () => {
     expect(apiServer.mock.calls[0][1].body).toEqual({ confirmar: true, vuelos_esperados: [] });
   });
 
+  it("INCLUIR EN EL MES (21-oct-2026): `incluir_vuelos` viaja solo con ids válidos y solo si hay alguno", async () => {
+    apiServer.mockResolvedValueOnce({ cierre: {}, diferidos: [], incluidos: [{ id: V337 }] });
+    await cerrarMesAction("2026-09", [V316, V337], [V337, "basura"]);
+    expect(apiServer.mock.calls[0][1].body).toEqual({
+      confirmar: true,
+      vuelos_esperados: [V316, V337],
+      incluir_vuelos: [V337],
+    });
+    apiServer.mockResolvedValueOnce({ cierre: {}, diferidos: [] });
+    await cerrarMesAction("2026-09", [V316], []);
+    expect(apiServer.mock.calls[1][1].body).toEqual({ confirmar: true, vuelos_esperados: [V316] });
+  });
+
   it("409 PREVIA_CAMBIO: conserva code/details/status y el message; NO revalida", async () => {
     const details = { previa: { periodo: "2026-09", listo: true, vuelos_que_pasan: [] } };
     apiServer.mockRejectedValueOnce(
@@ -123,6 +136,33 @@ describe("reabrirMesAction", () => {
     const r = await reabrirMesAction("2026-09", "Corregir un cobro");
     expect(r).toMatchObject({ ok: false, code: "MES_SIGUIENTE_CERRADO", error: "Octubre 2026 ya está cerrado: reábrelo primero." });
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe("previaCierreAction con `incluir` (21-oct-2026)", () => {
+  it("manda ?incluir=id,id (solo UUIDs) y devuelve la previa normalizada con vuelos_incluidos", async () => {
+    apiServer.mockResolvedValueOnce({
+      periodo: "2026-09",
+      estado: "ABIERTO",
+      listo: true,
+      motivo_no_cerrable: null,
+      bloqueantes: [],
+      vuelos_que_pasan: [{ id: V316, motivo: "SIN_COBRO" }],
+      vuelos_que_vienen: [],
+      vuelos_incluidos: [{ id: V337, motivo: "COBRO_POSTERIOR", leyenda: "Se queda en septiembre 2026 · cobrado el 2-oct" }],
+      totales: { pasan: 1, incluidos: 1 },
+      reparto: null,
+    });
+    const r = await previaCierreAction("2026-09", [V337, "nada"]);
+    expect(apiServer).toHaveBeenCalledWith(`/v1/cierres/2026-09/previa?incluir=${V337}`, { cache: "no-store" });
+    expect(r.ok).toBe(true);
+    expect(r.data?.vuelos_incluidos?.map((v) => v.id)).toEqual([V337]);
+    expect(r.data?.totales.incluidos).toBe(1);
+  });
+  it("sin `incluir` la URL es la de siempre", async () => {
+    apiServer.mockResolvedValueOnce({ periodo: "2026-09", listo: true, totales: {} });
+    await previaCierreAction("2026-09");
+    expect(apiServer).toHaveBeenCalledWith("/v1/cierres/2026-09/previa", { cache: "no-store" });
   });
 });
 

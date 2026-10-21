@@ -12108,3 +12108,166 @@ proveedor siguen en sus pantallas. Contrato: invariante 98 del API
 - Pruebas: `lib/admin/__tests__/cuentas-gasto.test.ts`,
   `proveedores-gasto.test.ts` y
   `components/admin/expenses/__tests__/catalogos-en-linea.test.tsx`.
+
+## Reparto = CASCADA DEL BALANCE, pantalla por avión y Pagos a socios EN PESOS (20-oct-2026, API 0.0.101, invariante 99 del API)
+
+Pedido del cliente con las capturas del Excel del balance contra la card del
+reparto y «Pagos a socios»: «una pantalla por avión y no un card… todo el
+histórico… filtrar por mes», «la reserva de overhaul no se resta… cuánto debe
+guardar cada socio… opción por avión y socio», «las cuentas de dispersión en
+la pantalla del avión… todo en pesos, pagamos realmente en pesos».
+
+- **Fuente única**: `lib/admin/reparto-avion.ts` (rutas, roles, periodo de la
+  URL, filas de la cascada, socios, gastos agrupados, histórico, textos) con
+  `lib/admin/__tests__/reparto-avion.test.ts`; el cableado de las páginas en
+  `components/admin/profit-sharing/__tests__/reparto-avion-pantalla.test.tsx`
+  (estructura con `react-dom/server`).
+- **Bandera raíz `reparto_como_balance`** (`repartoComoBalance`, junto a
+  `reparto_en_pesos`): con ella la cascada es la del balance — cobrado −
+  comisiones − directos − indirectos − permisos − fijos − **Provisión AFAC**
+  (`afac_reservado_*`, sublabel «tarifa USD/hr × horas cobradas») + otros
+  ingresos = saldo — y la **reserva de overhaul NO resta**: se pinta DEBAJO del
+  saldo, en bloque punteado con badge «no se resta», con su parte por socio
+  («Reserva a guardar»; «se le descuenta» / «solo informativa» según
+  `descuenta_reserva`) y «VuelaTour retiene $X» (`reserva_retenida_*`). Sin la
+  bandera (API previo) se pinta la cascada vieja: NADA se inventa en el panel.
+- **Card de la lista = resumen** (`avion-reparto-card.tsx`: saldo, cascada
+  compacta `CascadaAvion`, reserva informativa, socios con «A recibir», cierre)
+  + «Ver detalle del avión →». El desglose vuelo por vuelo vive SOLO en la
+  pantalla del avión.
+- **Pantalla por avión** `/admin/profit-sharing/aviones/[id]?desde&hasta`
+  (`GET /v1/profit-sharing/aviones/:id`; `getAvionDetalle`, 404 ⇒
+  `no-existe`): periodo (mismo `PeriodSelector` y ajuste al inicio oficial),
+  saldo, cascada completa, **«Gastos del periodo»** (`gastos-avion-table.tsx`:
+  `detalle.gastos[]` agrupados en el orden de la cascada; el subtotal de cada
+  grupo se compara EN CENTAVOS con su fila de la cascada y dice «Cuadra» / «No
+  cuadra… diferencia de $X»; EXCLUIDO tachado con su motivo (`clave`); FIJO
+  sin cuadre: el pool prorrateado no viene desglosado), vuelos y otros
+  ingresos (`DesgloseSection`), **«Socios de este avión»**
+  (`socios-avion-table.tsx`: utilidad, reserva a guardar, a recibir, entregado
+  y por entregar DE ESTE AVIÓN en MXN — todo del API, `socios[]` — «Registrar
+  entrega» con avión y socio preseleccionados, «Ver cuenta ›») y **«Entregas
+  de este avión»** (`entregas-avion-table.tsx`; USD ⇒ «$1,000 USD = $18,500.00
+  MXN»). SOCIO: solo su renglón y sus entregas (lo manda el API), sin
+  controles ni Excel.
+- **¿Se le descuenta la reserva?** (`reserva-socio-control.tsx`): SOLO ADMIN;
+  `AlertDialog` con la consecuencia («se resta de lo que recibe» / «recibe
+  completo y solo se le informa»; afecta los repartos que se calculan hoy, no
+  los cierres congelados); `cambiarDescuentoReservaAction` hace `PATCH
+  /v1/aircraft/owners/:id` con `descontar_reserva_overhaul` por cada renglón
+  VIGENTE de `aeronave_socio` del socio y revalida reparto, avión y ficha.
+- **Histórico** `/admin/profit-sharing/aviones/[id]/historico?desde=AAAA-MM&
+  hasta=AAAA-MM` (`GET …/historico`; `getAvionHistorico`, 400
+  `RANGO_INVALIDO` ⇒ reintento sin filtro + aviso `filtroIgnorado`): filtro de
+  meses (tope 36), un renglón por mes con 8 columnas por default («Ver todas
+  las columnas» = 14), mes en curso marcado, estado del cierre, totales DEL
+  API, socios en el rango (generado / reserva / entregado / por entregar) y
+  entregas del rango. Meses futuros no vienen.
+- **Pagos a socios EN PESOS**: `types/reparto-pagos.ts` y
+  `lib/admin/reparto-pagos.ts` íntegros en `_mxn` (`TOLERANCIA_SALDO_MXN`,
+  `estadoCuentaSocio(saldoMxn)`…); `fmtMxn` en tablas, KPIs y estado de
+  cuenta; el **T.C. es obligatorio en las DOS monedas** (`entrega-socio-dialog`:
+  MXN por default, T.C. oficial del día prellenado, hint de para qué sirve y
+  preview «Descuenta de la cuenta: $X MXN» / «≈ $Y USD (informativo)»); el
+  409 `PAGO_EXCEDE_SALDO` se lee con `details.*_mxn`; «Configurar cuenta»
+  manda `saldo_inicial_mxn`; el pre-cierre lee `monto_mxn` / `por_entregar_mxn`.
+  Filas viejas sin `monto_mxn` se normalizan con `montoMxnDeFila` (la MISMA
+  regla que `aPagoSocio` del API).
+- **Enlaces**: ficha del avión → «Reparto y balance por mes» / «Ver el reparto
+  del periodo»; títulos de pestaña `tituloRepartoAvion` / `tituloHistoricoAvion`.
+- **Huecos conocidos del API** (no se parchan aquí): `PagoSocio` no trae
+  `socio_nombre` (se resuelve con `socios[]` de la misma respuesta; si el
+  socio ya no está en el reparto del periodo sale «Socio»); el histórico se
+  calcula en vivo mes a mes (no lee snapshots de cierres); `saldo_inicial_usd`
+  no vuelve en ninguna respuesta.
+- Tests que fijan esto: `reparto-avion.test.ts` (26), `reparto-avion-pantalla
+  .test.tsx` (19), `reparto-pagos.test.ts` (71, reescrita), `reparto-pesos`
+  (lib y tsx; golden regenerable con `ACTUALIZAR_GOLDEN=1`: `kpi` quedó byte a
+  byte, solo las cards cambian), `cuentas-socios`, `entrega-socio-dialog`,
+  `pre-cierre-resolver-card`, `cuenta-socios-actions`, `titulos-pestana*`.
+- Paridad con el repo hermano en Windows: `conciliacion-balance.test.ts` lee
+  pyservices normalizando CRLF → LF (con `core.autocrlf` el `indexOf` de un
+  bloque multilínea fallaba solo aquí).
+
+## Cierre de mes: «Se queda en <mes>» para los cobrados después del corte (21-oct-2026, API 0.0.102, invariante 102 del API)
+
+Pedido del cliente: «ya se cobraron varios… en octubre pero aún no se
+cierra, que dé la opción de poder incluirlos en septiembre».
+- En el diálogo «Cerrar <mes>», la tabla de los que pasan trae la columna
+  «Se queda en sep 2026» con una casilla SOLO en las filas `COBRO_POSTERIOR`
+  (`puedeQuedarseEnMes`; las demás pintan «—»: sin cobro completo pasan).
+  Cada cambio relee la previa con `previaCierreAction(mes, incluir)`
+  (`GET …/previa?incluir=id,id`): los marcados salen de «pasan», entran en
+  la tabla «Se quedan en septiembre 2026 (cobrados después del corte)»
+  (`vuelos_incluidos`, leyenda «Se queda en …») y el reparto antes/después
+  se recalcula en el servidor. Mientras relee: «Recalculando la previa…» y
+  casillas deshabilitadas; un fallo al releer no tira la previa anterior.
+- `cerrarMesAction(mes, idsVistosEnPrevia(previa), incluir)`:
+  `vuelos_esperados` = los que pasan + los que se quedan (el API compara
+  contra la lista completa; 409 `PREVIA_CAMBIO` si cambió) e
+  `incluir_vuelos` solo con ids válidos y solo si hay alguno. Toast:
+  `textoToastCerrado(mes, diferidos, destino, incluidos)`.
+- Reglas y textos en `lib/admin/cierre-mes.ts` (`puedeQuedarseEnMes`,
+  `textoQuedarseEnMes`, `tituloVuelosQueSeQuedan`, `notaQuedarseEnMes`,
+  `idsVistosEnPrevia`; `normalizarPrevia` lee `vuelos_incluidos` y
+  `totales.incluidos` con [] / 0 en un API previo). Tests:
+  `lib/admin/__tests__/cierre-mes.test.ts`, `app/admin/reportes/__tests__/
+  cierre-actions.test.ts`, `components/admin/reportes/__tests__/cierre-mes-
+  ui.test.tsx`.
+
+## Compras: registrar → recibir → registrar gasto; refacción = gasto normal (21-oct-2026, API 0.0.102, invariante 101 del API)
+
+Pedido del cliente: quitar «¿a dónde va la refacción?», registrar la entrada
+en Inventario cuando la pieza llega aunque el gasto ya exista, vincular ese
+gasto, vender al avión en pesos, y que el gasto de una compra solo nazca con
+«Registrar gasto» y T.C. obligatorio.
+- **Alta de gasto**: sin «¿A dónde va la refacción?» ni bloque `inventario`
+  (ni en `schema.ts`, ni en `actions.ts`; `lib/admin/refaccion-inventario.ts`
+  y sus tests se borraron). Categoría Refacción pinta la nota de
+  `lib/admin/refaccion-alta.ts` (`notaRefaccionAlta({conAvion})`); sin avión
+  se guarda (gasto de la empresa). El único freno de fecha antes de la
+  confirmación es `errorFechaFuturaConCargos` (cargos del banco). Golden
+  `alta-gasto.golden.json` regenerado solo en `refaccion` y `vuelo`.
+- **Fuente única PURA `lib/admin/compras-estado.ts`** (test
+  `__tests__/compras-estado.test.ts`): pestañas (`FiltroCompras` =
+  por-recibir | sin-gasto | completas | todas en `titulos-pestana.ts`;
+  `filtroComprasDeUrl`, `filtrarComprasPorPestana`, `contarPestanasCompras`),
+  badges `recepcionDe`/`gastoDe` (con API previo sin `gasto_estado`: «N
+  pagos ligados»/«Sin pagos» en gris, nunca «Sin gasto registrado»), «Sin
+  líneas» + `puedeEliminarDesdeLista` (solo ABIERTA sin líneas),
+  `pasosCompra`/`accionSiguiente` (Registrada → Recibida → Gasto; la acción
+  que sigue va en primario), `validarTcCompra` (banda 15–25 y textos espejo
+  del API, con prueba de paridad que lee `compra-gasto.util.ts`),
+  `textoEquivalente` (informativo), textos de los diálogos y toasts,
+  `cuerpoRegistrarCompra`. El panel NO calcula estados ni totales.
+- **Pantallas**: `compras/page.tsx` lee TODAS las compras
+  (`listComprasTodas`, sin cap 200) y reparte pestañas con la regla pura;
+  `compras-table.tsx` (Recepción · Gasto · Líneas/«Sin líneas» +
+  `CompraEliminarDialog`); `compra-registrar-dialog.tsx` (sustituye a
+  `compra-nueva-button.tsx`); detalle con `compra-pasos.tsx`,
+  `compra-actions.tsx` («Ya llegó: recibir en bodega», «Registrar gasto»,
+  «Vincular gasto ya registrado»), `compra-registrar-gasto-dialog.tsx`
+  (monto del API de solo lectura, T.C. obligatorio prellenado con el de la
+  compra o `getTipoCambioOficial()`, confirmación de dinero, 409
+  `COMPRA_GASTO_YA_REGISTRADO` ⇒ aviso + refresh; el formulario se monta solo
+  abierto: sin setState en efectos), `gasto-candidato-selector.tsx`
+  (candidatos del API con búsqueda y fechas; «Reintentar», jamás «no hay
+  gastos») usado por `compra-pago-add-dialog.tsx` y por la ENTRADA de
+  `movimiento-dialog.tsx` (casilla «Vincular con un gasto ya registrado»:
+  guarda con `entradaDesdeGastoAction`, sin costo tecleado).
+- **Server actions** (`app/admin/inventory/compras/actions.ts`):
+  `registrarGastoCompraAction` (revalida compras, inventario, gastos, vuelos
+  y caja chica), `entradaDesdeGastoAction`, `listGastosCandidatosCompraAction`
+  (no revalida); `listGastosSinCompraAction` se retiró. `ActionResult` gana
+  `status`/`code`.
+- **Salida en pesos** (`lib/admin/inventario-salida.ts`):
+  `ventaInicialSalida({precioVenta, precioVentaMoneda, tcHoy})` decide el
+  default (MXN; USD de la ficha ⇒ sugerido en pesos con el T.C. de hoy y
+  nota; sin T.C. queda en USD y lo dice), `textoEquivalenteUsdVenta`,
+  `NOTA_VENTA_EN_PESOS`; `MovimientoDialog`/`MovimientoButton`/`ItemActions`/
+  `ItemsTable` reciben `tcHoy`. Tests: `inventario-salida.test.ts`,
+  `inventory/__tests__/movimiento-entrada-gasto.test.tsx`,
+  `compras/__tests__/compras-ui.test.tsx`.
+- **Orden de deploy**: API antes que el panel (con un API previo, «Registrar
+  gasto» y los candidatos responden que la ruta no existe; la pestaña «Sin
+  gasto» sale vacía y el badge en gris).

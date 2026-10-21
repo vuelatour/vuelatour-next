@@ -107,6 +107,7 @@ describe("card del avión (render)", () => {
     expect(html).toContain("Otros ingresos del avión");
     expect(html).toContain("reembolsos y ventas registrados en Ingresos con este avión, netos de comisión");
     expect(html).toMatch(/text-emerald-600 dark:text-emerald-400">\$2,586\.16</);
+    expect(html).toContain('data-fila-cascada="otros_ingresos"');
     // La fila de la cascada (el badge del TC oficial también lo nombra en su title).
     const venta = html.indexOf("Venta del avión cobrada");
     const otros = html.indexOf("Otros ingresos del avión<span");
@@ -182,9 +183,12 @@ describe("KpiStrip", () => {
   });
 });
 
-describe("cableado del tablero ejecutivo y de la card", () => {
+describe("cableado del tablero ejecutivo y de la cascada", () => {
   const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
   const dashboards = leer("../../../../app/admin/dashboards/page.tsx");
+  // La cascada se mudó de la card a `lib/admin/reparto-avion.ts` +
+  // `cascada-avion.tsx` (20-oct-2026): la card y la pantalla del avión la comparten.
+  const cascada = leer("../../../../lib/admin/reparto-avion.ts") + leer("../cascada-avion.tsx");
   const tarjeta = leer("../avion-reparto-card.tsx");
 
   it("KPI «Ingresos cobrados» con su hint y la celda por avión con «+ $X otros»", () => {
@@ -197,10 +201,12 @@ describe("cableado del tablero ejecutivo y de la card", () => {
   });
 
   it("la fila sale SOLO con > 0 y los textos de la fuente única", () => {
-    expect(tarjeta).toContain("(avion.ingresos.otros_ingresos_avion_usd ?? 0) > 0 &&");
-    expect(tarjeta).toContain("label={ETIQUETA_FILA_OTROS_INGRESOS_AVION}");
-    expect(tarjeta).toContain("sublabel={SUBLABEL_OTROS_INGRESOS_AVION}");
-    expect(tarjeta).toContain("title={tituloOtrosIngresosAvion(detalle?.otros_ingresos_avion)}");
+    expect(cascada).toContain("if ((avion.ingresos.otros_ingresos_avion_usd ?? 0) > 0) {");
+    expect(cascada).toContain("otrosIngresos: ETIQUETA_FILA_OTROS_INGRESOS_AVION");
+    expect(cascada).toContain("{ sublabel: SUBLABEL_OTROS_INGRESOS_AVION }");
+    expect(cascada).toContain("tituloOtrosIngresosAvion(detalle?.otros_ingresos_avion)");
+    expect(cascada).not.toContain('"Otros ingresos del avión"');
+    expect(tarjeta).toContain("<CascadaAvion avion={avion} enPesos={enPesos} comoBalance={comoBalance} compacta />");
     expect(tarjeta).not.toContain('"Otros ingresos del avión"');
   });
 });

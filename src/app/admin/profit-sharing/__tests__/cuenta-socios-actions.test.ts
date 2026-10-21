@@ -26,14 +26,20 @@ vi.mock("@/lib/api/server", () => ({ apiServer: (...a: unknown[]) => apiServer(.
 vi.mock("next/cache", () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a) }));
 
 const {
+  cambiarDescuentoReservaAction,
   configurarCuentaSocioAction,
   crearPagoSocioAction,
   editarPagoSocioAction,
   eliminarPagoSocioAction,
 } = await import("../actions");
-const { getContextoRegistro, getEntregasAntesDelArranque, getEstadoCuentaSocio, getSociosCuenta } = await import(
-  "@/lib/api/profit-sharing-server"
-);
+const {
+  getAvionDetalle,
+  getAvionHistorico,
+  getContextoRegistro,
+  getEntregasAntesDelArranque,
+  getEstadoCuentaSocio,
+  getSociosCuenta,
+} = await import("@/lib/api/profit-sharing-server");
 
 const MAURICIO = "50c10000-0000-4000-8000-000000000001";
 const N4142R = "a1a1a1a1-0000-4000-8000-000000000001";
@@ -51,8 +57,10 @@ const PAGO_API = {
   moneda: "MXN",
   tc_usd_mxn: "18.500000",
   monto_usd: "3783.78",
+  monto_mxn: "70000",
   utilidad_snapshot_usd: null,
   saldo_snapshot_usd: "1395.94",
+  saldo_snapshot_mxn: "25824.87",
   fecha_pago: "2026-10-01",
   metodo: "EFECTIVO",
   referencia: null,
@@ -69,13 +77,13 @@ const PAGO_API = {
 };
 const CUENTA_API = {
   socio: { id: MAURICIO, nombre: "Mauricio Roque", rol: "SOCIO", estado: "ACTIVO" },
-  cuenta: { cuenta_desde: "2026-09", saldo_inicial_usd: 0, notas: null, configurada: false },
-  generado_usd: 1395.94,
-  mes_en_curso_usd: 0,
-  entregado_usd: 3783.78,
-  por_entregar_usd: -2387.84,
+  cuenta: { cuenta_desde: "2026-09", saldo_inicial_mxn: 0, notas: null, configurada: false },
+  generado_mxn: 1395.94,
+  mes_en_curso_mxn: 0,
+  entregado_mxn: 3783.78,
+  por_entregar_mxn: -2387.84,
   estado: "ADELANTADO",
-  ultimo_pago: { id: PAGO, fecha_pago: "2026-10-01", monto: 70000, moneda: "MXN", monto_usd: 3783.78, metodo: "EFECTIVO" },
+  ultimo_pago: { id: PAGO, fecha_pago: "2026-10-01", monto: 70000, moneda: "MXN", monto_mxn: 70000, monto_usd: 3783.78, metodo: "EFECTIVO" },
   aviones: [{ id: N4142R, matricula: "N4142R", porcentaje: 69, vigente: true }],
 };
 
@@ -83,6 +91,9 @@ const RUTAS_REVALIDADAS = [
   ["/admin/profit-sharing"],
   ["/admin/profit-sharing/socios"],
   ["/admin/profit-sharing/socios/[id]", "page"],
+  // Pantalla por avión y su histórico (20-oct-2026): enseñan lo entregado por avión.
+  ["/admin/profit-sharing/aviones/[id]", "page"],
+  ["/admin/profit-sharing/aviones/[id]/historico", "page"],
 ];
 
 beforeEach(() => {
@@ -106,8 +117,14 @@ describe("crearPagoSocioAction (registrar entrega)", () => {
     const r = await crearPagoSocioAction(cuerpo);
     expect(apiServer).toHaveBeenCalledWith("/v1/profit-sharing/pagos", { method: "POST", body: cuerpo });
     expect(r.ok).toBe(true);
-    expect(r.data?.pago).toMatchObject({ monto: 70000, monto_usd: 3783.78, tc_usd_mxn: 18.5 });
-    expect(r.data?.cuenta).toMatchObject({ por_entregar_usd: -2387.84, estado: "ADELANTADO" });
+    expect(r.data?.pago).toMatchObject({
+      monto: 70000,
+      monto_usd: 3783.78,
+      monto_mxn: 70000,
+      saldo_snapshot_mxn: 25824.87,
+      tc_usd_mxn: 18.5,
+    });
+    expect(r.data?.cuenta).toMatchObject({ por_entregar_mxn: -2387.84, estado: "ADELANTADO" });
     expect(revalidatePath.mock.calls).toEqual(RUTAS_REVALIDADAS);
   });
 
@@ -119,8 +136,14 @@ describe("crearPagoSocioAction (registrar entrega)", () => {
     expect(r).toMatchObject({ ok: false, code: "SIN_CONFIRMACION" });
   });
 
-  it("409 PAGO_EXCEDE_SALDO conserva code y details (la confirmación del adelanto los lee)", async () => {
-    const details = { por_entregar_usd: 1395.94, monto_usd: 3783.78, exceso_usd: 2387.84 };
+  it("409 PAGO_EXCEDE_SALDO conserva code y details EN PESOS (la confirmación del adelanto los lee)", async () => {
+    const details = {
+      por_entregar_mxn: 1395.94,
+      mes_en_curso_mxn: 0,
+      monto_mxn: 3783.78,
+      exceso_mxn: 2387.84,
+      saldo_despues_mxn: -2387.84,
+    };
     apiServer.mockRejectedValueOnce(
       new ApiError({ statusCode: 409, code: "PAGO_EXCEDE_SALDO", message: "Esta entrega…", details }),
     );
@@ -184,8 +207,8 @@ describe("editar / eliminar entrega", () => {
 
 describe("configurarCuentaSocioAction («Configurar cuenta»)", () => {
   it("PUT /socios/:id/cuenta; responde el renglón del socio y revalida", async () => {
-    apiServer.mockResolvedValueOnce({ ...CUENTA_API, cuenta: { cuenta_desde: "2026-06", saldo_inicial_usd: -1500.5, notas: null, configurada: true } });
-    const body = { cuenta_desde: "2026-06", saldo_inicial_usd: -1500.5, notas: null };
+    apiServer.mockResolvedValueOnce({ ...CUENTA_API, cuenta: { cuenta_desde: "2026-06", saldo_inicial_mxn: -1500.5, notas: null, configurada: true } });
+    const body = { cuenta_desde: "2026-06", saldo_inicial_mxn: -1500.5, notas: null };
     const r = await configurarCuentaSocioAction(MAURICIO, body);
     expect(apiServer).toHaveBeenCalledWith(`/v1/profit-sharing/socios/${MAURICIO}/cuenta`, {
       method: "PUT",
@@ -196,15 +219,15 @@ describe("configurarCuentaSocioAction («Configurar cuenta»)", () => {
   });
 
   it("socio o mes inválido no llegan al API; el error del API sale en es-MX", async () => {
-    expect((await configurarCuentaSocioAction("x", { cuenta_desde: "2026-06", saldo_inicial_usd: 0 })).ok).toBe(false);
-    expect((await configurarCuentaSocioAction(MAURICIO, { cuenta_desde: "2026-6", saldo_inicial_usd: 0 })).ok).toBe(
+    expect((await configurarCuentaSocioAction("x", { cuenta_desde: "2026-06", saldo_inicial_mxn: 0 })).ok).toBe(false);
+    expect((await configurarCuentaSocioAction(MAURICIO, { cuenta_desde: "2026-6", saldo_inicial_mxn: 0 })).ok).toBe(
       false,
     );
     expect(apiServer).not.toHaveBeenCalled();
     apiServer.mockRejectedValueOnce(
       new ApiError({ statusCode: 400, code: "CUENTA_DESDE_FUTURA", message: "La cuenta no puede arrancar en un mes futuro: elige el mes en curso o uno anterior." }),
     );
-    const r = await configurarCuentaSocioAction(MAURICIO, { cuenta_desde: "2026-11", saldo_inicial_usd: 0 });
+    const r = await configurarCuentaSocioAction(MAURICIO, { cuenta_desde: "2026-11", saldo_inicial_mxn: 0 });
     expect(r.error).toBe("La cuenta no puede arrancar en un mes futuro: elige el mes en curso o uno anterior.");
   });
 });
@@ -215,7 +238,7 @@ describe("getSociosCuenta (nunca lanza)", () => {
     const r = await getSociosCuenta();
     expect(apiServer).toHaveBeenCalledWith("/v1/profit-sharing/socios", { cache: "no-store" });
     expect(r.estado).toBe("ok");
-    if (r.estado === "ok") expect(r.datos.socios[0].por_entregar_usd).toBe(-2387.84);
+    if (r.estado === "ok") expect(r.datos.socios[0].por_entregar_mxn).toBe(-2387.84);
   });
 
   it("sin la migración (`disponible:false` o 503 con su código) y API previo (404 «Cannot GET») ⇒ no-disponible", async () => {
@@ -248,13 +271,13 @@ describe("getEstadoCuentaSocio (nunca lanza)", () => {
   const ESTADO = {
     disponible: true,
     socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-    cuenta: { cuenta_desde: "2026-09", saldo_inicial_usd: 0, notas: null, configurada: false },
+    cuenta: { cuenta_desde: "2026-09", saldo_inicial_mxn: 0, notas: null, configurada: false },
     desde: "2026-09",
     hasta: "2026-10",
-    saldo_anterior_usd: 0,
+    saldo_anterior_mxn: 0,
     movimientos: [],
     por_mes: [],
-    totales: { generado_usd: 0, entregado_usd: 0, por_entregar_usd: 0, estado: "AL_CORRIENTE" },
+    totales: { generado_mxn: 0, entregado_mxn: 0, por_entregar_mxn: 0, estado: "AL_CORRIENTE" },
   };
 
   it("solo manda el filtro válido; sin filtro el API pone su default", async () => {
@@ -382,5 +405,205 @@ describe("getContextoRegistro (lista de «Entregó» y T.C. oficial de hoy)", ()
     const r2 = await getContextoRegistro({ ...ME, rol: "ADMIN" }, degradado);
     expect(r2.usuarios).toEqual([]);
     expect(degradado.faltantes).toEqual(["la lista de personas que entregan"]);
+  });
+});
+
+// =============================================================================
+// PANTALLA POR AVIÓN (20-oct-2026, API 0.0.101, invariante 99)
+// =============================================================================
+
+const N621TX = "a1a1a1a1-0000-4000-8000-000000000621";
+const OWNER_1 = "0e0e0000-0000-4000-8000-000000000001";
+const OWNER_2 = "0e0e0000-0000-4000-8000-000000000002";
+const PERIODO = { desde: "2026-09-01", hasta: "2026-09-30" };
+
+const AVION_API = {
+  periodo: PERIODO,
+  reparto_en_pesos: true,
+  reparto_como_balance: true,
+  avion: {
+    aeronave: { id: N621TX, matricula: "N621TX", modelo: "Cessna 421C" },
+    ingresos: { cobrado_usd: 12000, comisiones_venta_usd: 0, pendiente_cobro_usd: 0, vuelos_cobrados: 2, vuelos_pendientes: 0, cobros_sin_tc_mxn: 0 },
+    horas_voladas_hr: 12.5,
+    gastos: { directos_usd: 4000, indirectos_usd: 800, permisos_usd: 150, otros_prorrateados_usd: 600, gastos_sin_tc_count: 0, gastos_sin_tc_mxn: 0 },
+    reserva_overhaul_usd: 500,
+    reserva_overhaul_incompleta: false,
+    saldo_disponible_usd: 6250,
+    afac_reservado_usd: 200,
+    reparto: [],
+    reparto_porcentaje_total: 100,
+    detalle: { vuelos: [], gastos_por_categoria: [], reserva: { horas_hr: 12.5, tarifa_hora_usd: 40, monto_usd: 500 }, gastos: [] },
+  },
+  socios: [
+    {
+      socio_id: MAURICIO,
+      socio_nombre: "Mauricio Roque",
+      porcentaje: "69",
+      utilidad_mxn: "74393.44",
+      reserva_mxn: "5951.25",
+      descuenta_reserva: true,
+      monto_mxn: "68442.19",
+      entregado_mxn: "20000",
+      por_entregar_mxn: "48442.19",
+      monto_usd: "3967.95",
+      reserva_usd: "345",
+    },
+  ],
+  entregas: [{ ...PAGO_API, aeronave_id: N621TX, aeronave: { id: N621TX, matricula: "N621TX" }, monto: "20000", monto_mxn: "20000", monto_usd: "1081.08" }],
+  tc_oficial: { vuelos: 0, gastos: { count: 0, monto_mxn: 0 }, fuentes: [], leyenda: "x" },
+  gastos_sin_tc: { count: 0, monto_mxn: 0 },
+};
+
+describe("cambiarDescuentoReservaAction (si se le descuenta la reserva, solo ADMIN)", () => {
+  it("PATCH /v1/aircraft/owners/:id con { descontar_reserva_overhaul } por cada renglón y revalida reparto, avión, cuentas y ficha", async () => {
+    apiServer.mockResolvedValue({ id: OWNER_1 });
+    const r = await cambiarDescuentoReservaAction(N621TX, [OWNER_1, OWNER_2, OWNER_1], true);
+    expect(r).toEqual({ ok: true, data: { aplicados: 2 } });
+    expect(apiServer).toHaveBeenCalledTimes(2);
+    expect(apiServer).toHaveBeenNthCalledWith(1, `/v1/aircraft/owners/${OWNER_1}`, {
+      method: "PATCH",
+      body: { descontar_reserva_overhaul: true },
+    });
+    expect(apiServer).toHaveBeenNthCalledWith(2, `/v1/aircraft/owners/${OWNER_2}`, {
+      method: "PATCH",
+      body: { descontar_reserva_overhaul: true },
+    });
+    expect(revalidatePath.mock.calls).toEqual([...RUTAS_REVALIDADAS, [`/admin/aircraft/${N621TX}`]]);
+  });
+
+  it("ids inválidos o sin renglón no llegan al API", async () => {
+    expect((await cambiarDescuentoReservaAction("x", [OWNER_1], false)).ok).toBe(false);
+    expect((await cambiarDescuentoReservaAction(N621TX, [], false)).ok).toBe(false);
+    expect((await cambiarDescuentoReservaAction(N621TX, ["nada"], false)).ok).toBe(false);
+    expect(apiServer).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("403 en es-MX; un fallo a medias dice cuántos renglones sí se aplicaron (y revalida)", async () => {
+    apiServer.mockRejectedValueOnce(new ApiError({ statusCode: 403, code: "FORBIDDEN", message: "Forbidden" }));
+    const r = await cambiarDescuentoReservaAction(N621TX, [OWNER_1], true);
+    expect(r).toMatchObject({ ok: false, status: 403 });
+    expect(r.error).toBe("Solo administración puede cambiar si se descuenta la reserva.");
+    expect(revalidatePath).not.toHaveBeenCalled();
+
+    apiServer.mockReset();
+    apiServer.mockResolvedValueOnce({ id: OWNER_1 }).mockRejectedValueOnce(new TypeError("fetch failed"));
+    const parcial = await cambiarDescuentoReservaAction(N621TX, [OWNER_1, OWNER_2], false);
+    expect(parcial.ok).toBe(false);
+    expect(parcial.error).toContain("Se aplicó en 1 de 2 renglones: recarga la página.");
+    expect(revalidatePath).toHaveBeenCalled();
+  });
+});
+
+describe("getAvionDetalle (nunca lanza)", () => {
+  it("GET /v1/profit-sharing/aviones/:id?desde&hasta con forma sana (socios y entregas normalizados)", async () => {
+    apiServer.mockResolvedValueOnce(AVION_API);
+    const r = await getAvionDetalle(N621TX, PERIODO);
+    expect(apiServer).toHaveBeenCalledWith(`/v1/profit-sharing/aviones/${N621TX}`, {
+      searchParams: PERIODO,
+      cache: "no-store",
+    });
+    expect(r.estado).toBe("ok");
+    if (r.estado !== "ok") return;
+    expect(r.datos.avion.aeronave.matricula).toBe("N621TX");
+    expect(r.datos.socios[0]).toMatchObject({
+      porcentaje: 69,
+      utilidad_mxn: 74393.44,
+      descuenta_reserva: true,
+      por_entregar_mxn: 48442.19,
+    });
+    expect(r.datos.entregas[0]).toMatchObject({ monto: 20000, monto_mxn: 20000, aeronave: { id: N621TX, matricula: "N621TX" } });
+  });
+
+  it("id que no es uuid ⇒ no-existe sin llamar; 404 AERONAVE_NO_EXISTE ⇒ no-existe; 404 «Cannot GET» ⇒ no-disponible", async () => {
+    expect((await getAvionDetalle("x", PERIODO)).estado).toBe("no-existe");
+    expect(apiServer).not.toHaveBeenCalled();
+    apiServer.mockRejectedValueOnce(
+      new ApiError({ statusCode: 404, code: "AERONAVE_NO_EXISTE", message: "Ese avión no existe o está dado de baja." }),
+    );
+    expect((await getAvionDetalle(N621TX, PERIODO)).estado).toBe("no-existe");
+    apiServer.mockRejectedValueOnce(
+      new ApiError({ statusCode: 404, code: "NOT_FOUND", message: `Cannot GET /v1/profit-sharing/aviones/${N621TX}` }),
+    );
+    expect((await getAvionDetalle(N621TX, PERIODO)).estado).toBe("no-disponible");
+  });
+
+  it("403 ⇒ sin-permiso; 500 o basura ⇒ error (jamás «sin datos»)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    apiServer.mockRejectedValueOnce(new ApiError({ statusCode: 403, code: "FORBIDDEN", message: "Forbidden" }));
+    expect((await getAvionDetalle(N621TX, PERIODO)).estado).toBe("sin-permiso");
+    apiServer.mockRejectedValueOnce(new ApiError({ statusCode: 500, code: "X", message: "boom" }));
+    expect((await getAvionDetalle(N621TX, PERIODO)).estado).toBe("error");
+    apiServer.mockResolvedValueOnce({ avion: {} });
+    expect((await getAvionDetalle(N621TX, PERIODO)).estado).toBe("error");
+  });
+});
+
+describe("getAvionHistorico (nunca lanza)", () => {
+  const HISTORICO = {
+    aeronave: { id: N621TX, matricula: "N621TX", modelo: "Cessna 421C" },
+    desde: "2026-09",
+    hasta: "2026-10",
+    mes_actual: "2026-10",
+    reparto_en_pesos: true,
+    reparto_como_balance: true,
+    meses: [
+      {
+        mes: "2026-09",
+        en_curso: false,
+        horas_voladas_hr: "12.5",
+        vuelos: 2,
+        cobrado_mxn: "210811.73",
+        saldo_mxn: "100000",
+        reserva_mxn: "8625",
+        entregado_mxn: "20000",
+        reparto: [],
+        cierre_estado: "CERRADO",
+      },
+    ],
+    totales: { horas_voladas_hr: 12.5, vuelos: 2, cobrado_mxn: 210811.73, saldo_mxn: 100000 },
+    socios: [
+      { socio_id: MAURICIO, socio_nombre: "Mauricio Roque", generado_mxn: "69000", reserva_mxn: "5951.25", entregado_mxn: "20000", por_entregar_mxn: "49000" },
+    ],
+    entregas: [],
+  };
+
+  it("solo manda el filtro válido (meses); normaliza números que llegan como texto", async () => {
+    apiServer.mockResolvedValue(HISTORICO);
+    const r = await getAvionHistorico(N621TX, { desde: "2026-09", hasta: "nada" });
+    expect(apiServer).toHaveBeenCalledWith(`/v1/profit-sharing/aviones/${N621TX}/historico`, {
+      searchParams: { desde: "2026-09", hasta: undefined },
+      cache: "no-store",
+    });
+    expect(r.estado).toBe("ok");
+    if (r.estado !== "ok") return;
+    expect(r.datos.meses[0]).toMatchObject({
+      mes: "2026-09",
+      horas_voladas_hr: 12.5,
+      cobrado_mxn: 210811.73,
+      cierre_estado: "CERRADO",
+      afac_mxn: 0,
+    });
+    expect(r.datos.socios[0]).toMatchObject({ generado_mxn: 69000, por_entregar_mxn: 49000 });
+  });
+
+  it("400 RANGO_INVALIDO con filtro ⇒ se pide UNA vez sin filtro y se marca `filtroIgnorado`; sin filtro ⇒ error", async () => {
+    apiServer
+      .mockRejectedValueOnce(new ApiError({ statusCode: 400, code: "RANGO_INVALIDO", message: "x" }))
+      .mockResolvedValueOnce(HISTORICO);
+    const r = await getAvionHistorico(N621TX, { desde: "2026-10", hasta: "2026-09" });
+    expect(apiServer).toHaveBeenCalledTimes(2);
+    expect(r).toMatchObject({ estado: "ok", filtroIgnorado: true });
+    apiServer.mockReset();
+    apiServer.mockRejectedValue(new ApiError({ statusCode: 400, code: "RANGO_INVALIDO", message: "x" }));
+    expect((await getAvionHistorico(N621TX)).estado).toBe("error");
+    expect(apiServer).toHaveBeenCalledTimes(1);
+  });
+
+  it("id inválido ⇒ no-existe sin llamar; 404 AERONAVE_NO_EXISTE ⇒ no-existe", async () => {
+    expect((await getAvionHistorico("x")).estado).toBe("no-existe");
+    expect(apiServer).not.toHaveBeenCalled();
+    apiServer.mockRejectedValueOnce(new ApiError({ statusCode: 404, code: "AERONAVE_NO_EXISTE", message: "x" }));
+    expect((await getAvionHistorico(N621TX)).estado).toBe("no-existe");
   });
 });

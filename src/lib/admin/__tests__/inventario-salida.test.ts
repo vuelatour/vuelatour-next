@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ETIQUETA_A_COSTO,
   HINT_A_COSTO,
+  NOTA_VENTA_EN_PESOS,
   PLACEHOLDER_A_COSTO,
   etiquetaOrigenVenta,
   hintAvionSalida,
@@ -9,8 +10,10 @@ import {
   hintVentaSalida,
   placeholderVenta,
   textoPrecioVentaProducto,
+  textoEquivalenteUsdVenta,
   textoSalidaRegistrada,
   ventaDelFormulario,
+  ventaInicialSalida,
 } from "../inventario-salida";
 
 /**
@@ -197,5 +200,57 @@ describe("textoSalidaRegistrada · toast de éxito", () => {
     expect(textoSalidaRegistrada({ gasto_generado: null }, "XA-VGV")).toBe(
       "Salida registrada · sin cargo al avión (la pieza no tiene costo capturado).",
     );
+  });
+});
+
+/**
+ * La salida al avión se cobra EN PESOS (21-oct-2026): la moneda de la venta
+ * arranca en MXN; un precio de ficha en dólares se sugiere en pesos con el
+ * T.C. oficial de hoy (y se dice); sin T.C. queda en USD (y se dice).
+ */
+describe("ventaInicialSalida · pesos por default", () => {
+  it("sin precio en la ficha: vacío y en MXN, sin nota", () => {
+    expect(ventaInicialSalida({ precioVenta: null, precioVentaMoneda: null, tcHoy: 18.2 })).toEqual({
+      venta_unitaria: "",
+      venta_moneda: "MXN",
+      nota: null,
+    });
+    expect(ventaInicialSalida({ precioVenta: 0, precioVentaMoneda: "USD", tcHoy: 18.2 }).venta_moneda).toBe("MXN");
+  });
+
+  it("precio en pesos: tal cual", () => {
+    expect(ventaInicialSalida({ precioVenta: 450, precioVentaMoneda: "MXN", tcHoy: 18.2 })).toEqual({
+      venta_unitaria: "450",
+      venta_moneda: "MXN",
+      nota: null,
+    });
+    // Sin moneda guardada (ficha vieja) también es pesos.
+    expect(ventaInicialSalida({ precioVenta: 450, precioVentaMoneda: null, tcHoy: null }).venta_moneda).toBe("MXN");
+  });
+
+  it("precio en dólares + T.C. de hoy ⇒ sugerido en pesos a centavos, con la cuenta a la vista", () => {
+    const r = ventaInicialSalida({ precioVenta: 62.5, precioVentaMoneda: "USD", tcHoy: 18.2345 });
+    expect(r).toEqual({
+      venta_unitaria: "1139.66",
+      venta_moneda: "MXN",
+      nota: "Precio de la ficha $62.50 USD × T.C. oficial de hoy 18.2345 = $1,139.66 MXN (sugerido; edítalo si cobras otro).",
+    });
+  });
+
+  it("precio en dólares SIN T.C. ⇒ se queda en USD (no se rompe) y se dice", () => {
+    const r = ventaInicialSalida({ precioVenta: 62.5, precioVentaMoneda: "USD", tcHoy: null });
+    expect(r.venta_moneda).toBe("USD");
+    expect(r.venta_unitaria).toBe("62.5");
+    expect(r.nota).toContain("no hay T.C. oficial de hoy");
+  });
+
+  it("el equivalente en dólares es solo informativo: en pesos con T.C.; nunca en USD ni sin precio", () => {
+    expect(textoEquivalenteUsdVenta({ venta: "1139.66", moneda: "MXN", tcHoy: 18.2345 })).toBe(
+      "≈ $62.50 USD al T.C. oficial de hoy (18.2345)",
+    );
+    expect(textoEquivalenteUsdVenta({ venta: "62.5", moneda: "USD", tcHoy: 18.2345 })).toBeNull();
+    expect(textoEquivalenteUsdVenta({ venta: "", moneda: "MXN", tcHoy: 18.2345 })).toBeNull();
+    expect(textoEquivalenteUsdVenta({ venta: "100", moneda: "MXN", tcHoy: null })).toBeNull();
+    expect(NOTA_VENTA_EN_PESOS).toContain("pesos");
   });
 });

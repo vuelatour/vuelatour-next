@@ -47,9 +47,12 @@ export const getCierres = cache(async (): Promise<CargaCierres<CierresRespuesta>
 });
 
 /** `GET /v1/cierres/:periodo/previa`: qué pasaría al cerrar (lectura pesada). */
-export async function getPreviaCierre(periodo: string): Promise<CargaCierres<PreviaCierre>> {
+export async function getPreviaCierre(periodo: string, incluir: string[] = []): Promise<CargaCierres<PreviaCierre>> {
   try {
-    const raw = await apiServer<unknown>(`/v1/cierres/${periodo}/previa`, { cache: "no-store" });
+    // INCLUIR EN EL MES (21-oct-2026): la previa se recalcula con los vuelos
+    // que la oficina marcó para quedarse (`?incluir=id,id`).
+    const q = incluir.length > 0 ? `?incluir=${encodeURIComponent(incluir.join(","))}` : "";
+    const raw = await apiServer<unknown>(`/v1/cierres/${periodo}/previa${q}`, { cache: "no-store" });
     const datos = normalizarPrevia(raw);
     if (!datos) {
       if (raw && typeof raw === "object" && (raw as { disponible?: unknown }).disponible === false) {

@@ -68,6 +68,12 @@ import {
   tituloVuelosQueVienen,
   ultimoDiaCorto,
   validarMotivoReabrir,
+  idsVistosEnPrevia,
+  mesCorto,
+  notaQuedarseEnMes,
+  puedeQuedarseEnMes,
+  textoQuedarseEnMes,
+  tituloVuelosQueSeQuedan,
 } from "@/lib/admin/cierre-mes";
 import { sumarMeses } from "@/lib/admin/reparto-pagos";
 import {
@@ -172,24 +178,41 @@ function DialogoCerrar({
   const [entiendo, setEntiendo] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // INCLUIR EN EL MES (21-oct-2026): los vuelos cobrados después del corte
+  // que la oficina marcó para quedarse; cada cambio relee la previa.
+  const [incluir, setIncluir] = useState<string[]>([]);
+  const [recalculando, setRecalculando] = useState(false);
   const enviandoRef = useRef(false);
   const refrescarAlCerrar = useRef(false);
+  // ¿Ya hubo una previa? (se escribe en el efecto, nunca en el render).
+  const cargadaRef = useRef(false);
 
   // La previa se pide al montar (el diálogo se monta al abrir y se desmonta
-  // al cerrar: cada apertura relee).
+  // al cerrar: cada apertura relee) y cada vez que cambia `incluir`.
   useEffect(() => {
     let vivo = true;
-    void previaCierreAction(mes)
+    const primera = !cargadaRef.current;
+    if (!primera) setRecalculando(true);
+    void previaCierreAction(mes, incluir)
       .catch(() => ({ ok: false as const, error: PREVIA_SIN_RESPUESTA, data: undefined }))
       .then((r) => {
         if (!vivo) return;
-        if (r.ok && r.data) setEstado({ tipo: "ok", previa: r.data, cambio: false });
-        else setEstado({ tipo: "error", texto: r.error || PREVIA_SIN_RESPUESTA });
+        setRecalculando(false);
+        if (r.ok && r.data) {
+          cargadaRef.current = true;
+          setEstado({ tipo: "ok", previa: r.data, cambio: false });
+        } else if (primera) setEstado({ tipo: "error", texto: r.error || PREVIA_SIN_RESPUESTA });
+        else setError(r.error || PREVIA_SIN_RESPUESTA);
       });
     return () => {
       vivo = false;
     };
-  }, [mes]);
+  }, [mes, incluir]);
+
+  const cambiarQuedarse = (id: string, quedarse: boolean) => {
+    setError(null);
+    setIncluir((prev) => (quedarse ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)));
+  };
 
   const cambiarAbierto = (v: boolean) => {
     if (!v && enviandoRef.current) return;
@@ -210,17 +233,14 @@ function DialogoCerrar({
     enviandoRef.current = true;
     setEnviando(true);
     setError(null);
-    void cerrarMesAction(
-      mes,
-      previa.vuelos_que_pasan.map((v) => v.id),
-    )
+    void cerrarMesAction(mes, idsVistosEnPrevia(previa), incluir)
       .catch(sinRespuesta<ResultadoCerrarMes>)
       .then((r) => {
         enviandoRef.current = false;
         setEnviando(false);
         const d = decidirRespuestaCerrar(r, mes);
         if (d.tipo === "exito") {
-          toast.success(textoToastCerrado(mes, d.diferidos, destino));
+          toast.success(textoToastCerrado(mes, d.diferidos, destino, d.incluidos));
           refrescarAlCerrar.current = false;
           onOpenChange(false);
           router.refresh();
@@ -297,7 +317,28 @@ function DialogoCerrar({
               vacio={`Ningún vuelo pasa a ${mesEnMinuscula(destino)}: todo lo completado está cobrado al ${ultimoDiaCorto(mes)}.`}
               vuelos={previa.vuelos_que_pasan}
               corte={ultimoDiaCorto(mes)}
+              quedarse={{ mes, marcados: incluir, onCambiar: cambiarQuedarse, ocupado: recalculando || enviando }}
             />
+            {previa.vuelos_que_pasan.some(puedeQuedarseEnMes) && (
+              <p className="text-xs text-muted-foreground" data-nota-quedarse>
+                {notaQuedarseEnMes(mes, destino)}
+              </p>
+            )}
+            {(previa.vuelos_incluidos ?? []).length > 0 && (
+              <TablaVuelos
+                titulo={tituloVuelosQueSeQuedan(mes)}
+                vacio=""
+                vuelos={previa.vuelos_incluidos ?? []}
+                corte={ultimoDiaCorto(mes)}
+                clave="quedan"
+                quedarse={{ mes, marcados: incluir, onCambiar: cambiarQuedarse, ocupado: recalculando || enviando }}
+              />
+            )}
+            {recalculando && (
+              <p className="text-xs text-muted-foreground" role="status">
+                Recalculando la previa…
+              </p>
+            )}
 
             {previa.vuelos_que_vienen.length > 0 && (
               <TablaVuelos
@@ -387,15 +428,29 @@ function TablaVuelos({
   vuelos,
   corte,
   informativo = false,
+  clave,
+  quedarse,
 }: {
   titulo: string;
   vacio: string;
   vuelos: VueloDiferido[];
   corte: string;
   informativo?: boolean;
+  /** `data-vuelos-cierre` (default: «vienen» / «pasan»). */
+  clave?: string;
+  /**
+   * INCLUIR EN EL MES (21-oct-2026): la casilla «Se queda en <mes>» por fila
+   * (solo para los ya cobrados después del corte, `puedeQuedarseEnMes`).
+   */
+  quedarse?: {
+    mes: string;
+    marcados: readonly string[];
+    onCambiar: (id: string, quedarse: boolean) => void;
+    ocupado: boolean;
+  };
 }) {
   return (
-    <div className="space-y-1" data-vuelos-cierre={informativo ? "vienen" : "pasan"}>
+    <div className="space-y-1" data-vuelos-cierre={clave ?? (informativo ? "vienen" : "pasan")}>
       <p className="font-medium">
         {titulo} <span className="text-muted-foreground">· {vuelos.length}</span>
       </p>
@@ -420,6 +475,7 @@ function TablaVuelos({
                   {informativo ? "Por cobrar entonces" : `Por cobrar al ${corte}`}
                 </th>
                 {!informativo && <th className="px-2 py-1 text-right font-medium">Cobrado después</th>}
+                {quedarse && <th className="px-2 py-1 text-center font-medium">Se queda en {mesCorto(quedarse.mes)}</th>}
               </tr>
             </thead>
             <tbody>
@@ -445,6 +501,26 @@ function TablaVuelos({
                   </td>
                   {!informativo && (
                     <td className="whitespace-nowrap px-2 py-1 text-right font-mono">{textoCobradoPosterior(v)}</td>
+                  )}
+                  {quedarse && (
+                    <td className="px-2 py-1 text-center">
+                      {puedeQuedarseEnMes(v) ? (
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 cursor-pointer accent-brand-600"
+                          checked={quedarse.marcados.includes(v.id)}
+                          disabled={quedarse.ocupado}
+                          onChange={(e) => quedarse.onCambiar(v.id, e.target.checked)}
+                          aria-label={textoQuedarseEnMes(quedarse.mes, v)}
+                          title={textoQuedarseEnMes(quedarse.mes, v)}
+                          data-quedarse={v.id}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground" title="Sin cobro completo: pasa al mes siguiente">
+                          —
+                        </span>
+                      )}
+                    </td>
                   )}
                 </tr>
               ))}

@@ -8,14 +8,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { fmtDecimal, fmtUsd } from "@/lib/format";
+import { fmtDecimal } from "@/lib/format";
 import {
   ETIQUETA_ATAJO_CUENTA_SOCIO,
   TITULO_ATAJO_CUENTA_SOCIO,
   hrefCuentaSocioDesdeReparto,
 } from "@/lib/admin/reparto-pagos";
-import { montoPrincipal } from "@/lib/admin/reparto-pesos";
+import {
+  ETIQUETA_COLUMNA_A_RECIBIR,
+  TITULO_SE_DESCUENTA,
+  TITULO_SOLO_INFORMATIVA,
+  filasSociosReparto,
+  textoReservaSocio,
+} from "@/lib/admin/reparto-avion";
 import type { RepartoSocio } from "@/types/profit-sharing";
+import { MontoDobleCelda } from "./cascada-avion";
 
 /** Paleta fija del design system para distinguir socios (máx. 4 y cicla). */
 const PALETA = ["bg-brand-600", "bg-navy-500", "bg-navy-300", "bg-navy-700"];
@@ -31,17 +38,20 @@ function iniciales(nombre: string): string {
 
 /**
  * Reparto a socios de un avión: barra apilada de porcentajes + tabla «Socio ·
- * % · Utilidad del periodo». Los montos vienen del API (mismo saldo). Lo
- * entregado y lo por entregar NO van aquí: viven en la cuenta corriente de
- * cada socio («Socios · por entregar» arriba y «Pagos a socios»). Desde el
- * 2-oct-2026 el NOMBRE del socio es un atajo a esa cuenta (donde está
- * «Registrar entrega»): pedido del cliente «al lado del nombre del socio
- * puede mandar al detalle para pagar al socio». Quién ve el atajo lo decide
- * `hrefCuentaSocioDesdeReparto` (rol + usuario: un SOCIO solo la suya).
+ * % · A recibir». Los montos vienen del API (mismo saldo). Lo entregado y lo
+ * por entregar NO van aquí: viven en la pantalla del avión y en la cuenta
+ * corriente de cada socio («Socios · por entregar» arriba y «Pagos a
+ * socios»). Desde el 2-oct-2026 el NOMBRE del socio es un atajo a esa cuenta
+ * (donde está «Registrar entrega»): pedido del cliente «al lado del nombre
+ * del socio puede mandar al detalle para pagar al socio». Quién ve el atajo
+ * lo decide `hrefCuentaSocioDesdeReparto` (rol + usuario: un SOCIO solo la
+ * suya).
  *
- * Reparto EN PESOS (18-oct-2026, API 0.0.93): con `enPesos` la «Utilidad del
- * periodo» de cada socio es el `monto_mxn` del API (lo que se le transfiere)
- * y el `monto_usd` va debajo, en gris. La cuenta corriente sigue en dólares.
+ * Reparto EN PESOS (18-oct-2026, API 0.0.93): con `enPesos` lo que recibe
+ * cada socio es el `monto_mxn` del API (lo que se le transfiere) y el
+ * `monto_usd` va debajo, en gris. Cascada del balance (20-oct-2026, API
+ * 0.0.101): bajo el monto, su reserva de overhaul «se le descuenta» / «solo
+ * informativa» (`textoReservaSocio`).
  */
 export function SociosSection({
   socios,
@@ -50,6 +60,7 @@ export function SociosSection({
   rol = null,
   usuarioId = null,
   enPesos = false,
+  comoBalance = false,
 }: {
   socios: RepartoSocio[];
   porcentajeTotal: number;
@@ -59,6 +70,8 @@ export function SociosSection({
   usuarioId?: string | null;
   /** Bandera raíz `reparto_en_pesos` del API (`repartoEnPesos`). */
   enPesos?: boolean;
+  /** Bandera raíz `reparto_como_balance` del API (`repartoComoBalance`). */
+  comoBalance?: boolean;
 }) {
   if (socios.length === 0) {
     return (
@@ -79,6 +92,7 @@ export function SociosSection({
   }
 
   const pctOk = porcentajeTotal === 100;
+  const filas = filasSociosReparto(socios, enPesos);
 
   return (
     <div className="space-y-2">
@@ -131,14 +145,17 @@ export function SociosSection({
           <TableRow>
             <TableHead>Socio</TableHead>
             <TableHead className="text-right">%</TableHead>
-            <TableHead className="text-right">Utilidad del periodo</TableHead>
+            <TableHead className="text-right">
+              {comoBalance ? ETIQUETA_COLUMNA_A_RECIBIR : "Utilidad del periodo"}
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {socios.map((s, i) => {
-            const hrefCuenta = hrefCuentaSocioDesdeReparto({ rol, usuarioId }, s.socio_id);
+          {filas.map((f, i) => {
+            const hrefCuenta = hrefCuentaSocioDesdeReparto({ rol, usuarioId }, f.socio_id);
+            const reserva = comoBalance ? textoReservaSocio(f) : null;
             return (
-            <TableRow key={`${s.socio_id}-${i}`}>
+            <TableRow key={`${f.socio_id}-${i}`}>
               <TableCell className="text-sm">
                 {hrefCuenta ? (
                   // Atajo a la cuenta del socio (ahí vive «Registrar
@@ -148,10 +165,10 @@ export function SociosSection({
                     <Link
                       href={hrefCuenta}
                       title={TITULO_ATAJO_CUENTA_SOCIO}
-                      aria-label={`${ETIQUETA_ATAJO_CUENTA_SOCIO} de ${s.socio_nombre}`}
+                      aria-label={`${ETIQUETA_ATAJO_CUENTA_SOCIO} de ${f.nombre}`}
                       className="cursor-pointer font-medium hover:underline underline-offset-2"
                     >
-                      {s.socio_nombre}
+                      {f.nombre}
                     </Link>
                     <Link
                       href={hrefCuenta}
@@ -163,43 +180,29 @@ export function SociosSection({
                     </Link>
                   </span>
                 ) : (
-                  s.socio_nombre
+                  f.nombre
                 )}
               </TableCell>
               <TableCell className="text-right font-mono text-xs">
-                {fmtDecimal(s.porcentaje)}%
+                {fmtDecimal(f.porcentaje)}%
               </TableCell>
-              {enPesos ? (
-                <CeldaUtilidadPesos socio={s} />
-              ) : (
-                <TableCell className="text-right font-mono text-sm">
-                  {fmtUsd(s.monto_usd)}
-                </TableCell>
-              )}
+              <TableCell className="text-right font-mono text-sm">
+                <MontoDobleCelda monto={f.aRecibir} className="block" />
+                {reserva && (
+                  <span
+                    className="mt-0.5 block font-sans text-[10px] font-normal text-muted-foreground"
+                    data-reserva-socio={f.descuenta ? "descuenta" : "informativa"}
+                    title={f.descuenta ? TITULO_SE_DESCUENTA : TITULO_SOLO_INFORMATIVA}
+                  >
+                    {reserva}
+                  </span>
+                )}
+              </TableCell>
             </TableRow>
             );
           })}
         </TableBody>
       </Table>
     </div>
-  );
-}
-
-/** «Utilidad del periodo» en pesos: el monto en MXN y los dólares debajo. */
-function CeldaUtilidadPesos({ socio }: { socio: RepartoSocio }) {
-  const monto = montoPrincipal({ mxn: socio.monto_mxn, usd: socio.monto_usd }, true);
-  return (
-    <TableCell className="text-right font-mono text-sm">
-      {monto.principal}
-      {monto.informativo && (
-        <span
-          className={`block text-xs font-normal ${
-            monto.sinPesos ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"
-          }`}
-        >
-          {monto.informativo}
-        </span>
-      )}
-    </TableCell>
   );
 }

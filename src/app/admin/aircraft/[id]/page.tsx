@@ -50,6 +50,17 @@ import {
   ComponentActions,
   type AeronaveDestinoOption,
 } from "@/components/admin/aircraft/aircraft-component-actions";
+import Link from "next/link";
+import { ChartPieIcon } from "@heroicons/react/24/outline";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  ETIQUETA_REPARTO_POR_MES,
+  ETIQUETA_VER_REPARTO_AVION,
+  hrefHistoricoAvion,
+  hrefRepartoAvion,
+  puedeVerRepartoAvion,
+} from "@/lib/admin/reparto-avion";
 import { ErrorState } from "@/components/admin/error-state";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import {
@@ -214,6 +225,29 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Reparto y balance por mes (20-oct-2026): la pantalla del avión
+                en el reparto y su histórico (ADMIN, ANALISTA, FACTURACION,
+                SOCIO: espejo del endpoint). */}
+            {puedeVerRepartoAvion(me?.rol) && (
+              <>
+                <Link
+                  href={hrefHistoricoAvion(aircraft.id)}
+                  className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-pointer gap-1.5")}
+                  data-accion="reparto-por-mes-avion"
+                  title={ETIQUETA_VER_REPARTO_AVION}
+                >
+                  <ChartPieIcon className="h-4 w-4" aria-hidden />
+                  {ETIQUETA_REPARTO_POR_MES}
+                </Link>
+                <Link
+                  href={hrefRepartoAvion(aircraft.id)}
+                  className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "cursor-pointer")}
+                  data-accion="reparto-periodo-avion"
+                >
+                  {ETIQUETA_VER_REPARTO_AVION}
+                </Link>
+              </>
+            )}
             <ExcelExportButton
               path={`/v1/aircraft/${aircraft.id}/balance.xlsx`}
               filename={`balance-${aircraft.matricula}.xlsx`}

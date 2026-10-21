@@ -46,7 +46,7 @@ import {
   textoAltaUbicacionPendiente,
   textoUbicacion,
 } from "@/lib/admin/inventario-ubicacion";
-import { hintPrecioVentaProducto } from "@/lib/admin/inventario-salida";
+import { NOTA_VENTA_EN_PESOS, hintPrecioVentaProducto } from "@/lib/admin/inventario-salida";
 import {
   AVISO_COSTO_PENDIENTE,
   AYUDA_COSTO_PENDIENTE,
@@ -735,7 +735,12 @@ export function ItemFormDialog({
               para el inventario. */}
           <Field
             label="Precio de venta unitario"
-            hint={hintPrecioVentaProducto(margenVentaPct)}
+            hint={
+              <>
+                {hintPrecioVentaProducto(margenVentaPct)}{" "}
+                <span className="block">{NOTA_VENTA_EN_PESOS}</span>
+              </>
+            }
             error={errors.precio_venta?.message}
           >
             <div className="flex gap-2">

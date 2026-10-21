@@ -1,23 +1,25 @@
 /**
  * CUENTA CORRIENTE DE LOS SOCIOS (v2, 1-oct-2026, API 0.0.50) — fuente única
- * PURA del panel.
+ * PURA del panel. TODO EN PESOS desde el API 0.0.101 (20-oct-2026,
+ * invariante 99): «todo ponlo en Pesos, porque aquí en pagos a socios dice
+ * en dólares y pagamos realmente en pesos».
  *
  * Aclaración del cliente: «cuando el socio dice: necesito que me adelanten
  * 70,000 pesos de mis utilidades … que se lleve el HISTÓRICO de cuánto se le
  * ha ido repartiendo, cuánto falta por repartir, cómo se le repartió, la
  * fecha de la entrega y algún comprobante escaneado».
  *
- * Números REALES: N4142R septiembre 2026, saldo $2,023.10 a 69 / 29 / 2 % ⇒
- * 1,395.94 / 586.70 / 40.46 (residuo mayor en centavos, lo hace el API). Un
- * adelanto de 70,000 MXN a 18.5 = 3,783.78 USD sobre 1,395.94 por entregar
- * deja al socio ADELANTADO por 2,387.84. Aquí NO se recalcula nada de eso:
- * se custodian el espejo del estado, los textos, los formularios, los
+ * Los montos de las fixtures se leen EN PESOS (la cuenta ya es en pesos):
+ * una entrega de 70,000 MXN sobre 1,395.94 MXN por entregar deja al socio
+ * ADELANTADO. Aquí NO se recalcula nada de eso: se custodian el espejo del
+ * estado, los textos, los formularios (T.C. en las DOS monedas), los
  * cuerpos que viajan al API y la tolerancia al API previo.
  */
 import { describe, expect, it } from "vitest";
 import {
   AYUDA_COLUMNAS_CUENTA,
   AYUDA_POR_MES_CUENTA,
+  AYUDA_SALDO_INICIAL,
   BOTON_GUARDAR_ADELANTO,
   BOTON_REGISTRAR_ADELANTO,
   CLAVE_PRECIERRE_SOCIOS_ADELANTADOS,
@@ -26,7 +28,9 @@ import {
   ETIQUETA_COLUMNA_ENTREGADO_POR_FECHA,
   ETIQUETA_COLUMNA_SALDO,
   ETIQUETA_COLUMNA_SALDO_ACUMULADO,
+  ETIQUETA_SALDO_INICIAL,
   ETIQUETA_SIN_MES,
+  ETIQUETA_TC_PAGO,
   MES_CUENTA_DEFAULT,
   MESES_ARRANQUE_CUENTA,
   MESES_ESTADO_CUENTA_MAX,
@@ -37,6 +41,7 @@ import {
   TEXTO_CUENTA_NO_CONFIGURADA,
   TEXTO_CUENTA_NO_CONFIGURADA_LECTURA,
   TEXTO_CUENTA_NO_CONFIGURADA_PROPIA,
+  TOLERANCIA_SALDO_MXN,
   avisoFechaAntesDelArranque,
   cambiosPago,
   claseTextoSaldo,
@@ -102,11 +107,13 @@ import {
   payloadAltaPago,
   payloadCuenta,
   piezasPago,
+  previewEntregaPesos,
   puedeRegistrarEntregas,
   puedeVerCuentasSocios,
   rangoMesPasado,
   sociosSinConfigurar,
   sumarMeses,
+  tcDePago,
   textoContadorMotivo,
   textoCorrespondeA,
   textoCuentaNoConfigurada,
@@ -114,6 +121,7 @@ import {
   textoMesEnCurso,
   textoMontoPago,
   textoPorEntregarHoy,
+  textoPreviewEntrega,
   textoSociosSinConfigurar,
   textoUltimoPago,
   validarFormCuenta,
@@ -133,7 +141,7 @@ const ITZI = { id: "0f1c0000-0000-4000-8000-000000000010", nombre: "Itzi" };
 
 const CUENTA_DEFAULT: CuentaSocio = {
   cuenta_desde: "2026-09",
-  saldo_inicial_usd: 0,
+  saldo_inicial_mxn: 0,
   notas: null,
   configurada: false,
 };
@@ -141,17 +149,17 @@ const CUENTA_DEFAULT: CuentaSocio = {
 const resumen = (over: Partial<ResumenCuentaSocio> = {}): ResumenCuentaSocio => ({
   socio: { id: MAURICIO, nombre: "Mauricio Roque", rol: "SOCIO", estado: "ACTIVO" },
   cuenta: CUENTA_DEFAULT,
-  generado_usd: 1395.94,
-  mes_en_curso_usd: 0,
-  entregado_usd: 0,
-  por_entregar_usd: 1395.94,
+  generado_mxn: 1395.94,
+  mes_en_curso_mxn: 0,
+  entregado_mxn: 0,
+  por_entregar_mxn: 1395.94,
   estado: "POR_ENTREGAR",
   ultimo_pago: null,
   aviones: [{ id: N4142R, matricula: "N4142R", porcentaje: 69, vigente: true, activa: true }],
   ...over,
 });
 
-/** El adelanto del audio: 70,000 MXN a 18.5 ⇒ 3,783.78 USD (lo calcula el API). */
+/** El adelanto del audio: 70,000 MXN (a T.C. 18.5 ⇒ 3,783.78 USD informativos, lo calcula el API). */
 const ADELANTO: PagoSocio = {
   id: "9a9a0000-0000-4000-8000-000000000001",
   socio_id: MAURICIO,
@@ -162,8 +170,10 @@ const ADELANTO: PagoSocio = {
   moneda: "MXN",
   tc_usd_mxn: 18.5,
   monto_usd: 3783.78,
+  monto_mxn: 70000,
   utilidad_snapshot_usd: null,
-  saldo_snapshot_usd: 1395.94,
+  saldo_snapshot_usd: null,
+  saldo_snapshot_mxn: 1395.94,
   fecha_pago: "2026-10-01",
   metodo: "EFECTIVO",
   referencia: null,
@@ -180,8 +190,19 @@ const ADELANTO: PagoSocio = {
   aeronave: null,
 };
 
+/** Una entrega en DÓLARES: 1,000 USD que descontaron 18,500 MXN (T.C. implícito 18.5). */
+const EN_DOLARES: PagoSocio = {
+  ...ADELANTO,
+  id: "9a9a0000-0000-4000-8000-000000000003",
+  moneda: "USD",
+  monto: 1000,
+  tc_usd_mxn: null,
+  monto_usd: 1000,
+  monto_mxn: 18500,
+};
+
 const formValido = (over: Partial<FormPagoSocio> = {}): FormPagoSocio => ({
-  ...formInicialAlta({ porEntregarUsd: 1395.94, hoy: "2026-10-01", meId: ALE.id }),
+  ...formInicialAlta({ porEntregarMxn: 1395.94, hoy: "2026-10-01", meId: ALE.id, tcOficial: 18.5 }),
   metodo: "TRANSFERENCIA",
   ...over,
 });
@@ -277,15 +298,17 @@ describe("meses", () => {
   });
 });
 
-describe("estado de la cuenta (lo manda el API; esto solo pinta)", () => {
+describe("estado de la cuenta (lo manda el API; esto solo pinta, en pesos)", () => {
   it("colores: al corriente verde, por entregar ámbar, ADELANTADO azul «Adelantado»", () => {
     expect(ESTADOS_CUENTA_SOCIO.AL_CORRIENTE.tono).toBe("verde");
+    expect(ESTADOS_CUENTA_SOCIO.AL_CORRIENTE.titulo).toContain("$1 MXN");
     expect(ESTADOS_CUENTA_SOCIO.POR_ENTREGAR.tono).toBe("ambar");
     expect(ESTADOS_CUENTA_SOCIO.ADELANTADO).toMatchObject({ tono: "azul", etiqueta: "Adelantado" });
     expect(ESTADOS_CUENTA_SOCIO.ADELANTADO.clase).toContain("sky");
   });
 
-  it("el estado del API manda; uno desconocido se pinta con el espejo (tolerancia $1)", () => {
+  it("el estado del API manda; uno desconocido se pinta con el espejo (tolerancia $1 MXN)", () => {
+    expect(TOLERANCIA_SALDO_MXN).toBe(1);
     expect(estiloEstadoCuenta("POR_ENTREGAR", -5000).estado).toBe("POR_ENTREGAR");
     expect(estiloEstadoCuenta("NUEVO", 1.01).estado).toBe("POR_ENTREGAR");
     expect(estiloEstadoCuenta(null, -2387.84).estado).toBe("ADELANTADO");
@@ -333,7 +356,7 @@ describe("estado de la cuenta (lo manda el API; esto solo pinta)", () => {
   });
 });
 
-describe("textos", () => {
+describe("textos (todo dice MXN)", () => {
   it("banner de la cuenta sin configurar: copia LITERAL del API", () => {
     expect(TEXTO_CUENTA_NO_CONFIGURADA).toBe(
       "La cuenta de este socio arranca en septiembre 2026 con saldo 0. Si hubo repartos anteriores, configura el mes de arranque y el saldo inicial.",
@@ -359,18 +382,19 @@ describe("textos", () => {
     }
   });
 
-  it("«Por entregar hoy» y, con saldo negativo, el adelanto a favor de VuelaTour", () => {
-    expect(textoPorEntregarHoy(1395.94)).toBe("Por entregar hoy: $1,395.94 USD");
-    expect(textoPorEntregarHoy(0.4)).toBe("Por entregar hoy: $0.40 USD");
+  it("«Por entregar hoy» EN PESOS y, con saldo a favor, el adelanto a favor de VuelaTour", () => {
+    expect(textoPorEntregarHoy(1395.94)).toBe("Por entregar hoy: $1,395.94 MXN");
+    expect(textoPorEntregarHoy(0.4)).toBe("Por entregar hoy: $0.40 MXN");
     expect(textoPorEntregarHoy(-2387.84)).toBe(
-      "Adelantado: $2,387.84 USD a favor de VuelaTour (no hay nada por entregar).",
+      "Adelantado: $2,387.84 MXN a favor de VuelaTour (no hay nada por entregar).",
     );
     expect(textoPorEntregarHoy(null)).toContain("no se pudo leer");
+    expect(textoPorEntregarHoy(1395.94)).not.toContain("USD");
   });
 
-  it("mes en curso: «incluye $X de Octubre 2026 (en curso…)»; con 0 no se dice", () => {
+  it("mes en curso: «incluye $X MXN de Octubre 2026 (en curso…)»; con 0 no se dice", () => {
     expect(textoMesEnCurso(206.1, "2026-10")).toBe(
-      "incluye $206.10 de Octubre 2026 (en curso: cambia día con día)",
+      "incluye $206.10 MXN de Octubre 2026 (en curso: cambia día con día)",
     );
     expect(textoMesEnCurso(0, "2026-10")).toBeNull();
   });
@@ -380,11 +404,11 @@ describe("textos", () => {
     expect(etiquetaGeneroPeriodo("2026-10-01", "2026-10-15")).toMatch(/^Generó del 01 oct\.? 2026 al 15 oct\.? 2026$/);
   });
 
-  it("monto de la entrega: el adelanto de 70,000 MXN dice T.C. y su equivalente del API", () => {
+  it("monto de la entrega: en pesos dice T.C. y el dólar informativo; en dólares dice los PESOS que descontó", () => {
     expect(textoMontoPago(ADELANTO)).toBe("$70,000 MXN · T.C. 18.5 · ≈ $3,783.78 USD");
-    expect(textoMontoPago({ ...ADELANTO, moneda: "USD", monto: 1000, monto_usd: 1000, tc_usd_mxn: null })).toBe(
-      "$1,000 USD",
-    );
+    expect(textoMontoPago(EN_DOLARES)).toBe("$1,000 USD = $18,500.00 MXN");
+    // Una entrega vieja en dólares sin pesos (API previo): solo su monto.
+    expect(textoMontoPago({ ...EN_DOLARES, monto_mxn: 0 })).toBe("$1,000 USD");
   });
 
   it("«Corresponde a» es informativo; sin mes ni avión es «A cuenta (sin mes)» (la palabra «adelanto» es del saldo negativo)", () => {
@@ -419,7 +443,7 @@ describe("textos", () => {
     expect(piezasPago({ ...ADELANTO, entregado_por_nombre: null }).entrego).toBe("Entregó: —");
   });
 
-  it("última entrega", () => {
+  it("última entrega (una en dólares dice sus pesos)", () => {
     expect(textoUltimoPago(null)).toBe("Sin entregas");
     expect(
       textoUltimoPago({
@@ -427,10 +451,22 @@ describe("textos", () => {
         fecha_pago: "2026-10-01",
         monto: 70000,
         moneda: "MXN",
+        monto_mxn: 70000,
         monto_usd: 3783.78,
         metodo: "EFECTIVO",
       }),
     ).toMatch(/^01 oct\.? 2026 · \$70,000 MXN · Efectivo$/);
+    expect(
+      textoUltimoPago({
+        id: EN_DOLARES.id,
+        fecha_pago: "2026-10-01",
+        monto: 1000,
+        moneda: "USD",
+        monto_mxn: 18500,
+        monto_usd: 1000,
+        metodo: "TRANSFERENCIA",
+      }),
+    ).toMatch(/^01 oct\.? 2026 · \$1,000 USD = \$18,500\.00 MXN · Transferencia$/);
   });
 
   it("«Por mes»: la columna dice que agrupa por FECHA de entrega (no por el mes al que corresponde)", () => {
@@ -440,36 +476,52 @@ describe("textos", () => {
     );
   });
 
-  it("columnas del estado de cuenta en palabras del operador", () => {
+  it("columnas del estado de cuenta en palabras del operador, y que todo es en pesos", () => {
+    expect(AYUDA_COLUMNAS_CUENTA).toMatch(/^Todo en pesos \(MXN\)\./);
     expect(AYUDA_COLUMNAS_CUENTA).toContain("Generó");
     expect(AYUDA_COLUMNAS_CUENTA).toContain("Entregado");
     expect(etiquetaRegistrarEntrega("Mauricio Roque")).toBe("Registrar entrega a Mauricio Roque");
   });
 });
 
-describe("confirmación del ADELANTO (409 PAGO_EXCEDE_SALDO)", () => {
-  const details = { por_entregar_usd: 1395.94, monto_usd: 3783.78, exceso_usd: 2387.84 };
+describe("confirmación del ADELANTO (409 PAGO_EXCEDE_SALDO, en pesos)", () => {
+  const details = { por_entregar_mxn: 1395.94, monto_mxn: 3783.78, exceso_mxn: 2387.84 };
 
   it("texto del contrato con los TRES números del API", () => {
     expect(confirmacionAdelanto(details)).toEqual({
       titulo: "Esta entrega es un ADELANTO",
       descripcion:
-        "Esta entrega de $3,783.78 USD supera lo que hay por entregar ($1,395.94 USD). Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour por $2,387.84 USD. ¿Registrar?",
+        "Esta entrega de $3,783.78 MXN supera lo que hay por entregar ($1,395.94 MXN). Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour por $2,387.84 MXN. ¿Registrar?",
     });
+  });
+
+  it("con el mes en curso ≠ 0 dice que no cuenta (espejo de `mensajeExcedeSaldo` del API)", () => {
+    expect(confirmacionAdelanto({ ...details, mes_en_curso_mxn: 206.1 }).descripcion).toContain(
+      "supera lo que hay por entregar ($1,395.94 MXN, sin contar el mes en curso: $206.10 MXN).",
+    );
+    expect(confirmacionAdelanto({ ...details, mes_en_curso_mxn: 0 }).descripcion).not.toContain("sin contar");
   });
 
   it("en la edición pregunta «¿Guardar?»; ya adelantado no dice «por entregar −$X»", () => {
     expect(confirmacionAdelanto(details, "edicion").descripcion).toMatch(/¿Guardar\?$/);
-    const ya = confirmacionAdelanto({ por_entregar_usd: -100, monto_usd: 500, exceso_usd: 600 });
-    expect(ya.descripcion).toContain("supera lo que hay por entregar ($0 USD)");
-    expect(ya.descripcion).toContain("a favor de VuelaTour por $600 USD");
+    const ya = confirmacionAdelanto({ por_entregar_mxn: -100, monto_mxn: 500, exceso_mxn: 600 });
+    expect(ya.descripcion).toContain("supera lo que hay por entregar ($0.00 MXN)");
+    expect(ya.descripcion).toContain("a favor de VuelaTour por $600.00 MXN");
   });
 
   it("details tolerantes (numeric como texto) y sin details un texto sin números", () => {
-    expect(detalleExcesoSaldo({ por_entregar_usd: "1395.94", monto_usd: "3783.78", exceso_usd: "2387.84" })).toEqual(
-      details,
-    );
-    expect(detalleExcesoSaldo({ monto_usd: 1 })).toBeNull();
+    expect(detalleExcesoSaldo({ por_entregar_mxn: "1395.94", monto_mxn: "3783.78", exceso_mxn: "2387.84" })).toEqual({
+      ...details,
+      mes_en_curso_mxn: null,
+      saldo_despues_mxn: null,
+    });
+    expect(detalleExcesoSaldo({ ...details, mes_en_curso_mxn: "206.1", saldo_despues_mxn: -2387.84 })).toMatchObject({
+      mes_en_curso_mxn: 206.1,
+      saldo_despues_mxn: -2387.84,
+    });
+    // Los `details` en dólares del API previo no se entienden: texto sin números.
+    expect(detalleExcesoSaldo({ por_entregar_usd: 1395.94, monto_usd: 3783.78, exceso_usd: 2387.84 })).toBeNull();
+    expect(detalleExcesoSaldo({ monto_mxn: 1 })).toBeNull();
     expect(confirmacionAdelanto(null).descripcion).toContain("Se registrará como ADELANTO");
     expect(BOTON_REGISTRAR_ADELANTO).toBe("Registrar como adelanto");
     expect(BOTON_GUARDAR_ADELANTO).toBe("Guardar como adelanto");
@@ -533,6 +585,11 @@ describe("errores del API en es-MX", () => {
     expect(mensajeErrorCuentaSocio("CUENTA_SOCIO_NO_DISPONIBLE", "Service Unavailable", 503)).toContain(
       "No se guardó nada",
     );
+    expect(mensajeErrorCuentaSocio("SALDO_INICIAL_INVALIDO", "Bad Request", 400)).toContain("pesos (MXN)");
+    // 400 TC_REQUERIDO (API 0.0.101): el texto del API en español gana; sin él, el respaldo dice por qué.
+    expect(mensajeErrorCuentaSocio("TC_REQUERIDO", "property tc_usd_mxn should not be empty", 400)).toContain(
+      "cuántos pesos descuenta",
+    );
     expect(mensajeErrorCuentaSocio(undefined, "Cannot PUT /v1/profit-sharing/socios/x/cuenta", 404)).toContain(
       "falta actualizarlo",
     );
@@ -557,7 +614,7 @@ describe("errores del API en es-MX", () => {
   });
 });
 
-describe("normalización (PostgREST manda numeric como texto)", () => {
+describe("normalización (PostgREST manda numeric como texto; todo en pesos)", () => {
   it("resumen: números sanos, cuenta `YYYY-MM-01` ⇒ `YYYY-MM`, renglón sin socio fuera", () => {
     const r = normalizarRespuestaSocios({
       disponible: true,
@@ -565,34 +622,37 @@ describe("normalización (PostgREST manda numeric como texto)", () => {
       socios: [
         {
           socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-          cuenta: { cuenta_desde: "2026-09-01", saldo_inicial_usd: "-500", notas: null, configurada: true },
-          generado_usd: "1395.94",
-          mes_en_curso_usd: "0",
-          entregado_usd: "3783.78",
-          por_entregar_usd: "-2887.84",
+          cuenta: { cuenta_desde: "2026-09-01", saldo_inicial_mxn: "-500", notas: null, configurada: true },
+          generado_mxn: "1395.94",
+          mes_en_curso_mxn: "0",
+          entregado_mxn: "3783.78",
+          por_entregar_mxn: "-2887.84",
+          por_entregar_cerrado_mxn: "-2887.84",
           estado: "ADELANTADO",
-          ultimo_pago: { id: ADELANTO.id, fecha_pago: "2026-10-01", monto: "70000", moneda: "MXN", monto_usd: "3783.78", metodo: "EFECTIVO" },
+          ultimo_pago: { id: ADELANTO.id, fecha_pago: "2026-10-01", monto: "70000", moneda: "MXN", monto_mxn: "70000", monto_usd: "3783.78", metodo: "EFECTIVO" },
           aviones: [{ id: N4142R, matricula: "N4142R", porcentaje: "69", vigente: true }],
           avisos: ["Hay 1 entrega(s) con fecha anterior al arranque", 3],
         },
         { cuenta: {} },
       ],
-      totales: { generado_usd: "1395.94", entregado_usd: 3783.78, por_entregar_usd: 0, adelantado_usd: "2887.84", socios_por_entregar: 0, socios_adelantados: 1 },
+      totales: { generado_mxn: "1395.94", entregado_mxn: 3783.78, por_entregar_mxn: 0, adelantado_mxn: "2887.84", socios_por_entregar: 0, socios_adelantados: 1 },
     });
     expect(r?.socios).toHaveLength(1);
     const s = r!.socios[0];
     expect(s.cuenta).toEqual({
       cuenta_desde: "2026-09",
-      saldo_inicial_usd: -500,
+      saldo_inicial_mxn: -500,
+      saldo_inicial_usd: null,
       notas: null,
       configurada: true,
       updated_at: null,
     });
-    expect(s.por_entregar_usd).toBe(-2887.84);
-    expect(s.ultimo_pago?.monto).toBe(70000);
+    expect(s.por_entregar_mxn).toBe(-2887.84);
+    expect(s.por_entregar_cerrado_mxn).toBe(-2887.84);
+    expect(s.ultimo_pago).toMatchObject({ monto: 70000, monto_mxn: 70000, monto_usd: 3783.78 });
     expect(s.aviones[0]).toEqual({ id: N4142R, matricula: "N4142R", porcentaje: 69, vigente: true, activa: true });
     expect(s.avisos).toEqual(["Hay 1 entrega(s) con fecha anterior al arranque"]);
-    expect(r?.totales?.adelantado_usd).toBe(2887.84);
+    expect(r?.totales?.adelantado_mxn).toBe(2887.84);
   });
 
   it("SOCIO: totales null; sin la migración `disponible:false`; basura ⇒ null (fallo, no «sin socios»)", () => {
@@ -602,13 +662,15 @@ describe("normalización (PostgREST manda numeric como texto)", () => {
     expect(normalizarRespuestaSocios([1])).toBeNull();
   });
 
-  it("entrega: `mes` sale de `periodo` si el API no lo manda; aeronave del «corresponde a»", () => {
+  it("entrega: `mes` sale de `periodo` si el API no lo manda; aeronave del «corresponde a»; los pesos que descuenta", () => {
     const p = normalizarPago({
       ...ADELANTO,
       monto: "70000",
       monto_usd: "3783.78",
+      monto_mxn: "70000",
       tc_usd_mxn: "18.500000",
       saldo_snapshot_usd: "1395.94",
+      saldo_snapshot_mxn: "25824.87",
       periodo: "2026-09-01",
       mes: undefined,
       aeronave: { id: N4142R, matricula: "N4142R" },
@@ -617,107 +679,126 @@ describe("normalización (PostgREST manda numeric como texto)", () => {
     expect(p).toMatchObject({
       monto: 70000,
       monto_usd: 3783.78,
+      monto_mxn: 70000,
       tc_usd_mxn: 18.5,
       saldo_snapshot_usd: 1395.94,
+      saldo_snapshot_mxn: 25824.87,
       mes: "2026-09",
       fecha_pago: "2026-10-01",
       aeronave: { id: N4142R, matricula: "N4142R" },
     });
     expect(normalizarPago({ monto: 1 })).toBeNull();
+    // Fila vieja SIN `monto_mxn` (API previo): la MISMA regla del API —
+    // MXN ⇒ su monto; USD con T.C. ⇒ monto × T.C.; USD sin T.C. ⇒ 0.
+    expect(normalizarPago({ ...ADELANTO, monto_mxn: undefined })?.monto_mxn).toBe(70000);
+    expect(normalizarPago({ ...EN_DOLARES, monto_mxn: undefined, tc_usd_mxn: 18.5 })?.monto_mxn).toBe(18500);
+    expect(normalizarPago({ ...EN_DOLARES, monto_mxn: undefined })?.monto_mxn).toBe(0);
   });
 
-  it("estado de cuenta: movimientos, por mes, totales de HOY, aviones, rango y avisos", () => {
+  it("estado de cuenta: movimientos, por mes, totales de HOY, aviones, rango y avisos (en pesos)", () => {
     const e = normalizarEstadoCuenta({
       disponible: true,
       socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-      cuenta: { cuenta_desde: "2026-09", saldo_inicial_usd: 0, notas: null, configurada: false },
+      cuenta: { cuenta_desde: "2026-09", saldo_inicial_mxn: 0, notas: null, configurada: false },
       aviones: [{ id: N4142R, matricula: "N4142R", porcentaje: 69, vigente: true, activa: true }],
       desde: "2026-09",
       hasta: "2026-10",
-      saldo_anterior_usd: 0,
+      saldo_anterior_mxn: 0,
       movimientos: [
-        { fecha: "2026-09-01", tipo: "SALDO_INICIAL", concepto: "Arranque", mes: "2026-09", cargo_usd: 0, abono_usd: 0, saldo_usd: 0 },
-        { fecha: "2026-09-30", tipo: "UTILIDAD", concepto: "Utilidad sep 2026 · N4142R 69 %", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: "69", cargo_usd: "1395.94", abono_usd: 0, saldo_usd: "1395.94", en_curso: false },
-        { fecha: "2026-10-01", tipo: "ENTREGA", concepto: "Adelanto a cuenta · Efectivo", mes: null, cargo_usd: 0, abono_usd: 3783.78, saldo_usd: -2387.84, pago: ADELANTO },
+        { fecha: "2026-09-01", tipo: "SALDO_INICIAL", concepto: "Arranque", mes: "2026-09", cargo_mxn: 0, abono_mxn: 0, saldo_mxn: 0 },
+        { fecha: "2026-09-30", tipo: "UTILIDAD", concepto: "Utilidad sep 2026 · N4142R 69 %", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: "69", cargo_mxn: "1395.94", abono_mxn: 0, saldo_mxn: "1395.94", en_curso: false },
+        { fecha: "2026-10-01", tipo: "ENTREGA", concepto: "Adelanto a cuenta · Efectivo", mes: null, cargo_mxn: 0, abono_mxn: 3783.78, saldo_mxn: -2387.84, pago: ADELANTO },
         { sin: "tipo" },
       ],
       por_mes: [
-        { mes: "2026-09", utilidad_usd: "1395.94", en_curso: false, por_avion: [{ aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, monto_usd: "1395.94" }], entregado_usd: 0 },
-        { mes: "2026-10", utilidad_usd: 0, en_curso: true, por_avion: [], entregado_usd: 3783.78 },
+        { mes: "2026-09", utilidad_mxn: "1395.94", en_curso: false, por_avion: [{ aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, monto_mxn: "1395.94" }], entregado_mxn: 0 },
+        { mes: "2026-10", utilidad_mxn: 0, en_curso: true, por_avion: [], entregado_mxn: 3783.78 },
       ],
-      totales: { generado_usd: 1395.94, mes_en_curso_usd: 0, entregado_usd: 3783.78, por_entregar_usd: -2387.84, estado: "ADELANTADO" },
-      rango: { generado_usd: 1395.94, entregado_usd: 3783.78, saldo_final_usd: -2387.84 },
+      totales: { generado_mxn: 1395.94, mes_en_curso_mxn: 0, entregado_mxn: 3783.78, por_entregar_mxn: -2387.84, por_entregar_cerrado_mxn: -2387.84, estado: "ADELANTADO" },
+      rango: { generado_mxn: 1395.94, entregado_mxn: 3783.78, saldo_final_mxn: -2387.84 },
       avisos: [],
     });
     expect(e?.movimientos.map((m) => m.tipo)).toEqual(["SALDO_INICIAL", "UTILIDAD", "ENTREGA"]);
-    expect(e?.movimientos[1]).toMatchObject({ cargo_usd: 1395.94, porcentaje: 69, saldo_usd: 1395.94 });
+    expect(e?.movimientos[1]).toMatchObject({ cargo_mxn: 1395.94, porcentaje: 69, saldo_mxn: 1395.94 });
     expect(e?.movimientos[2].pago?.id).toBe(ADELANTO.id);
-    expect(e?.por_mes[1]).toMatchObject({ mes: "2026-10", en_curso: true, entregado_usd: 3783.78 });
-    expect(e?.totales).toMatchObject({ por_entregar_usd: -2387.84, estado: "ADELANTADO" });
+    expect(e?.por_mes[0].por_avion[0]).toMatchObject({ porcentaje: 69, monto_mxn: 1395.94 });
+    expect(e?.por_mes[1]).toMatchObject({ mes: "2026-10", en_curso: true, entregado_mxn: 3783.78 });
+    expect(e?.totales).toMatchObject({ por_entregar_mxn: -2387.84, por_entregar_cerrado_mxn: -2387.84, estado: "ADELANTADO" });
     expect(e?.aviones).toHaveLength(1);
-    expect(e?.rango?.saldo_final_usd).toBe(-2387.84);
+    expect(e?.rango?.saldo_final_mxn).toBe(-2387.84);
     expect(normalizarEstadoCuenta({ disponible: false })).toBeNull();
   });
 
   it("importes con la convención del API: cargo SUMA (negativo en pérdida), abono RESTA; 0 ⇒ celda vacía", () => {
-    expect(importesMovimiento({ cargo_usd: 1395.94, abono_usd: 0 })).toEqual({ suma: 1395.94, resta: null });
-    expect(importesMovimiento({ cargo_usd: 0, abono_usd: 3783.78 })).toEqual({ suma: null, resta: 3783.78 });
-    expect(importesMovimiento({ cargo_usd: -120.5, abono_usd: 0 })).toEqual({ suma: -120.5, resta: null });
-    expect(importesMovimiento({ cargo_usd: 0, abono_usd: 0 })).toEqual({ suma: null, resta: null });
+    expect(importesMovimiento({ cargo_mxn: 1395.94, abono_mxn: 0 })).toEqual({ suma: 1395.94, resta: null });
+    expect(importesMovimiento({ cargo_mxn: 0, abono_mxn: 3783.78 })).toEqual({ suma: null, resta: 3783.78 });
+    expect(importesMovimiento({ cargo_mxn: -120.5, abono_mxn: 0 })).toEqual({ suma: -120.5, resta: null });
+    expect(importesMovimiento({ cargo_mxn: 0, abono_mxn: 0 })).toEqual({ suma: null, resta: null });
     expect(esRenglonDeSaldo("SALDO_ANTERIOR")).toBe(true);
     expect(esRenglonDeSaldo("ENTREGA")).toBe(false);
   });
 });
 
 describe("qué pinta cada pantalla", () => {
-  it("«Generó en el periodo» SUMA (en centavos) lo que ya está en las tarjetas: N4142R 69/29/2 + otro avión", () => {
+  it("«Generó en el periodo» SUMA (en centavos) los PESOS que ya están en las tarjetas; sin algún peso ⇒ null", () => {
     const g = generadoPorSocioEnPeriodo([
       {
         reparto: [
-          { socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 69, monto_usd: 1395.94 },
-          { socio_id: ACC, socio_nombre: "Aero Charter Cancun S.A. de C.V.", porcentaje: 29, monto_usd: 586.7 },
-          { socio_id: SAAB, socio_nombre: "Alexander E. Saab", porcentaje: 2, monto_usd: 40.46 },
+          { socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 69, monto_usd: 75.46, monto_mxn: 1395.94 },
+          { socio_id: ACC, socio_nombre: "Aero Charter Cancun S.A. de C.V.", porcentaje: 29, monto_usd: 31.71, monto_mxn: 586.7 },
+          { socio_id: SAAB, socio_nombre: "Alexander E. Saab", porcentaje: 2, monto_usd: 2.19, monto_mxn: 40.46 },
         ],
       },
-      { reparto: [{ socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 50, monto_usd: 0.1 }] },
-      { reparto: [{ socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 50, monto_usd: 0.2 }] },
+      { reparto: [{ socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 50, monto_usd: 0.01, monto_mxn: 0.1 }] },
+      { reparto: [{ socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 50, monto_usd: 0.01, monto_mxn: 0.2 }] },
     ]);
     expect(g.get(MAURICIO)).toBe(1396.24);
     expect(g.get(ACC)).toBe(586.7);
     expect(g.get(SAAB)).toBe(40.46);
+    // Un renglón sin pesos (API previo) deja al socio en null: jamás un peso a medias.
+    const sin = generadoPorSocioEnPeriodo([
+      { reparto: [{ socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 69, monto_usd: 75.46, monto_mxn: 1395.94 }] },
+      { reparto: [{ socio_id: MAURICIO, socio_nombre: "Mauricio Roque", porcentaje: 50, monto_usd: 10 }] },
+    ]);
+    expect(sin.get(MAURICIO)).toBeNull();
   });
 
-  it("renglones de «Socios · por entregar»: TODOS los del resumen, 0 si no generó en el periodo", () => {
-    const otro = resumen({ socio: { id: ACC, nombre: "Aero Charter" }, por_entregar_usd: 0, estado: "AL_CORRIENTE" });
+  it("renglones de «Socios · por entregar»: TODOS los del resumen, 0 si no generó en el periodo, null si faltó el peso", () => {
+    const otro = resumen({ socio: { id: ACC, nombre: "Aero Charter" }, por_entregar_mxn: 0, estado: "AL_CORRIENTE" });
     const filas = filasSociosPorEntregar([resumen(), otro], new Map([[MAURICIO, 1395.94]]));
-    expect(filas.map((f) => [f.resumen.socio.id, f.genero_periodo_usd])).toEqual([
+    expect(filas.map((f) => [f.resumen.socio.id, f.genero_periodo_mxn])).toEqual([
       [MAURICIO, 1395.94],
       [ACC, 0],
     ]);
+    expect(filasSociosPorEntregar([resumen()], new Map([[MAURICIO, null]]))[0].genero_periodo_mxn).toBeNull();
     expect(sociosSinConfigurar([resumen(), resumen({ cuenta: { ...CUENTA_DEFAULT, configurada: true } })])).toBe(1);
   });
 
-  it("contexto del diálogo: desde el resumen y desde el estado de cuenta (sus totales son los de HOY)", () => {
+  it("contexto del diálogo: desde el resumen y desde el estado de cuenta (sus totales son los de HOY), en pesos", () => {
     expect(contextoEntrega(resumen())).toEqual({
       socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-      porEntregarUsd: 1395.94,
-      mesEnCursoUsd: 0,
+      porEntregarMxn: 1395.94,
+      mesEnCursoMxn: 0,
       mesEnCurso: null,
       aviones: resumen().aviones,
       cuentaDesdeMes: "2026-09",
       mesSugerido: null,
+      avionSugerido: null,
     });
     // Desde el Reparto con «Mes pasado»: el mes que se está pagando y el en curso.
     expect(
-      contextoEntrega(resumen({ mes_en_curso_usd: 206.1, por_entregar_usd: 1602.04 }), {
+      contextoEntrega(resumen({ mes_en_curso_mxn: 206.1, por_entregar_mxn: 1602.04 }), {
         mesEnCurso: "2026-10",
         mesSugerido: "2026-09",
       }),
-    ).toMatchObject({ porEntregarUsd: 1602.04, mesEnCursoUsd: 206.1, mesEnCurso: "2026-10", mesSugerido: "2026-09" });
-    expect(contextoEntrega(resumen(), { mesEnCurso: "nada", mesSugerido: "2026-13" })).toMatchObject({
+    ).toMatchObject({ porEntregarMxn: 1602.04, mesEnCursoMxn: 206.1, mesEnCurso: "2026-10", mesSugerido: "2026-09" });
+    expect(contextoEntrega(resumen(), { mesEnCurso: "nada", mesSugerido: "2026-13", avionSugerido: "x" })).toMatchObject({
       mesEnCurso: null,
       mesSugerido: null,
+      avionSugerido: null,
     });
+    // Desde la pantalla del avión (20-oct-2026): el avión viene preseleccionado.
+    expect(contextoEntrega(resumen(), { avionSugerido: N4142R }).avionSugerido).toBe(N4142R);
     const e = normalizarEstadoCuenta({
       socio: { id: MAURICIO, nombre: "Mauricio Roque" },
       cuenta: { cuenta_desde: "2026-08", configurada: true },
@@ -725,16 +806,17 @@ describe("qué pinta cada pantalla", () => {
       hasta: "2026-08",
       movimientos: [],
       por_mes: [],
-      totales: { por_entregar_usd: -2387.84, mes_en_curso_usd: "206.10", estado: "ADELANTADO" },
+      totales: { por_entregar_mxn: -2387.84, mes_en_curso_mxn: "206.10", estado: "ADELANTADO" },
     })!;
     expect(contextoEntregaDeEstadoCuenta(e, { mesEnCurso: "2026-10" })).toEqual({
       socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-      porEntregarUsd: -2387.84,
-      mesEnCursoUsd: 206.1,
+      porEntregarMxn: -2387.84,
+      mesEnCursoMxn: 206.1,
       mesEnCurso: "2026-10",
       aviones: [],
       cuentaDesdeMes: "2026-08",
       mesSugerido: null,
+      avionSugerido: null,
     });
   });
 
@@ -786,12 +868,12 @@ describe("qué pinta cada pantalla", () => {
   });
 });
 
-describe("formulario «Registrar entrega»", () => {
-  it("prellenado: lo POR ENTREGAR del API, USD, hoy, yo, SIN método, sin mes ni avión", () => {
-    expect(formInicialAlta({ porEntregarUsd: 1395.94, hoy: "2026-10-01", meId: ALE.id })).toEqual({
+describe("formulario «Registrar entrega» (la cuenta es en pesos)", () => {
+  it("prellenado: lo POR ENTREGAR del API en pesos, MXN, el T.C. oficial de hoy, hoy, yo, SIN método, sin mes ni avión", () => {
+    expect(formInicialAlta({ porEntregarMxn: 1395.94, hoy: "2026-10-01", meId: ALE.id, tcOficial: 18.4567891 })).toEqual({
       monto: "1395.94",
-      moneda: "USD",
-      tc: "",
+      moneda: "MXN",
+      tc: "18.456789",
       fecha_pago: "2026-10-01",
       metodo: "",
       entregado_por_id: ALE.id,
@@ -802,53 +884,74 @@ describe("formulario «Registrar entrega»", () => {
       mes: SIN_MES,
       aeronave_id: SIN_AVION,
     });
+    // Sin T.C. oficial: vacío (nunca uno inventado).
+    expect(formInicialAlta({ porEntregarMxn: 1395.94, hoy: "2026-10-01", meId: ALE.id }).tc).toBe("");
     // Adelantado o sin dato: monto vacío (un adelanto se captura a mano).
-    expect(formInicialAlta({ porEntregarUsd: -2387.84, hoy: "2026-10-01", meId: ALE.id }).monto).toBe("");
-    expect(formInicialAlta({ porEntregarUsd: null, hoy: "2026-10-01", meId: ALE.id }).monto).toBe("");
+    expect(formInicialAlta({ porEntregarMxn: -2387.84, hoy: "2026-10-01", meId: ALE.id }).monto).toBe("");
+    expect(formInicialAlta({ porEntregarMxn: null, hoy: "2026-10-01", meId: ALE.id }).monto).toBe("");
   });
 
-  it("prellenado desde el Reparto con un MES completo: «Corresponde al mes» = ese mes (nunca uno futuro)", () => {
-    const base = { porEntregarUsd: 1395.94, hoy: "2026-10-01", meId: ALE.id };
+  it("prellenado desde el Reparto con un MES completo: «Corresponde al mes» = ese mes (nunca uno futuro); desde la pantalla del avión, el avión", () => {
+    const base = { porEntregarMxn: 1395.94, hoy: "2026-10-01", meId: ALE.id };
     expect(formInicialAlta({ ...base, mesSugerido: "2026-09" }).mes).toBe("2026-09");
     expect(formInicialAlta({ ...base, mesSugerido: "2026-10" }).mes).toBe("2026-10");
     // El API rechaza un mes futuro (MES_FUTURO): no se sugiere.
     expect(formInicialAlta({ ...base, mesSugerido: "2026-11" }).mes).toBe(SIN_MES);
     expect(formInicialAlta({ ...base, mesSugerido: null }).mes).toBe(SIN_MES);
-    // Y viaja en el POST como «corresponde a».
-    const f = { ...formInicialAlta({ ...base, mesSugerido: "2026-09" }), metodo: "TRANSFERENCIA" as const };
-    expect(payloadAltaPago(f, { socio_id: MAURICIO, meId: ALE.id })).toMatchObject({ mes: "2026-09" });
+    expect(formInicialAlta({ ...base, avionSugerido: N4142R }).aeronave_id).toBe(N4142R);
+    expect(formInicialAlta({ ...base, avionSugerido: "x" }).aeronave_id).toBe(SIN_AVION);
+    // Y viajan en el POST como «corresponde a».
+    const f = { ...formInicialAlta({ ...base, mesSugerido: "2026-09", avionSugerido: N4142R, tcOficial: 18.5 }), metodo: "TRANSFERENCIA" as const };
+    expect(payloadAltaPago(f, { socio_id: MAURICIO, meId: ALE.id })).toMatchObject({ mes: "2026-09", aeronave_id: N4142R });
   });
 
-  it("moneda: a MXN vacía el monto prellenado y prellena el T.C. oficial; de vuelta a USD lo restaura", () => {
+  it("moneda: a USD vacía el monto prellenado (eran pesos) y conserva el T.C.; de vuelta a MXN lo restaura", () => {
     const f = formValido();
-    const mxn = formAlCambiarMoneda(f, "MXN", "1395.94", 18.4567891);
-    expect(mxn).toMatchObject({ moneda: "MXN", monto: "", tc: "18.456789" });
-    expect(formAlCambiarMoneda(mxn, "USD", "1395.94", 18.45)).toMatchObject({ moneda: "USD", monto: "1395.94" });
+    const usd = formAlCambiarMoneda(f, "USD", "1395.94", 18.4567891);
+    expect(usd).toMatchObject({ moneda: "USD", monto: "", tc: "18.5" });
+    expect(formAlCambiarMoneda(usd, "MXN", "1395.94", 18.45)).toMatchObject({ moneda: "MXN", monto: "1395.94" });
     // Un monto tecleado y un T.C. ya capturado no se tocan.
-    const tecleado = formAlCambiarMoneda({ ...f, monto: "500", tc: "19" }, "MXN", "1395.94", 18.45);
+    const tecleado = formAlCambiarMoneda({ ...f, monto: "500", tc: "19" }, "USD", "1395.94", 18.45);
     expect(tecleado).toMatchObject({ monto: "500", tc: "19" });
-    // Sin T.C. oficial: vacío (nunca uno inventado).
-    expect(formAlCambiarMoneda(f, "MXN", "1395.94", null).tc).toBe("");
+    // Con el T.C. vacío se prellena el oficial en CUALQUIER moneda; sin oficial, vacío.
+    expect(formAlCambiarMoneda({ ...f, tc: "" }, "USD", "1395.94", 18.4567891).tc).toBe("18.456789");
+    expect(formAlCambiarMoneda({ ...f, tc: "" }, "USD", "1395.94", null).tc).toBe("");
     // Edición (sin prellenado): solo cambia la moneda.
-    expect(formAlCambiarMoneda({ ...f, monto: "1395.94" }, "MXN", null, null).monto).toBe("1395.94");
+    expect(formAlCambiarMoneda({ ...f, monto: "1395.94" }, "USD", null, null).monto).toBe("1395.94");
   });
 
-  it("ayudas del monto y del T.C.", () => {
-    expect(hintMontoPago({ moneda: "USD", porEntregarUsd: 1395.94, alta: true })).toBe(
-      "Prellenado con lo que hay por entregar: $1,395.94 USD.",
+  it("ayudas del monto y del T.C. (en dólares el T.C. dice cuántos pesos descuenta)", () => {
+    expect(ETIQUETA_TC_PAGO).toBe("Tipo de cambio USD/MXN");
+    expect(hintMontoPago({ moneda: "MXN", porEntregarMxn: 1395.94, alta: true })).toBe(
+      "Prellenado con lo que hay por entregar: $1,395.94 MXN.",
     );
-    expect(hintMontoPago({ moneda: "MXN", porEntregarUsd: 1395.94, alta: true })).toBe(
-      "Captura el monto en pesos; por entregar $1,395.94 USD.",
+    expect(hintMontoPago({ moneda: "USD", porEntregarMxn: 1395.94, alta: true })).toBe(
+      "Captura el monto en dólares; por entregar $1,395.94 MXN. Con el T.C. se sabe cuántos pesos descuenta.",
     );
-    expect(hintMontoPago({ moneda: "USD", porEntregarUsd: -5, alta: true })).toBeNull();
-    expect(hintMontoPago({ moneda: "USD", porEntregarUsd: 1, alta: false })).toBeNull();
-    expect(hintTcPago({ tc: "18.45", tcOficial: 18.45, hoy: "2026-10-01" })).toMatch(
-      /^T\.C\. oficial de referencia de hoy \(01 oct\.? 2026\) — puedes editarlo\./,
+    expect(hintMontoPago({ moneda: "MXN", porEntregarMxn: -5, alta: true })).toBeNull();
+    expect(hintMontoPago({ moneda: "MXN", porEntregarMxn: 1, alta: false })).toBeNull();
+    expect(hintTcPago({ tc: "18.45", tcOficial: 18.45, hoy: "2026-10-01", moneda: "USD" })).toMatch(
+      /^T\.C\. oficial de referencia de hoy \(01 oct\.? 2026\) — puedes editarlo\. La cuenta del socio es en pesos: la entrega descuenta monto × T\.C\./,
     );
-    expect(hintTcPago({ tc: "19", tcOficial: 18.45, hoy: "2026-10-01" })).not.toContain("oficial");
+    expect(hintTcPago({ tc: "19", tcOficial: 18.45, hoy: "2026-10-01", moneda: "USD" })).not.toContain("oficial");
+    expect(hintTcPago({ tc: "19", tcOficial: null, hoy: "2026-10-01", moneda: "MXN" })).toBe(
+      "Solo para el dato informativo en dólares (monto ÷ T.C.); la cuenta descuenta los pesos tal cual.",
+    );
   });
 
-  it("validación: monto, T.C. en pesos, fecha no futura, método, mes/avión", () => {
+  it("vista previa antes de confirmar: en USD «Descuenta $X MXN»; en MXN el dólar informativo (espejo de la regla del API)", () => {
+    expect(previewEntregaPesos({ monto: "1000", moneda: "USD", tc: "18.5" })).toEqual({ descuentaMxn: 18500, informativoUsd: 1000 });
+    expect(previewEntregaPesos({ monto: "70,000", moneda: "MXN", tc: "18.5" })).toEqual({ descuentaMxn: 70000, informativoUsd: 3783.78 });
+    expect(previewEntregaPesos({ monto: "1000", moneda: "USD", tc: "" })).toBeNull();
+    expect(previewEntregaPesos({ monto: "", moneda: "MXN", tc: "18.5" })).toBeNull();
+    expect(textoPreviewEntrega({ monto: "1000", moneda: "USD", tc: "18.5" })).toBe(
+      "Descuenta de la cuenta: $18,500.00 MXN (monto × T.C.).",
+    );
+    expect(textoPreviewEntrega({ monto: "70000", moneda: "MXN", tc: "18.5" })).toBe("≈ $3,783.78 USD (informativo).");
+    expect(textoPreviewEntrega({ monto: "70000", moneda: "MXN", tc: "" })).toBeNull();
+  });
+
+  it("validación: monto, T.C. en las DOS monedas, fecha no futura, método, mes/avión", () => {
     expect(validarFormPago(formValido(), "2026-10-01")).toEqual({});
     const e = validarFormPago(
       formValido({ monto: "0", moneda: "MXN", tc: "", fecha_pago: "2026-10-02", metodo: "", mes: "2026-13", aeronave_id: "x" }),
@@ -856,12 +959,18 @@ describe("formulario «Registrar entrega»", () => {
     );
     expect(Object.keys(e).sort()).toEqual(["aeronave_id", "fecha_pago", "mes", "metodo", "monto", "tc"]);
     expect(e.fecha_pago).toBe("La fecha de la entrega no puede ser futura.");
+    expect(e.tc).toContain("dato informativo en dólares");
+    // En DÓLARES sin T.C. no se sabe cuántos pesos descuenta: también se exige.
+    expect(validarFormPago(formValido({ moneda: "USD", monto: "1000", tc: "" }), "2026-10-01").tc).toBe(
+      "Captura el tipo de cambio: dice cuántos pesos descuenta esta entrega en dólares.",
+    );
+    expect(validarFormPago(formValido({ moneda: "USD", monto: "1000", tc: "18.5" }), "2026-10-01")).toEqual({});
     expect(hayErrores(e)).toBe(true);
     expect(leerNumero("1,234.50")).toBe(1234.5);
     expect(Number.isNaN(leerNumero(""))).toBe(true);
   });
 
-  it("POST: el adelanto de 70,000 MXN sin mes ni avión; vacíos no viajan; la MISMA llave al confirmar", () => {
+  it("POST: el adelanto de 70,000 MXN sin mes ni avión; el T.C. SIEMPRE viaja; vacíos no viajan; la MISMA llave al confirmar", () => {
     const f = formValido({ monto: "70000", moneda: "MXN", tc: "18.5", metodo: "EFECTIVO", recibido_por: " Su esposa " });
     const crid = "c0c0c0c0-0000-4000-8000-000000000001";
     const primero = payloadAltaPago(f, { socio_id: MAURICIO, client_request_id: crid, meId: ALE.id });
@@ -884,23 +993,30 @@ describe("formulario «Registrar entrega»", () => {
     expect(confirmado).toEqual({ ...primero, aceptar_exceso: true });
   });
 
-  it("POST con «corresponde a» y otro «Entregó»", () => {
-    const p = payloadAltaPago(formValido({ mes: "2026-09", aeronave_id: N4142R, entregado_por_id: ITZI.id }), {
-      socio_id: MAURICIO,
-      meId: ALE.id,
-    });
-    expect(p).toMatchObject({ mes: "2026-09", aeronave_id: N4142R, entregado_por_id: ITZI.id, monto: 1395.94 });
-    expect(p).not.toHaveProperty("tc_usd_mxn");
+  it("POST en DÓLARES: el T.C. viaja (el API lo exige para saber los pesos); con «corresponde a» y otro «Entregó»", () => {
+    const p = payloadAltaPago(
+      formValido({ moneda: "USD", monto: "1000", tc: "18.5", mes: "2026-09", aeronave_id: N4142R, entregado_por_id: ITZI.id }),
+      { socio_id: MAURICIO, meId: ALE.id },
+    );
+    expect(p).toMatchObject({ moneda: "USD", monto: 1000, tc_usd_mxn: 18.5, mes: "2026-09", aeronave_id: N4142R, entregado_por_id: ITZI.id });
   });
 
-  it("PATCH: solo lo que cambió; a USD manda `tc_usd_mxn:null`; vaciar un texto manda null", () => {
+  it("T.C. de una entrega guardada: en MXN el persistido; en USD el implícito (monto_mxn ÷ monto)", () => {
+    expect(tcDePago(ADELANTO)).toBe(18.5);
+    expect(tcDePago(EN_DOLARES)).toBe(18.5);
+    expect(tcDePago({ ...EN_DOLARES, monto_mxn: 18456.79 })).toBe(18.45679);
+    expect(tcDePago({ ...EN_DOLARES, monto_mxn: 0 })).toBeNull();
+    expect(tcDePago({ ...ADELANTO, tc_usd_mxn: null })).toBeNull();
+  });
+
+  it("PATCH: solo lo que cambió; a USD manda el T.C. (nunca null); vaciar un texto manda null", () => {
     const f = formDePago(ADELANTO);
     expect(f).toMatchObject({ monto: "70000", moneda: "MXN", tc: "18.5", metodo: "EFECTIVO", mes: SIN_MES, aeronave_id: SIN_AVION });
     expect(cambiosPago(ADELANTO, f)).toEqual({});
     expect(cambiosPago(ADELANTO, { ...f, moneda: "USD", monto: "3783.78", recibido_por: "" })).toEqual({
       monto: 3783.78,
       moneda: "USD",
-      tc_usd_mxn: null,
+      tc_usd_mxn: 18.5,
       recibido_por: null,
     });
     expect(cambiosPago(ADELANTO, { ...f, tc: "18.75", metodo: "TRANSFERENCIA", referencia: "SPEI 1" })).toEqual({
@@ -908,6 +1024,11 @@ describe("formulario «Registrar entrega»", () => {
       metodo: "TRANSFERENCIA",
       referencia: "SPEI 1",
     });
+    // Una entrega en DÓLARES arranca con su T.C. implícito; sin cambios no manda nada.
+    const g = formDePago(EN_DOLARES);
+    expect(g).toMatchObject({ monto: "1000", moneda: "USD", tc: "18.5" });
+    expect(cambiosPago(EN_DOLARES, g)).toEqual({});
+    expect(cambiosPago(EN_DOLARES, { ...g, tc: "19" })).toEqual({ tc_usd_mxn: 19 });
   });
 
   it("PATCH del «corresponde a»: asignarlo manda el valor; «Sin mes» / «Sin avión» manda null", () => {
@@ -925,12 +1046,14 @@ describe("formulario «Registrar entrega»", () => {
   });
 });
 
-describe("formulario «Configurar cuenta»", () => {
+describe("formulario «Configurar cuenta» (saldo inicial EN PESOS)", () => {
   it("arranca con lo que tiene la cuenta (o el default del API)", () => {
     expect(formDeCuenta(CUENTA_DEFAULT)).toEqual({ cuenta_desde: "2026-09", saldo_inicial: "0", notas: "" });
     expect(
-      formDeCuenta({ cuenta_desde: "2026-06", saldo_inicial_usd: -1500.5, notas: "Repartos de junio a agosto", configurada: true }),
+      formDeCuenta({ cuenta_desde: "2026-06", saldo_inicial_mxn: -1500.5, notas: "Repartos de junio a agosto", configurada: true }),
     ).toEqual({ cuenta_desde: "2026-06", saldo_inicial: "-1500.5", notas: "Repartos de junio a agosto" });
+    expect(ETIQUETA_SALDO_INICIAL).toBe("Saldo inicial (MXN)");
+    expect(AYUDA_SALDO_INICIAL).toMatch(/^En pesos \(MXN\)\./);
   });
 
   it("validación: mes no futuro, saldo obligatorio (negativo permitido), notas ≤ 500", () => {
@@ -947,35 +1070,35 @@ describe("formulario «Configurar cuenta»", () => {
     expect(validarFormCuenta({ cuenta_desde: "2026-09", saldo_inicial: "−1,500.5", notas: "" }, "2026-10-01")).toEqual({});
   });
 
-  it("PUT: `YYYY-MM`, saldo con 2 decimales (−0 viaja como 0), notas vacías ⇒ null", () => {
+  it("PUT: `YYYY-MM`, saldo EN PESOS con 2 decimales (−0 viaja como 0), notas vacías ⇒ null", () => {
     expect(payloadCuenta({ cuenta_desde: "2026-06", saldo_inicial: "-1,500.50", notas: " Repartos " })).toEqual({
       cuenta_desde: "2026-06",
-      saldo_inicial_usd: -1500.5,
+      saldo_inicial_mxn: -1500.5,
       notas: "Repartos",
     });
     expect(payloadCuenta({ cuenta_desde: "2026-09", saldo_inicial: "-0", notas: "" })).toEqual({
       cuenta_desde: "2026-09",
-      saldo_inicial_usd: 0,
+      saldo_inicial_mxn: 0,
       notas: null,
     });
   });
 
   it("¿cambia algo? Sin configurar SIEMPRE (guardar el default la configura); configurada igual ⇒ no", () => {
     expect(cuentaCambia(CUENTA_DEFAULT, formDeCuenta(CUENTA_DEFAULT))).toBe(true);
-    const c: CuentaSocio = { cuenta_desde: "2026-06", saldo_inicial_usd: -1500.5, notas: "x", configurada: true };
+    const c: CuentaSocio = { cuenta_desde: "2026-06", saldo_inicial_mxn: -1500.5, notas: "x", configurada: true };
     expect(cuentaCambia(c, formDeCuenta(c))).toBe(false);
     expect(cuentaCambia(c, { ...formDeCuenta(c), saldo_inicial: "-1500.49" })).toBe(true);
   });
 
-  it("confirmación al cambiar una cuenta configurada (el saldo se recalcula)", () => {
+  it("confirmación al cambiar una cuenta configurada (el saldo se recalcula), en pesos", () => {
     const c = confirmacionCambiarCuenta("Mauricio Roque", { cuenta_desde: "2026-06", saldo_inicial: "-1500.5", notas: "" });
     expect(c.descripcion).toBe(
-      "La cuenta de Mauricio Roque arrancará en Junio 2026 con saldo inicial de -$1,500.50 USD. Su saldo por entregar se recalcula; las entregas registradas no cambian.",
+      "La cuenta de Mauricio Roque arrancará en Junio 2026 con saldo inicial de -$1,500.50 MXN. Su saldo por entregar se recalcula; las entregas registradas no cambian.",
     );
   });
 });
 
-describe("pre-cierre: socios por entregar / adelantados", () => {
+describe("pre-cierre: socios por entregar / adelantados (en pesos)", () => {
   it("claves y «Resolver →» a Pagos a socios", () => {
     expect(CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR).toBe("socios_por_entregar");
     expect(CLAVE_PRECIERRE_SOCIOS_ADELANTADOS).toBe("socios_adelantados");
@@ -984,41 +1107,46 @@ describe("pre-cierre: socios por entregar / adelantados", () => {
     expect(hrefPrecierreSocios()).toBe("/admin/profit-sharing/socios");
   });
 
-  it("renglones con el saldo del API; el «y N más» sale del count", () => {
+  it("renglones con el saldo del API en pesos; el «y N más» sale del count", () => {
     const pend = lineasPreCierreSocios(
       [
-        { socio: { id: MAURICIO, nombre: "Mauricio Roque" }, por_entregar_usd: 1395.94 },
-        { socio: "Aero Charter", por_entregar_usd: 586.7 },
+        { socio: { id: MAURICIO, nombre: "Mauricio Roque" }, por_entregar_mxn: 1395.94 },
+        { socio: "Aero Charter", por_entregar_mxn: 586.7 },
       ],
       CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR,
       1,
       3,
     );
-    expect(pend.lineas.map((l) => l.texto)).toEqual(["Mauricio Roque · por entregar: $1,395.94 USD"]);
+    expect(pend.lineas.map((l) => l.texto)).toEqual(["Mauricio Roque · por entregar: $1,395.94 MXN"]);
     expect(pend.restantes).toBe(2);
     const adel = lineasPreCierreSocios(
       [
-        { socio: { id: MAURICIO, nombre: "Mauricio Roque" }, por_entregar_usd: -2387.84, adelantado_usd: 2387.84 },
-        { socio: { id: SAAB, nombre: "Alexander E. Saab" }, por_entregar_usd: -10 },
+        { socio: { id: MAURICIO, nombre: "Mauricio Roque" }, por_entregar_mxn: -2387.84, adelantado_mxn: 2387.84 },
+        { socio: { id: SAAB, nombre: "Alexander E. Saab" }, por_entregar_mxn: -10 },
       ],
       CLAVE_PRECIERRE_SOCIOS_ADELANTADOS,
     );
     expect(adel.lineas.map((l) => l.texto)).toEqual([
-      "Mauricio Roque · adelantado hoy: $2,387.84 USD",
-      "Alexander E. Saab · adelantado hoy: $10 USD",
+      "Mauricio Roque · adelantado hoy: $2,387.84 MXN",
+      "Alexander E. Saab · adelantado hoy: $10.00 MXN",
     ]);
     expect(lineasPreCierreSocios(null, CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR)).toEqual({ lineas: [], restantes: 0 });
+    // Un item en dólares del API previo no trae pesos: solo el nombre (nunca un peso inventado).
+    expect(
+      lineasPreCierreSocios([{ socio: "Mauricio Roque", por_entregar_mxn: null }], CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR).lineas[0]
+        .texto,
+    ).toBe("Mauricio Roque");
   });
 
-  it("con el MES del cierre: «por entregar hasta Septiembre 2026: $X USD» + la nota de que «Pagos a socios» es el saldo de HOY", () => {
+  it("con el MES del cierre: «por entregar hasta Septiembre 2026: $X MXN» + la nota de que «Pagos a socios» es el saldo de HOY", () => {
     const pend = lineasPreCierreSocios(
-      [{ socio: { id: MAURICIO, nombre: "Mauricio Roque" }, por_entregar_usd: 1395.94 }],
+      [{ socio: { id: MAURICIO, nombre: "Mauricio Roque" }, por_entregar_mxn: 1395.94 }],
       CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR,
       undefined,
       1,
       "2026-09",
     );
-    expect(pend.lineas.map((l) => l.texto)).toEqual(["Mauricio Roque · por entregar hasta Septiembre 2026: $1,395.94 USD"]);
+    expect(pend.lineas.map((l) => l.texto)).toEqual(["Mauricio Roque · por entregar hasta Septiembre 2026: $1,395.94 MXN"]);
     expect(notaPreCierreSocios(CLAVE_PRECIERRE_SOCIOS_POR_ENTREGAR, "2026-09")).toBe(
       "Montos con las utilidades hasta Septiembre 2026. En «Pagos a socios» el saldo es el de hoy: suma también la utilidad del mes en curso.",
     );
@@ -1027,13 +1155,13 @@ describe("pre-cierre: socios por entregar / adelantados", () => {
     expect(notaPreCierreSocios(CLAVE_PRECIERRE_SOCIOS_ADELANTADOS, "2026-09")).toBeNull();
     expect(
       lineasPreCierreSocios(
-        [{ socio: "Mauricio Roque", por_entregar_usd: -2387.84 }],
+        [{ socio: "Mauricio Roque", por_entregar_mxn: -2387.84 }],
         CLAVE_PRECIERRE_SOCIOS_ADELANTADOS,
         undefined,
         1,
         "2026-09",
       ).lineas[0].texto,
-    ).toBe("Mauricio Roque · adelantado hoy: $2,387.84 USD");
+    ).toBe("Mauricio Roque · adelantado hoy: $2,387.84 MXN");
   });
 });
 
@@ -1046,9 +1174,9 @@ describe("entregas fechadas ANTES del arranque de la cuenta", () => {
       mes: null,
       aeronave: null,
       porcentaje: null,
-      cargo_usd: 0,
-      abono_usd: 0,
-      saldo_usd: 0,
+      cargo_mxn: 0,
+      abono_mxn: 0,
+      saldo_mxn: 0,
       en_curso: false,
       pago: null,
     }));

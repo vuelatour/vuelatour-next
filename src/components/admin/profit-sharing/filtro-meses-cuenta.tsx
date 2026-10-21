@@ -24,6 +24,7 @@ export function FiltroMesesCuenta({
   mesActual,
   mesMinimo = null,
   filtrado,
+  etiquetaTodo = "Toda la cuenta",
 }: {
   /** Lo que muestra hoy el estado de cuenta (`YYYY-MM`). */
   desde: string;
@@ -34,6 +35,9 @@ export function FiltroMesesCuenta({
   mesMinimo?: string | null;
   /** true = la URL trae filtro (se ofrece «Toda la cuenta»). */
   filtrado: boolean;
+  /** Texto del botón que quita el filtro (el histórico del avión dice
+      «Todo el histórico»). */
+  etiquetaTodo?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -96,7 +100,7 @@ export function FiltroMesesCuenta({
           disabled={pendiente}
           onClick={() => ir(null)}
         >
-          Toda la cuenta
+          {etiquetaTodo}
         </Button>
       )}
     </div>

@@ -11,12 +11,21 @@
  * comprobante escaneado». Es una CUENTA CORRIENTE por socio, no un estatus
  * por mes (eso era la v1 del mismo día, que se retiró).
  *
+ * **LA CUENTA ES EN PESOS (20-oct-2026, API 0.0.101, invariante 99).** Pedido
+ * del cliente: «todo ponlo en Pesos, porque aquí en pagos a socios dice en
+ * dólares y pagamos realmente en pesos». TODOS los importes de la cuenta
+ * viajan en `*_mxn` (saldo inicial, utilidades, entregado, por entregar,
+ * saldo corrido, totales, el 409 del adelanto y el pre-cierre). Una entrega
+ * trae `monto_mxn` = lo que descuenta del saldo (MXN = monto; USD = monto ×
+ * T.C.) y `monto_usd` solo como dato informativo. TODA entrega lleva T.C.
+ * (en USD para saber sus pesos; en MXN para su dólar informativo).
+ *
  * Solo la FORMA del contrato (1:1 con `/v1/profit-sharing/socios*` y
  * `/v1/profit-sharing/pagos*`). Textos, colores, validación del formulario y
  * tolerancia al API previo viven en `lib/admin/reparto-pagos.ts`. El DINERO
  * (utilidad generada por mes y avión, entregado, por entregar, saldo
- * corrido, estado, equivalente en USD de una entrega en pesos) lo calcula el
- * API: el panel nunca lo recalcula.
+ * corrido, estado, los pesos de una entrega en dólares) lo calcula el API:
+ * el panel nunca lo recalcula.
  */
 
 export type MonedaPagoSocio = "USD" | "MXN";
@@ -24,8 +33,8 @@ export type MonedaPagoSocio = "USD" | "MXN";
 export type MetodoPagoSocio = "EFECTIVO" | "TRANSFERENCIA" | "CHEQUE" | "OTRO";
 
 /**
- * Estado de la cuenta del socio (lo decide el API con tolerancia de $1.00):
- * AL_CORRIENTE (|saldo| ≤ 1), POR_ENTREGAR (saldo > 1: se le debe) o
+ * Estado de la cuenta del socio (lo decide el API con tolerancia de $1.00
+ * MXN): AL_CORRIENTE (|saldo| ≤ 1), POR_ENTREGAR (saldo > 1: se le debe) o
  * ADELANTADO (saldo < −1: se le entregó más de lo que ha generado).
  * String en la unión: un estado nuevo del API no rompe el tipado.
  */
@@ -62,15 +71,21 @@ export interface PagoSocio {
   /** Lo que se entregó, en su moneda. */
   monto: number;
   moneda: MonedaPagoSocio | (string & {});
-  /** Solo con MXN (6 decimales). */
+  /** T.C. PERSISTIDO: solo en MXN (6 decimales). En una entrega en USD el
+      API no lo guarda aquí: queda implícito en `monto_mxn ÷ monto`. */
   tc_usd_mxn: number | null;
-  /** Lo que descuenta del saldo (USD = monto; MXN = monto ÷ T.C.). Lo
-      calcula el API. */
+  /** Dólares INFORMATIVOS (USD = monto; MXN = monto ÷ T.C.). Lo calcula el API. */
   monto_usd: number;
+  /** LO QUE DESCUENTA DEL SALDO, EN PESOS (API 0.0.101): MXN = monto; USD =
+      monto × T.C. de la entrega. Lo calcula el API. */
+  monto_mxn: number;
   /** v1: utilidad del renglón (avión × mes) al registrar. null en v2. */
   utilidad_snapshot_usd: number | null;
-  /** Por entregar del socio ANTES de esta entrega (informativo). */
+  /** Por entregar del socio ANTES de esta entrega (informativo; el de las
+      entregas previas al 0.0.101 está en dólares). */
   saldo_snapshot_usd: number | null;
+  /** Lo mismo EN PESOS (API 0.0.101; null en entregas anteriores). */
+  saldo_snapshot_mxn?: number | null;
   /** Día de la entrega (`YYYY-MM-DD`, día Cancún). */
   fecha_pago: string;
   metodo: MetodoPagoSocio | (string & {});
@@ -100,8 +115,10 @@ export interface PagoSocio {
 export interface CuentaSocio {
   /** Mes de arranque (`YYYY-MM`; el panel tolera `YYYY-MM-01`). */
   cuenta_desde: string;
-  /** Positivo = se le debía al arrancar; negativo = ya se le había adelantado. */
-  saldo_inicial_usd: number;
+  /** EN PESOS. Positivo = se le debía al arrancar; negativo = ya se le había adelantado. */
+  saldo_inicial_mxn: number;
+  /** Informativo (el PUT lo acepta opcional); el GET no lo manda. */
+  saldo_inicial_usd?: number | null;
   notas: string | null;
   /** false = no hay fila: el API usa el default (sep 2026, saldo 0). */
   configurada: boolean;
@@ -114,6 +131,9 @@ export interface UltimoPagoSocio {
   fecha_pago: string;
   monto: number;
   moneda: MonedaPagoSocio | (string & {});
+  /** Lo que descontó EN PESOS. */
+  monto_mxn: number;
+  /** Dólares informativos. */
   monto_usd: number;
   metodo: MetodoPagoSocio | (string & {});
 }
@@ -129,18 +149,21 @@ export interface AvionDeSocio {
   activa?: boolean;
 }
 
-/** Un renglón del resumen `GET /v1/profit-sharing/socios`. */
+/** Un renglón del resumen `GET /v1/profit-sharing/socios` (todo EN PESOS). */
 export interface ResumenCuentaSocio {
   socio: SocioRef;
   cuenta: CuentaSocio;
   /** Utilidades generadas desde `cuenta_desde` hasta el mes actual
       INCLUSIVE (el mes en curso incluido). */
-  generado_usd: number;
-  /** Parte de `generado_usd` del mes en curso (cambia día con día). */
-  mes_en_curso_usd: number;
-  entregado_usd: number;
+  generado_mxn: number;
+  /** Parte de `generado_mxn` del mes en curso (cambia día con día). */
+  mes_en_curso_mxn: number;
+  entregado_mxn: number;
   /** Saldo: saldo inicial + generado − entregado (negativo = adelantado). */
-  por_entregar_usd: number;
+  por_entregar_mxn: number;
+  /** ADITIVO: lo por entregar SIN el mes en curso (contra esto el API decide
+      un ADELANTO, 409 `PAGO_EXCEDE_SALDO`). */
+  por_entregar_cerrado_mxn?: number | null;
   estado: EstadoCuentaSocio | (string & {});
   ultimo_pago: UltimoPagoSocio | null;
   aviones: AvionDeSocio[];
@@ -150,12 +173,12 @@ export interface ResumenCuentaSocio {
 }
 
 export interface TotalesCuentasSocios {
-  generado_usd: number;
-  entregado_usd: number;
+  generado_mxn: number;
+  entregado_mxn: number;
   /** Σ de lo por entregar POSITIVO (un adelanto no compensa a otro socio). */
-  por_entregar_usd: number;
+  por_entregar_mxn: number;
   /** ADITIVO: Σ de lo adelantado (saldos negativos, en positivo). */
-  adelantado_usd?: number;
+  adelantado_mxn?: number;
   socios_por_entregar: number;
   socios_adelantados: number;
 }
@@ -175,9 +198,9 @@ export type TipoMovimientoCuenta = "SALDO_INICIAL" | "SALDO_ANTERIOR" | "UTILIDA
 
 /**
  * Un movimiento del estado de cuenta, en orden de fecha y con el saldo
- * corrido. Convención DEL API (`reparto-cuenta.util.ts`): `cargo_usd` SUMA a
+ * corrido. Convención DEL API (`reparto-cuenta.util.ts`): `cargo_mxn` SUMA a
  * lo por entregar (utilidad generada —NEGATIVA en un mes con pérdida— o
- * saldo inicial a favor del socio) y `abono_usd` RESTA (siempre ≥ 0:
+ * saldo inicial a favor del socio) y `abono_mxn` RESTA (siempre ≥ 0:
  * entregas o saldo inicial ya adelantado). El panel los pinta como
  * «Generó (+)» y «Entregado (−)».
  */
@@ -194,10 +217,10 @@ export interface MovimientoCuenta {
   mes: string | null;
   aeronave: AeronaveRef | null;
   porcentaje: number | null;
-  cargo_usd: number;
-  abono_usd: number;
+  cargo_mxn: number;
+  abono_mxn: number;
   /** Saldo por entregar DESPUÉS del movimiento. */
-  saldo_usd: number;
+  saldo_mxn: number;
   /** Utilidad del mes en curso (todavía cambia). */
   en_curso: boolean;
   /** La entrega completa (solo en ENTREGA). */
@@ -207,25 +230,27 @@ export interface MovimientoCuenta {
 export interface UtilidadAvionMes {
   aeronave: AeronaveRef;
   porcentaje: number;
-  monto_usd: number;
+  monto_mxn: number;
 }
 
 export interface ResumenMesCuenta {
   /** `YYYY-MM`. */
   mes: string;
-  utilidad_usd: number;
+  utilidad_mxn: number;
   en_curso: boolean;
   por_avion: UtilidadAvionMes[];
   /** Σ entregas con `fecha_pago` en ese mes (flujo de dinero). */
-  entregado_usd: number;
+  entregado_mxn: number;
 }
 
 export interface TotalesEstadoCuenta {
-  generado_usd: number;
-  /** ADITIVO: parte de `generado_usd` del mes en curso. */
-  mes_en_curso_usd?: number;
-  entregado_usd: number;
-  por_entregar_usd: number;
+  generado_mxn: number;
+  /** ADITIVO: parte de `generado_mxn` del mes en curso. */
+  mes_en_curso_mxn?: number;
+  entregado_mxn: number;
+  por_entregar_mxn: number;
+  /** ADITIVO: lo por entregar SIN el mes en curso (el tope sin confirmación). */
+  por_entregar_cerrado_mxn?: number | null;
   estado: EstadoCuentaSocio | (string & {});
 }
 
@@ -241,7 +266,7 @@ export interface EstadoCuentaRespuesta {
   hasta: string;
   /** Saldo al cierre del mes anterior a `desde` (incluye saldo inicial y
       entregas previas). */
-  saldo_anterior_usd: number;
+  saldo_anterior_mxn: number;
   movimientos: MovimientoCuenta[];
   por_mes: ResumenMesCuenta[];
   /** De TODA la cuenta, HOY (las mismas cifras que el resumen), aunque el
@@ -250,7 +275,7 @@ export interface EstadoCuentaRespuesta {
   /** ADITIVO: los aviones del socio (para «Corresponde a»). */
   aviones?: AvionDeSocio[];
   /** ADITIVO: solo lo que cae en [desde, hasta]. */
-  rango?: { generado_usd: number; entregado_usd: number; saldo_final_usd: number } | null;
+  rango?: { generado_mxn: number; entregado_mxn: number; saldo_final_mxn: number } | null;
   /** ADITIVO: avisos de la cuenta en texto listo. */
   avisos?: string[];
 }
@@ -260,7 +285,9 @@ export interface CrearPagoSocioPayload {
   socio_id: string;
   monto: number;
   moneda: MonedaPagoSocio;
-  tc_usd_mxn?: number;
+  /** OBLIGATORIO en las DOS monedas (API 0.0.101): en USD dice cuántos pesos
+      descuenta; en MXN, su dólar informativo. Sin él ⇒ 400 `TC_REQUERIDO`. */
+  tc_usd_mxn: number;
   /** `YYYY-MM-DD` (día Cancún, no futuro). */
   fecha_pago: string;
   metodo: MetodoPagoSocio;
@@ -285,8 +312,8 @@ export interface CrearPagoSocioPayload {
 export interface PatchPagoSocioPayload {
   monto?: number;
   moneda?: MonedaPagoSocio;
-  /** null = quitarlo (al pasar a USD). */
-  tc_usd_mxn?: number | null;
+  /** Obligatorio en las dos monedas: al cambiar de moneda hay que mandarlo. */
+  tc_usd_mxn?: number;
   fecha_pago?: string;
   metodo?: MetodoPagoSocio;
   referencia?: string | null;
@@ -324,23 +351,31 @@ export interface ResultadoComprobantePagoSocio {
 export interface ConfigurarCuentaPayload {
   /** `YYYY-MM`. */
   cuenta_desde: string;
-  saldo_inicial_usd: number;
+  /** EN PESOS (obligatorio). */
+  saldo_inicial_mxn: number;
+  /** Informativo (opcional). */
+  saldo_inicial_usd?: number | null;
   notas?: string | null;
 }
 
-/** `details` del 409 `PAGO_EXCEDE_SALDO`. */
+/** `details` del 409 `PAGO_EXCEDE_SALDO` (todo EN PESOS). */
 export interface DetalleExcesoSaldo {
-  por_entregar_usd: number;
-  monto_usd: number;
-  exceso_usd: number;
+  /** Lo por entregar de MESES CERRADOS (el mes en curso no cuenta). */
+  por_entregar_mxn: number;
+  /** Lo que lleva el mes en curso (todavía se mueve; no cuenta en el candado). */
+  mes_en_curso_mxn?: number | null;
+  /** Lo que la entrega descuenta en pesos. */
+  monto_mxn: number;
+  exceso_mxn: number;
+  saldo_despues_mxn?: number | null;
 }
 
 /** Renglón de los items del pre-cierre `socios_por_entregar` /
     `socios_adelantados` (máx. 50). `socio` como objeto o texto. */
 export interface PreCierreSocioCuenta {
   socio: SocioRef | string | null;
-  /** Saldo del socio (positivo = por entregar; negativo = adelantado). */
-  por_entregar_usd?: number | null;
+  /** Saldo del socio EN PESOS (positivo = por entregar; negativo = adelantado). */
+  por_entregar_mxn?: number | null;
   /** Tolerado: el adelanto como positivo. */
-  adelantado_usd?: number | null;
+  adelantado_mxn?: number | null;
 }

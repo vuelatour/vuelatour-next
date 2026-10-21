@@ -26,6 +26,10 @@ import type {
 } from "@/types/inventory";
 
 class NotFound extends Error {}
+vi.mock("@/app/admin/inventory/compras/actions", () => ({
+  entradaDesdeGastoAction: vi.fn(),
+  listGastosCandidatosCompraAction: vi.fn(async () => ({ ok: true, data: { data: [], total: 0, truncado: false, ventana: {} } })),
+}));
 vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new NotFound("404");

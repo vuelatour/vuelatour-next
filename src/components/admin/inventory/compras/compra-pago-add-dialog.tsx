@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,116 +14,94 @@ import {
 } from "@/components/ui/dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Field } from "@/components/admin/form-field";
-import {
-  addPagoCompraAction,
-  listGastosSinCompraAction,
-  type GastoCandidato,
-} from "@/app/admin/inventory/compras/actions";
-import { fmtDateOnly } from "@/lib/datetime";
-import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
-import {
-  COMPRA_ROL_OPTIONS,
-  fmtMontoMoneda,
-  sugerirRolCompra,
-  type CompraRol,
-} from "@/types/compras";
+import { addPagoCompraAction } from "@/app/admin/inventory/compras/actions";
+import { BOTON_VINCULAR_GASTO } from "@/lib/admin/compras-estado";
+import { COMPRA_ROL_OPTIONS, type CompraRol, type GastoCandidatoCompra } from "@/types/compras";
+import { GastoCandidatoSelector } from "./gasto-candidato-selector";
 
 /**
- * Liga un gasto YA capturado (con su factura) como pago de esta compra.
- * Candidatos: gastos sin compra de los últimos 60 días.
+ * «Vincular gasto ya registrado» (21-oct-2026): liga un gasto que YA está en
+ * Gastos como pago de esta compra (mercancía, envío, impuestos u otro). Es el
+ * caso del cliente «ya registramos el gasto; cuando llegue, vincular». Los
+ * candidatos los da el API; el rol se sugiere y la oficina lo confirma.
  */
 export function CompraPagoAddDialog({
   open,
   onOpenChange,
   compraId,
+  folio,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   compraId: string;
+  folio?: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  // null = aún no llegan (se vacía al cerrar para recargar en cada apertura).
-  const [candidatos, setCandidatos] = useState<GastoCandidato[] | null>(null);
-  const cargando = open && candidatos === null;
-  const [gastoId, setGastoId] = useState("");
+  const [gasto, setGasto] = useState<GastoCandidatoCompra | null>(null);
   const [rol, setRol] = useState<CompraRol>("OTRO");
-
-  useEffect(() => {
-    if (!open) return;
-    let cancel = false;
-    void listGastosSinCompraAction().then((r) => {
-      if (cancel) return;
-      if (r.ok && r.data) setCandidatos(r.data);
-      else {
-        setCandidatos([]);
-        toast.error(r.error ?? "No se pudieron cargar los gastos");
-      }
-    });
-    return () => {
-      cancel = true;
-    };
-  }, [open]);
 
   const cambiarOpen = (o: boolean) => {
     if (!o) {
-      setCandidatos(null);
-      setGastoId("");
+      setGasto(null);
+      setRol("OTRO");
     }
     onOpenChange(o);
   };
 
-  const elegir = (id: string) => {
-    setGastoId(id);
-    const g = (candidatos ?? []).find((c) => c.id === id);
-    if (g) setRol(sugerirRolCompra(g.categoria, [g.proveedor, g.descripcion].join(" ")));
+  const elegir = (g: GastoCandidatoCompra | null) => {
+    setGasto(g);
+    if (g) setRol(g.rol_sugerido);
   };
 
   const confirmar = () => {
-    if (!gastoId) {
+    if (!gasto) {
       toast.error("Elige el gasto que pagó esta compra");
       return;
     }
+    if (rol === "MERCANCIA" && !gasto.puede_mercancia) {
+      toast.error("Ese gasto no puede ser la factura de mercancía (solo Refacción, Otro u Operaciones): elige otro rol.");
+      return;
+    }
     startTransition(async () => {
-      const r = await addPagoCompraAction(compraId, { gasto_id: gastoId, rol });
+      const r = await addPagoCompraAction(compraId, { gasto_id: gasto.id, rol });
       if (r.ok) {
-        toast.success("Pago ligado a la compra");
+        toast.success(
+          rol === "MERCANCIA"
+            ? `Gasto vinculado a la compra${folio != null ? ` #${folio}` : ""} como su factura de mercancía`
+            : `Pago vinculado a la compra${folio != null ? ` #${folio}` : ""}`,
+        );
         cambiarOpen(false);
         router.refresh();
       } else {
-        toast.error(r.error ?? "No se pudo ligar el pago");
+        toast.error(r.error ?? "No se pudo vincular el gasto");
       }
     });
   };
 
   return (
     <Dialog open={open} onOpenChange={cambiarOpen}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Agregar pago a la compra</DialogTitle>
+          <DialogTitle>
+            {BOTON_VINCULAR_GASTO}
+            {folio != null ? ` · compra #${folio}` : ""}
+          </DialogTitle>
           <DialogDescription>
-            Elige un gasto ya capturado (con su factura) y di qué pagó: mercancía, envío,
-            impuestos u otro. El gasto conserva su cruce bancario.
+            Elige un gasto que ya está en Gastos y di qué pagó: la factura de mercancía (el gasto de la
+            compra), el envío, los impuestos u otro cargo. El gasto conserva su factura y su cruce bancario.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <Field label="Gasto" required hint="Gastos sin compra de los últimos 60 días.">
-            <SearchableSelect
-              options={(candidatos ?? []).map((g) => ({
-                value: g.id,
-                label: `${fmtDateOnly(g.fecha_gasto)} · ${categoriaGastoLabel(g.categoria)} · ${fmtMontoMoneda(g.monto, g.moneda)}`,
-                description: [g.proveedor, g.descripcion].filter(Boolean).join(" · ") || undefined,
-              }))}
-              value={gastoId}
-              onChange={elegir}
-              placeholder={cargando ? "Cargando gastos…" : "Elige el gasto"}
-              emptyText="Sin gastos disponibles en los últimos 60 días"
-              disabled={cargando}
-            />
+          <Field label="Gasto" required>
+            <GastoCandidatoSelector value={gasto?.id ?? ""} onChange={elegir} />
           </Field>
-          <Field label="¿Qué pagó?" required>
+          <Field label="¿Qué pagó?" required hint={gasto ? "Sugerido por lo que dice el gasto; corrígelo si hace falta." : undefined}>
             <SearchableSelect
-              options={COMPRA_ROL_OPTIONS}
+              options={COMPRA_ROL_OPTIONS.map((o) => ({
+                ...o,
+                disabled: o.value === "MERCANCIA" && !!gasto && !gasto.puede_mercancia,
+              }))}
               value={rol}
               onChange={(v) => setRol(v as CompraRol)}
             />
@@ -133,8 +111,8 @@ export function CompraPagoAddDialog({
           <Button variant="outline" onClick={() => cambiarOpen(false)} disabled={pending}>
             Cancelar
           </Button>
-          <Button onClick={confirmar} disabled={pending || !gastoId}>
-            {pending ? "Ligando…" : "Agregar pago"}
+          <Button onClick={confirmar} disabled={pending || !gasto}>
+            {pending ? "Vinculando…" : "Vincular gasto"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { fmtDateOnly } from "@/lib/datetime";
-import { fmtUsd } from "@/lib/format";
+import { fmtMxn } from "@/lib/format";
 import {
   AYUDA_COLUMNAS_CUENTA,
   claseTextoSaldoCorrido,
@@ -35,9 +35,10 @@ import { ComprobanteEntrega } from "./comprobante-entrega";
 
 /**
  * Movimientos del estado de cuenta de UN socio con el SALDO CORRIDO (todo
- * del API): saldo inicial/anterior, una utilidad por mes y avión (el mes en
- * curso marcado) y cada entrega con método · entregó · recibió/factura ·
- * referencia · comprobante, «Editar» y «Eliminar» (ADMIN/FACTURACION).
+ * del API, EN PESOS desde el API 0.0.101): saldo inicial/anterior, una
+ * utilidad por mes y avión (el mes en curso marcado) y cada entrega con
+ * método · entregó · recibió/factura · referencia · comprobante, «Editar» y
+ * «Eliminar» (ADMIN/FACTURACION).
  *
  * El concepto de una ENTREGA lo redacta `conceptoEntregaCuenta` («Entrega ·
  * corresponde a Septiembre 2026» / «Entrega a cuenta (sin mes)»): el del API
@@ -128,18 +129,18 @@ export function MovimientosCuenta({
                         : "text-emerald-700 dark:text-emerald-400",
                     )}
                   >
-                    {suma != null ? fmtUsd(suma) : ""}
+                    {suma != null ? fmtMxn(suma) : ""}
                   </TableCell>
                   <TableCell className="text-right align-top font-mono text-sm">
-                    {resta != null ? fmtUsd(resta) : ""}
+                    {resta != null ? fmtMxn(resta) : ""}
                   </TableCell>
                   <TableCell
                     className={cn(
                       "text-right align-top font-mono text-sm font-medium",
-                      claseTextoSaldoCorrido(m.saldo_usd),
+                      claseTextoSaldoCorrido(m.saldo_mxn),
                     )}
                   >
-                    {fmtUsd(m.saldo_usd)}
+                    {fmtMxn(m.saldo_mxn)}
                   </TableCell>
                 </FilaNavegable>
                 {pago && p && (

@@ -18,9 +18,9 @@ export function CategoriaDestinoHint({
   categoria: string;
   tieneVuelo: boolean;
   tieneAvion: boolean;
-  /** Hoja ya decidida por el diálogo (p. ej. la refacción que entra a
-   *  Inventario/Tienda, 12-oct-2026): sustituye a `hojaDestinoGasto` y se
-   *  pinta aunque no haya vuelo ni avión. */
+  /** Hoja ya decidida por el diálogo (p. ej. el reparto entre aviones de
+   *  «Verificar / editar»): sustituye a `hojaDestinoGasto` y se pinta aunque
+   *  no haya vuelo ni avión. */
   hoja?: string | null;
 }) {
   const destino = destinoPorDefecto(categoria);

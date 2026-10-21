@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   ENCABEZADO_GASTOS_PESOS,
   HINT_SALDO_PESOS_INCOMPLETO,
+  NOTA_REPARTO_COMO_BALANCE,
   NOTA_REPARTO_EN_PESOS,
   SUB_COLUMNA_USD,
   TEXTO_SIN_PESOS,
@@ -19,6 +20,7 @@ import {
   informativoUsd,
   montoPrincipal,
   pesosIncompletos,
+  repartoComoBalance,
   repartoEnPesos,
   sumaCentavos,
   textoAlTc,
@@ -42,6 +44,13 @@ describe("bandera", () => {
     expect(repartoEnPesos(null)).toBe(false);
     expect(repartoEnPesos(undefined)).toBe(false);
     expect(repartoEnPesos({ reparto_en_pesos: null })).toBe(false);
+  });
+
+  it("la cascada del balance (API 0.0.101) también es solo `true` estricto", () => {
+    expect(repartoComoBalance({ reparto_como_balance: true })).toBe(true);
+    expect(repartoComoBalance({ reparto_como_balance: false })).toBe(false);
+    expect(repartoComoBalance({})).toBe(false);
+    expect(repartoComoBalance(null)).toBe(false);
   });
 });
 
@@ -136,8 +145,9 @@ describe("piezas de texto", () => {
     expect(SUB_COLUMNA_USD).toBe("en USD");
     expect(HINT_SALDO_PESOS_INCOMPLETO).toBe("Incompleto en pesos: revisa el aviso del avión");
     expect(NOTA_REPARTO_EN_PESOS).toBe(
-      "Montos en pesos (MXN), que es como se transfiere a los socios; los dólares van en gris solo como referencia. «Pagos a socios» sigue en dólares.",
+      "Montos en pesos (MXN), que es como se transfiere a los socios; los dólares van en gris solo como referencia. «Pagos a socios» también está en pesos.",
     );
+    expect(NOTA_REPARTO_COMO_BALANCE).toContain("la reserva de overhaul no se resta");
   });
 
   it("tooltip de los otros ingresos del avión en pesos", () => {
@@ -172,6 +182,9 @@ describe("sumas en centavos (solo lo que ya manda el API)", () => {
     expect(totalFlotaMxn(flota, (a) => a.saldo_disponible_mxn)).toBe(127800.03);
     expect(gastosMxnDeAvion(flota[0])).toBe(103687.5);
     expect(gastosMxnDeAvion(flota[1])).toBe(17250);
+    // Cascada del balance: la provisión AFAC también es gasto del periodo (y sin la llave, null).
+    expect(gastosMxnDeAvion({ ...flota[0], afac_reservado_mxn: 3450 }, { conAfac: true })).toBe(107137.5);
+    expect(gastosMxnDeAvion(flota[0], { conAfac: true })).toBeNull();
     // API previo en un avión ⇒ no hay total en pesos.
     expect(totalFlotaMxn([flota[0], avionB()], (a) => a.saldo_disponible_mxn)).toBeNull();
     expect(gastosMxnDeAvion(avionA())).toBeNull();

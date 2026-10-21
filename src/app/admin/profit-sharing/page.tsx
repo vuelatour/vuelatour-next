@@ -26,7 +26,13 @@ import { startOfMonthCancun, todayCancun } from "@/lib/datetime";
 import { rangoFiltro } from "@/lib/admin/url-params";
 import { puedeRegistrarEntregas, puedeVerCuentasSocios } from "@/lib/admin/reparto-pagos";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
-import { NOTA_REPARTO_EN_PESOS, repartoEnPesos, textoUsd } from "@/lib/admin/reparto-pesos";
+import {
+  NOTA_REPARTO_COMO_BALANCE,
+  NOTA_REPARTO_EN_PESOS,
+  repartoComoBalance,
+  repartoEnPesos,
+  textoUsd,
+} from "@/lib/admin/reparto-pesos";
 import { EmptyState } from "@/components/admin/empty-state";
 import {
   Card,
@@ -118,6 +124,9 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
   // Reparto EN PESOS (18-oct-2026, API 0.0.93): pesos primero, dólares
   // informativos. Sin la bandera (API ≤ 0.0.92), la pantalla de siempre.
   const enPesos = repartoEnPesos(result);
+  // Cascada del balance (20-oct-2026, API 0.0.101): la provisión AFAC resta
+  // y la reserva de overhaul solo se informa. Sin la bandera, lo de antes.
+  const comoBalance = repartoComoBalance(result);
   // Los vuelos externos solo existen en dólares: con la bandera llevan su
   // sufijo para no leerse como pesos junto a todo lo demás.
   const usdExterno = enPesos ? textoUsd : fmtUsd;
@@ -156,6 +165,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
             Excel con los botones de arriba y de cada avión.
           </p>
           {enPesos && <p>{NOTA_REPARTO_EN_PESOS}</p>}
+          {comoBalance && <p>{NOTA_REPARTO_COMO_BALANCE}</p>}
           {(result.gastos_sin_tc?.count ?? 0) > 0 && (
             <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
               <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />
@@ -210,6 +220,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
             aviones={result.aviones}
             otrosIngresos={result.otros_ingresos_vuelatour}
             enPesos={enPesos}
+            comoBalance={comoBalance}
           />
           {seccionSocios}
           <div className="grid gap-4 lg:grid-cols-2">
@@ -224,6 +235,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 usuarioId={me.id}
                 cierre={result.cierre}
                 enPesos={enPesos}
+                comoBalance={comoBalance}
               />
             ))}
           </div>

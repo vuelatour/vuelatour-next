@@ -7,10 +7,6 @@ import {
   notaFechaPorPagar,
   type EstadoPago,
 } from "@/lib/admin/gasto-por-pagar";
-import {
-  NOTA_REFACCION_POR_PAGAR_SIN_AVION,
-  errorInventarioFechaFutura,
-} from "@/lib/admin/refaccion-inventario";
 
 /**
  * Nota ámbar bajo «Fecha del gasto» (19-oct-2026, gastos «por pagar», API
@@ -54,32 +50,5 @@ export function NotaFechaPorPagar({
     <p role="status" data-nota-por-pagar="" className="mt-1 text-xs text-amber-700 dark:text-amber-300">
       {nota}
     </p>
-  );
-}
-
-/**
- * Refacción «A Inventario/Tienda» con fecha futura (acuerdo 4 del lote): el
- * texto EXACTO del API (`INVENTARIO_FECHA_FUTURA`) dentro del bloque del
- * destino, para que se vea ANTES de pulsar «Guardar» (que tampoco deja
- * guardar). Debajo, en su propio renglón, la salida real cuando todavía no
- * se sabe a qué avión va (texto PROPIO del panel, segunda revisión del
- * lote: «Directo al avión» exige el avión y cada aviso mandaba al otro).
- * Sin la capacidad o con fecha ≤ hoy no pinta nada.
- */
-export function AvisoInventarioFechaFutura({ fecha }: { fecha: string | null | undefined }) {
-  const capacidad = usePorPagar();
-  const error = errorInventarioFechaFutura({ destino: "INVENTARIO", fecha, capacidad });
-  if (!error) return null;
-  return (
-    <div
-      role="alert"
-      data-error-inventario-fecha-futura=""
-      className="space-y-1 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive dark:text-red-400"
-    >
-      <p>{error}</p>
-      <p data-salida-inventario-fecha-futura="" className="text-foreground">
-        {NOTA_REFACCION_POR_PAGAR_SIN_AVION}
-      </p>
-    </div>
   );
 }

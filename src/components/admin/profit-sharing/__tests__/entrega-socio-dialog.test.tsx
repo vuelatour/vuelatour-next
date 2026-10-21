@@ -2,11 +2,14 @@
  * Diálogos de la cuenta corriente de los socios (v2, 1-oct-2026, API 0.0.50),
  * renderizados de verdad con `react-dom/server`.
  *
- * Qué se congela:
- *  1. «Registrar entrega»: socio fijo, «Por entregar hoy: $X USD» a la vista,
- *     monto = lo POR ENTREGAR del API, USD, fecha = HOY Cancún calculado al
- *     abrir (no el del servidor), «Entregó» = yo, MÉTODO sin elegir y
- *     «Corresponde a» opcional (mes y avión) en «Sin mes» / «Sin avión»;
+ * Qué se congela (TODO EN PESOS desde el API 0.0.101, invariante 99):
+ *  1. «Registrar entrega»: socio fijo, «Por entregar hoy: $X MXN» a la vista,
+ *     monto = lo POR ENTREGAR del API, MXN, el T.C. oficial de hoy prellenado
+ *     (obligatorio en las dos monedas: en dólares dice cuántos pesos
+ *     descuenta —«Descuenta $X MXN» antes de confirmar—), fecha = HOY Cancún
+ *     calculado al abrir (no el del servidor), «Entregó» = yo, MÉTODO sin
+ *     elegir y «Corresponde a» opcional (mes y avión) en «Sin mes» / «Sin
+ *     avión»;
  *  2. un socio ADELANTADO no prellena monto y lo dice;
  *  3. la EDICIÓN arranca con lo que tiene la entrega (el «corresponde a»
  *     también se corrige: el API lo acepta en el PATCH);
@@ -73,8 +76,8 @@ const ITZI = { id: "0f1c0000-0000-4000-8000-000000000010", nombre: "Itzi" };
 
 const CONTEXTO: ContextoEntrega = {
   socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-  porEntregarUsd: 1395.94,
-  mesEnCursoUsd: 0,
+  porEntregarMxn: 1395.94,
+  mesEnCursoMxn: 0,
   mesEnCurso: "2026-10",
   aviones: [{ id: N4142R, matricula: "N4142R", porcentaje: 69, vigente: true }],
   cuentaDesdeMes: "2026-09",
@@ -93,6 +96,7 @@ const ENTREGA: PagoSocio = {
   moneda: "MXN",
   tc_usd_mxn: 18.5,
   monto_usd: 1081.08,
+  monto_mxn: 20000,
   utilidad_snapshot_usd: null,
   saldo_snapshot_usd: 1395.94,
   fecha_pago: "2026-09-30",
@@ -142,25 +146,49 @@ describe("«Registrar entrega»", () => {
     );
   });
 
-  it("socio fijo en el título y «Por entregar hoy» a la vista", () => {
+  it("socio fijo en el título y «Por entregar hoy» a la vista, EN PESOS", () => {
     expect(html).toContain("Registrar entrega a Mauricio Roque");
-    expect(html).toContain("Por entregar hoy: $1,395.94 USD");
+    expect(html).toContain("Por entregar hoy: $1,395.94 MXN");
   });
 
-  it("monto = lo POR ENTREGAR del API, con la moneda en la etiqueta", () => {
+  it("monto = lo POR ENTREGAR del API (pesos), con la moneda en la etiqueta", () => {
     expect(html).toContain('value="1395.94"');
-    expect(html).toContain("Monto entregado (USD)");
-    expect(html).toContain("Prellenado con lo que hay por entregar: $1,395.94 USD.");
+    expect(html).toContain("Monto entregado (MXN)");
+    expect(html).toContain("Prellenado con lo que hay por entregar: $1,395.94 MXN.");
   });
 
-  it("USD marcado y NINGÚN método elegido (nada de medio de pago por defecto)", () => {
-    expect(radio(html, "USD")).toContain('aria-checked="true"');
-    expect(radio(html, "MXN")).toContain('aria-checked="false"');
+  it("MXN marcado (la cuenta es en pesos), el T.C. oficial de hoy prellenado y NINGÚN método elegido", () => {
+    expect(radio(html, "MXN")).toContain('aria-checked="true"');
+    expect(radio(html, "USD")).toContain('aria-checked="false"');
     for (const m of ["Transferencia", "Efectivo", "Cheque", "Otro"]) {
       expect(radio(html, m), m).toContain('aria-checked="false"');
     }
     expect(html).toContain("¿Cómo se entregó?");
-    expect(html).not.toContain("Tipo de cambio USD/MXN");
+    // El T.C. va en las DOS monedas (API 0.0.101): prellenado con el oficial de hoy.
+    expect(html).toContain("Tipo de cambio USD/MXN");
+    expect(html).toContain('value="18.45"');
+    expect(html).toMatch(/T\.C\. oficial de referencia de hoy \(01 oct\.? 2026\) — puedes editarlo\. Solo para el dato informativo en dólares/);
+    // En pesos la vista previa es solo el dólar informativo (1,395.94 ÷ 18.45).
+    expect(html).toMatch(/data-preview-entrega="MXN"[^>]*>≈ \$75\.66 USD \(informativo\)\.</);
+  });
+
+  it("en DÓLARES el T.C. dice cuántos PESOS descuenta («Descuenta $18,500.00 MXN») antes de confirmar", () => {
+    const h = renderToStaticMarkup(
+      <FormularioEntrega
+        dialogo={{
+          tipo: "edicion",
+          contexto: CONTEXTO,
+          pago: { ...ENTREGA, moneda: "USD", monto: 1000, tc_usd_mxn: null, monto_usd: 1000, monto_mxn: 18500 },
+        }}
+        onCerrar={() => {}}
+        registro={REGISTRO}
+      />,
+    );
+    expect(h).toContain("Monto entregado (USD)");
+    // El T.C. de una entrega en USD no se persiste: se lee de monto_mxn ÷ monto.
+    expect(h).toContain('value="18.5"');
+    expect(h).toContain("la entrega descuenta monto × T.C.");
+    expect(h).toMatch(/data-preview-entrega="USD"[^>]*>Descuenta de la cuenta: \$18,500\.00 MXN \(monto × T\.C\.\)\.</);
   });
 
   it("fecha = HOY Cancún calculado al abrir (no el «hoy» viejo del servidor) y tope en hoy", () => {
@@ -195,13 +223,13 @@ describe("«Registrar entrega»", () => {
     expect(html).not.toContain("data-mes-en-curso");
     const h = renderToStaticMarkup(
       <FormularioEntrega
-        dialogo={{ tipo: "alta", contexto: { ...CONTEXTO, porEntregarUsd: 1602.04, mesEnCursoUsd: 206.1 } }}
+        dialogo={{ tipo: "alta", contexto: { ...CONTEXTO, porEntregarMxn: 1602.04, mesEnCursoMxn: 206.1 } }}
         onCerrar={() => {}}
         registro={REGISTRO}
       />,
     );
-    expect(h).toContain("Por entregar hoy: $1,602.04 USD");
-    expect(h).toMatch(/data-mes-en-curso[^>]*>incluye \$206\.10 de Octubre 2026 \(en curso: cambia día con día\)</);
+    expect(h).toContain("Por entregar hoy: $1,602.04 MXN");
+    expect(h).toMatch(/data-mes-en-curso[^>]*>incluye \$206\.10 MXN de Octubre 2026 \(en curso: cambia día con día\)</);
     expect(h).toContain('value="1602.04"');
   });
 
@@ -234,12 +262,12 @@ describe("«Registrar entrega»", () => {
   it("socio ADELANTADO: sin monto prellenado y se dice el saldo a favor de VuelaTour", () => {
     const h = renderToStaticMarkup(
       <FormularioEntrega
-        dialogo={{ tipo: "alta", contexto: { ...CONTEXTO, porEntregarUsd: -2387.84 } }}
+        dialogo={{ tipo: "alta", contexto: { ...CONTEXTO, porEntregarMxn: -2387.84 } }}
         onCerrar={() => {}}
         registro={REGISTRO}
       />,
     );
-    expect(h).toContain("Adelantado: $2,387.84 USD a favor de VuelaTour (no hay nada por entregar).");
+    expect(h).toContain("Adelantado: $2,387.84 MXN a favor de VuelaTour (no hay nada por entregar).");
     expect(h).not.toContain("Prellenado con lo que hay por entregar");
     const monto = h.match(/<input[^>]*type="number"[^>]*>/)?.[0] ?? "";
     expect(monto).toContain('value=""');
@@ -279,13 +307,13 @@ describe("«Editar entrega»", () => {
 });
 
 describe("confirmación del ADELANTO (409 PAGO_EXCEDE_SALDO)", () => {
-  it("recuadro con el texto del contrato (70,000 MXN a 18.5 = $3,783.78 USD)", () => {
-    const c = confirmacionAdelanto({ por_entregar_usd: 1395.94, monto_usd: 3783.78, exceso_usd: 2387.84 });
+  it("recuadro con el texto del contrato, EN PESOS", () => {
+    const c = confirmacionAdelanto({ por_entregar_mxn: 1395.94, monto_mxn: 3783.78, exceso_mxn: 2387.84 });
     const html = renderToStaticMarkup(<AvisoAdelanto titulo={c.titulo} descripcion={c.descripcion} />);
     expect(html).toContain('role="alert"');
     expect(html).toContain("Esta entrega es un ADELANTO");
     expect(html).toContain(
-      "Esta entrega de $3,783.78 USD supera lo que hay por entregar ($1,395.94 USD). Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour por $2,387.84 USD. ¿Registrar?",
+      "Esta entrega de $3,783.78 MXN supera lo que hay por entregar ($1,395.94 MXN). Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour por $2,387.84 MXN. ¿Registrar?",
     );
   });
 
@@ -315,14 +343,14 @@ describe("paso 2: «Entrega registrada» ofrece el comprobante", () => {
       onCerrar={() => {}}
       registro={REGISTRO}
       registradaInicial={{
-        pago: { ...ENTREGA, monto: 70000, monto_usd: 3783.78, fecha_pago: "2026-10-01", metodo: "EFECTIVO" },
+        pago: { ...ENTREGA, monto: 70000, monto_usd: 3783.78, monto_mxn: 70000, fecha_pago: "2026-10-01", metodo: "EFECTIVO" },
         cuenta: {
           socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-          cuenta: { cuenta_desde: "2026-09", saldo_inicial_usd: 0, notas: null, configurada: false },
-          generado_usd: 1395.94,
-          mes_en_curso_usd: 0,
-          entregado_usd: 3783.78,
-          por_entregar_usd: -2387.84,
+          cuenta: { cuenta_desde: "2026-09", saldo_inicial_mxn: 0, notas: null, configurada: false },
+          generado_mxn: 1395.94,
+          mes_en_curso_mxn: 0,
+          entregado_mxn: 3783.78,
+          por_entregar_mxn: -2387.84,
           estado: "ADELANTADO",
           ultimo_pago: null,
           aviones: [],
@@ -334,7 +362,7 @@ describe("paso 2: «Entrega registrada» ofrece el comprobante", () => {
   it("resumen de la entrega, el saldo que quedó y «Adjuntar comprobante» / «Listo»", () => {
     expect(html).toContain("Entrega registrada");
     expect(html).toContain("$70,000 MXN · T.C. 18.5 · ≈ $3,783.78 USD a Mauricio Roque");
-    expect(html).toContain("Adelantado: $2,387.84 USD a favor de VuelaTour");
+    expect(html).toContain("Adelantado: $2,387.84 MXN a favor de VuelaTour");
     expect(html).toContain("¿Tienes el comprobante?");
     expect(html).toMatch(/data-accion="adjuntar-comprobante-entrega"[^>]*>.*Adjuntar comprobante<\/button>/);
     expect(html).toContain(">Listo, sin comprobante por ahora</button>");
@@ -348,7 +376,7 @@ describe("«Configurar cuenta»", () => {
     const html = renderToStaticMarkup(
       <FormularioCuenta
         socio={{ id: MAURICIO, nombre: "Mauricio Roque" }}
-        cuenta={{ cuenta_desde: "2026-09", saldo_inicial_usd: 0, notas: null, configurada: false }}
+        cuenta={{ cuenta_desde: "2026-09", saldo_inicial_mxn: 0, notas: null, configurada: false }}
         hoy="2026-10-01"
         onCerrar={() => {}}
       />,
@@ -358,9 +386,10 @@ describe("«Configurar cuenta»", () => {
     expect(html).toMatch(/<label[^>]*for="[^"]+"[^>]*>Mes de arranque/);
     expect(etiquetasHuerfanas(html)).toEqual([]);
     expect(html).toContain(">Septiembre 2026</span>");
-    expect(html).toContain("Saldo inicial (USD)");
+    expect(html).toContain("Saldo inicial (MXN)");
+    expect(html).not.toContain("Saldo inicial (USD)");
     expect(html).toContain('value="0"');
-    expect(html).toContain("Negativo: lo que ya se le había adelantado de más.");
+    expect(html).toContain("En pesos (MXN). Positivo: lo que se le debía al socio al arrancar la cuenta. Negativo: lo que ya se le había adelantado de más.");
     expect(html).toMatch(/<button[^>]*type="submit"[^>]*>Guardar cuenta<\/button>/);
     for (const b of botones(html)) expect(b, b).toContain("cursor-pointer");
   });
@@ -369,7 +398,7 @@ describe("«Configurar cuenta»", () => {
     const html = renderToStaticMarkup(
       <FormularioCuenta
         socio={{ id: MAURICIO, nombre: "Mauricio Roque" }}
-        cuenta={{ cuenta_desde: "2026-06", saldo_inicial_usd: -1500.5, notas: "Repartos de junio", configurada: true }}
+        cuenta={{ cuenta_desde: "2026-06", saldo_inicial_mxn: -1500.5, notas: "Repartos de junio", configurada: true }}
         hoy="2026-10-01"
         onCerrar={() => {}}
       />,

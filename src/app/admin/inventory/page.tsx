@@ -316,6 +316,7 @@ export default async function InventoryPage({
               ordenInicial={ordenInicial}
               ubicaciones={ubicaciones}
               margenVentaPct={margenVentaPct}
+              tcHoy={tc_hoy?.tc ?? null}
               puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
               filtroUbicacionInicial={filtroUbicacionInicial}
             />

@@ -149,6 +149,7 @@ describe("MovimientosCuenta: el estado de cuenta del socio", () => {
     moneda: "MXN",
     tc_usd_mxn: 18.5,
     monto_usd: 3783.78,
+    monto_mxn: 70000,
     utilidad_snapshot_usd: null,
     saldo_snapshot_usd: 1395.94,
     fecha_pago: "2026-10-01",
@@ -167,16 +168,16 @@ describe("MovimientosCuenta: el estado de cuenta del socio", () => {
     aeronave: null,
   };
   const MOVS: MovimientoCuenta[] = [
-    { fecha: "2026-09-01", tipo: "SALDO_INICIAL", concepto: "Arranque de la cuenta (saldo inicial $0)", mes: "2026-09", aeronave: null, porcentaje: null, cargo_usd: 0, abono_usd: 0, saldo_usd: 0, en_curso: false, pago: null },
-    { fecha: "2026-09-30", tipo: "UTILIDAD", concepto: "Utilidad sep 2026 · N4142R 69 %", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, cargo_usd: 1395.94, abono_usd: 0, saldo_usd: 1395.94, en_curso: false, pago: null },
-    { fecha: "2026-10-01", tipo: "ENTREGA", concepto: "Adelanto a cuenta · Efectivo · $70,000 MXN a T.C. 18.5", mes: null, aeronave: null, porcentaje: null, cargo_usd: 0, abono_usd: 3783.78, saldo_usd: -2387.84, en_curso: false, pago: ENTREGA },
-    { fecha: "2026-10-05", tipo: "ENTREGA", concepto: "Entrega · Transferencia · corresponde a sep 2026 · N4142R", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: null, cargo_usd: 0, abono_usd: 10, saldo_usd: -2397.84, en_curso: false, pago: { ...ENTREGA, id: "9a9a0000-0000-4000-8000-000000000002", mes: "2026-09", aeronave_id: N4142R, aeronave: { id: N4142R, matricula: "N4142R" }, monto: 10, moneda: "USD", tc_usd_mxn: null, monto_usd: 10, metodo: "TRANSFERENCIA", comprobante_path: null, comprobante_url: null, notas: null } },
-    { fecha: "2026-10-31", tipo: "UTILIDAD", concepto: "Utilidad oct 2026 · N4142R 69 %", mes: "2026-10", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, cargo_usd: -120.5, abono_usd: 0, saldo_usd: -2518.34, en_curso: true, pago: null },
+    { fecha: "2026-09-01", tipo: "SALDO_INICIAL", concepto: "Arranque de la cuenta (saldo inicial $0)", mes: "2026-09", aeronave: null, porcentaje: null, cargo_mxn: 0, abono_mxn: 0, saldo_mxn: 0, en_curso: false, pago: null },
+    { fecha: "2026-09-30", tipo: "UTILIDAD", concepto: "Utilidad sep 2026 · N4142R 69 %", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, cargo_mxn: 1395.94, abono_mxn: 0, saldo_mxn: 1395.94, en_curso: false, pago: null },
+    { fecha: "2026-10-01", tipo: "ENTREGA", concepto: "Adelanto a cuenta · Efectivo · $70,000 MXN a T.C. 18.5", mes: null, aeronave: null, porcentaje: null, cargo_mxn: 0, abono_mxn: 3783.78, saldo_mxn: -2387.84, en_curso: false, pago: ENTREGA },
+    { fecha: "2026-10-05", tipo: "ENTREGA", concepto: "Entrega · Transferencia · corresponde a sep 2026 · N4142R", mes: "2026-09", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: null, cargo_mxn: 0, abono_mxn: 10, saldo_mxn: -2397.84, en_curso: false, pago: { ...ENTREGA, id: "9a9a0000-0000-4000-8000-000000000002", mes: "2026-09", aeronave_id: N4142R, aeronave: { id: N4142R, matricula: "N4142R" }, monto: 10, moneda: "USD", tc_usd_mxn: null, monto_usd: 10, monto_mxn: 185, metodo: "TRANSFERENCIA", comprobante_path: null, comprobante_url: null, notas: null } },
+    { fecha: "2026-10-31", tipo: "UTILIDAD", concepto: "Utilidad oct 2026 · N4142R 69 %", mes: "2026-10", aeronave: { id: N4142R, matricula: "N4142R" }, porcentaje: 69, cargo_mxn: -120.5, abono_mxn: 0, saldo_mxn: -2518.34, en_curso: true, pago: null },
   ];
   const CONTEXTO: ContextoEntrega = {
     socio: { id: MAURICIO, nombre: "Mauricio Roque" },
-    porEntregarUsd: -2518.34,
-    mesEnCursoUsd: -120.5,
+    porEntregarMxn: -2518.34,
+    mesEnCursoMxn: -120.5,
     mesEnCurso: "2026-10",
     aviones: [],
     cuentaDesdeMes: "2026-09",

@@ -1,8 +1,9 @@
 /**
  * «Guardar» del ALTA con fecha futura, por COMPORTAMIENTO (segunda revisión
- * del lote «por pagar», 19-oct-2026: P12, P17 y NUEVO-1). La primera pasada
- * solo vigilaba la FORMA de la llamada en `onSubmit` y un mutante que
- * quitaba (o forzaba) la guarda `categoria === "REFACCION"` seguía en verde.
+ * del lote «por pagar», 19-oct-2026: P17). Desde el 21-oct-2026 (invariante
+ * 101 del API) la refacción es un gasto NORMAL: ya no hay destino
+ * «A Inventario/Tienda» ni freno P12 — una refacción por pagar mañana se
+ * guarda como cualquier otra categoría, con o sin avión.
  *
  * El runner no tiene DOM, así que aquí se corre el `onSubmit` REAL del alta:
  *  - un envoltorio de `react-hook-form` toma el `onValid` que el alta le pasa
@@ -22,12 +23,7 @@ import type { AvionCatalogoGasto } from "@/lib/admin/combustibles";
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
 import { CATEGORIAS_CAPTURA } from "@/lib/admin/categorias-gasto";
 import { MSG_FECHA_FUTURA_CON_CARGOS, NOTA_QUEDARA_POR_PAGAR } from "@/lib/admin/gasto-por-pagar";
-import {
-  MSG_INVENTARIO_FECHA_FUTURA,
-  NOTA_DIRECTO_AVION_SIN_AVION,
-  NOTA_ELIGE_AVION_REFACCION,
-  NOTA_REFACCION_POR_PAGAR_SIN_AVION,
-} from "@/lib/admin/refaccion-inventario";
+import { NOTA_REFACCION_CON_AVION, NOTA_REFACCION_SIN_AVION } from "@/lib/admin/refaccion-alta";
 
 const testigos = vi.hoisted(() => ({
   /** El `onValid` que el alta le pasó a `handleSubmit` (su `onSubmit` real). */
@@ -81,7 +77,6 @@ vi.mock("@/app/admin/expenses/actions", () => ({
   createGastoAction: async () => ({ ok: false }),
   buscarVuelosCercanosAction: async () => ({ ok: true, data: [] }),
   leerFacturaIAAction: async () => ({ ok: false }),
-  listArticulosRefaccionAction: async () => ({ ok: true, data: [] }),
   listAvionesActivosAction: async () => ({ ok: false }),
 }));
 vi.mock("@/app/admin/users/actions", () => ({
@@ -138,7 +133,7 @@ const FLOTA: AvionCatalogoGasto[] = [
 const PROV = [{ id: "7a1c0000-0000-4000-8000-000000000001", nombre: "HSBC" }];
 const VUELO = "b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 const CARGOS = ["2f95e45b-0000-4000-8000-000000000649", "61baed07-0000-4000-8000-000000000103"];
-/** Alta del detalle del vuelo SIN avión prefijado: el destino de la refacción arranca «Directo al avión». */
+/** Alta del detalle del vuelo SIN avión prefijado (refacción, sin avión elegido todavía). */
 const DESDE_VUELO_SIN_AVION = { defaultVueloId: VUELO, defaultVueloFolio: 437, defaultCategoria: "REFACCION" };
 const CON_CARGOS = {
   conciliarConMovimientos: CARGOS,
@@ -211,39 +206,23 @@ beforeEach(() => {
   testigos.transiciones.length = 0;
 });
 
-describe("el `onSubmit` REAL del alta: el freno de la refacción «A Inventario/Tienda» con fecha futura (P12)", () => {
-  it("REFACCION en el alta general (destino «A Inventario/Tienda») con fecha futura ⇒ FRENO con el texto EXACTO del API", () => {
-    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: MANANA })).toEqual({
-      tipo: "FRENO",
-      mensaje: MSG_INVENTARIO_FECHA_FUTURA,
-    });
-    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: "2026-10-31" })).toEqual({
-      tipo: "FRENO",
-      mensaje: MSG_INVENTARIO_FECHA_FUTURA,
-    });
-  });
-
-  it("el freno va ANTES de la confirmación de fecha (más allá de fin de mes no llega a preguntar)", () => {
-    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: DESPUES_DE_FIN_DE_MES })).toEqual({
-      tipo: "FRENO",
-      mensaje: MSG_INVENTARIO_FECHA_FUTURA,
-    });
-    // Control: otra categoría con esa fecha SÍ pide la confirmación de siempre.
-    expect(guardar({}, { categoria: "COMIDA", fecha_gasto: DESPUES_DE_FIN_DE_MES })).toEqual({ tipo: "CONFIRMA" });
-  });
-
-  it("CUALQUIER otra categoría por pagar mañana se guarda, aunque el destino del alta general siga en «A Inventario/Tienda»", () => {
-    for (const categoria of CATEGORIAS_CAPTURA.filter((c) => c !== "REFACCION")) {
+describe("el `onSubmit` REAL del alta: la refacción es un gasto normal (sin freno P12, 21-oct-2026)", () => {
+  it("REFACCION en el alta general con fecha futura ⇒ se GUARDA (queda por pagar), como cualquier categoría", () => {
+    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: MANANA })).toEqual({ tipo: "GUARDA" });
+    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: "2026-10-31" })).toEqual({ tipo: "GUARDA" });
+    for (const categoria of CATEGORIAS_CAPTURA) {
       expect(guardar({}, { categoria, fecha_gasto: MANANA }), categoria).toEqual({ tipo: "GUARDA" });
     }
   });
 
-  it("REFACCION con fecha de hoy, o SIN la capacidad (API previo), se guarda como antes", () => {
-    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: HOY })).toEqual({ tipo: "GUARDA" });
-    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: MANANA }, SIN_CAPACIDAD)).toEqual({ tipo: "GUARDA" });
+  it("más allá de fin de mes pide la confirmación de fecha de siempre (también la refacción)", () => {
+    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: DESPUES_DE_FIN_DE_MES })).toEqual({ tipo: "CONFIRMA" });
+    expect(guardar({}, { categoria: "COMIDA", fecha_gasto: DESPUES_DE_FIN_DE_MES })).toEqual({ tipo: "CONFIRMA" });
   });
 
-  it("REFACCION «Directo al avión» (alta desde el vuelo) con fecha futura NO frena por la fecha", () => {
+  it("REFACCION con fecha de hoy, SIN la capacidad (API previo) o desde el vuelo sin avión: se guarda", () => {
+    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: HOY })).toEqual({ tipo: "GUARDA" });
+    expect(guardar({}, { categoria: "REFACCION", fecha_gasto: MANANA }, SIN_CAPACIDAD)).toEqual({ tipo: "GUARDA" });
     expect(guardar(DESDE_VUELO_SIN_AVION, { categoria: "REFACCION", fecha_gasto: MANANA, vuelo_id: VUELO })).toEqual({
       tipo: "GUARDA",
     });
@@ -266,50 +245,35 @@ describe("el `onSubmit` REAL de «Créalo por la suma» con fecha futura (P17)",
   });
 });
 
-describe("refacción por pagar SIN avión: los avisos ya no se mandan uno al otro (NUEVO-1)", () => {
-  const SALIDA_DIRECTO = `${NOTA_ELIGE_AVION_REFACCION} ${NOTA_REFACCION_POR_PAGAR_SIN_AVION}`;
-
-  it("alta general REFACCION con fecha de mañana: el bloque del destino dice el texto del API Y la salida real", () => {
+describe("la nota de la refacción (un gasto normal, 21-oct-2026)", () => {
+  it("alta general REFACCION: la nota «sin avión» (gasto de la empresa, se vincula desde Compras) y nada de la bodega", () => {
     testigos.valores = { fecha_gasto: MANANA };
     const html = pintar({ defaultCategoria: "REFACCION" });
-    const i = html.indexOf("data-error-inventario-fecha-futura");
-    expect(i).toBeGreaterThan(-1);
-    const aviso = html.slice(i, html.indexOf("</div>", i));
-    expect(aviso).toContain(`>${esc(MSG_INVENTARIO_FECHA_FUTURA)}<`);
-    expect(aviso).toContain("data-salida-inventario-fecha-futura");
-    expect(aviso).toContain(`>${esc(NOTA_REFACCION_POR_PAGAR_SIN_AVION)}<`);
-    // La fecha de mañana también lleva la nota de «por pagar».
+    expect(html).toContain("data-refaccion-nota");
+    expect(html).toContain(esc(NOTA_REFACCION_SIN_AVION));
+    expect(html).not.toContain("data-error-inventario-fecha-futura");
+    expect(html).not.toContain("A Inventario/Tienda");
+    expect(html).not.toContain("Precio de venta");
+    // La fecha de mañana lleva la nota de «por pagar» como cualquier gasto.
     expect(html).toContain(NOTA_QUEDARA_POR_PAGAR);
   });
 
-  it("con la fecha de hoy el bloque no avisa nada", () => {
-    const html = pintar({ defaultCategoria: "REFACCION" });
-    expect(html).not.toContain("data-error-inventario-fecha-futura");
-    expect(html).not.toContain(esc(NOTA_REFACCION_POR_PAGAR_SIN_AVION));
+  it("con avión prefijado: la nota «con avión» (gasto indirecto del avión)", () => {
+    const html = pintar({
+      defaultVueloId: VUELO,
+      defaultAeronaveId: FLOTA[0].id,
+      defaultCategoria: "REFACCION",
+    });
+    expect(html).toContain(esc(NOTA_REFACCION_CON_AVION));
+    expect(html).not.toContain(esc(NOTA_REFACCION_SIN_AVION));
   });
 
-  it("«Directo al avión» sin avión y con fecha de mañana: la nota dice la salida real, no «pásala a Inventario/Tienda»", () => {
-    testigos.valores = { fecha_gasto: MANANA };
-    const html = pintar(DESDE_VUELO_SIN_AVION);
-    expect(html).toContain(`>${esc(SALIDA_DIRECTO)}<`);
-    expect(html).not.toContain("pásala a Inventario/Tienda");
-  });
-
-  it("«Directo al avión» sin avión: con la fecha de hoy, o sin la capacidad, la nota de siempre", () => {
-    expect(pintar(DESDE_VUELO_SIN_AVION)).toContain(`>${esc(NOTA_DIRECTO_AVION_SIN_AVION)}<`);
-    testigos.valores = { fecha_gasto: MANANA };
-    expect(pintar(DESDE_VUELO_SIN_AVION, SIN_CAPACIDAD)).toContain(`>${esc(NOTA_DIRECTO_AVION_SIN_AVION)}<`);
-  });
-
-  it("«Guardar» de «Directo al avión» sin avión con fecha de mañana: el toast dice la salida real (y con hoy, el de siempre)", async () => {
-    const correr = async (fecha: string, capacidad: typeof CAPACIDAD | typeof SIN_CAPACIDAD = CAPACIDAD) => {
-      const d = guardar(DESDE_VUELO_SIN_AVION, { categoria: "REFACCION", fecha_gasto: fecha, vuelo_id: VUELO }, capacidad);
-      expect(d).toEqual({ tipo: "GUARDA" });
-      await testigos.transiciones[0]();
-      return [...testigos.errores];
-    };
-    expect(await correr(MANANA)).toEqual([SALIDA_DIRECTO]);
-    expect(await correr(HOY)).toEqual([NOTA_DIRECTO_AVION_SIN_AVION]);
-    expect(await correr(MANANA, SIN_CAPACIDAD)).toEqual([NOTA_DIRECTO_AVION_SIN_AVION]);
+  it("«Guardar» de una refacción sin avión NO frena por el avión (es un gasto de la empresa): llega a la red", async () => {
+    const d = guardar(DESDE_VUELO_SIN_AVION, { categoria: "REFACCION", fecha_gasto: HOY, vuelo_id: VUELO });
+    expect(d).toEqual({ tipo: "GUARDA" });
+    await testigos.transiciones[0]();
+    // El mock de `createGastoAction` responde ok:false ⇒ el único error es el
+    // de la red; ninguna nota de «elige el avión».
+    expect(testigos.errores).toEqual(["Error desconocido"]);
   });
 });

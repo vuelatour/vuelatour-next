@@ -40,7 +40,7 @@ import {
 } from "@/lib/api/profit-sharing-server";
 import { esUuid } from "@/lib/admin/url-params";
 import { todayCancun } from "@/lib/datetime";
-import { fmtUsd } from "@/lib/format";
+import { fmtMxn } from "@/lib/format";
 import {
   AYUDA_POR_MES_CUENTA,
   MES_CUENTA_DEFAULT,
@@ -194,8 +194,8 @@ export default async function EstadoCuentaSocioPage({ params, searchParams }: Pa
           <Volver />
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{datos.socio.nombre}</h1>
           <p className="text-sm text-muted-foreground">
-            Estado de cuenta · cuenta desde {etiquetaMes(cuentaDesdeMes)} · saldo inicial{" "}
-            <span className="font-mono">{fmtUsd(datos.cuenta.saldo_inicial_usd)}</span>
+            Estado de cuenta en pesos (MXN) · cuenta desde {etiquetaMes(cuentaDesdeMes)} · saldo inicial{" "}
+            <span className="font-mono">{fmtMxn(datos.cuenta.saldo_inicial_mxn)}</span>
             {aviones.length > 0 && (
               <>
                 {" "}
@@ -269,9 +269,9 @@ export default async function EstadoCuentaSocioPage({ params, searchParams }: Pa
                 {datos.rango && (
                   <>
                     {" "}
-                    · generó <span className="font-mono">{fmtUsd(datos.rango.generado_usd)}</span>
+                    · generó <span className="font-mono">{fmtMxn(datos.rango.generado_mxn)}</span>
                     {" "}· se le entregó{" "}
-                    <span className="font-mono">{fmtUsd(datos.rango.entregado_usd)}</span>
+                    <span className="font-mono">{fmtMxn(datos.rango.entregado_mxn)}</span>
                   </>
                 )}
               </CardDescription>

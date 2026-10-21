@@ -41,6 +41,8 @@ interface ItemActionsProps {
   puedeAdministrarUbicaciones?: boolean;
   /** Margen de la tienda: textos de la salida («Vacío = último precio de compra + 25 %»). */
   margenVentaPct?: number | null;
+  /** T.C. oficial de hoy: la salida se cobra en pesos (un precio en USD se sugiere convertido). */
+  tcHoy?: number | null;
 }
 
 export function ItemActions({
@@ -51,6 +53,7 @@ export function ItemActions({
   ubicaciones,
   puedeAdministrarUbicaciones = false,
   margenVentaPct,
+  tcHoy = null,
 }: ItemActionsProps) {
   const [openEdit, setOpenEdit] = useState(false);
   const [openSalida, setOpenSalida] = useState(false);
@@ -123,6 +126,7 @@ export function ItemActions({
         margenVentaPct={margenVentaPct}
         initialTipo="SALIDA"
         tieneCostoVigente={tieneCostoVigenteDe(item)}
+        tcHoy={tcHoy}
       />
 
       <AlertDialog open={openDelete} onOpenChange={setOpenDelete}>

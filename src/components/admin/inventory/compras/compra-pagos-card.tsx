@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { LinkIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -50,12 +50,14 @@ import {
   type CompraPago,
   type CompraRol,
 } from "@/types/compras";
+import { BOTON_VINCULAR_GASTO } from "@/lib/admin/compras-estado";
 import { CompraPagoAddDialog } from "./compra-pago-add-dialog";
 
 /**
- * Pagos ligados a la compra: cada uno es un gasto con su factura y su cruce
- * bancario. Aquí solo se liga/desliga y se corrige el rol; el gasto se edita
- * en /admin/expenses.
+ * El GASTO de la compra (la factura de mercancía) y sus otros pagos (envío,
+ * impuestos): cada uno es un gasto en Gastos con su factura y su cruce
+ * bancario. Aquí se vincula/desvincula y se corrige el rol; el gasto se
+ * edita en /admin/expenses. «Registrar gasto» vive en las acciones de arriba.
  */
 export function CompraPagosCard({
   compra,
@@ -117,25 +119,26 @@ export function CompraPagosCard({
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <CardTitle className="text-base">
-              Pagos{" "}
+              Gasto y pagos de la compra{" "}
               <span className="text-sm font-normal text-muted-foreground">({compra.pagos.length})</span>
             </CardTitle>
             <CardDescription>
-              Las facturas que componen la compra (mercancía, envío, impuestos). Envío e impuestos se
-              reparten al costo de las refacciones.
+              La factura de mercancía es el gasto de la compra; envío e impuestos son otros pagos que se
+              reparten al costo de las refacciones. Cada uno sigue siendo un gasto en Gastos.
             </CardDescription>
           </div>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setOpenAdd(true)}>
-            <PlusIcon className="h-4 w-4" />
-            Agregar pago
+            <LinkIcon className="h-4 w-4" />
+            {BOTON_VINCULAR_GASTO}
           </Button>
         </div>
       </CardHeader>
       <CardContent className="p-0">
         {compra.pagos.length === 0 ? (
-          <p className="px-6 pb-6 text-sm text-muted-foreground">
-            Sin pagos ligados. Agrega la factura de mercancía y, cuando lleguen, las de envío e
-            impuestos.
+          <p className="px-6 pb-6 text-sm text-muted-foreground" data-sin-pagos>
+            Sin gasto ni pagos ligados: pulsa «Registrar gasto» arriba (crea el gasto en Gastos por el
+            total de la factura) o vincula uno que ya esté en Gastos. Las facturas de envío e impuestos se
+            vinculan cuando lleguen.
           </p>
         ) : (
           <Table>
@@ -264,17 +267,23 @@ export function CompraPagosCard({
         )}
       </CardContent>
 
-      <CompraPagoAddDialog open={openAdd} onOpenChange={setOpenAdd} compraId={compra.id} />
+      <CompraPagoAddDialog
+        open={openAdd}
+        onOpenChange={setOpenAdd}
+        compraId={compra.id}
+        folio={compra.folio}
+      />
 
       <GastoBancoSheet detalle={detalleBanco} />
 
       <AlertDialog open={quitar !== null} onOpenChange={(o) => !o && setQuitar(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Quitar este pago de la compra?</AlertDialogTitle>
+            <AlertDialogTitle>¿Desvincular este gasto de la compra?</AlertDialogTitle>
             <AlertDialogDescription>
-              El gasto no se borra: vuelve a ser un gasto suelto en la bandeja. El costo de las
-              refacciones se recalcula sin este cargo.
+              El gasto no se borra: vuelve a ser un gasto suelto en Gastos. El costo de las refacciones
+              se recalcula sin este cargo y, si era la factura de mercancía, la compra vuelve a quedar
+              «Sin gasto registrado».
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

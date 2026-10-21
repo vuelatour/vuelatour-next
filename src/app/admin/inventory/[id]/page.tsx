@@ -226,6 +226,7 @@ export default async function InventoryItemPage({
             autoOpen={!!empaqueEscaneado}
             margenVentaPct={margenVentaPct}
             tieneCostoVigente={tieneCostoVigenteDe(item)}
+            tcHoy={resumen?.tc_hoy?.tc ?? null}
           />
           <CardexLibroButton itemId={item.id} itemNombre={item.nombre} />
           {/* «Editar» = PATCH items/:id (ADMIN/MECANICO): a los demás roles

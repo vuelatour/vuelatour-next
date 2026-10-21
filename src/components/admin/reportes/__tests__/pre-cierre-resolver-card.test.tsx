@@ -148,14 +148,14 @@ describe("destino de cada renglón (lo que va antes de `pc=`)", () => {
 
   it("socios ⇒ ids de `socios[].socio.id`; grupos ⇒ `grupos[].grupo_id`; ligas ⇒ el cargo", async () => {
     const hs = hrefResolver(
-      await pintar([item("socios_por_entregar", { count: 1, socios: [{ socio: { id: A, nombre: "Hernán" }, por_entregar_usd: 10 }] })]),
+      await pintar([item("socios_por_entregar", { count: 1, socios: [{ socio: { id: A, nombre: "Hernán" }, por_entregar_mxn: 10 }] })]),
     ) as string;
     expect(params(hs).get("ids")).toBe(A);
     const hg = hrefResolver(
       await pintar([
         item("grupo_con_saldo", {
           count: 1,
-          grupos: [{ grupo_id: B, grupo_folio: 3, nombre: null, aviones: 2, total_usd: 1, cobrado_usd: 0, saldo_usd: 1 }],
+          grupos: [{ grupo_id: B, grupo_folio: 3, nombre: null, aviones: 2, total_usd: 1, cobrado_usd: 0, saldo_mxn: 1 }],
         }),
       ]),
     ) as string;

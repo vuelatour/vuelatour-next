@@ -75,6 +75,8 @@ interface ItemsTableProps {
   ubicaciones?: InventarioUbicacion[] | null;
   /** Margen vigente de la tienda (solo para TEXTOS; el número lo decide el API). */
   margenVentaPct?: number | null;
+  /** T.C. oficial de hoy: la salida se cobra en pesos (un precio en USD se sugiere convertido). */
+  tcHoy?: number | null;
   /** ADMIN/MECANICO: «Mover a…» y administrar el catálogo (roles del API). */
   puedeAdministrarUbicaciones?: boolean;
   /** `?ubic=` de respaldo sin router (tests). */
@@ -132,6 +134,7 @@ export function ItemsTable({
   ordenInicial = ORDEN_INVENTARIO_DEFAULT,
   ubicaciones = null,
   margenVentaPct = null,
+  tcHoy = null,
   puedeAdministrarUbicaciones = false,
   filtroUbicacionInicial = null,
 }: ItemsTableProps) {
@@ -306,6 +309,7 @@ export function ItemsTable({
           ubicaciones={ubicaciones}
           puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
           margenVentaPct={margenVentaPct}
+          tcHoy={tcHoy}
         />
       ),
     },

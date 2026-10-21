@@ -287,6 +287,8 @@ export function normalizarPrevia(raw: unknown): PreviaCierre | null {
     bloqueantes: Array.isArray(p.bloqueantes) ? (p.bloqueantes as PreviaCierre["bloqueantes"]) : [],
     vuelos_que_pasan: lista(p.vuelos_que_pasan),
     vuelos_que_vienen: lista(p.vuelos_que_vienen),
+    // INCLUIR EN EL MES (API 0.0.102): sin la llave, [] (API previo).
+    vuelos_incluidos: lista(p.vuelos_incluidos),
     totales: {
       vuelos: num("vuelos"),
       completados: num("completados"),
@@ -299,6 +301,7 @@ export function normalizarPrevia(raw: unknown): PreviaCierre | null {
       pasan_mxn: num("pasan_mxn"),
       pasan_usd_nativo: num("pasan_usd_nativo"),
       se_quedan_en_cero: num("se_quedan_en_cero"),
+      incluidos: num("incluidos"),
     },
     reparto:
       p.reparto && typeof p.reparto === "object" && Array.isArray((p.reparto as { antes?: unknown }).antes)
@@ -448,7 +451,7 @@ export function mensajeErrorCierre(r: RespuestaAccionCierre, accion: "cerrar" | 
 }
 
 export type DecisionRespuestaCerrar =
-  | { tipo: "exito"; diferidos: number }
+  | { tipo: "exito"; diferidos: number; incluidos: number }
   | { tipo: "previa_nueva"; previa: PreviaCierre }
   | { tipo: "error"; texto: string };
 
@@ -459,10 +462,16 @@ export type DecisionRespuestaCerrar =
  * ⇒ el diálogo refresca al cerrarse.
  */
 export function decidirRespuestaCerrar(
-  r: RespuestaAccionCierre & { data?: { diferidos?: unknown[] } | null },
+  r: RespuestaAccionCierre & { data?: { diferidos?: unknown[]; incluidos?: unknown[] } | null },
   mes: string,
 ): DecisionRespuestaCerrar {
-  if (r.ok && r.data) return { tipo: "exito", diferidos: Array.isArray(r.data.diferidos) ? r.data.diferidos.length : 0 };
+  if (r.ok && r.data) {
+    return {
+      tipo: "exito",
+      diferidos: Array.isArray(r.data.diferidos) ? r.data.diferidos.length : 0,
+      incluidos: Array.isArray(r.data.incluidos) ? r.data.incluidos.length : 0,
+    };
+  }
   if (r.code === CODIGO_PREVIA_CAMBIO) {
     const nueva = previaDeDetails(r.details);
     if (nueva) return { tipo: "previa_nueva", previa: nueva };
@@ -544,9 +553,53 @@ function fraseVuelosPasan(n: number, destino: string, tiempo: "presente" | "pasa
   return `${n} vuelo${n === 1 ? "" : "s"} ${verbo} a ${d}.`;
 }
 
-/** Toast tras cerrar: «Septiembre 2026 cerrado. 5 vuelos pasan a octubre 2026.» */
-export function textoToastCerrado(mes: string, n: number, destino: string): string {
-  return `${etiquetaMes(mes)} cerrado. ${fraseVuelosPasan(n, destino)}`;
+/**
+ * Toast tras cerrar: «Septiembre 2026 cerrado. 5 vuelos pasan a octubre
+ * 2026.» y, con vuelos que se quedaron (21-oct-2026), «… 2 vuelos cobrados
+ * después del corte se quedan en septiembre.»
+ */
+export function textoToastCerrado(mes: string, n: number, destino: string, incluidos = 0): string {
+  const base = `${etiquetaMes(mes)} cerrado. ${fraseVuelosPasan(n, destino)}`;
+  if (incluidos <= 0) return base;
+  const s = incluidos === 1 ? "" : "s";
+  return `${base} ${incluidos} vuelo${s} cobrado${s} después del corte se queda${incluidos === 1 ? "" : "n"} en ${mesEnMinuscula(mes)}.`;
+}
+
+// ── INCLUIR EN EL MES (21-oct-2026) ──────────────────────────────────────────
+// Pedido del cliente: «ya se cobraron varios de los vuelos que no se habían
+// cobrado pero se cobraron en octubre… que dé la opción de poder incluirlos
+// en septiembre». Solo un vuelo YA cobrado después del corte
+// (COBRO_POSTERIOR) puede quedarse; el API rechaza cualquier otro
+// (INCLUIR_VUELO_NO_COBRADO) y el diálogo no ofrece la casilla.
+
+/** ¿Se le ofrece «Se queda en <mes>»? Solo COBRO_POSTERIOR. */
+export function puedeQuedarseEnMes(v: Pick<VueloDiferido, "motivo">): boolean {
+  return v.motivo === "COBRO_POSTERIOR";
+}
+
+/** Título de la casilla: «Se queda en septiembre (ya se cobró el 2-oct)». */
+export function textoQuedarseEnMes(mes: string, v: Pick<VueloDiferido, "fecha_cobro_posterior">): string {
+  const cuando = diaCortoDeDia(v.fecha_cobro_posterior ?? null);
+  return `Se queda en ${mesEnMinuscula(mes)} (${cuando ? `ya se cobró el ${cuando}` : "ya se cobró después del corte"})`;
+}
+
+/** Título de la tabla de los que se quedan. */
+export function tituloVuelosQueSeQuedan(mes: string): string {
+  return `Se quedan en ${mesEnMinuscula(mes)} (cobrados después del corte)`;
+}
+
+/** Nota bajo la tabla de los que pasan, solo si alguno se puede quedar. */
+export function notaQuedarseEnMes(mes: string, destino: string): string {
+  return `Los que ya se cobraron después del corte pueden quedarse en ${mesEnMinuscula(mes)}: marca «Se queda» y el reparto de abajo se recalcula. Los demás pasan a ${mesEnMinuscula(destino)}.`;
+}
+
+/**
+ * Los ids que el diálogo VIO (= `vuelos_esperados`): los que pasan + los que
+ * se quedan. Si el conjunto cambió en el servidor, el API responde 409
+ * PREVIA_CAMBIO con la previa nueva.
+ */
+export function idsVistosEnPrevia(previa: Pick<PreviaCierre, "vuelos_que_pasan" | "vuelos_incluidos">): string[] {
+  return [...previa.vuelos_que_pasan, ...(previa.vuelos_incluidos ?? [])].map((v) => v.id);
 }
 
 /** Toast tras reabrir: «Septiembre 2026 reabierto. 5 vuelos regresan a septiembre.» */

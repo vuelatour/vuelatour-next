@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card";
 import { EmptyState } from "@/components/admin/empty-state";
 import { cn } from "@/lib/utils";
-import { fmtUsd } from "@/lib/format";
+import { fmtMxn } from "@/lib/format";
 import {
   ETIQUETA_VER_ENTREGAS_PREVIAS,
   TEXTO_CUENTAS_NO_DISPONIBLES,
@@ -66,33 +66,33 @@ export function KpisCuenta({
   /** `YYYY-MM` del mes en curso (para «incluye $X de Octubre 2026»). */
   mesEnCurso: string | null;
 }) {
-  const enCurso = textoMesEnCurso(totales.mes_en_curso_usd ?? 0, mesEnCurso);
-  const saldo = kpiSaldoCuenta(totales.estado, totales.por_entregar_usd);
+  const enCurso = textoMesEnCurso(totales.mes_en_curso_mxn ?? 0, mesEnCurso);
+  const saldo = kpiSaldoCuenta(totales.estado, totales.por_entregar_mxn);
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-totales-estado-cuenta>
       <KpiCuenta etiqueta="Generado">
-        <p className="font-mono text-xl font-semibold">{fmtUsd(totales.generado_usd)}</p>
+        <p className="font-mono text-xl font-semibold">{fmtMxn(totales.generado_mxn)}</p>
         {enCurso && <p className="mt-0.5 text-[11px] text-muted-foreground">{enCurso}</p>}
       </KpiCuenta>
       <KpiCuenta etiqueta="Entregado">
-        <p className="font-mono text-xl font-semibold">{fmtUsd(totales.entregado_usd)}</p>
+        <p className="font-mono text-xl font-semibold">{fmtMxn(totales.entregado_mxn)}</p>
       </KpiCuenta>
       <KpiCuenta etiqueta={saldo.etiqueta}>
         <p
           className={cn(
             "font-mono text-xl font-semibold",
-            claseTextoSaldo(totales.estado, totales.por_entregar_usd),
+            claseTextoSaldo(totales.estado, totales.por_entregar_mxn),
           )}
           data-kpi-saldo={saldo.adelantado ? "adelantado" : "por-entregar"}
         >
-          {fmtUsd(saldo.monto)}
+          {fmtMxn(saldo.monto)}
         </p>
         {enCurso && <p className="mt-0.5 text-[11px] text-muted-foreground">{enCurso}</p>}
       </KpiCuenta>
       <KpiCuenta etiqueta="Estatus">
         <EstadoCuentaBadge
           estado={totales.estado}
-          saldoUsd={totales.por_entregar_usd}
+          saldoMxn={totales.por_entregar_mxn}
           className="text-sm"
         />
       </KpiCuenta>
@@ -100,15 +100,15 @@ export function KpisCuenta({
   );
 }
 
-/** KPIs de la lista «Pagos a socios» (solo oficina: un SOCIO no recibe totales). */
+/** KPIs de la lista «Pagos a socios» (solo oficina: un SOCIO no recibe totales). Todo en pesos. */
 export function KpisCuentasSocios({ totales }: { totales: TotalesCuentasSocios }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-totales-cuentas>
       <KpiCuenta etiqueta="Por entregar (todos)">
-        <p className="font-mono text-xl font-semibold">{fmtUsd(totales.por_entregar_usd)}</p>
+        <p className="font-mono text-xl font-semibold">{fmtMxn(totales.por_entregar_mxn)}</p>
       </KpiCuenta>
       <KpiCuenta etiqueta="Adelantado (todos)">
-        <p className="font-mono text-xl font-semibold">{fmtUsd(totales.adelantado_usd ?? 0)}</p>
+        <p className="font-mono text-xl font-semibold">{fmtMxn(totales.adelantado_mxn ?? 0)}</p>
       </KpiCuenta>
       <KpiCuenta etiqueta="Socios con saldo por entregar">
         <p className="text-xl font-semibold">{totales.socios_por_entregar}</p>

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   ArrowPathIcon,
   ArchiveBoxArrowDownIcon,
+  BanknotesIcon,
+  LinkIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -31,23 +33,46 @@ import {
   deleteCompraAction,
   recibirCompraAction,
 } from "@/app/admin/inventory/compras/actions";
+import {
+  BOTON_REGISTRAR_GASTO,
+  BOTON_VINCULAR_GASTO,
+  ETIQUETA_ACCION,
+  accionSiguiente,
+  pasosCompra,
+} from "@/lib/admin/compras-estado";
 import type { CompraDetalle } from "@/types/compras";
+import { CompraPagoAddDialog } from "./compra-pago-add-dialog";
+import { CompraRegistrarGastoDialog } from "./compra-registrar-gasto-dialog";
 
 type Confirmacion = "recibir" | "recalcular" | "eliminar" | null;
 
 /**
- * Acciones de la compra. Recibir genera las ENTRADAS al inventario con el
- * costo final; sobre una compra recibida, "Recalcular" vuelve a correr el
- * mismo cálculo (cargos ligados después). Todo con confirmación.
+ * Acciones de la compra (21-oct-2026): la del paso que SIGUE va en primario
+ * («Ya llegó: recibir en bodega» → «Registrar gasto»); «Vincular gasto ya
+ * registrado» siempre a la mano. Recibir genera las ENTRADAS al inventario
+ * con el costo final; sobre una compra recibida, «Recalcular» vuelve a correr
+ * el mismo cálculo (cargos ligados después). Todo con confirmación.
  */
-export function CompraActions({ compra }: { compra: CompraDetalle }) {
+export function CompraActions({
+  compra,
+  providers,
+  tcOficialHoy = null,
+}: {
+  compra: CompraDetalle;
+  providers: { id: string; nombre: string }[];
+  tcOficialHoy?: number | null;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [confirm, setConfirm] = useState<Confirmacion>(null);
   const [avisos, setAvisos] = useState<string[] | null>(null);
+  const [openGasto, setOpenGasto] = useState(false);
+  const [openVincular, setOpenVincular] = useState(false);
 
   const abierta = compra.estado === "ABIERTA";
   const sinLineas = compra.lineas.length === 0;
+  const siguiente = accionSiguiente(pasosCompra(compra));
+  const gastoRegistrado = compra.resumen.gasto_estado === "REGISTRADO";
 
   // Cargos sin TC: el API rechaza recibir (400) para no dejar el costo en
   // bodega incompleto; la oficina puede capturar el TC o recibir de todos
@@ -62,9 +87,7 @@ export function CompraActions({ compra }: { compra: CompraDetalle }) {
       }
       if (r.ok && r.data) {
         setConfirm(null);
-        toast.success(
-          abierta ? "Compra recibida en bodega" : "Costos recalculados",
-        );
+        toast.success(abierta ? "Compra recibida en bodega: sus entradas ya están en el inventario" : "Costos recalculados");
         if (r.data.resumen.avisos.length > 0) setAvisos(r.data.resumen.avisos);
         router.refresh();
       } else {
@@ -88,7 +111,7 @@ export function CompraActions({ compra }: { compra: CompraDetalle }) {
 
   return (
     <>
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap" data-acciones-compra data-siguiente={siguiente ?? "completa"}>
         {abierta ? (
           <>
             <Button
@@ -101,13 +124,15 @@ export function CompraActions({ compra }: { compra: CompraDetalle }) {
               Eliminar
             </Button>
             <Button
+              variant={siguiente === "recibir" ? "default" : "outline"}
               className="gap-2"
               onClick={() => setConfirm("recibir")}
               disabled={pending || sinLineas}
               title={sinLineas ? "Agrega las líneas de la compra antes de recibirla" : undefined}
+              data-accion="recibir"
             >
               <ArchiveBoxArrowDownIcon className="h-4 w-4" />
-              Recibir en bodega
+              {ETIQUETA_ACCION.recibir}
             </Button>
           </>
         ) : (
@@ -121,7 +146,36 @@ export function CompraActions({ compra }: { compra: CompraDetalle }) {
             Recalcular costos
           </Button>
         )}
+        <Button
+          variant={siguiente === "gasto" ? "default" : "outline"}
+          className="gap-2"
+          onClick={() => setOpenGasto(true)}
+          disabled={pending || gastoRegistrado}
+          title={gastoRegistrado ? "Esta compra ya tiene su gasto de mercancía registrado" : undefined}
+          data-accion="gasto"
+        >
+          <BanknotesIcon className="h-4 w-4" />
+          {BOTON_REGISTRAR_GASTO}
+        </Button>
+        <Button variant="outline" className="gap-2" onClick={() => setOpenVincular(true)} disabled={pending} data-accion="vincular">
+          <LinkIcon className="h-4 w-4" />
+          {BOTON_VINCULAR_GASTO}
+        </Button>
       </div>
+
+      <CompraRegistrarGastoDialog
+        open={openGasto}
+        onOpenChange={setOpenGasto}
+        compra={compra}
+        providers={providers}
+        tcOficialHoy={tcOficialHoy}
+      />
+      <CompraPagoAddDialog
+        open={openVincular}
+        onOpenChange={setOpenVincular}
+        compraId={compra.id}
+        folio={compra.folio}
+      />
 
       <AlertDialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
         <AlertDialogContent>

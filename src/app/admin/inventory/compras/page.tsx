@@ -7,28 +7,27 @@ import { cn } from "@/lib/utils";
 import { BackLink } from "@/components/admin/back-link";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ComprasTable } from "@/components/admin/inventory/compras/compras-table";
-import { CompraNuevaButton } from "@/components/admin/inventory/compras/compra-nueva-button";
+import { CompraRegistrarDialog } from "@/components/admin/inventory/compras/compra-registrar-dialog";
 import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
-import { listCompras } from "@/lib/api/compras-server";
+import { listComprasTodas } from "@/lib/api/compras-server";
+import { listInventario } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
-import type { CompraEstado } from "@/types/compras";
+import {
+  AYUDA_FLUJO_COMPRAS,
+  AYUDA_PESTANA_COMPRAS,
+  ORDEN_PESTANAS_COMPRAS,
+  PESTANAS_COMPRAS,
+  VACIO_PESTANA_COMPRAS,
+  contarPestanasCompras,
+  filtrarComprasPorPestana,
+  filtroComprasDeUrl,
+  hrefPestanaCompras,
+  type FiltroCompras,
+} from "@/lib/admin/compras-estado";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 
 export const dynamic = "force-dynamic";
-
-type Filtro = "abiertas" | "recibidas" | "todas";
-
-const FILTRO_ESTADO: Record<Filtro, CompraEstado | undefined> = {
-  abiertas: "ABIERTA",
-  recibidas: "RECIBIDA",
-  todas: undefined,
-};
-
-/** Pestaña de la URL (`?f=`): la MISMA regla para la pantalla y su título. */
-function filtroComprasDeUrl(f: string | undefined): Filtro {
-  return f === "recibidas" || f === "todas" ? f : "abiertas";
-}
 
 export async function generateMetadata({
   searchParams,
@@ -45,27 +44,25 @@ export default async function ComprasPage({
   searchParams: Promise<{ f?: string }>;
 }) {
   const sp = await searchParams;
-  const filtro: Filtro = filtroComprasDeUrl(sp.f);
+  const filtro: FiltroCompras = filtroComprasDeUrl(sp.f);
 
-  // Las COMPRAS son el dato principal; el contador de la pestaña y el
-  // catálogo de proveedores degradan con aviso.
+  // Las COMPRAS son el dato principal (todas: las pestañas se reparten con
+  // los estados que manda el API); proveedores y artículos solo llenan los
+  // selectores de «Registrar compra» y degradan con aviso.
   const degradado = new Degradaciones();
-  const [comprasRes, abiertasRes, providersRes] = await Promise.all([
-    listCompras({ estado: FILTRO_ESTADO[filtro], limit: 200 }),
-    degradado.opcional("el contador de compras abiertas", listCompras({ estado: "ABIERTA", limit: 1 }), {
-      count: null as number | null,
-    }),
+  const [comprasRes, providersRes, itemsRes] = await Promise.all([
+    listComprasTodas(),
     degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
       data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
     }),
+    degradado.opcional("los artículos de bodega", listInventario({ limit: 500, activo: true }), {
+      data: [] as Awaited<ReturnType<typeof listInventario>>["data"],
+    }),
   ]);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
-
-  const tabs: { key: Filtro; label: string; count?: number | null }[] = [
-    { key: "abiertas", label: "Abiertas", count: abiertasRes.count },
-    { key: "recibidas", label: "Recibidas" },
-    { key: "todas", label: "Todas" },
-  ];
+  const items = itemsRes.data.map((i) => ({ id: i.id, nombre: i.nombre, numero_parte: i.numero_parte ?? null }));
+  const conteos = contarPestanasCompras(comprasRes.data);
+  const compras = filtrarComprasPorPestana(comprasRes.data, filtro);
 
   return (
     <div className="space-y-6">
@@ -79,63 +76,63 @@ export default async function ComprasPage({
 
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-sm text-muted-foreground">Bodega</p>
+          <p className="text-sm text-muted-foreground">Inventario/Tienda</p>
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Compras</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Una compra une la factura de las refacciones con su envío e impuestos y
-            reparte esos cargos al costo de cada pieza. Al recibirla en bodega se
-            registran las entradas con el costo real.
+          <p className="text-sm text-muted-foreground mt-1" data-ayuda-flujo>
+            {AYUDA_FLUJO_COMPRAS}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <ImportCompraButton providers={providers} />
-          <CompraNuevaButton />
+          <CompraRegistrarDialog providers={providers} items={items} />
         </div>
       </div>
 
       <AvisoDegradado faltantes={degradado.faltantes} />
 
-      <div className="flex gap-2 flex-wrap items-center">
-        {tabs.map((t) => (
-          <Link
-            key={t.key}
-            href={t.key === "abiertas" ? "/admin/inventory/compras" : `/admin/inventory/compras?f=${t.key}`}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-              filtro === t.key
-                ? "bg-brand-600 text-white"
-                : "bg-muted text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t.label}
-            {t.count != null && t.count > 0 && (
-              <span
-                className={cn(
-                  "rounded-full px-1.5 text-xs",
-                  filtro === t.key ? "bg-white/20" : "bg-amber-500/20 text-amber-600",
-                )}
-              >
-                {t.count}
-              </span>
-            )}
-          </Link>
-        ))}
+      <div className="space-y-1">
+        <div className="flex gap-2 flex-wrap items-center" role="tablist" aria-label="Pestañas de compras">
+          {ORDEN_PESTANAS_COMPRAS.map((key) => (
+            <Link
+              key={key}
+              href={hrefPestanaCompras(key)}
+              role="tab"
+              aria-selected={filtro === key}
+              title={AYUDA_PESTANA_COMPRAS[key]}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                filtro === key ? "bg-brand-600 text-white" : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {PESTANAS_COMPRAS[key]}
+              {key !== "todas" && conteos[key] > 0 && (
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 text-xs",
+                    filtro === key ? "bg-white/20" : key === "completas" ? "bg-emerald-500/20 text-emerald-600" : "bg-amber-500/20 text-amber-600",
+                  )}
+                >
+                  {conteos[key]}
+                </span>
+              )}
+            </Link>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground" data-ayuda-pestana>
+          {AYUDA_PESTANA_COMPRAS[filtro]}
+        </p>
       </div>
 
-      {comprasRes.data.length === 0 ? (
+      {compras.length === 0 ? (
         <EmptyState
           icon={ShoppingCartIcon}
-          title={filtro === "abiertas" ? "Sin compras abiertas" : "Sin compras"}
-          description={
-            filtro === "abiertas"
-              ? "Todo lo comprado ya está en bodega. Crea una compra nueva o únela desde los gastos (selecciona las facturas y elige “Unir en compra”)."
-              : "Aquí verás las compras de refacciones con su costo puesto en bodega."
-          }
+          title={VACIO_PESTANA_COMPRAS[filtro].titulo}
+          description={VACIO_PESTANA_COMPRAS[filtro].descripcion}
         />
       ) : (
         <Card>
           <CardContent className="p-0">
-            <ComprasTable compras={comprasRes.data} />
+            <ComprasTable compras={compras} />
           </CardContent>
         </Card>
       )}

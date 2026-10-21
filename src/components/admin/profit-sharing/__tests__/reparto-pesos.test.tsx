@@ -1,18 +1,21 @@
 /**
  * Reparto EN PESOS (18-oct-2026, API 0.0.93) en la pantalla del reparto:
  *  1. SIN la bandera `reparto_en_pesos` (API ≤ 0.0.92) el marcado del KPI y de
- *     las cards es BYTE A BYTE el de antes (golden congelado ANTES del cambio
- *     con las mismas fixtures: `reparto-pesos.golden.json`), aunque el API ya
- *     mande las llaves `*_mxn`;
+ *     las cards es BYTE A BYTE el congelado con las mismas fixtures en
+ *     `reparto-pesos.golden.json`, aunque el API ya mande las llaves `*_mxn`
+ *     (golden regenerado el 20-oct-2026 al volverse la card un resumen
+ *     compacto con «Ver detalle del avión»; para regenerarlo tras un cambio
+ *     INTENCIONAL del marcado: `ACTUALIZAR_GOLDEN=1 npx vitest run <este archivo>`);
  *  2. CON la bandera: pesos primero (tamaño/peso de siempre) y los dólares
  *     debajo en gris y más chicos; la reserva con su T.C.; los socios en
- *     pesos; el desglose (vuelos y categorías) en pesos;
+ *     pesos; el desglose (vuelos y categorías) en pesos — desde el 20-oct
+ *     vive en la pantalla del avión, no en la card;
  *  3. `pesos_sin_tc_usd > 0` ⇒ aviso ámbar en la card de ese avión;
  *  4. un monto sin pesos se pinta en dólares CON sufijo y lo dice;
  *  5. cableado: la página lee la bandera con la fuente única y la pasa; la
- *     cuenta corriente de socios no se toca.
+ *     cuenta corriente de socios va SIEMPRE en pesos (API 0.0.101), sin bandera.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -27,13 +30,11 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/components/admin/excel-export-button", () => ({ ExcelExportButton: () => null }));
 
 const { AvionRepartoCard } = await import("../avion-reparto-card");
+const { DesgloseSection } = await import("../desglose-section");
 const { KpiStrip } = await import("../kpi-strip");
 
 const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
-const GOLDEN = JSON.parse(leer("./reparto-pesos.golden.json")) as Record<
-  "kpi" | "kpiSinOtros" | "cardA" | "cardB",
-  string
->;
+const RUTA_GOLDEN = path.resolve(__dirname, "./reparto-pesos.golden.json");
 
 const card = (a: AvionReparto, enPesos?: boolean) =>
   renderToStaticMarkup(
@@ -54,6 +55,32 @@ const kpi = (aviones: AvionReparto[], opts: { otros?: boolean; enPesos?: boolean
       {...(opts.enPesos === undefined ? {} : { enPesos: opts.enPesos })}
     />,
   );
+/** El desglose vuelo por vuelo (20-oct-2026): lo pinta la pantalla del avión. */
+const desglose = (a: AvionReparto, enPesos?: boolean) =>
+  renderToStaticMarkup(
+    <DesgloseSection detalle={a.detalle!} {...(enPesos === undefined ? {} : { enPesos })} />,
+  );
+
+// Solo tras un cambio INTENCIONAL del marcado (nunca para tapar una regresión).
+if (process.env.ACTUALIZAR_GOLDEN) {
+  writeFileSync(
+    RUTA_GOLDEN,
+    `${JSON.stringify(
+      {
+        kpi: kpi([avionA(), avionB()]),
+        kpiSinOtros: kpi([avionA(), avionB()], { otros: false }),
+        cardA: card(avionA()),
+        cardB: card(avionB()),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+const GOLDEN = JSON.parse(readFileSync(RUTA_GOLDEN, "utf8")) as Record<
+  "kpi" | "kpiSinOtros" | "cardA" | "cardB",
+  string
+>;
 
 /** La cifra principal aparece ANTES que su dato informativo, y este va gris y chico. */
 function pesosAntesQueDolares(html: string, principal: string, informativo: string) {
@@ -66,7 +93,7 @@ function pesosAntesQueDolares(html: string, principal: string, informativo: stri
   expect(etiqueta).toMatch(/text-(xs|\[10px\])/);
 }
 
-describe("sin la bandera: el marcado de SIEMPRE (golden del 18-oct, antes del cambio)", () => {
+describe("sin la bandera: el marcado de SIEMPRE (golden congelado con la card compacta del 20-oct)", () => {
   it("KPI y cards idénticos al golden con la forma del API ≤ 0.0.92", () => {
     expect(kpi([avionA(), avionB()])).toBe(GOLDEN.kpi);
     expect(kpi([avionA(), avionB()], { otros: false })).toBe(GOLDEN.kpiSinOtros);
@@ -131,18 +158,22 @@ describe("con la bandera: pesos primero, dólares informativos", () => {
     );
   });
 
-  it("desglose: cobrado/pendiente por vuelo en pesos con su T.C., venta en USD, categorías en MXN", () => {
-    pesosAntesQueDolares(htmlA, "$90,061.73 MXN", "≈ $5,000 USD · al T.C. 18.012345");
-    pesosAntesQueDolares(htmlA, "$120,750.00 MXN", "≈ $7,000 USD · al T.C. 17.25");
-    pesosAntesQueDolares(htmlA, "$51,750.00 MXN", "≈ $3,000 USD");
+  it("desglose (pantalla del avión): cobrado/pendiente por vuelo en pesos con su T.C., venta en USD, categorías en MXN", () => {
+    const htmlD = desglose(conPesos(avionA()), true);
+    pesosAntesQueDolares(htmlD, "$90,061.73 MXN", "≈ $5,000 USD · al T.C. 18.012345");
+    pesosAntesQueDolares(htmlD, "$120,750.00 MXN", "≈ $7,000 USD · al T.C. 17.25");
+    pesosAntesQueDolares(htmlD, "$51,750.00 MXN", "≈ $3,000 USD");
     // Pie: Σ en centavos de lo que trae cada vuelo (= «Venta del avión cobrada»).
-    expect(htmlA).toContain(">$210,811.73 MXN<");
-    expect(htmlA).toContain(">$10,000 USD<");
-    expect(htmlA).toContain(">en USD<");
-    expect(htmlA).toMatch(/<th[^>]*>MXN<\/th>/);
-    expect(htmlA).not.toMatch(/<th[^>]*>USD<\/th>/);
-    pesosAntesQueDolares(htmlA, "$55,200.00 MXN", "≈ $3,200 USD");
-    expect(htmlA).toContain("1 sin TC · $1,740.00 MXN fuera del dato en USD");
+    expect(htmlD).toContain(">$210,811.73 MXN<");
+    expect(htmlD).toContain(">$10,000 USD<");
+    expect(htmlD).toContain(">en USD<");
+    expect(htmlD).toMatch(/<th[^>]*>MXN<\/th>/);
+    expect(htmlD).not.toMatch(/<th[^>]*>USD<\/th>/);
+    pesosAntesQueDolares(htmlD, "$55,200.00 MXN", "≈ $3,200 USD");
+    expect(htmlD).toContain("1 sin TC · $1,740.00 MXN fuera del dato en USD");
+    // La card ya no trae el desglose: manda a la pantalla del avión.
+    expect(htmlA).not.toContain("$90,061.73 MXN");
+    expect(htmlA).toContain('data-accion="ver-detalle-avion"');
   });
 
   it("sin dólares sin T.C. no hay aviso ámbar", () => {
@@ -191,7 +222,7 @@ describe("un monto sin pesos se dice (jamás un peso inventado)", () => {
         ),
       },
     };
-    const html = card(sinTc, true);
+    const html = desglose(sinTc, true);
     expect(html).toContain(">$5,000 USD<");
     expect(html).toMatch(/text-amber-700[^"]*">sin T\.C\. para pasarlo a pesos</);
     // Pie del cobrado: Σ a medias no se pinta; cae a los dólares.
@@ -234,7 +265,9 @@ describe("KpiStrip con la bandera", () => {
 
 describe("cableado", () => {
   const pagina = leer("../../../../app/admin/profit-sharing/page.tsx");
+  const pantallaAvion = leer("../../../../app/admin/profit-sharing/aviones/[id]/page.tsx");
   const tarjeta = leer("../avion-reparto-card.tsx");
+  const cascada = leer("../cascada-avion.tsx");
   const porEntregar = leer("../socios-por-entregar-section.tsx");
 
   it("la página lee la bandera con la fuente única y la pasa al KPI y a las cards", () => {
@@ -244,23 +277,32 @@ describe("cableado", () => {
     expect(pagina).toContain("{enPesos && <p>{NOTA_REPARTO_EN_PESOS}</p>}");
   });
 
-  it("la cuenta corriente de socios no se toca (sigue en dólares)", () => {
+  it("la cuenta corriente de socios va SIEMPRE en pesos (API 0.0.101): no depende de la bandera", () => {
     expect(pagina).not.toMatch(/<SociosPorEntregarSection[^>]*enPesos/);
     expect(porEntregar).not.toContain("reparto-pesos");
-    expect(porEntregar).not.toContain("_mxn");
+    expect(porEntregar).toContain("fmtMxn(r.por_entregar_mxn)");
+    expect(porEntregar).not.toMatch(/fmtUsd\(|_usd\b/);
   });
 
-  it("la card pasa la bandera a socios y al desglose; el aviso no va como hermano del desglose", () => {
-    expect(tarjeta).toContain("enPesos={enPesos}\n        />");
-    expect(tarjeta).toContain("<DesgloseSection detalle={detalle} enPesos={enPesos} />");
-    // El aviso vive DENTRO de la cascada (un hermano nuevo en CardContent
-    // correría los ids de `useId` del desglose).
-    const cascada = tarjeta.slice(tarjeta.indexOf("Cascada del saldo"), tarjeta.indexOf("<SociosSection"));
+  it("la card pasa las dos banderas a la cascada y a los socios; el desglose vive en la pantalla del avión; el aviso, dentro de la cascada", () => {
+    expect(tarjeta).toContain(
+      "<CascadaAvion avion={avion} enPesos={enPesos} comoBalance={comoBalance} compacta />",
+    );
+    expect(tarjeta).toMatch(/<SociosSection[\s\S]*?enPesos=\{enPesos\}\s+comoBalance=\{comoBalance\}\s+\/>/);
+    expect(tarjeta).not.toContain("DesgloseSection");
+    expect(pantallaAvion).toContain("<DesgloseSection detalle={detalle} enPesos={enPesos} />");
+    expect(pantallaAvion).toContain("<CascadaAvion avion={avion} enPesos={enPesos} comoBalance={comoBalance} />");
     expect(cascada).toContain("avisoPesosSinTc(");
   });
 
   it("ningún componente redacta los textos de pesos a mano", () => {
-    for (const rel of ["../kpi-strip.tsx", "../avion-reparto-card.tsx", "../desglose-section.tsx", "../socios-section.tsx"]) {
+    for (const rel of [
+      "../kpi-strip.tsx",
+      "../avion-reparto-card.tsx",
+      "../cascada-avion.tsx",
+      "../desglose-section.tsx",
+      "../socios-section.tsx",
+    ]) {
       const fuente = leer(rel);
       expect(fuente, rel).not.toMatch(/no se pudieron pasar a pesos/);
       expect(fuente, rel).not.toMatch(/["'`]≈ /);

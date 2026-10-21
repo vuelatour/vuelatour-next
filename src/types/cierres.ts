@@ -129,6 +129,8 @@ export interface TotalesPrevia {
   pasan_mxn: number;
   pasan_usd_nativo: number;
   se_quedan_en_cero: number;
+  /** INCLUIR EN EL MES (API 0.0.102, 21-oct-2026): cuántos de «pasan» se quedan por decisión de la oficina. Sin la llave (API previo) ⇒ 0. */
+  incluidos?: number;
 }
 
 /** `GET /v1/cierres/:periodo/previa`: «qué pasaría» al cerrar. */
@@ -142,6 +144,13 @@ export interface PreviaCierre {
   bloqueantes: BloqueantePrevia[];
   vuelos_que_pasan: VueloDiferido[];
   vuelos_que_vienen: VueloDiferido[];
+  /**
+   * INCLUIR EN EL MES (API 0.0.102, 21-oct-2026): los de «pasan» que la
+   * oficina marcó (`?incluir=`) y se QUEDAN en el mes (ya cobrados después
+   * del corte; leyenda «Se queda en …»). Ya no están en `vuelos_que_pasan`.
+   * Sin la llave (API previo) ⇒ [].
+   */
+  vuelos_incluidos?: VueloDiferido[];
   totales: TotalesPrevia;
   reparto: { antes: RepartoAvionPrevia[]; despues: RepartoAvionPrevia[] } | null;
 }
@@ -156,6 +165,8 @@ export interface ResultadoCerrarMes {
     cerrado_por: UsuarioCierre | null;
   };
   diferidos: VueloDiferido[];
+  /** INCLUIR EN EL MES (API 0.0.102): los que se quedaron en el mes. */
+  incluidos?: VueloDiferido[];
   totales: TotalesPrevia | TotalesCierre;
   reparto: { aviones: { matricula: string; saldo_usd: number }[]; total_usd: number } | null;
   notificados: number;

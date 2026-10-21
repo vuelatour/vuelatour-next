@@ -40,6 +40,8 @@ import {
   tituloPiloto,
   tituloProducto,
   tituloReparto,
+  tituloRepartoAvion,
+  tituloHistoricoAvion,
   tituloSocio,
   tituloTacometros,
   tituloVuelo,
@@ -211,7 +213,20 @@ describe("detalles: lo distintivo primero", () => {
       piloto: "Piloto",
       socio: "Socio",
       balanceAvion: "Balance del avión",
+      repartoAvion: "Reparto del avión",
+      historicoAvion: "Histórico del avión",
     });
+  });
+
+  it("pantalla por avión del reparto (20-oct-2026): «Reparto N621TX · septiembre 2026» e «Histórico N621TX»; sin matrícula, el genérico", () => {
+    expect(tituloRepartoAvion("N621TX", "2026-09-01", "2026-09-30")).toBe("Reparto N621TX · septiembre 2026");
+    expect(tituloRepartoAvion("N621TX", "2026-10-01", "2026-10-14")).toBe("Reparto N621TX · 1–14 oct 2026");
+    expect(tituloRepartoAvion("N621TX")).toBe("Reparto N621TX");
+    expect(tituloRepartoAvion("", "2026-09-01", "2026-09-30")).toBe("Reparto del avión");
+    expect(tituloRepartoAvion()).toBe(TITULOS_DETALLE.repartoAvion);
+    expect(tituloHistoricoAvion("N621TX")).toBe("Histórico N621TX");
+    expect(tituloHistoricoAvion(null)).toBe("Histórico del avión");
+    expect(tituloHistoricoAvion()).toBe(TITULOS_DETALLE.historicoAvion);
   });
 });
 
@@ -256,9 +271,10 @@ describe("pestañas de una sección: «Sección · Pestaña»", () => {
     expect(tituloEstadisticas()).toBe("Estadísticas");
   });
 
-  it("Compras (Abiertas es el default; Todas no se nombra)", () => {
-    expect(tituloCompras("abiertas")).toBe("Compras · Abiertas");
-    expect(tituloCompras("recibidas")).toBe("Compras · Recibidas");
+  it("Compras (Por recibir es el default; Todas no se nombra)", () => {
+    expect(tituloCompras("por-recibir")).toBe("Compras · Por recibir");
+    expect(tituloCompras("sin-gasto")).toBe("Compras · Sin gasto");
+    expect(tituloCompras("completas")).toBe("Compras · Completas");
     expect(tituloCompras("todas")).toBe("Compras");
     expect(tituloCompras(null)).toBe("Compras");
   });

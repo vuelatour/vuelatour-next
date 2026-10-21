@@ -114,6 +114,61 @@ export function ventaDelFormulario(f: {
 const montoTxt = (monto: number, moneda: string) =>
   moneda === "USD" ? `${fmtUsd(monto)} USD` : fmtMxn(monto);
 
+// ===== La salida al avión se cobra EN PESOS (21-oct-2026) =====
+
+/**
+ * Pedido del cliente: «cuando se mande algo del inventario/tiendita al avión
+ * se ponga en pesos la venta de esa refacción a ese avión». La moneda de la
+ * venta arranca en MXN SIEMPRE; si el precio guardado en la ficha está en
+ * dólares, se SUGIERE su equivalente en pesos con el T.C. oficial de hoy (y
+ * se dice). Sin T.C. a la mano, el precio queda en dólares y también se dice:
+ * las salidas en USD siguen siendo válidas (solo cambió el default).
+ */
+export const NOTA_VENTA_EN_PESOS = "El avión paga en pesos (moneda operativa). Cambia a USD solo si de verdad se cobra en dólares.";
+
+export interface VentaInicialSalida {
+  venta_unitaria: string;
+  venta_moneda: "MXN" | "USD";
+  /** Qué pasó con el precio de la ficha (null = nada que explicar). */
+  nota: string | null;
+}
+
+export function ventaInicialSalida(p: {
+  precioVenta: number | null | undefined;
+  precioVentaMoneda: "MXN" | "USD" | null | undefined;
+  tcHoy: number | null | undefined;
+}): VentaInicialSalida {
+  const precio = p.precioVenta != null && Number.isFinite(Number(p.precioVenta)) ? Number(p.precioVenta) : null;
+  if (precio == null || precio <= 0) return { venta_unitaria: "", venta_moneda: "MXN", nota: null };
+  if (p.precioVentaMoneda !== "USD") return { venta_unitaria: String(precio), venta_moneda: "MXN", nota: null };
+  const tc = p.tcHoy != null && p.tcHoy > 0 ? p.tcHoy : null;
+  if (tc == null) {
+    return {
+      venta_unitaria: String(precio),
+      venta_moneda: "USD",
+      nota: `La ficha tiene el precio en dólares (${fmtUsd(precio)} USD) y no hay T.C. oficial de hoy: se cobra en USD, o captúralo en pesos a mano.`,
+    };
+  }
+  const enPesos = Math.round(precio * tc * 100) / 100;
+  return {
+    venta_unitaria: String(enPesos),
+    venta_moneda: "MXN",
+    nota: `Precio de la ficha ${fmtUsd(precio)} USD × T.C. oficial de hoy ${tc} = ${fmtMxn(enPesos)} (sugerido; edítalo si cobras otro).`,
+  };
+}
+
+/** «≈ 62.50 USD» bajo un precio en pesos (informativo); nada sin T.C., sin precio o ya en dólares. */
+export function textoEquivalenteUsdVenta(p: {
+  venta: string | number | null | undefined;
+  moneda: "MXN" | "USD";
+  tcHoy: number | null | undefined;
+}): string | null {
+  if (p.moneda !== "MXN") return null;
+  const n = Number(String(p.venta ?? "").trim());
+  if (!(n > 0) || p.tcHoy == null || !(p.tcHoy > 0)) return null;
+  return `≈ ${fmtUsd(n / p.tcHoy)} USD al T.C. oficial de hoy (${p.tcHoy})`;
+}
+
 /** «(último precio + 25 %)», «(precio del producto)»… `null` = no se sabe (API previo). */
 export function etiquetaOrigenVenta(
   origen: OrigenVenta | null | undefined,

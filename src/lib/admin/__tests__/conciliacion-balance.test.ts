@@ -373,7 +373,8 @@ const WORKSPACE = process.env.VUELATOUR_WORKSPACE
   ? path.resolve(process.env.VUELATOUR_WORKSPACE)
   : path.resolve(__dirname, "../../../../..");
 const PY = path.join(WORKSPACE, "vuelatour-pyservices/app/services/balance_avion_xlsx.py");
-const libroPy = existsSync(PY) ? readFileSync(PY, "utf8") : null;
+// CRLF (Windows, core.autocrlf): el repo hermano se lee normalizado a LF.
+const libroPy = existsSync(PY) ? readFileSync(PY, "utf8").replace(/\r\n/g, "\n") : null;
 /** Cuerpo de una función top-level de Python (hasta el siguiente `def` de columna 0). */
 const cuerpoPy = (src: string, funcion: string): string => {
   const i = src.indexOf(`\ndef ${funcion}(`);
@@ -394,7 +395,8 @@ describe("paridad con pyservices (lectura del repo hermano)", () => {
     for (const [hoja, nombre] of Object.entries(NOMBRE_HOJA_BALANCE_AVION)) {
       if (hoja === "reporte_horas") {
         expect(nombre).toBe("reporte horas");
-        expect(individual, hoja).toContain("_hoja_maestra(wb.active, req)");
+        // pyservices 0.0.98 agregó `usd_por_gasto=` a la llamada: con o sin extras.
+        expect(individual, hoja).toMatch(/_hoja_maestra\(\s*wb\.active,\s*req[,)]/);
       } else {
         expect(individual, hoja).toContain(`create_sheet("${nombre}")`);
       }
@@ -429,7 +431,7 @@ describe("paridad con pyservices (lectura del repo hermano)", () => {
 const API = path.join(WORKSPACE, "vuelatour-api/src");
 const leerApi = (rel: string): string | null => {
   const p = path.join(API, rel);
-  return existsSync(p) ? readFileSync(p, "utf8") : null;
+  return existsSync(p) ? readFileSync(p, "utf8").replace(/\r\n/g, "\n") : null;
 };
 const TIPOS_PANEL = readFileSync(path.resolve(__dirname, "../../../types/conciliacion.ts"), "utf8");
 /** Literales de un `export type X = 'a' | 'b'` leído como texto (ordenados). */
