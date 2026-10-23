@@ -14,6 +14,11 @@ import {
   mensajeErrorModeloIa,
   normalizarIdModeloIa,
 } from "@/lib/admin/ia-modelo";
+import {
+  TEXTO_RECALCULO_RESPUESTA_RARA,
+  normalizarResultadoRecalculo,
+  type ResultadoRecalcularCobrado,
+} from "@/lib/admin/recalcular-cobrado";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -21,10 +26,12 @@ export interface ActionResult<T = unknown> {
   error?: string;
   /** Código estructurado del API (p. ej. `LISTA_VACIA`). */
   code?: string;
+  /** HTTP del API (22-oct-2026): el recálculo distingue 404 de API previo, 401 y 403. */
+  status?: number;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
-  if (isApiError(err)) return { ok: false, error: err.message, code: err.code };
+  if (isApiError(err)) return { ok: false, error: err.message, code: err.code, status: err.status };
   return {
     ok: false,
     error: err instanceof Error ? err.message : "Error desconocido",
@@ -155,5 +162,31 @@ export async function setModeloIaAction(
       };
     }
     return { ok: false, error: mensajeErrorModeloIa({ error: null }) };
+  }
+}
+
+/**
+ * RECALCULAR LA BANDERA «COBRADO» (22-oct-2026, API 0.0.102, invariante 99
+ * del API): `POST /v1/flights/recalcular-cobrado` sin rango (todo el
+ * histórico con precio). Solo ADMIN (el API es el candado). Revalida vuelos,
+ * reparto y reportes porque la bandera cambia lo que se pinta ahí. La
+ * respuesta se lee a la defensiva (`normalizarResultadoRecalculo`): algo raro
+ * ⇒ ok:false con texto es-MX, nunca un resultado inventado.
+ */
+export async function recalcularCobradoAction(): Promise<ActionResult<ResultadoRecalcularCobrado>> {
+  try {
+    const raw = await apiServer<unknown>("/v1/flights/recalcular-cobrado", {
+      method: "POST",
+      body: {},
+    });
+    const data = normalizarResultadoRecalculo(raw);
+    if (!data) return { ok: false, error: TEXTO_RECALCULO_RESPUESTA_RARA };
+    revalidatePath("/admin/flights");
+    revalidatePath("/admin/profit-sharing");
+    revalidatePath("/admin/reportes");
+    revalidatePath("/admin/configuracion");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
   }
 }

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { LockClosedIcon } from "@heroicons/react/24/outline";
 import { ConfiguracionClient } from "@/components/admin/configuracion/configuracion-client";
 import { IaCreditosSection } from "@/components/admin/configuracion/ia-creditos-section";
+import { RecalcularCobradoCard } from "@/components/admin/configuracion/recalcular-cobrado-card";
 import {
   ModeloIaCard,
   ModeloIaCardCargando,
@@ -55,6 +56,10 @@ async function TarjetaModeloIa({ lectura }: { lectura: Promise<LecturaModeloIa> 
 interface PageProps {
   searchParams: Promise<{ mes?: string }>;
 }
+
+// RECALCULAR LA BANDERA «COBRADO» (22-oct-2026): la action recorre hasta
+// 5,000 vuelos; el límite por default de Vercel la cortaría a medias.
+export const maxDuration = 300;
 
 export default async function ConfiguracionPage({ searchParams }: PageProps) {
   // Solo ADMIN puede cambiar la configuración: sin este gate la página se
@@ -222,6 +227,10 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
           </Suspense>
         }
       />
+
+      {/* RECALCULAR LA BANDERA «COBRADO» (22-oct-2026, API 0.0.102): solo ADMIN
+          (la página ya lo exige arriba). */}
+      <RecalcularCobradoCard />
     </div>
   );
 }
