@@ -12271,3 +12271,32 @@ gasto, vender al avión en pesos, y que el gasto de una compra solo nazca con
 - **Orden de deploy**: API antes que el panel (con un API previo, «Registrar
   gasto» y los candidatos responden que la ruta no existe; la pestaña «Sin
   gasto» sale vacía y el badge en gris).
+
+## Configuración: «Recalcular bandera cobrado» (22-oct-2026, API 0.0.102, invariante 99 del API)
+
+Tras «pesos primero» la bandera `vuelo.cobrado` puede cambiar en vuelos con
+cobros MXN; el API expone `POST /v1/flights/recalcular-cobrado` (solo ADMIN)
+y el panel le pone botón para que la oficina no dependa de Swagger ni de un
+token.
+- `components/admin/configuracion/recalcular-cobrado-card.tsx`: tarjeta al
+  final de Configuración (la página ya exige ADMIN), botón «Recalcular ahora»
+  con `AlertDialog` de confirmación (acción masiva ⇒ se confirma), estado
+  «Recalculando…», resultado con resumen, lista de vuelos que cambiaron (con
+  enlace, máximo `MAX_CAMBIOS_LISTADOS`) y errores. Sin cálculos propios: todo
+  viene del API.
+- `recalcularCobradoAction` (`app/admin/configuracion/actions.ts`): POST con
+  body `{}` (todo el histórico con precio), normaliza con
+  `normalizarResultadoRecalculo` (respuesta rara ⇒ ok:false, nunca un 0
+  inventado), revalida `/admin/flights`, `/admin/profit-sharing`,
+  `/admin/reportes` y `/admin/configuracion`; `ActionResult` de Configuración
+  gana `status` para que los textos distingan 404 (API previo), 401 y 403.
+- La página exporta `maxDuration = 300` (como Reportes): el recálculo recorre
+  hasta 5,000 vuelos y el límite por default de Vercel lo cortaría.
+- Textos y lectura defensiva en `lib/admin/recalcular-cobrado.ts`; tests
+  `lib/admin/__tests__/recalcular-cobrado.test.ts` y
+  `app/admin/configuracion/__tests__/recalcular-cobrado-action.test.ts`.
+- Finales de línea: varios tests del panel LEEN el código fuente y buscan
+  bloques con `
+`; en Windows con `core.autocrlf=true` un checkout los
+  reescribe en CRLF y fallan sin que haya bug. Los repos locales quedaron con
+  `core.autocrlf=false` (22-oct-2026).
