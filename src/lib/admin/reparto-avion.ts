@@ -32,7 +32,8 @@
  */
 
 import { fmtDecimal, fmtMonto, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
-import { esDiaValido, esUuid, rangoFiltro } from "@/lib/admin/url-params";
+import { esDiaValido, esUuid, rangoFiltro, valorDeCatalogo } from "@/lib/admin/url-params";
+import { pestanaInicial, type PestanaDef } from "@/lib/admin/pestanas";
 import { ajustarRangoAlInicio, type InicioOficial } from "@/lib/admin/inicio-oficial";
 import {
   ETIQUETA_FILA_OTROS_INGRESOS_AVION,
@@ -186,6 +187,8 @@ export function ayudaGastosAvion(conCombustible: boolean): string {
   return conCombustible ? AYUDA_GASTOS_AVION_EXCEL : AYUDA_GASTOS_AVION;
 }
 export const TITULO_VUELOS_AVION = "Vuelos y otros ingresos del periodo";
+export const AYUDA_VUELOS_AVION =
+  "Cada vuelo con su venta, lo cobrado y lo pendiente de la parte de este avión, y los gastos por categoría.";
 export const TITULO_SOCIOS_AVION = "Socios de este avión";
 export const AYUDA_SOCIOS_AVION =
   "Lo que le toca a cada socio de ESTE avión en el periodo, en pesos: su parte del saldo, la reserva de overhaul que debe guardar (se le descuenta solo si así se configuró), lo que se le ha entregado por este avión y lo que falta.";
@@ -202,6 +205,72 @@ export const TEXTO_AVION_NO_DISPONIBLE =
   "La pantalla por avión necesita la actualización del servidor (API 0.0.101). Mientras tanto, el reparto sigue en la lista.";
 export const TEXTO_SOCIO_SOLO_LO_SUYO =
   "Como socio ves tu renglón y tus entregas de este avión.";
+
+// ===== Secciones en pestañas (23-oct-2026) =====
+// Pedido del cliente: «las tablas acomódalas por pestañas, para que no esté
+// una tabla encima de otra y nos confundamos con el scroll». El saldo y la
+// cascada quedan SIEMPRE arriba; debajo, UNA tira de pestañas con las cuatro
+// secciones y solo la activa pintada. `?seccion=` enlaza una pestaña.
+
+export const SECCIONES_PANTALLA_AVION = ["gastos", "vuelos", "socios", "entregas"] as const;
+export type SeccionPantallaAvion = (typeof SECCIONES_PANTALLA_AVION)[number];
+
+export const PARAMETRO_SECCION_AVION = "seccion";
+export const ETIQUETA_LISTA_SECCIONES_AVION = "Secciones del reparto del avión";
+
+export const ETIQUETA_SECCION_PANTALLA_AVION: Readonly<Record<SeccionPantallaAvion, string>> = {
+  gastos: TITULO_GASTOS_AVION,
+  vuelos: "Vuelos",
+  socios: "Socios",
+  entregas: "Entregas",
+};
+
+export interface ConteosPantallaAvion {
+  /** Gastos listados en «Gastos del periodo» (todos los grupos, los que no restan incluidos). */
+  gastos: number;
+  /** Vuelos del desglose; null = el API no mandó `detalle` (no hay pestaña). */
+  vuelos: number | null;
+  entregas: number;
+}
+
+/** Los conteos reales de las pestañas, de la respuesta de la pantalla. */
+export function conteosPantallaAvion(
+  datos: Pick<AvionDetalleRespuesta, "avion" | "entregas">,
+): ConteosPantallaAvion {
+  const detalle = datos.avion.detalle ?? null;
+  return {
+    gastos: detalle?.gastos?.length ?? 0,
+    vuelos: detalle ? detalle.vuelos.length : null,
+    entregas: datos.entregas.length,
+  };
+}
+
+/**
+ * Las pestañas de la pantalla, en orden: «Gastos del periodo (n)», «Vuelos
+ * (n)» (solo si el API mandó el desglose), «Socios», «Entregas (n)».
+ */
+export function pestanasPantallaAvion(c: ConteosPantallaAvion): PestanaDef[] {
+  return [
+    { clave: "gastos", etiqueta: ETIQUETA_SECCION_PANTALLA_AVION.gastos, conteo: c.gastos },
+    ...(c.vuelos === null
+      ? []
+      : [{ clave: "vuelos", etiqueta: ETIQUETA_SECCION_PANTALLA_AVION.vuelos, conteo: c.vuelos }]),
+    { clave: "socios", etiqueta: ETIQUETA_SECCION_PANTALLA_AVION.socios },
+    { clave: "entregas", etiqueta: ETIQUETA_SECCION_PANTALLA_AVION.entregas, conteo: c.entregas },
+  ];
+}
+
+/**
+ * `?seccion=` validado: una sección del catálogo que SÍ tiene pestaña; basura
+ * o una sección sin pestaña ⇒ la primera («Gastos del periodo»). Jamás un 400.
+ */
+export function seccionPantallaAvionDeUrl(
+  valor: string | null | undefined,
+  pestanas: ReadonlyArray<Pick<PestanaDef, "clave">>,
+): SeccionPantallaAvion {
+  const pedida = valorDeCatalogo(valor ?? undefined, SECCIONES_PANTALLA_AVION);
+  return (pestanaInicial(pestanas, pedida) ?? SECCIONES_PANTALLA_AVION[0]) as SeccionPantallaAvion;
+}
 
 // ===== Cascada =====
 
@@ -763,6 +832,18 @@ export const DESCRIPCION_GRUPO_GASTO: Readonly<Record<DetalleGastoGrupo, string>
   EXCLUIDO: "Gastos ligados al avión o a sus vuelos que NO le restan: TUA (traslado al pasajero), pagos al vendedor, pagos de AFAC, categorías de la empresa… El motivo va en cada renglón.",
 };
 
+/** Etiqueta CORTA del grupo para su pastilla en «Gastos del periodo» (23-oct-2026). */
+export const ETIQUETA_CORTA_GRUPO_GASTO: Readonly<Record<DetalleGastoGrupo, string>> = {
+  DIRECTO: "Directos",
+  COMBUSTIBLE: "Combustible",
+  INDIRECTO: "Indirectos",
+  PERMISO: "Permisos",
+  FIJO: "Fijos",
+  EXCLUIDO: "No restan",
+};
+
+export const ETIQUETA_LISTA_GRUPOS_GASTO = "Grupos de gastos";
+
 /** Los directos cuando el combustible ya viene aparte (API 0.0.103). */
 export const DESCRIPCION_GRUPO_DIRECTO_SIN_COMBUSTIBLE =
   "Costo de cada vuelo sin el combustible (que va aparte, como en el Excel): aterrizajes y pistas, hotel, comida, taxi, piloto externo, comisariato…";
@@ -823,6 +904,20 @@ export function agruparGastosDetalle(
       sinPesos: propias.filter((f) => f.mxn === null).length,
     };
   }).filter((g) => g.filas.length > 0);
+}
+
+/**
+ * Las pastillas de «Gastos del periodo» (23-oct-2026): una por grupo CON
+ * gastos, en el orden de la cascada, con su conteo («Directos (64)») y el
+ * nombre largo como tooltip. Se muestra UNA tabla a la vez.
+ */
+export function pestanasGruposGasto(grupos: ReadonlyArray<GrupoGastosDetalle>): PestanaDef[] {
+  return grupos.map((g) => ({
+    clave: g.grupo,
+    etiqueta: ETIQUETA_CORTA_GRUPO_GASTO[g.grupo],
+    conteo: g.filas.length,
+    title: g.etiqueta,
+  }));
 }
 
 /** La fila de la cascada con la que debe cuadrar cada grupo (EXCLUIDO: ninguna). */

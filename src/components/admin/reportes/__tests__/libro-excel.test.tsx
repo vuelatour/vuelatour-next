@@ -240,8 +240,10 @@ describe("cableado", () => {
     );
     // El libro a pantalla y, desde el 13-oct-2026 (punto 5), la llegada desde
     // Conciliación: `?gasto=` validado, la `key` que remonta al cambiar de
-    // periodo, avión o chip (y que un refresh conserva) y los chips que
-    // conservan el gasto. Sin gasto no hay key y el libro es el de siempre.
+    // periodo o avión (y que un refresh conserva) y, desde el 23-oct-2026,
+    // la redirección del «Balance general» retirado, que conserva el gasto
+    // (los chips de libro ya no existen). Sin gasto no hay key y el libro es
+    // el de siempre.
     expect(src).toContain("const { destino, desde, hasta, gasto, ajustado } = parametrosVistaBalance(");
     const libroJsx = src.match(/<LibroExcel\b[\s\S]*?\/>/)?.[0] ?? "";
     expect(libroJsx).toContain("key={claveSalto(gasto, libro) ?? undefined}");
@@ -250,7 +252,10 @@ describe("cableado", () => {
     expect(libroJsx).toMatch(/\spantalla\s/);
     expect(libroJsx).toContain("gastoInicial={gasto ?? null}");
     expect(src).toContain('from "@/lib/admin/libro-vinculos"');
-    expect(src).toContain('hrefVistaBalance({ tipo: "vuelatour", modo }, desde, hasta, { gasto })');
+    expect(src).toContain(
+      'hrefVistaBalance({ tipo: "vuelatour", modo: MODO_VISTA_BALANCE_DEFAULT }, desde, hasta, { gasto })',
+    );
+    expect(src).not.toContain("MODOS_BALANCE_VUELATOUR.map(");
     expect(src).toContain("InformationCircleIcon");
     expect(src).toContain("title={ayuda}");
     expect(src).toContain("aria-label={ayuda}");

@@ -15,6 +15,7 @@ import {
   MODOS_BALANCE_VUELATOUR,
   RUTA_BALANCE_VUELATOUR,
   archivoBalanceVuelaTour,
+  esModoBalanceRetirado,
   type ModoBalanceVuelaTour,
 } from "./reportes-balance";
 import { rangoFiltro, uuidFiltro, valorDeCatalogo } from "./url-params";
@@ -33,11 +34,21 @@ export const DESCRIPCION_VISTA_BALANCE =
   "Es el mismo libro que se descarga: las mismas hojas, los mismos números y fórmulas y los mismos colores. Cambia de hoja abajo, como en Excel. Doble clic en la línea entre dos letras de columna ajusta el ancho al contenido.";
 export const ETIQUETA_VOLVER_REPORTES = "Reportes";
 
-/** Nombre de cada libro de la flota, como lo dice el cliente. */
+/** Nombre de cada libro de la flota, como lo dice el cliente (el general ya no se ofrece, 23-oct-2026). */
 export const NOMBRE_LIBRO_VUELATOUR: Record<ModoBalanceVuelaTour, string> = {
   mensual: "Balance mensual",
   general: "Balance general",
 };
+
+/**
+ * ¿La URL pide el «Balance general», retirado del panel el 23-oct-2026
+ * («ya no se necesita»)? `?modo=general` (la URL de siempre de la vista) o
+ * `?tipo=general` (enlaces viejos). La página redirige al mensual con el
+ * mismo periodo (y `?gasto=`), en vez de pintar el libro retirado.
+ */
+export function modoRetiradoEnUrl(sp: { modo?: string; tipo?: string }): boolean {
+  return esModoBalanceRetirado(sp.modo) || esModoBalanceRetirado(sp.tipo);
+}
 
 export type DestinoVistaBalance =
   | { tipo: "vuelatour"; modo: ModoBalanceVuelaTour }
@@ -78,7 +89,8 @@ export interface ParametrosVistaBalance {
 /**
  * Parámetros de la URL YA validados (regla de `url-params`: lo inválido se
  * ignora, nunca tumba la pantalla): `avion` solo si es uuid (y entonces gana
- * sobre `modo`), `modo` solo si está en el catálogo (si no, mensual), fechas
+ * sobre `modo`), `modo` solo si está en el catálogo de los libros OFRECIDOS
+ * (si no, mensual; `general` ya no lo está, ver `modoRetiradoEnUrl`), fechas
  * solo si son días válidos (si no, el mes corriente), el rango invertido se
  * corrige y `gasto` solo si es uuid.
  */

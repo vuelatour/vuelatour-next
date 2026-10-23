@@ -140,7 +140,8 @@ export default async function ReportesPage({ searchParams }: PageProps) {
   const aviones = aeronaves ? ordenarAvionesBalance(aeronaves.data.map(avionBalanceDeAeronave)) : [];
   const avionesDisponibles = aeronaves !== null;
 
-  // «Balance mensual» y «Balance general» del periodo (mismo orden que los tiles).
+  // Los libros de la flota del periodo (desde el 23-oct-2026 solo «Balance
+  // mensual»: el general se retiró a pedido del cliente).
   const librosBalance = librosBalanceVuelaTour(desde, hasta);
   // Sin `/me` se ofrece todo: el API es el candado.
   const abreBalances = puedeAbrirBalances(rol);
@@ -176,8 +177,8 @@ export default async function ReportesPage({ searchParams }: PageProps) {
         </div>
         {abreBalances ? (
           <>
-            {/* Los dos libros de la FLOTA van PRIMERO (en móvil el general
-                queda a un scroll, no a ocho). */}
+            {/* El libro de la FLOTA va PRIMERO (en móvil queda a un scroll,
+                no a ocho). */}
             <Card>
               <CardHeader>
                 <CardTitle id="reportes-balances-flota" className="text-base">

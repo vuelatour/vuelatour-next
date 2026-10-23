@@ -6740,6 +6740,24 @@ etiquetas, archivo y query salen SOLO de `lib/admin/reportes-balance.ts` (PURO;
 página pintada). Deploy: pyservices → API 0.0.64 → panel (el 0.0.63 responde
 400 a `modo` por `forbidNonWhitelisted`).
 
+- **«Balance general» RETIRADO del panel (23-oct-2026).** Pedido del cliente:
+  «eliminar porfis esta opción de balance general (este era un balance
+  abreviado en donde no aparecían los costos individuales de cada vuelo) pero
+  ya no se necesita». La card de `/admin/reportes` se llama «Balance mensual»
+  (nota: «Consolida toda la flota en el periodo elegido arriba; el libro de un
+  solo avión se descarga en «Balance por avión».») con UN tile (Ver en
+  pantalla + Descargar balance mensual (Excel)); `MODOS_BALANCE_VUELATOUR` =
+  `["mensual"]` (tipo `ModoBalanceOfrecido`), `MODO_BALANCE_RETIRADO` /
+  `esModoBalanceRetirado`; el plegable «¿Qué trae cada libro?» ya no describe
+  el general. La vista `/admin/reportes/balance` perdió los chips de libro y
+  redirige `?modo=general` (o `?tipo=general`) al mensual con el mismo
+  periodo y `?gasto=` (`modoRetiradoEnUrl`). Solo panel: el API sigue
+  aceptando `modo=general` (no se tocó) y `ModoBalanceVuelaTour` conserva los
+  dos valores para `archivoBalanceVuelaTour`, `getBalanceGeneralLibro` y
+  `NOMBRE_LIBRO_VUELATOUR`. «Balance general VuelaTour» como NOMBRE DE
+  LIBRO/CONCEPTO (categorías, Dinero, ingresos, cotizaciones) NO cambia. Tests:
+  `reportes-balance.test.ts` (la card ya no lo ofrece), `balance-vista.test.ts`.
+
 ## Conciliación: filtro de fechas de la vista (12-oct-2026)
 
 Pedido del cliente (captura de `/admin/conciliacion`): «necesitamos agregar un
@@ -12219,6 +12237,31 @@ la pantalla del avión… todo en pesos, pagamos realmente en pesos».
   187,865.72»): `avionCombustible()` / `sinCombustible()` en
   `reparto-pesos.fixtures.ts`; tests en `reparto-avion.test.ts`,
   `reparto-avion-pantalla.test.tsx` y `reparto-pesos` (lib y tsx).
+- **Pantalla por avión EN PESTAÑAS (23-oct-2026).** Pedido del cliente: «las
+  tablas acomódalas por pestañas, para que no esté una tabla encima de otra y
+  nos confundamos con el scroll». La card del saldo y «Cómo se llega al
+  saldo» quedan SIEMPRE arriba; debajo, UNA tira de pestañas de página
+  «Gastos del periodo (n) · Vuelos (n) · Socios · Entregas (n)» (conteos
+  reales: `conteosPantallaAvion` / `pestanasPantallaAvion`; «Vuelos» solo si
+  el API mandó `detalle`), pestaña inicial «Gastos del periodo» o la de
+  `?seccion=gastos|vuelos|socios|entregas` (`seccionPantallaAvionDeUrl`:
+  basura ⇒ la primera, jamás un 400); al cambiar se reescribe `?seccion=` con
+  `history.replaceState` sin recargar. Solo se pinta la sección activa.
+  Dentro de «Gastos del periodo», pastillas secundarias por GRUPO («Directos
+  (64)», «Combustible (n)», «Indirectos (n)», «Permisos (n)», «Fijos (n)»,
+  «No restan (n)»: `ETIQUETA_CORTA_GRUPO_GASTO`, `pestanasGruposGasto`, solo
+  los grupos con gastos; todos vacíos ⇒ el texto de siempre) y UNA tabla a la
+  vez con su subtotal y su cuadre. Componente `components/admin/pestanas.tsx`
+  (`Pestanas`: cliente, `role="tablist"/"tab"/"tabpanel"`, `aria-selected`,
+  `aria-controls`, ← → Inicio Fin con activación automática, tabindex
+  itinerante, variantes `pagina` / `secundaria`, `parametroUrl`; los paneles
+  llegan YA renderizados por el servidor, nada en localStorage) con sus
+  reglas puras en `lib/admin/pestanas.ts` (`pestanaInicial`,
+  `siguientePestana`, `textoPestana`; test `pestanas.test.ts`). Tests:
+  `reparto-avion.test.ts` (pestañas, conteos, `?seccion=`),
+  `reparto-avion-pantalla.test.tsx` (marcado) y
+  `app/admin/profit-sharing/__tests__/pantalla-avion-pestanas.test.tsx` (SSR
+  de la página: pestaña inicial, `?seccion=socios`, la cascada arriba).
 
 ## Cierre de mes: «Se queda en <mes>» para los cobrados después del corte (21-oct-2026, API 0.0.102, invariante 102 del API)
 

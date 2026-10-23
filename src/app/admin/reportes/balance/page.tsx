@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { tituloBalance } from "@/lib/admin/titulos-pestana";
 import { TituloPestana } from "@/components/admin/titulo-pestana";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   ArrowDownTrayIcon,
   InformationCircleIcon,
@@ -25,12 +26,13 @@ import {
 import {
   DESCRIPCION_VISTA_BALANCE,
   ETIQUETA_VOLVER_REPORTES,
-  NOMBRE_LIBRO_VUELATOUR,
+  MODO_VISTA_BALANCE_DEFAULT,
   claveAnchosVistaBalance,
   descargaVistaBalance,
   errorVistaBalance,
   hrefReportesDesdeVista,
   hrefVistaBalance,
+  modoRetiradoEnUrl,
   parametrosVistaBalance,
   periodoDefaultVista,
   textoPeriodoVista,
@@ -38,7 +40,6 @@ import {
   type ErrorVistaBalance,
 } from "@/lib/admin/balance-vista";
 import { claveSalto } from "@/lib/admin/libro-vinculos";
-import { MODOS_BALANCE_VUELATOUR } from "@/lib/admin/reportes-balance";
 import { getBalanceAvionLibro, getBalanceGeneralLibro } from "@/lib/api/balance-libro-server";
 import { esErrorDeNext } from "@/lib/api/degradar";
 import { isApiError } from "@/lib/api/errors";
@@ -51,13 +52,13 @@ import { puedeEditarAfacReal } from "@/lib/admin/libro-afac";
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 
 export const dynamic = "force-dynamic";
-// El libro lo arma pyservices (el general de la flota tarda decenas de
-// segundos): la página hereda el tope del segmento, como Conciliación e
-// Ingresos.
+// El libro lo arma pyservices (el de la flota tarda decenas de segundos): la
+// página hereda el tope del segmento, como Conciliación e Ingresos.
 export const maxDuration = 300;
 
 interface PageProps {
-  searchParams: Promise<{ modo?: string; avion?: string; desde?: string; hasta?: string; gasto?: string }>;
+  /** `tipo` solo se lee para redirigir enlaces viejos al «Balance general» (retirado el 23-oct-2026). */
+  searchParams: Promise<{ modo?: string; tipo?: string; avion?: string; desde?: string; hasta?: string; gasto?: string }>;
 }
 
 /**
@@ -76,10 +77,12 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
 }
 
 /**
- * `/admin/reportes/balance` (12-oct-2026): el balance mensual, el general o
- * el de un avión EN PANTALLA, como el Excel que se descarga (es el mismo
- * libro). `?modo=mensual|general` o `?avion=<uuid>`, y el periodo
- * `?desde&hasta` (el mismo selector de Reportes, en su variante compacta).
+ * `/admin/reportes/balance` (12-oct-2026): el balance mensual o el de un
+ * avión EN PANTALLA, como el Excel que se descarga (es el mismo libro).
+ * `?modo=mensual` o `?avion=<uuid>`, y el periodo `?desde&hasta` (el mismo
+ * selector de Reportes, en su variante compacta). El «Balance general»
+ * (`?modo=general`) se retiró el 23-oct-2026 («ya no se necesita»): un enlace
+ * viejo redirige al mensual con el mismo periodo.
  *
  * Cabecera de UNA línea y el libro debajo (12-oct-2026, tarde; pedido del
  * cliente: «que se vea en grande el "Excel" y hacer muy sutil el título y
@@ -108,6 +111,11 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
     periodoDefaultVista(todayCancun()),
     inicio,
   );
+  // «Balance general» retirado (23-oct-2026): el enlace viejo abre el mensual
+  // con el mismo periodo (y `?gasto=`), con la URL limpia.
+  if (modoRetiradoEnUrl(sp) && destino.tipo === "vuelatour") {
+    redirect(hrefVistaBalance({ tipo: "vuelatour", modo: MODO_VISTA_BALANCE_DEFAULT }, desde, hasta, { gasto }));
+  }
 
   // AFAC por vuelo (16-oct-2026, API 0.0.89): ¿puede capturar el costo real
   // en la celda EGRESO de «otros movimientos»? Rol de oficina + la base con la
@@ -179,28 +187,8 @@ export default async function BalanceVistaPage({ searchParams }: PageProps) {
             ))}
           </div>
         ) : null}
-        {destino.tipo === "vuelatour" ? (
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Libro">
-            {MODOS_BALANCE_VUELATOUR.map((modo) => {
-              const activo = modo === destino.modo;
-              return (
-                <Link
-                  key={modo}
-                  // Conserva `?gasto=`: del mensual (OPERACIONES/PILOTO/OTROS)
-                  // al general cae en TOTAL PARA PROVEEDOR (PESOS).
-                  href={hrefVistaBalance({ tipo: "vuelatour", modo }, desde, hasta, { gasto })}
-                  aria-current={activo ? "page" : undefined}
-                  className={cn(
-                    buttonVariants({ variant: activo ? "secondary" : "outline", size: "sm" }),
-                    "cursor-pointer",
-                  )}
-                >
-                  {NOMBRE_LIBRO_VUELATOUR[modo]}
-                </Link>
-              );
-            })}
-          </div>
-        ) : null}
+        {/* Hasta el 23-oct-2026 aquí iban los chips «Balance mensual» /
+            «Balance general»; con un solo libro de la flota ya no hay qué elegir. */}
         <PeriodSelector initial={{ desde, hasta }} compacto etiquetaGrupo="Periodo del libro" />
       </div>
       <AvisoPeriodoAjustado inicio={inicio} ajustado={!!ajustado} />

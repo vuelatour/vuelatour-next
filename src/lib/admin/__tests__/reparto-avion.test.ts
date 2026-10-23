@@ -25,11 +25,14 @@ import {
   DESCRIPCION_GRUPO_GASTO,
   ETIQUETAS_CASCADA,
   ETIQUETAS_CASCADA_EXCEL,
+  ETIQUETA_CORTA_GRUPO_GASTO,
   ETIQUETA_GRUPO_GASTO,
   ETIQUETA_RESERVA_INFORMATIVA,
   MESES_HISTORICO_MAX,
   ORDEN_GRUPOS_GASTO,
+  PARAMETRO_SECCION_AVION,
   RUTA_REPARTO_AVIONES,
+  SECCIONES_PANTALLA_AVION,
   TEXTO_RESERVA_NO_RESTA,
   TITULO_FILA_COMBUSTIBLE,
   agruparGastosDetalle,
@@ -39,6 +42,7 @@ import {
   celdasTotalesHistorico,
   columnasHistorico,
   confirmacionDescuentoReserva,
+  conteosPantallaAvion,
   contextoEntregaDesdeAvion,
   descripcionGrupoGasto,
   diferenciaConCascada,
@@ -60,10 +64,13 @@ import {
   normalizarAvionDetalle,
   normalizarAvionHistorico,
   periodoRepartoDeUrl,
+  pestanasGruposGasto,
+  pestanasPantallaAvion,
   puedeCambiarDescuentoReserva,
   puedeVerRepartoAvion,
   reservaInformativa,
   saldoCascada,
+  seccionPantallaAvionDeUrl,
   sublabelAfac,
   sublabelReservaOverhaul,
   textoCeldaHistorico,
@@ -968,5 +975,82 @@ describe("combustible separado: el histórico trae la columna «Combustible» ju
     expect("combustible_mxn" in viejo.meses[0]).toBe(false);
     expect("combustible_mxn" in viejo.totales).toBe(false);
     expect(historicoConCombustible(viejo.meses, viejo.totales)).toBe(false);
+  });
+});
+
+// =============================================================================
+// PANTALLA POR AVIÓN EN PESTAÑAS (23-oct-2026): «las tablas acomódalas por
+// pestañas, para que no esté una tabla encima de otra y nos confundamos con
+// el scroll». Qué pestañas salen, con qué conteos, `?seccion=` y las
+// pastillas por grupo de «Gastos del periodo».
+// =============================================================================
+
+describe("pantalla por avión en pestañas (23-oct-2026)", () => {
+  it("las pestañas con sus conteos reales, en orden; «Vuelos» solo si el API mandó el desglose", () => {
+    expect(SECCIONES_PANTALLA_AVION).toEqual(["gastos", "vuelos", "socios", "entregas"]);
+    expect(PARAMETRO_SECCION_AVION).toBe("seccion");
+    const a = avionCombustible();
+    const conDetalle = conteosPantallaAvion({
+      avion: { ...a, detalle: { ...a.detalle!, vuelos: avionA().detalle!.vuelos, gastos: [gasto({}), gasto({ id: "g-2" })] } },
+      entregas: [],
+    });
+    expect(conDetalle).toEqual({ gastos: 2, vuelos: 3, entregas: 0 });
+    // API previo (sin `detalle`): ni gastos ni pestaña de vuelos.
+    expect(conteosPantallaAvion({ avion: { ...a, detalle: null }, entregas: [] })).toEqual({
+      gastos: 0,
+      vuelos: null,
+      entregas: 0,
+    });
+    expect(pestanasPantallaAvion({ gastos: 64, vuelos: 3, entregas: 2 })).toEqual([
+      { clave: "gastos", etiqueta: "Gastos del periodo", conteo: 64 },
+      { clave: "vuelos", etiqueta: "Vuelos", conteo: 3 },
+      { clave: "socios", etiqueta: "Socios" },
+      { clave: "entregas", etiqueta: "Entregas", conteo: 2 },
+    ]);
+    expect(pestanasPantallaAvion({ gastos: 0, vuelos: null, entregas: 0 }).map((p) => p.clave)).toEqual([
+      "gastos",
+      "socios",
+      "entregas",
+    ]);
+  });
+
+  it("`?seccion=` validado: una pestaña existente abre; basura, vacío o una sección sin pestaña ⇒ «Gastos del periodo»", () => {
+    const con = pestanasPantallaAvion({ gastos: 1, vuelos: 1, entregas: 1 });
+    expect(seccionPantallaAvionDeUrl("socios", con)).toBe("socios");
+    expect(seccionPantallaAvionDeUrl("entregas", con)).toBe("entregas");
+    expect(seccionPantallaAvionDeUrl("vuelos", con)).toBe("vuelos");
+    expect(seccionPantallaAvionDeUrl("gastos", con)).toBe("gastos");
+    expect(seccionPantallaAvionDeUrl("nada", con)).toBe("gastos");
+    expect(seccionPantallaAvionDeUrl("", con)).toBe("gastos");
+    expect(seccionPantallaAvionDeUrl(undefined, con)).toBe("gastos");
+    expect(seccionPantallaAvionDeUrl(null, con)).toBe("gastos");
+    const sinVuelos = pestanasPantallaAvion({ gastos: 1, vuelos: null, entregas: 1 });
+    expect(seccionPantallaAvionDeUrl("vuelos", sinVuelos)).toBe("gastos");
+  });
+
+  it("pastillas de «Gastos del periodo»: solo los grupos con gastos, etiqueta corta, conteo y el nombre largo como tooltip", () => {
+    const grupos = agruparGastosDetalle(
+      [
+        gasto({}),
+        gasto({ id: "g-2" }),
+        gasto({ id: "g-3", grupo: "COMBUSTIBLE" }),
+        gasto({ id: "g-5", grupo: "EXCLUIDO", clave: "TUAS (egreso VuelaTour — Otros movimientos)" }),
+      ],
+      { conCombustible: true },
+    );
+    expect(pestanasGruposGasto(grupos)).toEqual([
+      { clave: "DIRECTO", etiqueta: "Directos", conteo: 2, title: "Gastos directos" },
+      { clave: "COMBUSTIBLE", etiqueta: "Combustible", conteo: 1, title: "Combustible" },
+      { clave: "EXCLUIDO", etiqueta: "No restan", conteo: 1, title: "No restan al avión" },
+    ]);
+    expect(ETIQUETA_CORTA_GRUPO_GASTO).toEqual({
+      DIRECTO: "Directos",
+      COMBUSTIBLE: "Combustible",
+      INDIRECTO: "Indirectos",
+      PERMISO: "Permisos",
+      FIJO: "Fijos",
+      EXCLUIDO: "No restan",
+    });
+    expect(pestanasGruposGasto([])).toEqual([]);
   });
 });

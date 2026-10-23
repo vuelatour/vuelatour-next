@@ -1,46 +1,51 @@
 /**
- * Card «Balance mensual y balance general» de `/admin/reportes` — FUENTE
- * ÚNICA de su título, sus líneas, sus botones, el nombre del archivo y los
- * parámetros (6-oct-2026, API 0.0.64). PURO (sin React ni red): lo pinta
+ * Card «Balance mensual» de `/admin/reportes` — FUENTE ÚNICA de su título,
+ * sus líneas, sus botones, el nombre del archivo y los parámetros
+ * (6-oct-2026, API 0.0.64). PURO (sin React ni red): lo pinta
  * `app/admin/reportes/page.tsx`.
  *
- * Pedido del cliente: «Aquí me pueden poner otro botón para bajar el balance
- * general; el que ya tenemos que se renombre a "Balance mensual" y el nuevo
- * botón sea el "Balance general"». El MENSUAL es el libro de siempre, sin un
- * solo cambio. El GENERAL es el mismo libro con la hoja de vuelos («reporte
- * horas FLOTA») resumida a COSTO TOTAL y COSTO POR HORA, con la fórmula que
- * confirmó el cliente: «es el total de todos los gastos, entre el tiempo
- * volado, entre el tipo de cambio del día, entre 1.16 (para sacar subtotal)».
+ * Historia: el 6-oct-2026 el cliente pidió «otro botón para bajar el balance
+ * general; el que ya tenemos que se renombre a "Balance mensual"». El
+ * 23-oct-2026 pidió lo contrario: «eliminar porfis esta opción de balance
+ * general (este era un balance abreviado en donde no aparecían los costos
+ * individuales de cada vuelo) pero ya no se necesita». Desde entonces la card
+ * ofrece SOLO el mensual (el libro de siempre, sin un solo cambio). El API
+ * sigue aceptando `modo=general` (no se tocó): el panel simplemente ya no lo
+ * ofrece y la vista en pantalla redirige `?modo=general` al mensual.
  *
- * Los dos salen de la MISMA ruta del API; el libro lo elige `modo`
- * (`mensual` | `general`). Sin `modo` el API entrega el mensual y con otro
- * valor responde 400. Los números son los del API: el panel no calcula nada.
+ * «Balance general VuelaTour» sigue existiendo como NOMBRE DE LIBRO/CONCEPTO
+ * (etiquetas de categorías, Dinero, ingresos, cotizaciones): eso no cambia.
  */
 
-/** Libro que se pide al API en `?modo=`. */
+/** Libros que el API acepta en `?modo=` (cualquier otro ⇒ 400). */
 export type ModoBalanceVuelaTour = "mensual" | "general";
 
-/**
- * Orden de los botones en la card y valores que acepta el API en `modo`
- * (cualquier otro ⇒ 400).
- */
-export const MODOS_BALANCE_VUELATOUR: ReadonlyArray<ModoBalanceVuelaTour> = [
-  "mensual",
-  "general",
-];
+/** Libro que el panel OFRECE (desde el 23-oct-2026, solo el mensual). */
+export type ModoBalanceOfrecido = "mensual";
 
-/** Ruta ÚNICA de los dos libros (`GET`); el `modo` decide cuál se arma. */
+/** Los libros que se ofrecen en la card (y en la vista), en orden. */
+export const MODOS_BALANCE_VUELATOUR: ReadonlyArray<ModoBalanceOfrecido> = ["mensual"];
+
+/** El libro que se RETIRÓ del panel (23-oct-2026): si llega en la URL, se redirige al mensual. */
+export const MODO_BALANCE_RETIRADO: ModoBalanceVuelaTour = "general";
+
+/** ¿Este valor de la URL (`?modo=` o `?tipo=`) pide el libro retirado? */
+export function esModoBalanceRetirado(valor: string | null | undefined): boolean {
+  return typeof valor === "string" && valor.trim().toLowerCase() === MODO_BALANCE_RETIRADO;
+}
+
+/** Ruta ÚNICA del libro (`GET`); el `modo` decide cuál se arma. */
 export const RUTA_BALANCE_VUELATOUR = "/v1/aircraft/balance-general.xlsx";
 
-/** Título de la card (antes «Balance general VuelaTour»). */
-export const TITULO_CARD_BALANCE_VUELATOUR = "Balance mensual y balance general";
+/** Título de la card (antes «Balance mensual y balance general»; antes «Balance general VuelaTour»). */
+export const TITULO_CARD_BALANCE_VUELATOUR = "Balance mensual";
 
 /**
- * Línea común bajo las de cada libro: el periodo es el de la página y el libro
- * de UN avión vive en otra card (Ale y Pablo confundían ambos, 2-sep-2026).
+ * Línea bajo el título: el periodo es el de la página y el libro de UN avión
+ * vive en otra card (Ale y Pablo confundían ambos, 2-sep-2026).
  */
 export const NOTA_BALANCE_VUELATOUR =
-  "Los dos consolidan toda la flota en el periodo elegido arriba; el libro de un solo avión se descarga en «Balance por avión».";
+  "Consolida toda la flota en el periodo elegido arriba; el libro de un solo avión se descarga en «Balance por avión».";
 
 /**
  * Título del plegable (`TextoPlegable`) que guarda las descripciones LARGAS de
@@ -63,7 +68,7 @@ interface TextosLibroBalance {
   etiqueta: string;
 }
 
-const TEXTOS_LIBRO: Record<ModoBalanceVuelaTour, TextosLibroBalance> = {
+const TEXTOS_LIBRO: Record<ModoBalanceOfrecido, TextosLibroBalance> = {
   mensual: {
     nombre: "Balance mensual",
     resumen:
@@ -72,33 +77,24 @@ const TEXTOS_LIBRO: Record<ModoBalanceVuelaTour, TextosLibroBalance> = {
       "el libro completo de siempre — resumen por avión, hoja de vuelos (reporte de horas) con el desglose de operación, piloto, otros y permiso AFAC, otros movimientos, cobranza, otros gastos de la empresa, repartidos a aviones, inventario de bodega, balance por avión con sus socios y pendientes de captura.",
     etiqueta: "Descargar balance mensual (Excel)",
   },
-  general: {
-    nombre: "Balance general",
-    resumen:
-      "El mismo libro con la hoja de vuelos a costo total y costo por hora. En pantalla puede tardar hasta un minuto.",
-    detalle:
-      "el mismo libro con la hoja de vuelos resumida a costo total y costo por hora (sin desglose de operación/piloto/AFAC). Costo por hora = costo total ÷ tiempo volado ÷ tipo de cambio ÷ 1.16 (dólares sin IVA).",
-    etiqueta: "Descargar balance general (Excel)",
-  },
 };
 
 /** Todo lo que la card necesita para pintar la línea y el botón de un libro. */
 export interface LibroBalanceVuelaTour extends TextosLibroBalance {
-  modo: ModoBalanceVuelaTour;
-  /** Ruta del API (la misma para los dos libros). */
+  modo: ModoBalanceOfrecido;
+  /** Ruta del API. */
   path: string;
   /** Nombre con el que se guarda el archivo descargado. */
   filename: string;
   /** Parámetros del `GET` (el periodo de la página + el libro). */
-  query: { desde: string; hasta: string; modo: ModoBalanceVuelaTour };
+  query: { desde: string; hasta: string; modo: ModoBalanceOfrecido };
 }
 
 /**
- * Archivo descargado: `balance-mensual-vuelatour-<desde>-a-<hasta>.xlsx` o
- * `balance-general-vuelatour-<desde>-a-<hasta>.xlsx` (fechas `YYYY-MM-DD`),
- * el mismo nombre que pone el API en `Content-Disposition`. Antes del 0.0.64
- * el único libro bajaba como `balance-general-vuelatour-…`: ese libro hoy es
- * el MENSUAL y el nombre «general» queda para el de costo por hora.
+ * Archivo descargado: `balance-mensual-vuelatour-<desde>-a-<hasta>.xlsx`
+ * (fechas `YYYY-MM-DD`), el mismo nombre que pone el API en
+ * `Content-Disposition`. Antes del 0.0.64 el único libro bajaba como
+ * `balance-general-vuelatour-…`: ese libro es el MENSUAL de hoy.
  */
 export function archivoBalanceVuelaTour(
   modo: ModoBalanceVuelaTour,
@@ -108,7 +104,7 @@ export function archivoBalanceVuelaTour(
   return `balance-${modo}-vuelatour-${desde}-a-${hasta}.xlsx`;
 }
 
-/** Línea de la descripción de un libro: «Balance general: el mismo libro…». */
+/** Línea de la descripción de un libro: «Balance mensual: el libro completo…». */
 export function lineaDescripcionBalance(
   libro: Pick<LibroBalanceVuelaTour, "nombre" | "detalle">,
 ): string {
@@ -116,7 +112,7 @@ export function lineaDescripcionBalance(
 }
 
 /**
- * Los dos libros de la card, en el orden de los botones (mensual, general),
+ * Los libros de la card, en el orden de los botones (hoy solo el mensual),
  * para el periodo YA validado de la página.
  */
 export function librosBalanceVuelaTour(

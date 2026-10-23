@@ -10,9 +10,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Pestanas } from "@/components/admin/pestanas";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn } from "@/lib/format";
 import {
+  ETIQUETA_LISTA_GRUPOS_GASTO,
   ETIQUETA_REPARTO_PARCIAL,
   ETIQUETA_SIN_TC_GASTO,
   ETIQUETA_TC_OFICIAL,
@@ -25,15 +27,17 @@ import {
   diferenciaConCascada,
   hrefVueloGasto,
   montoGastoDetalle,
+  pestanasGruposGasto,
   textoCuadreGrupo,
   textoDescontadoGasto,
   textoMontoOriginalGasto,
   textoTcGasto,
   textoUsdGasto,
   textoVueloGasto,
+  type GrupoGastosDetalle,
 } from "@/lib/admin/reparto-avion";
 import { combustibleSeparado, montoPrincipal } from "@/lib/admin/reparto-pesos";
-import type { AvionReparto, FilaGastoDetalle } from "@/types/profit-sharing";
+import type { AvionReparto, DetalleGastoGrupo, FilaGastoDetalle } from "@/types/profit-sharing";
 import { MontoDobleCelda } from "./cascada-avion";
 
 const BADGE_INFO = "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30";
@@ -41,114 +45,142 @@ const BADGE_AMBAR = "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-a
 
 /**
  * «Gastos del periodo» de la pantalla del avión (20-oct-2026, API 0.0.101):
- * `detalle.gastos[]` agrupado como en el balance (directos, indirectos,
- * permisos, fijos repartidos a mano, no restan), con fecha, categoría,
- * concepto, vuelo (enlace), monto original, T.C. (badge si fue el oficial),
- * pesos y dólares; subtotal por grupo comparado con la fila de la cascada.
- * Es la respuesta a «para saber cuáles son esos permisos, gastos indirectos
- * y directos de los que habla el Excel». Con el combustible separado (API
- * 0.0.103) el grupo «Combustible» va tras los directos y cuadra contra su
- * fila de la cascada. Sin hooks (servidor).
+ * `detalle.gastos[]` agrupado como en el balance (directos, combustible,
+ * indirectos, permisos, fijos repartidos a mano, no restan), con fecha,
+ * categoría, concepto, vuelo (enlace), monto original, T.C. (badge si fue el
+ * oficial), pesos y dólares; subtotal por grupo comparado con la fila de la
+ * cascada. Es la respuesta a «para saber cuáles son esos permisos, gastos
+ * indirectos y directos de los que habla el Excel». Con el combustible
+ * separado (API 0.0.103) el grupo «Combustible» va tras los directos y cuadra
+ * contra su fila de la cascada.
+ *
+ * Desde el 23-oct-2026 («para que no esté una tabla encima de otra») los
+ * grupos van en PASTILLAS (`Pestanas` secundarias: «Directos (64)»,
+ * «Combustible (n)»…, solo los grupos con gastos) y se pinta UNA tabla a la
+ * vez con su subtotal y su cuadre. `grupoInicial`: el grupo abierto (si no
+ * existe, el primero con gastos). Las tablas se renderizan en el servidor.
  */
 export function GastosAvionTable({
   avion,
   filas,
   enPesos,
+  grupoInicial = null,
 }: {
   avion: AvionReparto;
   filas: FilaGastoDetalle[] | null | undefined;
   enPesos: boolean;
+  grupoInicial?: DetalleGastoGrupo | null;
 }) {
   const grupos = agruparGastosDetalle(filas, { conCombustible: combustibleSeparado(avion) });
   if (grupos.length === 0) {
     return <p className="text-sm text-muted-foreground">{TEXTO_SIN_GASTOS_AVION}</p>;
   }
+  const paneles = Object.fromEntries(
+    grupos.map((g) => [g.grupo, <GrupoGastosPanel key={g.grupo} avion={avion} grupo={g} enPesos={enPesos} />]),
+  );
   return (
-    <div className="space-y-5" data-gastos-avion>
-      {grupos.map((g) => {
-        const cascada = cascadaDelGrupo(avion, g.grupo);
-        const cascadaMonto = cascada
-          ? montoPrincipal({ mxn: cascada.mxn, usd: cascada.usd }, enPesos).principal
-          : null;
-        const dif = diferenciaConCascada(
-          g.grupo,
-          enPesos ? g.subtotalMxn : g.subtotalUsd,
-          enPesos ? cascada?.mxn ?? null : cascada?.usd ?? null,
-          g.filas.length,
-        );
-        const cuadre = textoCuadreGrupo(g.grupo, dif, cascadaMonto);
-        const subtotal =
-          g.grupo === "EXCLUIDO"
-            ? null
-            : montoPrincipal({ mxn: g.subtotalMxn, usd: g.subtotalUsd }, enPesos);
-        return (
-          <section key={g.grupo} data-grupo-gastos={g.grupo} className="space-y-1.5">
-            <div>
-              <h3 className="text-sm font-semibold">
-                {g.etiqueta}
-                <span className="ml-1.5 text-xs font-normal text-muted-foreground">· {g.filas.length} gasto(s)</span>
-              </h3>
-              <p className="text-xs text-muted-foreground">{g.descripcion}</p>
-            </div>
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Concepto</TableHead>
-                    <TableHead>Vuelo</TableHead>
-                    <TableHead className="text-right">Monto original</TableHead>
-                    <TableHead className="text-right">T.C.</TableHead>
-                    <TableHead className="text-right">{enPesos ? "MXN" : "USD"}</TableHead>
-                    {enPesos && <TableHead className="text-right">USD</TableHead>}
-                    {g.grupo === "EXCLUIDO" && <TableHead>Por qué no resta</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {g.filas.map((f) => (
-                    <FilaGasto key={f.id} fila={f} enPesos={enPesos} excluido={g.grupo === "EXCLUIDO"} />
-                  ))}
-                </TableBody>
-                {subtotal && (
-                  <TableFooter>
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-xs font-semibold">
-                        Subtotal · {g.etiqueta}
-                        {g.sinPesos > 0 && (
-                          <span className="ml-1.5 font-normal text-amber-700 dark:text-amber-400">
-                            · {g.sinPesos} sin T.C. (fuera del subtotal)
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs font-semibold" data-subtotal-grupo={g.grupo}>
-                        {subtotal.principal}
-                      </TableCell>
-                      {enPesos && (
-                        <TableCell className="text-right font-mono text-xs text-muted-foreground">
-                          {g.subtotalUsd === null ? "—" : textoUsdGasto({ usd: g.subtotalUsd })}
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  </TableFooter>
-                )}
-              </Table>
-            </div>
-            {cuadre && (
-              <p
-                className={`flex items-center gap-1 text-[11px] ${
-                  dif === null ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400"
-                }`}
-                data-cuadre-grupo={dif === null ? "ok" : "diferencia"}
-              >
-                {dif !== null && <ExclamationTriangleIcon className="h-3 w-3 shrink-0" aria-hidden />}
-                {cuadre}
-              </p>
-            )}
-          </section>
-        );
-      })}
+    <div data-gastos-avion>
+      <Pestanas
+        variante="secundaria"
+        etiquetaLista={ETIQUETA_LISTA_GRUPOS_GASTO}
+        pestanas={pestanasGruposGasto(grupos)}
+        inicial={grupoInicial}
+        paneles={paneles}
+      />
     </div>
+  );
+}
+
+/** La tabla de UN grupo con su subtotal y su cuadre contra la cascada. */
+function GrupoGastosPanel({
+  avion,
+  grupo: g,
+  enPesos,
+}: {
+  avion: AvionReparto;
+  grupo: GrupoGastosDetalle;
+  enPesos: boolean;
+}) {
+  const cascada = cascadaDelGrupo(avion, g.grupo);
+  const cascadaMonto = cascada
+    ? montoPrincipal({ mxn: cascada.mxn, usd: cascada.usd }, enPesos).principal
+    : null;
+  const dif = diferenciaConCascada(
+    g.grupo,
+    enPesos ? g.subtotalMxn : g.subtotalUsd,
+    enPesos ? cascada?.mxn ?? null : cascada?.usd ?? null,
+    g.filas.length,
+  );
+  const cuadre = textoCuadreGrupo(g.grupo, dif, cascadaMonto);
+  const subtotal =
+    g.grupo === "EXCLUIDO"
+      ? null
+      : montoPrincipal({ mxn: g.subtotalMxn, usd: g.subtotalUsd }, enPesos);
+  return (
+    <section data-grupo-gastos={g.grupo} className="space-y-1.5">
+      <div>
+        <h3 className="text-sm font-semibold">
+          {g.etiqueta}
+          <span className="ml-1.5 text-xs font-normal text-muted-foreground">· {g.filas.length} gasto(s)</span>
+        </h3>
+        <p className="text-xs text-muted-foreground">{g.descripcion}</p>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Categoría</TableHead>
+              <TableHead>Concepto</TableHead>
+              <TableHead>Vuelo</TableHead>
+              <TableHead className="text-right">Monto original</TableHead>
+              <TableHead className="text-right">T.C.</TableHead>
+              <TableHead className="text-right">{enPesos ? "MXN" : "USD"}</TableHead>
+              {enPesos && <TableHead className="text-right">USD</TableHead>}
+              {g.grupo === "EXCLUIDO" && <TableHead>Por qué no resta</TableHead>}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {g.filas.map((f) => (
+              <FilaGasto key={f.id} fila={f} enPesos={enPesos} excluido={g.grupo === "EXCLUIDO"} />
+            ))}
+          </TableBody>
+          {subtotal && (
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={6} className="text-xs font-semibold">
+                  Subtotal · {g.etiqueta}
+                  {g.sinPesos > 0 && (
+                    <span className="ml-1.5 font-normal text-amber-700 dark:text-amber-400">
+                      · {g.sinPesos} sin T.C. (fuera del subtotal)
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold" data-subtotal-grupo={g.grupo}>
+                  {subtotal.principal}
+                </TableCell>
+                {enPesos && (
+                  <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                    {g.subtotalUsd === null ? "—" : textoUsdGasto({ usd: g.subtotalUsd })}
+                  </TableCell>
+                )}
+              </TableRow>
+            </TableFooter>
+          )}
+        </Table>
+      </div>
+      {cuadre && (
+        <p
+          className={`flex items-center gap-1 text-[11px] ${
+            dif === null ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400"
+          }`}
+          data-cuadre-grupo={dif === null ? "ok" : "diferencia"}
+        >
+          {dif !== null && <ExclamationTriangleIcon className="h-3 w-3 shrink-0" aria-hidden />}
+          {cuadre}
+        </p>
+      )}
+    </section>
   );
 }
 

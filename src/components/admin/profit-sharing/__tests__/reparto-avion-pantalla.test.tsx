@@ -49,6 +49,7 @@ vi.mock("@/components/admin/excel-export-button", () => ({ ExcelExportButton: ()
 const { CascadaAvion } = await import("../cascada-avion");
 const { AvionRepartoCard } = await import("../avion-reparto-card");
 const { GastosAvionTable } = await import("../gastos-avion-table");
+const { Pestanas } = await import("../../pestanas");
 const { SociosAvionTable } = await import("../socios-avion-table");
 const { EntregasAvionTable } = await import("../entregas-avion-table");
 const { HistoricoAvionTable } = await import("../historico-avion-table");
@@ -182,10 +183,23 @@ describe("gastos del periodo (GastosAvionTable)", () => {
   ];
   // Cascada: directos 70,740 MXN ⇒ con estas dos filas (27,184) NO cuadra: se dice.
   const html = renderToStaticMarkup(<GastosAvionTable avion={avionBalance()} filas={filas} enPesos />);
+  // Desde el 23-oct-2026 los grupos van en pastillas y se pinta UNA tabla a la
+  // vez: el primer grupo con gastos por default; los demás, con `grupoInicial`.
+  const excluidos = renderToStaticMarkup(
+    <GastosAvionTable avion={avionBalance()} filas={filas} enPesos grupoInicial="EXCLUIDO" />,
+  );
 
-  it("un bloque por grupo, con fecha, categoría, concepto, vuelo enlazado, monto original, T.C. (badge oficial), pesos y dólares", () => {
+  it("una pastilla por grupo con gastos (solo esos) y una tabla a la vez; la tabla con fecha, categoría, concepto, vuelo enlazado, monto original, T.C. (badge oficial), pesos y dólares", () => {
+    expect(html).toContain('data-pestanas="secundaria"');
+    expect(html).toContain('role="tablist" aria-label="Grupos de gastos"');
+    expect(html).toMatch(/data-pestana="DIRECTO" data-activa=""/);
+    expect(html).toContain('data-pestana="EXCLUIDO"');
+    expect(html).not.toContain('data-pestana="INDIRECTO"');
+    const texto = html.replace(/<[^>]+>/g, "");
+    expect(texto).toContain("Directos (2)");
+    expect(texto).toContain("No restan (1)");
     expect(html).toContain('data-grupo-gastos="DIRECTO"');
-    expect(html).toContain('data-grupo-gastos="EXCLUIDO"');
+    expect(html).not.toContain('data-grupo-gastos="EXCLUIDO"');
     expect(html).not.toContain('data-grupo-gastos="INDIRECTO"');
     expect(html).toContain(">Gastos directos<span");
     expect(html).toContain('href="/admin/flights/b2b2b2b2-0000-4000-8000-000000000301"');
@@ -198,13 +212,17 @@ describe("gastos del periodo (GastosAvionTable)", () => {
     expect(html).toContain(">$1,449.28 USD<");
   });
 
-  it("subtotal por grupo comparado con la fila de la cascada; los EXCLUIDOS con su motivo y tachados", () => {
+  it("subtotal por grupo comparado con la fila de la cascada; los EXCLUIDOS (en su pastilla) con su motivo y tachados", () => {
     expect(html).toMatch(/data-subtotal-grupo="DIRECTO"[^>]*>\$27,184\.00 MXN</);
     expect(html).toContain('data-cuadre-grupo="diferencia"');
     expect(html).toContain("No cuadra con la fila «Gastos directos» de la cascada ($70,740.00 MXN): diferencia de -$43,556.00 MXN.");
-    expect(html).toContain(">Por qué no resta<");
-    expect(html).toContain("TUAS (egreso VuelaTour — Otros movimientos)");
-    expect(html).toMatch(/line-through[^>]*>\$1,200\.00 MXN</);
+    expect(excluidos).toMatch(/data-pestana="EXCLUIDO" data-activa=""/);
+    expect(excluidos).toContain('data-grupo-gastos="EXCLUIDO"');
+    expect(excluidos).not.toContain('data-grupo-gastos="DIRECTO"');
+    expect(excluidos).toContain(">Por qué no resta<");
+    expect(excluidos).toContain("TUAS (egreso VuelaTour — Otros movimientos)");
+    expect(excluidos).toMatch(/line-through[^>]*>\$1,200\.00 MXN</);
+    expect(excluidos).not.toContain("data-cuadre-grupo");
     // Que cuadre se dice en gris.
     const cuadra = renderToStaticMarkup(
       <GastosAvionTable avion={{ ...avionBalance(), gastos: { ...avionBalance().gastos, directos_mxn: 27184 } }} filas={filas.slice(0, 2)} enPesos />,
@@ -574,26 +592,114 @@ describe("combustible separado: «Gastos del periodo» con el grupo «Combustibl
     gasto({ id: "g-d2", fecha: "2026-09-12", categoria: "HOTEL", etiqueta: "Hotel", clave: "HOTEL", monto: 15588.14, mxn: 15588.14, usd: 903.66 }),
   ];
   const html = renderToStaticMarkup(<GastosAvionTable avion={avionCombustible()} filas={filas} enPesos />);
+  const combustible = renderToStaticMarkup(
+    <GastosAvionTable avion={avionCombustible()} filas={filas} enPesos grupoInicial="COMBUSTIBLE" />,
+  );
 
-  it("el grupo va tras los directos, con subtotal, y CUADRA con la fila «Combustible» de la cascada; los directos cuadran con la suya", () => {
-    expect(pos(html, 'data-grupo-gastos="DIRECTO"')).toBeLessThan(pos(html, 'data-grupo-gastos="COMBUSTIBLE"'));
-    expect(html).toContain(">Combustible<span");
-    expect(html).toContain("Gasavión / turbosina de cada vuelo. Va aparte de los gastos directos, como en el Excel del balance.");
+  it("la pastilla «Combustible» va tras «Directos»; cada tabla con su subtotal CUADRA con su fila de la cascada", () => {
+    expect(pos(html, 'data-pestana="DIRECTO"')).toBeLessThan(pos(html, 'data-pestana="COMBUSTIBLE"'));
+    const texto = html.replace(/<[^>]+>/g, "");
+    expect(texto).toContain("Directos (2)");
+    expect(texto).toContain("Combustible (2)");
+    // Por default, la tabla de los directos (ya sin combustible).
+    expect(html).toContain('data-grupo-gastos="DIRECTO"');
+    expect(html).not.toContain('data-grupo-gastos="COMBUSTIBLE"');
     expect(html).toContain("Costo de cada vuelo sin el combustible (que va aparte, como en el Excel)");
-    expect(html).toMatch(/data-subtotal-grupo="COMBUSTIBLE"[^>]*>\$147,277\.58 MXN</);
     expect(html).toMatch(/data-subtotal-grupo="DIRECTO"[^>]*>\$40,588\.14 MXN</);
-    expect((html.match(/data-cuadre-grupo="ok"/g) ?? []).length).toBe(2);
-    expect(html).not.toContain('data-cuadre-grupo="diferencia"');
-    expect(html).toContain("Cuadra con la fila «Combustible» de la cascada ($147,277.58 MXN).");
+    expect(html).toContain('data-cuadre-grupo="ok"');
     expect(html).toContain("Cuadra con la fila «Gastos directos» de la cascada ($40,588.14 MXN).");
+    // La pastilla «Combustible»: su tabla, su subtotal y su cuadre.
+    expect(combustible).toMatch(/data-pestana="COMBUSTIBLE" data-activa=""/);
+    expect(combustible).toContain('data-grupo-gastos="COMBUSTIBLE"');
+    expect(combustible).not.toContain('data-grupo-gastos="DIRECTO"');
+    expect(combustible).toContain(">Combustible<span");
+    expect(combustible).toContain("Gasavión / turbosina de cada vuelo. Va aparte de los gastos directos, como en el Excel del balance.");
+    expect(combustible).toMatch(/data-subtotal-grupo="COMBUSTIBLE"[^>]*>\$147,277\.58 MXN</);
+    expect(combustible).toContain('data-cuadre-grupo="ok"');
+    expect(combustible).not.toContain('data-cuadre-grupo="diferencia"');
+    expect(combustible).toContain("Cuadra con la fila «Combustible» de la cascada ($147,277.58 MXN).");
   });
 
   it("si no cuadra con la fila «Combustible», se dice", () => {
     const a = avionCombustible();
     const desc = renderToStaticMarkup(
-      <GastosAvionTable avion={{ ...a, gastos: { ...a.gastos, combustible_mxn: 147300 } }} filas={filas} enPesos />,
+      <GastosAvionTable
+        avion={{ ...a, gastos: { ...a.gastos, combustible_mxn: 147300 } }}
+        filas={filas}
+        enPesos
+        grupoInicial="COMBUSTIBLE"
+      />,
     );
     expect(desc).toContain("No cuadra con la fila «Combustible» de la cascada ($147,300.00 MXN): diferencia de -$22.42 MXN.");
+  });
+});
+
+// =============================================================================
+// PESTAÑAS (23-oct-2026): el componente accesible y el cableado de la página.
+// =============================================================================
+
+describe("pestañas (Pestanas): accesibles, solo el panel activo, conteos", () => {
+  const PES = [
+    { clave: "a", etiqueta: "Gastos del periodo", conteo: 64 },
+    { clave: "b", etiqueta: "Socios" },
+    { clave: "c", etiqueta: "Entregas", conteo: 0 },
+  ];
+  const paneles = { a: <p>Panel A</p>, b: <p>Panel B</p>, c: <p>Panel C</p> };
+
+  it("tablist / tab / tabpanel con aria-selected, aria-controls y tabindex itinerante; SOLO el panel activo se pinta", () => {
+    const html = renderToStaticMarkup(<Pestanas etiquetaLista="Secciones" pestanas={PES} paneles={paneles} />);
+    expect(html).toContain('role="tablist" aria-label="Secciones"');
+    expect((html.match(/role="tab"/g) ?? []).length).toBe(3);
+    expect(html).toMatch(/role="tab" id="([^"]+)-tab-a" aria-selected="true" aria-controls="\1-panel-a" tabindex="0"/);
+    expect(html).toMatch(/id="[^"]+-tab-b" aria-selected="false" aria-controls="[^"]+-panel-b" tabindex="-1"/);
+    expect(html).toMatch(/role="tabpanel" id="([^"]+)-panel-a" aria-labelledby="\1-tab-a" data-panel-pestana="a"/);
+    expect(html).toContain("Panel A");
+    expect(html).not.toContain("Panel B");
+    expect(html).not.toContain("Panel C");
+    const texto = html.replace(/<[^>]+>/g, "");
+    expect(texto).toContain("Gastos del periodo (64)");
+    expect(texto).toContain("Socios");
+    expect(texto).toContain("Entregas (0)");
+    expect(html).toContain('data-pestanas="pagina"');
+    for (const b of botones(html)) expect(b, b).toContain("cursor-pointer");
+  });
+
+  it("la inicial pedida abre; una clave que no existe cae a la primera; variante secundaria (pastillas); sin pestañas, nada", () => {
+    const html = renderToStaticMarkup(
+      <Pestanas etiquetaLista="Secciones" pestanas={PES} inicial="b" paneles={paneles} parametroUrl="seccion" />,
+    );
+    expect(html).toMatch(/data-pestana="b" data-activa=""/);
+    expect(html).toContain("Panel B");
+    expect(html).not.toContain("Panel A");
+    const rota = renderToStaticMarkup(
+      <Pestanas etiquetaLista="Secciones" pestanas={PES} inicial="zzz" paneles={paneles} variante="secundaria" />,
+    );
+    expect(rota).toContain("Panel A");
+    expect(rota).toContain('data-pestanas="secundaria"');
+    expect(rota).toContain("rounded-full");
+    expect(renderToStaticMarkup(<Pestanas etiquetaLista="x" pestanas={[]} paneles={{}} />)).toBe("");
+  });
+});
+
+describe("cableado de la pantalla del avión en pestañas", () => {
+  const leer = (rel: string) => readFileSync(path.join(process.cwd(), rel), "utf8");
+  const detalle = leer("src/app/admin/profit-sharing/aviones/[id]/page.tsx");
+  const tabla = leer("src/components/admin/profit-sharing/gastos-avion-table.tsx");
+  const pestanas = leer("src/components/admin/pestanas.tsx");
+
+  it("saldo y cascada SIEMPRE arriba; debajo UNA tira de pestañas con `?seccion=` y los paneles ya renderizados", () => {
+    expect(detalle.indexOf("<CascadaAvion avion={avion}")).toBeLessThan(detalle.indexOf("<Pestanas"));
+    expect(detalle).toContain("const pestanas = pestanasPantallaAvion(conteosPantallaAvion(datos));");
+    expect(detalle).toContain("const seccionInicial = seccionPantallaAvionDeUrl(sp.seccion, pestanas);");
+    expect(detalle).toMatch(/<Pestanas[\s\S]*?inicial=\{seccionInicial\}[\s\S]*?parametroUrl=\{PARAMETRO_SECCION_AVION\}/);
+    for (const s of ["gastos", "vuelos", "socios", "entregas"]) expect(detalle).toContain(`data-seccion-avion="${s}"`);
+    // Las tablas siguen siendo las de siempre (SSR); el estado vive en el cliente.
+    expect(detalle).not.toContain('"use client"');
+    expect(pestanas.startsWith('"use client";')).toBe(true);
+    expect(pestanas).toContain("window.history.replaceState(");
+    expect(pestanas).not.toContain("localStorage");
+    expect(tabla).toContain('variante="secundaria"');
+    expect(tabla).toContain("pestanasGruposGasto(grupos)");
   });
 });
 

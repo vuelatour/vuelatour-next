@@ -1,20 +1,20 @@
 /**
- * Card «Balance mensual y balance general» de `/admin/reportes` (6-oct-2026,
- * API 0.0.64). Pedido del cliente: «me pueden poner otro botón para bajar el
- * balance general; el que ya tenemos que se renombre a "Balance mensual" y el
- * nuevo botón sea el "Balance general"». Costo por hora confirmado: «es el
- * total de todos los gastos, entre el tiempo volado, entre el tipo de cambio
- * del día, entre 1.16 (para sacar subtotal)».
+ * Card «Balance mensual» de `/admin/reportes` (6-oct-2026, API 0.0.64; desde
+ * el 23-oct-2026 SIN la opción «Balance general»). Pedido del cliente del
+ * 23-oct: «eliminar porfis esta opción de balance general (este era un
+ * balance abreviado en donde no aparecían los costos individuales de cada
+ * vuelo) pero ya no se necesita». El API sigue aceptando `modo=general`; el
+ * panel ya no lo ofrece y la vista redirige el enlace viejo al mensual.
  *
  * Se custodia:
- *  1. los textos (título, una línea por libro, nota y etiquetas: copia del
- *     contrato);
- *  2. archivo y parámetros de cada botón: la MISMA ruta, `modo` distinto y
- *     el periodo de la página;
+ *  1. los textos (título, la línea del libro, nota y etiqueta: copia del
+ *     contrato) y que el general YA NO se ofrece;
+ *  2. archivo y parámetros del botón: la ruta, `modo=mensual` y el periodo
+ *     de la página;
  *  3. la paridad de los modos y de la ruta con el API (si el repo hermano
- *     está al lado);
- *  4. el cableado de la página: dos botones en orden, todo sale del helper y
- *     el título viejo ya no se pinta.
+ *     está al lado): lo que el panel ofrece lo acepta el API;
+ *  4. el cableado de la página: un botón, todo sale del helper y ni el
+ *     título viejo ni el general se pintan.
  *
  * Desde el 12-oct-2026 («los balances a un clic») además: el hero de
  * balances va ANTES del cierre, los aviones llegan a la grilla ORDENADOS, un
@@ -28,11 +28,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MODOS_BALANCE_VUELATOUR,
+  MODO_BALANCE_RETIRADO,
   NOTA_BALANCE_VUELATOUR,
   RUTA_BALANCE_VUELATOUR,
   TITULO_CARD_BALANCE_VUELATOUR,
   TITULO_DETALLE_LIBROS,
   archivoBalanceVuelaTour,
+  esModoBalanceRetirado,
   librosBalanceVuelaTour,
   lineaDescripcionBalance,
 } from "../reportes-balance";
@@ -132,9 +134,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** COPIA del contrato (§4) — si cambia un texto, se cambia aquí y en el helper. */
+/** COPIA del contrato (§4, 23-oct-2026) — si cambia un texto, se cambia aquí y en el helper. */
 const CONTRATO = {
-  titulo: "Balance mensual y balance general",
+  titulo: "Balance mensual",
   ruta: "/v1/aircraft/balance-general.xlsx",
   mensual: {
     etiqueta: "Descargar balance mensual (Excel)",
@@ -143,15 +145,19 @@ const CONTRATO = {
     resumen:
       "El libro de siempre: resumen por avión, vuelos con desglose, cobranza, gastos, bodega y socios.",
   },
-  general: {
-    etiqueta: "Descargar balance general (Excel)",
-    linea:
-      "Balance general: el mismo libro con la hoja de vuelos resumida a costo total y costo por hora (sin desglose de operación/piloto/AFAC). Costo por hora = costo total ÷ tiempo volado ÷ tipo de cambio ÷ 1.16 (dólares sin IVA).",
-    resumen:
-      "El mismo libro con la hoja de vuelos a costo total y costo por hora. En pantalla puede tardar hasta un minuto.",
-  },
-  nota: "Los dos consolidan toda la flota en el periodo elegido arriba; el libro de un solo avión se descarga en «Balance por avión».",
+  nota: "Consolida toda la flota en el periodo elegido arriba; el libro de un solo avión se descarga en «Balance por avión».",
   tituloDetalle: "¿Qué trae cada libro?",
+} as const;
+
+/** Lo que se OFRECÍA hasta el 22-oct-2026 y ya no debe pintarse. */
+const RETIRADO = {
+  tituloViejo: "Balance mensual y balance general",
+  etiqueta: "Descargar balance general (Excel)",
+  linea:
+    "Balance general: el mismo libro con la hoja de vuelos resumida a costo total y costo por hora (sin desglose de operación/piloto/AFAC). Costo por hora = costo total ÷ tiempo volado ÷ tipo de cambio ÷ 1.16 (dólares sin IVA).",
+  resumen:
+    "El mismo libro con la hoja de vuelos a costo total y costo por hora. En pantalla puede tardar hasta un minuto.",
+  notaVieja: "Los dos consolidan toda la flota en el periodo elegido arriba; el libro de un solo avión se descarga en «Balance por avión».",
 } as const;
 
 const EXPORTS = [
@@ -164,56 +170,53 @@ const EXPORTS = [
 const EXPORTS_SIN_HORAS_PILOTO = EXPORTS.filter((p) => p !== "/v1/dashboards/horas-piloto/export");
 
 describe("textos de la card", () => {
-  it("título nuevo (el viejo era «Balance general VuelaTour»)", () => {
+  it("título «Balance mensual» (los viejos eran «Balance mensual y balance general» y «Balance general VuelaTour»)", () => {
     expect(TITULO_CARD_BALANCE_VUELATOUR).toBe(CONTRATO.titulo);
+    expect(TITULO_CARD_BALANCE_VUELATOUR).not.toBe(RETIRADO.tituloViejo);
   });
 
-  it("una línea por libro, en el orden de los botones, y la nota común", () => {
+  it("UNA línea (el mensual) y la nota ajustada", () => {
     const libros = librosBalanceVuelaTour("2026-09-01", "2026-09-30");
-    expect(libros.map(lineaDescripcionBalance)).toEqual([
-      CONTRATO.mensual.linea,
-      CONTRATO.general.linea,
-    ]);
+    expect(libros.map(lineaDescripcionBalance)).toEqual([CONTRATO.mensual.linea]);
     expect(NOTA_BALANCE_VUELATOUR).toBe(CONTRATO.nota);
+    expect(NOTA_BALANCE_VUELATOUR).not.toBe(RETIRADO.notaVieja);
   });
 
-  it("el general dice qué quita y cómo sale el costo por hora (la fórmula del cliente)", () => {
-    const [mensual, general] = librosBalanceVuelaTour("2026-09-01", "2026-09-30");
-    expect(general.nombre).toBe("Balance general");
-    expect(general.detalle).toContain(
-      "el mismo libro con la hoja de vuelos resumida a costo total y costo por hora (sin desglose de operación/piloto/AFAC)",
-    );
-    expect(general.detalle).toContain("costo total ÷ tiempo volado ÷ tipo de cambio ÷ 1.16");
-    // El mensual es el de siempre: sí trae el desglose.
+  it("el «Balance general» YA NO se ofrece (23-oct-2026): queda solo el mensual de siempre, con su desglose", () => {
+    const libros = librosBalanceVuelaTour("2026-09-01", "2026-09-30");
+    expect(libros).toHaveLength(1);
+    const [mensual] = libros;
     expect(mensual.nombre).toBe("Balance mensual");
     expect(mensual.detalle.startsWith("el libro completo de siempre")).toBe(true);
     expect(mensual.detalle).toContain("operación, piloto, otros y permiso AFAC");
+    expect(libros.some((l) => l.nombre === "Balance general" || /general/i.test(l.etiqueta))).toBe(false);
+    expect(MODOS_BALANCE_VUELATOUR).toEqual(["mensual"]);
+    expect(MODO_BALANCE_RETIRADO).toBe("general");
+    // El enlace viejo se reconoce para redirigir (`?modo=` o `?tipo=`).
+    for (const v of ["general", "GENERAL", " general "]) expect(esModoBalanceRetirado(v)).toBe(true);
+    for (const v of ["mensual", "", "anual", null, undefined]) expect(esModoBalanceRetirado(v)).toBe(false);
   });
 
-  it("etiquetas de los botones", () => {
+  it("etiqueta del botón", () => {
     expect(librosBalanceVuelaTour("2026-09-01", "2026-09-30").map((l) => l.etiqueta)).toEqual([
       CONTRATO.mensual.etiqueta,
-      CONTRATO.general.etiqueta,
     ]);
   });
 
-  it("una línea CORTA por libro para el tile y el título del plegable (12-oct-2026)", () => {
+  it("una línea CORTA para el tile y el título del plegable (12-oct-2026)", () => {
     expect(librosBalanceVuelaTour("2026-09-01", "2026-09-30").map((l) => l.resumen)).toEqual([
       CONTRATO.mensual.resumen,
-      CONTRATO.general.resumen,
     ]);
     expect(TITULO_DETALLE_LIBROS).toBe(CONTRATO.tituloDetalle);
   });
 });
 
-describe("archivo y parámetros de cada libro", () => {
-  it("misma ruta para los dos; el `modo` decide el libro y viaja SIEMPRE", () => {
-    expect(MODOS_BALANCE_VUELATOUR).toEqual(["mensual", "general"]);
+describe("archivo y parámetros del libro", () => {
+  it("la ruta del API; el `modo` viaja SIEMPRE (mensual)", () => {
     expect(RUTA_BALANCE_VUELATOUR).toBe(CONTRATO.ruta);
     const libros = librosBalanceVuelaTour("2026-09-01", "2026-09-30");
     expect(libros.map((l) => [l.modo, l.path, l.query])).toEqual([
       ["mensual", CONTRATO.ruta, { desde: "2026-09-01", hasta: "2026-09-30", modo: "mensual" }],
-      ["general", CONTRATO.ruta, { desde: "2026-09-01", hasta: "2026-09-30", modo: "general" }],
     ]);
   });
 
@@ -221,12 +224,12 @@ describe("archivo y parámetros de cada libro", () => {
     expect(archivoBalanceVuelaTour("mensual", "2026-09-01", "2026-09-30")).toBe(
       "balance-mensual-vuelatour-2026-09-01-a-2026-09-30.xlsx",
     );
+    // El API sigue nombrando así el general (no se tocó); el panel ya no lo pide.
     expect(archivoBalanceVuelaTour("general", "2026-10-01", "2026-10-06")).toBe(
       "balance-general-vuelatour-2026-10-01-a-2026-10-06.xlsx",
     );
     expect(librosBalanceVuelaTour("2026-09-01", "2026-09-30").map((l) => l.filename)).toEqual([
       "balance-mensual-vuelatour-2026-09-01-a-2026-09-30.xlsx",
-      "balance-general-vuelatour-2026-09-01-a-2026-09-30.xlsx",
     ]);
   });
 
@@ -235,7 +238,7 @@ describe("archivo y parámetros de cada libro", () => {
     const b = librosBalanceVuelaTour("2026-08-01", "2026-08-31");
     expect(a[0].query).not.toBe(b[0].query);
     expect(a[0].query.desde).toBe("2026-09-01");
-    expect(b[1].filename).toBe("balance-general-vuelatour-2026-08-01-a-2026-08-31.xlsx");
+    expect(b[0].filename).toBe("balance-mensual-vuelatour-2026-08-01-a-2026-08-31.xlsx");
   });
 });
 
@@ -248,11 +251,13 @@ const leerApi = (rel: string): string | null => {
 
 describe("paridad con el API", () => {
   const utilModo = leerApi("modules/aircraft/balance-general-modo.util.ts");
-  it.skipIf(!utilModo)("los modos que acepta el API (otro ⇒ 400) son los del panel, en el mismo orden", () => {
+  it.skipIf(!utilModo)("lo que el panel ofrece (mensual) lo acepta el API, que sigue aceptando el general retirado (el enlace viejo no da 400)", () => {
     const bloque = utilModo!.match(/MODOS_BALANCE_GENERAL\s*=\s*\[([\s\S]*?)\]/)?.[1];
     expect(bloque, "no se encontró MODOS_BALANCE_GENERAL en el API").toBeTruthy();
     const modosApi = [...bloque!.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-    expect(modosApi).toEqual([...MODOS_BALANCE_VUELATOUR]);
+    for (const modo of MODOS_BALANCE_VUELATOUR) expect(modosApi).toContain(modo);
+    expect(modosApi).toContain(MODO_BALANCE_RETIRADO);
+    expect(modosApi[0]).toBe("mensual");
   });
 
   const controller = leerApi("modules/aircraft/aircraft.controller.ts");
@@ -298,11 +303,12 @@ const FLOTA_API = [
 ];
 
 const RUTA_PAGINA = path.resolve(__dirname, "../../../app/admin/reportes/page.tsx");
+const RUTA_VISTA = path.resolve(__dirname, "../../../app/admin/reportes/balance/page.tsx");
 
 describe("cableado de la página /admin/reportes", () => {
-  it("dos botones con `modo` (mensual, general) en la card; los exports de operación siguen igual", async () => {
+  it("UN botón con `modo=mensual` en la card; los exports de operación siguen igual", async () => {
     await pintarPagina({ desde: "2026-09-01", hasta: "2026-09-30" });
-    expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, CONTRATO.ruta, ...EXPORTS]);
+    expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, ...EXPORTS]);
     const balance = botonesExcel.filter((b) => b.path === CONTRATO.ruta);
     expect(balance).toEqual([
       {
@@ -311,35 +317,39 @@ describe("cableado de la página /admin/reportes", () => {
         label: CONTRATO.mensual.etiqueta,
         query: { desde: "2026-09-01", hasta: "2026-09-30", modo: "mensual" },
       },
-      {
-        path: CONTRATO.ruta,
-        filename: "balance-general-vuelatour-2026-09-01-a-2026-09-30.xlsx",
-        label: CONTRATO.general.etiqueta,
-        query: { desde: "2026-09-01", hasta: "2026-09-30", modo: "general" },
-      },
     ]);
   });
 
-  it("pinta el título nuevo, una línea por libro y la nota; el título y el botón viejos ya no", async () => {
+  it("pinta el título, la línea del mensual y la nota; los títulos viejos ya no", async () => {
     const texto = await pintarPagina({ desde: "2026-09-01", hasta: "2026-09-30" });
     expect(texto).toContain(CONTRATO.titulo);
     expect(texto).toContain(CONTRATO.mensual.linea);
-    expect(texto).toContain(CONTRATO.general.linea);
     expect(texto).toContain(CONTRATO.nota);
     expect(texto).not.toContain("Balance general VuelaTour");
+    expect(texto).not.toContain(RETIRADO.tituloViejo);
   });
 
-  it("los botones reciben el periodo YA validado de la página (fechas al revés se ordenan)", async () => {
+  it("la card YA NO ofrece el «Balance general» (23-oct-2026): ni botón, ni tile, ni línea en «¿Qué trae cada libro?»; la vista redirige el enlace viejo", async () => {
+    const texto = await pintarPagina({ desde: "2026-09-01", hasta: "2026-09-30" });
+    expect(botonesExcel.filter((b) => b.query?.modo === "general")).toEqual([]);
+    expect(botonesExcel.filter((b) => b.label?.toLowerCase().includes("general"))).toEqual([]);
+    expect(texto).not.toContain(RETIRADO.etiqueta);
+    expect(texto).not.toContain(RETIRADO.resumen);
+    expect(texto).not.toContain(RETIRADO.linea);
+    expect(texto).not.toContain("Balance general");
+    expect(texto).toContain(CONTRATO.tituloDetalle);
+    const vista = readFileSync(RUTA_VISTA, "utf8");
+    expect(vista).toContain('if (modoRetiradoEnUrl(sp) && destino.tipo === "vuelatour")');
+    expect(vista).toContain("redirect(hrefVistaBalance({ tipo: \"vuelatour\", modo: MODO_VISTA_BALANCE_DEFAULT }, desde, hasta, { gasto }))");
+    expect(vista).not.toContain("MODOS_BALANCE_VUELATOUR.map(");
+    expect(vista).not.toContain('aria-label="Libro"');
+  });
+
+  it("el botón recibe el periodo YA validado de la página (fechas al revés se ordenan)", async () => {
     await pintarPagina({ desde: "2026-09-30", hasta: "2026-09-01" });
     const balance = botonesExcel.filter((b) => b.path === CONTRATO.ruta);
-    expect(balance.map((b) => b.query)).toEqual([
-      { desde: "2026-09-01", hasta: "2026-09-30", modo: "mensual" },
-      { desde: "2026-09-01", hasta: "2026-09-30", modo: "general" },
-    ]);
-    expect(balance.map((b) => b.filename)).toEqual([
-      "balance-mensual-vuelatour-2026-09-01-a-2026-09-30.xlsx",
-      "balance-general-vuelatour-2026-09-01-a-2026-09-30.xlsx",
-    ]);
+    expect(balance.map((b) => b.query)).toEqual([{ desde: "2026-09-01", hasta: "2026-09-30", modo: "mensual" }]);
+    expect(balance.map((b) => b.filename)).toEqual(["balance-mensual-vuelatour-2026-09-01-a-2026-09-30.xlsx"]);
   });
 
   it("los textos y los botones salen del helper (ni el título ni las etiquetas se escriben a mano)", () => {
@@ -362,7 +372,7 @@ describe("los balances al frente (12-oct-2026)", () => {
     expect(texto.indexOf(CONTRATO.titulo)).toBeLessThan(cierre);
     expect(texto.indexOf("Balance por avión")).toBeLessThan(cierre);
     expect(texto).toContain(CONTRATO.mensual.resumen);
-    expect(texto).toContain(CONTRATO.general.resumen);
+    expect(texto).not.toContain(RETIRADO.resumen);
     expect(texto).toContain(CONTRATO.tituloDetalle);
     expect(texto).toContain(textoPeriodoVista("2026-10-01", "2026-10-12"));
     expect(texto).toContain("Revisa primero el pre-cierre de arriba.");
@@ -389,8 +399,8 @@ describe("los balances al frente (12-oct-2026)", () => {
     const texto = await pintarPagina({ desde: "2026-10-01", hasta: "2026-10-12" });
     expect(pickerProps.at(-1)).toMatchObject({ disponibles: false, aircraft: [] });
     expect(texto).toContain("No se pudieron cargar los aviones");
-    // El resto de la pantalla sigue: los 6 botones de siempre.
-    expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, CONTRATO.ruta, ...EXPORTS]);
+    // El resto de la pantalla sigue: los 5 botones de siempre.
+    expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, ...EXPORTS]);
 
     api.aviones = falla(403);
     const silencio = await pintarPagina({ desde: "2026-10-01", hasta: "2026-10-12" });
@@ -448,7 +458,7 @@ describe("los balances solo se OFRECEN a quien puede abrirlos (ADMIN y ANALISTA,
   it("ANALISTA abre los balances; «Horas por piloto» no se le ofrece (el API se lo niega)", async () => {
     api.me = async () => ({ rol: "ANALISTA" });
     const texto = await pintarPagina({ desde: "2026-10-01", hasta: "2026-10-12" });
-    expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, CONTRATO.ruta, ...EXPORTS_SIN_HORAS_PILOTO]);
+    expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, ...EXPORTS_SIN_HORAS_PILOTO]);
     expect(pickerProps).toHaveLength(1);
     expect(texto).toContain(SUBTITULO_REPORTES);
   });
@@ -464,7 +474,7 @@ describe("los balances solo se OFRECEN a quien puede abrirlos (ADMIN y ANALISTA,
     vi.spyOn(console, "error").mockImplementation(() => {});
     api.me = falla(502);
     const texto = await pintarPagina({ desde: "2026-10-01", hasta: "2026-10-12" });
-    expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, CONTRATO.ruta, ...EXPORTS]);
+    expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, ...EXPORTS]);
     expect(texto).toContain("No se pudo cargar tu usuario");
     expect(texto).not.toContain(TEXTO_BALANCES_SIN_PERMISO.titulo);
   });

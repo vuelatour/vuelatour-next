@@ -26,6 +26,7 @@ import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 import { ChipEstadoCierre } from "@/components/admin/chip-cierre";
+import { Pestanas } from "@/components/admin/pestanas";
 import { PeriodSelector } from "@/components/admin/profit-sharing/period-selector";
 import { CascadaAvion } from "@/components/admin/profit-sharing/cascada-avion";
 import { CierreRepartoAvion } from "@/components/admin/profit-sharing/cierre-reparto-aviso";
@@ -67,29 +68,31 @@ import {
 import {
   AYUDA_ENTREGAS_AVION,
   AYUDA_SOCIOS_AVION,
+  AYUDA_VUELOS_AVION,
   ayudaCascada,
   ayudaGastosAvion,
   ETIQUETA_FICHA_AVION,
   ETIQUETA_HISTORICO,
+  ETIQUETA_LISTA_SECCIONES_AVION,
   ETIQUETA_VOLVER_REPARTO,
+  PARAMETRO_SECCION_AVION,
   TEXTO_AVION_NO_DISPONIBLE,
   TEXTO_ERROR_CARGA_AVION,
   TEXTO_SIN_ENTREGAS_AVION,
   TEXTO_SOCIO_SOLO_LO_SUYO,
   TITULO_CASCADA,
-  TITULO_ENTREGAS_AVION,
-  TITULO_GASTOS_AVION,
-  TITULO_SOCIOS_AVION,
-  TITULO_VUELOS_AVION,
+  conteosPantallaAvion,
   contextoEntregaDesdeAvion,
   filasPropietarioDeSocio,
   hrefHistoricoAvion,
   hrefRepartoConPeriodo,
   periodoRepartoDeUrl,
+  pestanasPantallaAvion,
   puedeCambiarDescuentoReserva,
   puedeDescargarBalanceAvion,
   puedeVerRepartoAvion,
   saldoCascada,
+  seccionPantallaAvionDeUrl,
 } from "@/lib/admin/reparto-avion";
 import type { ResumenCuentaSocio } from "@/types/reparto-pagos";
 
@@ -102,7 +105,8 @@ export const metadata: Metadata = { title: TITULOS_DETALLE.repartoAvion };
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ desde?: string; hasta?: string }>;
+  /** `?seccion=gastos|vuelos|socios|entregas` (23-oct-2026): la pestaña que abre. */
+  searchParams: Promise<{ desde?: string; hasta?: string; seccion?: string }>;
 }
 
 function Volver({ periodo }: { periodo: { desde?: string; hasta?: string } }) {
@@ -130,6 +134,14 @@ function Volver({ periodo }: { periodo: { desde?: string; hasta?: string } }) {
  * vuelos, los socios (reserva a guardar, se descuenta / solo informativa,
  * entregado y por entregar DE ESTE AVIÓN, «Registrar entrega») y las
  * entregas del avión. Todo en pesos; el USD en gris. Todo lo manda el API.
+ *
+ * EN PESTAÑAS (23-oct-2026; «las tablas acomódalas por pestañas, para que no
+ * esté una tabla encima de otra y nos confundamos con el scroll»): el saldo
+ * y la cascada quedan siempre arriba; debajo, UNA tira de pestañas «Gastos
+ * del periodo (n) · Vuelos (n) · Socios · Entregas (n)» y solo la activa se
+ * pinta. `?seccion=` abre una pestaña (enlace profundo) y el cambio la
+ * reescribe en la URL sin recargar. Las tablas siguen siendo SSR: llegan ya
+ * renderizadas al componente cliente `Pestanas`.
  */
 export default async function RepartoAvionPage({ params, searchParams }: PageProps) {
   const [{ id }, sp, me] = await Promise.all([params, searchParams, getMe()]);
@@ -234,6 +246,9 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
       : null,
   }));
   const totalVuelos = avion.ingresos.vuelos_cobrados + avion.ingresos.vuelos_pendientes;
+  // Pestañas (23-oct-2026): conteos reales y la sección pedida en la URL.
+  const pestanas = pestanasPantallaAvion(conteosPantallaAvion(datos));
+  const seccionInicial = seccionPantallaAvionDeUrl(sp.seccion, pestanas);
 
   return (
     <div className="space-y-6">
@@ -342,67 +357,81 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
         </CardContent>
       </Card>
 
-      {/* 3. Gastos del periodo, gasto por gasto, agrupados como en el balance. */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">{TITULO_GASTOS_AVION}</CardTitle>
-          <CardDescription>{ayudaGastosAvion(conCombustible)}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <GastosAvionTable avion={avion} filas={detalle?.gastos} enPesos={enPesos} />
-        </CardContent>
-      </Card>
-
-      {/* 4. Vuelos y otros ingresos del periodo (el desglose de siempre). */}
-      {detalle && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{TITULO_VUELOS_AVION}</CardTitle>
-            <CardDescription>
-              Cada vuelo con su venta, lo cobrado y lo pendiente de la parte de este avión, y los gastos por categoría.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <DesgloseSection detalle={detalle} enPesos={enPesos} />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 5. Socios de este avión. */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">{TITULO_SOCIOS_AVION}</CardTitle>
-          <CardDescription>{AYUDA_SOCIOS_AVION}</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0 sm:p-2">
-          <SociosAvionTable
-            aeronaveId={avion.aeronave.id}
-            matricula={avion.aeronave.matricula}
-            filas={filasSocios}
-            puedeCambiarReserva={puedeCambiarReserva}
-            puedeRegistrar={puedeRegistrar}
-            registro={registro}
-            rol={me.rol}
-            usuarioId={me.id}
-          />
-        </CardContent>
-      </Card>
-
-      {/* 6. Entregas que corresponden a este avión en el periodo. */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">{TITULO_ENTREGAS_AVION}</CardTitle>
-          <CardDescription>{AYUDA_ENTREGAS_AVION}</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0 sm:p-2">
-          <EntregasAvionTable
-            entregas={datos.entregas}
-            socios={datos.socios}
-            puedeAdjuntar={puedeRegistrar}
-            vacio={TEXTO_SIN_ENTREGAS_AVION}
-          />
-        </CardContent>
-      </Card>
+      {/* 3–6. Las secciones en PESTAÑAS (23-oct-2026): solo la activa se
+          pinta; cada panel llega renderizado por el servidor. La pestaña es el
+          título de la sección; dentro, su ayuda y la tabla. */}
+      <Pestanas
+        etiquetaLista={ETIQUETA_LISTA_SECCIONES_AVION}
+        pestanas={pestanas}
+        inicial={seccionInicial}
+        parametroUrl={PARAMETRO_SECCION_AVION}
+        paneles={{
+          // Gastos del periodo, gasto por gasto, agrupados como en el balance
+          // (una pastilla por grupo).
+          gastos: (
+            <Card data-seccion-avion="gastos">
+              <CardHeader className="pb-3">
+                <CardDescription>{ayudaGastosAvion(conCombustible)}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <GastosAvionTable avion={avion} filas={detalle?.gastos} enPesos={enPesos} />
+              </CardContent>
+            </Card>
+          ),
+          // Vuelos y otros ingresos del periodo (el desglose de siempre); sin
+          // `detalle` (API previo) no hay pestaña.
+          ...(detalle
+            ? {
+                vuelos: (
+                  <Card data-seccion-avion="vuelos">
+                    <CardHeader className="pb-3">
+                      <CardDescription>{AYUDA_VUELOS_AVION}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <DesgloseSection detalle={detalle} enPesos={enPesos} />
+                    </CardContent>
+                  </Card>
+                ),
+              }
+            : {}),
+          // Socios de este avión.
+          socios: (
+            <Card data-seccion-avion="socios">
+              <CardHeader className="pb-3">
+                <CardDescription>{AYUDA_SOCIOS_AVION}</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0 sm:p-2">
+                <SociosAvionTable
+                  aeronaveId={avion.aeronave.id}
+                  matricula={avion.aeronave.matricula}
+                  filas={filasSocios}
+                  puedeCambiarReserva={puedeCambiarReserva}
+                  puedeRegistrar={puedeRegistrar}
+                  registro={registro}
+                  rol={me.rol}
+                  usuarioId={me.id}
+                />
+              </CardContent>
+            </Card>
+          ),
+          // Entregas que corresponden a este avión en el periodo.
+          entregas: (
+            <Card data-seccion-avion="entregas">
+              <CardHeader className="pb-3">
+                <CardDescription>{AYUDA_ENTREGAS_AVION}</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0 sm:p-2">
+                <EntregasAvionTable
+                  entregas={datos.entregas}
+                  socios={datos.socios}
+                  puedeAdjuntar={puedeRegistrar}
+                  vacio={TEXTO_SIN_ENTREGAS_AVION}
+                />
+              </CardContent>
+            </Card>
+          ),
+        }}
+      />
     </div>
   );
 }

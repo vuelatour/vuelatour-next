@@ -25,6 +25,7 @@ import {
   puedeAbrirBalances,
   textoPeriodoVista,
   tituloVistaBalance,
+  modoRetiradoEnUrl,
 } from "../balance-vista";
 
 const UUID = "3f9a1c2e-0000-4000-8000-000000000001";
@@ -44,10 +45,18 @@ describe("parámetros de la URL", () => {
   });
 
   it("`modo` solo del catálogo (otro ⇒ mensual); `avion` solo si es uuid y entonces gana", () => {
+    // «Balance general» retirado (23-oct-2026): ya no está en el catálogo ⇒ mensual
+    // (y la página redirige para limpiar la URL: `modoRetiradoEnUrl`).
     expect(parametrosVistaBalance({ modo: "general" }, DEF).destino).toEqual({
       tipo: "vuelatour",
-      modo: "general",
+      modo: "mensual",
     });
+    expect(modoRetiradoEnUrl({ modo: "general" })).toBe(true);
+    expect(modoRetiradoEnUrl({ tipo: "general" })).toBe(true);
+    expect(modoRetiradoEnUrl({ modo: "General" })).toBe(true);
+    expect(modoRetiradoEnUrl({ modo: "mensual" })).toBe(false);
+    expect(modoRetiradoEnUrl({ tipo: "mensual" })).toBe(false);
+    expect(modoRetiradoEnUrl({})).toBe(false);
     expect(parametrosVistaBalance({ modo: "anual" }, DEF).destino).toEqual({
       tipo: "vuelatour",
       modo: "mensual",
@@ -120,10 +129,10 @@ describe("enlaces y títulos", () => {
     expect(
       hrefVistaBalance({ tipo: "vuelatour", modo: "mensual" }, "2026-10-01", "2026-10-31", { gasto: UUID_GASTO }),
     ).toBe(`${RUTA_VISTA_BALANCE}?modo=mensual&desde=2026-10-01&hasta=2026-10-31&gasto=${UUID_GASTO}`);
-    const siempre = hrefVistaBalance({ tipo: "vuelatour", modo: "general" }, "2026-10-01", "2026-10-31");
-    expect(siempre).toBe(`${RUTA_VISTA_BALANCE}?modo=general&desde=2026-10-01&hasta=2026-10-31`);
+    const siempre = hrefVistaBalance({ tipo: "vuelatour", modo: "mensual" }, "2026-10-01", "2026-10-31");
+    expect(siempre).toBe(`${RUTA_VISTA_BALANCE}?modo=mensual&desde=2026-10-01&hasta=2026-10-31`);
     for (const extra of [{}, { gasto: null }, { gasto: undefined }, { gasto: "nada" }, { gasto: "" }]) {
-      expect(hrefVistaBalance({ tipo: "vuelatour", modo: "general" }, "2026-10-01", "2026-10-31", extra)).toBe(
+      expect(hrefVistaBalance({ tipo: "vuelatour", modo: "mensual" }, "2026-10-01", "2026-10-31", extra)).toBe(
         siempre,
       );
     }
@@ -165,18 +174,14 @@ describe("enlaces y títulos", () => {
 });
 
 describe("descarga desde la vista = la de Reportes", () => {
-  it("la flota: misma ruta, mismo archivo y mismos parámetros que el botón de la card", () => {
-    const [mensual, general] = librosBalanceVuelaTour("2026-09-01", "2026-09-30");
+  it("la flota: misma ruta, mismo archivo y mismos parámetros que el botón de la card (solo el mensual desde el 23-oct-2026)", () => {
+    const libros = librosBalanceVuelaTour("2026-09-01", "2026-09-30");
+    expect(libros).toHaveLength(1);
+    const [mensual] = libros;
     expect(descargaVistaBalance({ tipo: "vuelatour", modo: "mensual" }, "2026-09-01", "2026-09-30")).toEqual({
-      path: mensual.path,
+      path: RUTA_BALANCE_VUELATOUR,
       filename: mensual.filename,
       query: mensual.query,
-      label: ETIQUETA_DESCARGAR_LIBRO,
-    });
-    expect(descargaVistaBalance({ tipo: "vuelatour", modo: "general" }, "2026-09-01", "2026-09-30")).toEqual({
-      path: RUTA_BALANCE_VUELATOUR,
-      filename: general.filename,
-      query: { desde: "2026-09-01", hasta: "2026-09-30", modo: "general" },
       label: ETIQUETA_DESCARGAR_LIBRO,
     });
   });
