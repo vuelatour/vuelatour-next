@@ -20,7 +20,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AvionReparto } from "@/types/profit-sharing";
-import { avionA, avionB, conPesos, otrosIngresosVt } from "./reparto-pesos.fixtures";
+import { avionA, avionB, avionCombustible, conPesos, otrosIngresosVt, sinCombustible } from "./reparto-pesos.fixtures";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, refresh: () => {}, replace: () => {} }),
@@ -308,5 +308,24 @@ describe("cableado", () => {
       expect(fuente, rel).not.toMatch(/["'`]≈ /);
       expect(fuente, rel).not.toMatch(/al T\.C\./);
     }
+  });
+});
+
+describe("combustible separado de los directos (23-oct-2026, API 0.0.103): KPIs de la flota", () => {
+  it("«Gastos del periodo» suma el combustible aparte y lo dice; Venta − Gastos + Otros = Saldo al centavo", () => {
+    const html = renderToStaticMarkup(<KpiStrip aviones={[avionCombustible()]} enPesos comoBalance />);
+    // 2,591 + 40,588.14 + 147,277.58 + 13,800 + 2,587.50 + 10,350 + 42,575.49.
+    pesosAntesQueDolares(html, "$259,769.71 MXN", "≈ $15,090.97 USD");
+    expect(html).toContain(">Directos, combustible, indirectos, permisos, fijos y provisión AFAC<");
+    pesosAntesQueDolares(html, "$787,851.13 MXN", "≈ $45,672.53 USD");
+    pesosAntesQueDolares(html, "$574,632.22 MXN", "≈ $33,280.16 USD");
+    expect(html).toContain(">3 vuelo(s) cobrados · + $46,550.80 MXN otros ingresos de aviones<");
+  });
+
+  it("sin las llaves (API previo): el hint y la suma de siempre", () => {
+    const html = renderToStaticMarkup(<KpiStrip aviones={[sinCombustible(avionCombustible())]} enPesos comoBalance />);
+    expect(html).toContain(">Directos, indirectos, permisos, fijos y provisión AFAC<");
+    expect(html).not.toContain("combustible");
+    pesosAntesQueDolares(html, "$112,492.13 MXN", "≈ $6,553.14 USD");
   });
 });

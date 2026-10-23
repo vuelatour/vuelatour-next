@@ -47,6 +47,8 @@ import type {
 
 const GRUPO_LABEL: Record<DetalleGastoGrupo, string> = {
   DIRECTO: "Directo",
+  // Combustible separado de los directos (23-oct-2026, API 0.0.103).
+  COMBUSTIBLE: "Combustible",
   INDIRECTO: "Indirecto",
   PERMISO: "Permiso",
   EXCLUIDO: "Excluido",
@@ -55,6 +57,7 @@ const GRUPO_LABEL: Record<DetalleGastoGrupo, string> = {
 
 const GRUPO_BADGE: Record<DetalleGastoGrupo, string> = {
   DIRECTO: "bg-navy-500/15 text-navy-600 dark:text-navy-300 border-navy-500/30",
+  COMBUSTIBLE: "bg-navy-500/15 text-navy-600 dark:text-navy-300 border-navy-500/30",
   INDIRECTO: "bg-muted text-muted-foreground border-border",
   PERMISO: "bg-brand-600/10 text-brand-600 dark:text-brand-400 border-brand-600/30",
   EXCLUIDO: "border-dashed text-muted-foreground",

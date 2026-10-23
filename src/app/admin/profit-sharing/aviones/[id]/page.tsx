@@ -57,16 +57,18 @@ import {
   puedeVerCuentasSocios,
 } from "@/lib/admin/reparto-pagos";
 import {
+  NOTA_COMBUSTIBLE_SEPARADO,
   NOTA_REPARTO_COMO_BALANCE,
   NOTA_REPARTO_EN_PESOS,
+  combustibleSeparado,
   repartoComoBalance,
   repartoEnPesos,
 } from "@/lib/admin/reparto-pesos";
 import {
-  AYUDA_CASCADA,
   AYUDA_ENTREGAS_AVION,
-  AYUDA_GASTOS_AVION,
   AYUDA_SOCIOS_AVION,
+  ayudaCascada,
+  ayudaGastosAvion,
   ETIQUETA_FICHA_AVION,
   ETIQUETA_HISTORICO,
   ETIQUETA_VOLVER_REPARTO,
@@ -206,6 +208,9 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
   const periodo = datos.periodo;
   const enPesos = repartoEnPesos(datos);
   const comoBalance = repartoComoBalance(datos);
+  // Combustible separado de los directos (23-oct-2026, API 0.0.103): la
+  // cascada y los gastos siguen las líneas del Excel. Sin las llaves, lo de antes.
+  const conCombustible = combustibleSeparado(avion);
   const saldo = saldoCascada(avion, enPesos);
   const positivo = (saldo.valor ?? avion.saldo_disponible_usd) >= 0;
   const detalle = avion.detalle ?? null;
@@ -311,6 +316,7 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
         <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
           {enPesos && <p>{NOTA_REPARTO_EN_PESOS}</p>}
           {comoBalance && <p>{NOTA_REPARTO_COMO_BALANCE}</p>}
+          {conCombustible && <p>{NOTA_COMBUSTIBLE_SEPARADO}</p>}
           {me.rol === "SOCIO" && <p>{TEXTO_SOCIO_SOLO_LO_SUYO}</p>}
           {(datos.gastos_sin_tc?.count ?? 0) > 0 && (
             <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
@@ -329,7 +335,7 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{TITULO_CASCADA}</CardTitle>
-          <CardDescription>{AYUDA_CASCADA}</CardDescription>
+          <CardDescription>{ayudaCascada(conCombustible)}</CardDescription>
         </CardHeader>
         <CardContent>
           <CascadaAvion avion={avion} enPesos={enPesos} comoBalance={comoBalance} />
@@ -340,7 +346,7 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{TITULO_GASTOS_AVION}</CardTitle>
-          <CardDescription>{AYUDA_GASTOS_AVION}</CardDescription>
+          <CardDescription>{ayudaGastosAvion(conCombustible)}</CardDescription>
         </CardHeader>
         <CardContent>
           <GastosAvionTable avion={avion} filas={detalle?.gastos} enPesos={enPesos} />

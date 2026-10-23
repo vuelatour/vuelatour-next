@@ -21,6 +21,7 @@ import {
   celdasTotalesHistorico,
   columnasHistorico,
   filasHistorico,
+  historicoConCombustible,
 } from "@/lib/admin/reparto-avion";
 import type { MesHistoricoAvion, TotalesHistoricoAvion } from "@/types/profit-sharing";
 
@@ -31,7 +32,8 @@ import type { MesHistoricoAvion, TotalesHistoricoAvion } from "@/types/profit-sh
  * defecto solo las columnas principales (mes, horas, vuelos, cobrado, saldo,
  * reserva, entregado, cierre) y un botón «Ver todas las columnas» para la
  * cascada completa; la tabla hace scroll horizontal en el celular. Los
- * números son del API.
+ * números son del API. La columna «Combustible» (API 0.0.103) solo existe
+ * cuando el API la manda (`combustible_mxn`), junto a «Directos».
  */
 export function HistoricoAvionTable({
   meses,
@@ -42,11 +44,12 @@ export function HistoricoAvionTable({
 }) {
   const [completas, setCompletas] = useState(false);
   if (meses.length === 0) return <p className="text-sm text-muted-foreground">{TEXTO_SIN_MESES_HISTORICO}</p>;
-  const columnas = columnasHistorico(completas);
+  const conCombustible = historicoConCombustible(meses, totales);
+  const columnas = columnasHistorico(completas, { conCombustible });
   const filas = filasHistorico(meses);
   const totalesCeldas = celdasTotalesHistorico(totales);
   return (
-    <div className="space-y-2" data-tabla-historico-avion>
+    <div className="space-y-2" data-tabla-historico-avion data-con-combustible={conCombustible ? "" : undefined}>
       <div className="flex justify-end">
         <Button
           type="button"

@@ -8,13 +8,16 @@ import { describe, expect, it } from "vitest";
 import {
   ENCABEZADO_GASTOS_PESOS,
   HINT_SALDO_PESOS_INCOMPLETO,
+  NOTA_COMBUSTIBLE_SEPARADO,
   NOTA_REPARTO_COMO_BALANCE,
   NOTA_REPARTO_EN_PESOS,
   SUB_COLUMNA_USD,
   TEXTO_SIN_PESOS,
   TITULO_OTROS_INGRESOS_SIN_TC_PESOS,
   avisoPesosSinTc,
+  combustibleSeparado,
   gastosMxnDeAvion,
+  hintKpiGastosPeriodo,
   hintKpiOtrosIngresosAvionesPesos,
   hintKpiOtrosVuelatourPesos,
   informativoUsd,
@@ -34,7 +37,14 @@ import {
   tituloOtrosIngresosAvionPesos,
   totalFlotaMxn,
 } from "../reparto-pesos";
-import { ING4, avionA, avionB, conPesos } from "@/components/admin/profit-sharing/__tests__/reparto-pesos.fixtures";
+import {
+  ING4,
+  avionA,
+  avionB,
+  avionCombustible,
+  conPesos,
+  sinCombustible,
+} from "@/components/admin/profit-sharing/__tests__/reparto-pesos.fixtures";
 
 describe("bandera", () => {
   it("solo `true` estricto enciende los pesos", () => {
@@ -194,5 +204,43 @@ describe("sumas en centavos (solo lo que ya manda el API)", () => {
     expect(pesosIncompletos(conPesos(avionA()))).toBe(false);
     expect(pesosIncompletos({ ...conPesos(avionA()), pesos_sin_tc_usd: 120 })).toBe(true);
     expect(pesosIncompletos(avionA())).toBe(false);
+  });
+});
+
+describe("combustible separado de los directos (23-oct-2026, API 0.0.103)", () => {
+  it("la bandera sale de `gastos.combustible_*` (número); sin las llaves, nada cambia", () => {
+    expect(combustibleSeparado(avionCombustible())).toBe(true);
+    expect(combustibleSeparado(sinCombustible(avionCombustible()))).toBe(false);
+    expect(combustibleSeparado(conPesos(avionA()))).toBe(false);
+    expect(combustibleSeparado(undefined)).toBe(false);
+  });
+
+  it("los gastos del avión en pesos suman el combustible aparte (los directos ya no lo traen)", () => {
+    const a = avionCombustible();
+    // 2,591 + 40,588.14 + 147,277.58 + 13,800 + 2,587.50 + 10,350 (+ AFAC 42,575.49).
+    expect(gastosMxnDeAvion(a)).toBe(217194.22);
+    expect(gastosMxnDeAvion(a, { conAfac: true })).toBe(259769.71);
+    // Venta − gastos + otros ingresos = saldo, al centavo.
+    expect(sumaCentavos([a.ingresos.cobrado_mxn, -259769.71, a.ingresos.otros_ingresos_avion_mxn])).toBe(a.saldo_disponible_mxn);
+    // Separado pero sin el peso del combustible: no se suma a medias.
+    expect(gastosMxnDeAvion({ ...a, gastos: { ...a.gastos, combustible_mxn: undefined } })).toBeNull();
+    // API previo: lo de siempre.
+    expect(gastosMxnDeAvion(sinCombustible(a), { conAfac: true })).toBe(112492.13);
+  });
+
+  it("hint del KPI «Gastos del periodo» y la leyenda", () => {
+    expect(hintKpiGastosPeriodo({ comoBalance: false, conCombustible: false })).toBe("Directos, indirectos, permisos y fijos");
+    expect(hintKpiGastosPeriodo({ comoBalance: true, conCombustible: false })).toBe(
+      "Directos, indirectos, permisos, fijos y provisión AFAC",
+    );
+    expect(hintKpiGastosPeriodo({ comoBalance: true, conCombustible: true })).toBe(
+      "Directos, combustible, indirectos, permisos, fijos y provisión AFAC",
+    );
+    expect(hintKpiGastosPeriodo({ comoBalance: false, conCombustible: true })).toBe(
+      "Directos, combustible, indirectos, permisos y fijos",
+    );
+    expect(NOTA_COMBUSTIBLE_SEPARADO).toBe(
+      "El combustible va en su propia fila, aparte de los gastos directos, con las mismas líneas y el mismo orden que el Excel del balance.",
+    );
   });
 });

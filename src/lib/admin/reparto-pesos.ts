@@ -162,9 +162,30 @@ export function totalFlotaMxn(
 }
 
 /**
+ * ¿El API ya manda el COMBUSTIBLE aparte de los gastos directos (23-oct-2026,
+ * API 0.0.103, invariante 104)? Solo si `gastos.combustible_usd` o
+ * `gastos.combustible_mxn` viene como número. Pedido del cliente: «debemos
+ * separar gastos directos del combustible, porque los está uniendo, porque
+ * no nos está coincidiendo con el excel». Con ello la cascada se pinta en el
+ * orden del Excel «Balance» (fila «Combustible» y subtotal «Utilidad antes de
+ * gastos»); sin ello (API previo) la pantalla queda EXACTAMENTE como antes.
+ */
+export function combustibleSeparado(
+  a:
+    | { gastos?: { combustible_usd?: number | null; combustible_mxn?: number | null } | null }
+    | null
+    | undefined,
+): boolean {
+  const g = a?.gastos;
+  return numero(g?.combustible_usd) !== null || numero(g?.combustible_mxn) !== null;
+}
+
+/**
  * Gastos del avión en pesos con la MISMA cascada del KPI en dólares. Con
  * `conAfac` (cascada del balance, API 0.0.101) la provisión AFAC también
- * cuenta como gasto del periodo.
+ * cuenta como gasto del periodo. Con el combustible separado (API 0.0.103)
+ * `directos_mxn` ya no lo trae: se suma `combustible_mxn` (si el API lo
+ * separó pero no mandó los pesos, el total cae a dólares y lo dice).
  */
 export function gastosMxnDeAvion(
   a: AvionReparto,
@@ -173,11 +194,22 @@ export function gastosMxnDeAvion(
   return sumaCentavos([
     a.ingresos.comisiones_venta_mxn,
     a.gastos.directos_mxn,
+    ...(combustibleSeparado(a) ? [a.gastos.combustible_mxn] : []),
     a.gastos.indirectos_mxn,
     a.gastos.permisos_mxn,
     a.gastos.otros_prorrateados_mxn,
     ...(opts.conAfac ? [a.afac_reservado_mxn] : []),
   ]);
+}
+
+/**
+ * Hint del KPI «Gastos del periodo»: qué suma. «Directos, indirectos,
+ * permisos y fijos» de siempre; «combustible» solo cuando viene aparte y
+ * «fijos y provisión AFAC» con la cascada del balance.
+ */
+export function hintKpiGastosPeriodo(opts: { comoBalance: boolean; conCombustible: boolean }): string {
+  const base = ["Directos", ...(opts.conCombustible ? ["combustible"] : []), "indirectos", "permisos"].join(", ");
+  return opts.comoBalance ? `${base}, fijos y provisión AFAC` : `${base} y fijos`;
 }
 
 // =============================================================================
@@ -211,6 +243,10 @@ export const NOTA_REPARTO_EN_PESOS =
 /** Renglón del recuadro con la cascada del balance (API 0.0.101). */
 export const NOTA_REPARTO_COMO_BALANCE =
   "Mismas cuentas que el balance del avión: la provisión AFAC resta del saldo y la reserva de overhaul no se resta, solo se informa cuánto debe guardar cada socio (se le descuenta únicamente a quien así se configuró). Abre el detalle de cada avión para ver gasto por gasto.";
+
+/** Renglón del recuadro con el combustible separado (23-oct-2026, API 0.0.103). */
+export const NOTA_COMBUSTIBLE_SEPARADO =
+  "El combustible va en su propia fila, aparte de los gastos directos, con las mismas líneas y el mismo orden que el Excel del balance.";
 
 /** Cola del hint del KPI «Venta de aviones cobrada» en pesos; '' sin otros ingresos. */
 export function hintKpiOtrosIngresosAvionesPesos(mxn: number | null): string {

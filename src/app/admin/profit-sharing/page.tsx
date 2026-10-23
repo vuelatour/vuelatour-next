@@ -27,8 +27,10 @@ import { rangoFiltro } from "@/lib/admin/url-params";
 import { puedeRegistrarEntregas, puedeVerCuentasSocios } from "@/lib/admin/reparto-pagos";
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import {
+  NOTA_COMBUSTIBLE_SEPARADO,
   NOTA_REPARTO_COMO_BALANCE,
   NOTA_REPARTO_EN_PESOS,
+  combustibleSeparado,
   repartoComoBalance,
   repartoEnPesos,
   textoUsd,
@@ -127,6 +129,10 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
   // Cascada del balance (20-oct-2026, API 0.0.101): la provisión AFAC resta
   // y la reserva de overhaul solo se informa. Sin la bandera, lo de antes.
   const comoBalance = repartoComoBalance(result);
+  // Combustible separado de los directos (23-oct-2026, API 0.0.103): la
+  // cascada de cada card sigue el orden del Excel del cliente. Sin las
+  // llaves (API previo), lo de antes.
+  const conCombustible = result.aviones.some(combustibleSeparado);
   // Los vuelos externos solo existen en dólares: con la bandera llevan su
   // sufijo para no leerse como pesos junto a todo lo demás.
   const usdExterno = enPesos ? textoUsd : fmtUsd;
@@ -166,6 +172,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
           </p>
           {enPesos && <p>{NOTA_REPARTO_EN_PESOS}</p>}
           {comoBalance && <p>{NOTA_REPARTO_COMO_BALANCE}</p>}
+          {conCombustible && <p>{NOTA_COMBUSTIBLE_SEPARADO}</p>}
           {(result.gastos_sin_tc?.count ?? 0) > 0 && (
             <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
               <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />

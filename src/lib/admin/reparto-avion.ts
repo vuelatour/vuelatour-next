@@ -39,7 +39,7 @@ import {
   SUBLABEL_OTROS_INGRESOS_AVION,
 } from "@/lib/admin/otros-ingresos-avion";
 import { SUBLABEL_COMISIONES_REPARTO } from "@/lib/admin/categorias-gasto";
-import { montoPrincipal, textoUsd, type MontoDoble } from "@/lib/admin/reparto-pesos";
+import { combustibleSeparado, montoPrincipal, textoUsd, type MontoDoble } from "@/lib/admin/reparto-pesos";
 import {
   MES_CUENTA_DEFAULT,
   contextoEntrega,
@@ -67,6 +67,9 @@ import type {
   TotalesHistoricoAvion,
 } from "@/types/profit-sharing";
 import type { PagoSocio, ResumenCuentaSocio } from "@/types/reparto-pagos";
+
+const numero = (v: number | null | undefined): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? v : null;
 
 // =============================================================================
 // Rutas y roles
@@ -164,9 +167,24 @@ export const ETIQUETA_VER_REPARTO_AVION = "Ver el reparto del periodo";
 export const TITULO_CASCADA = "Cómo se llega al saldo";
 export const AYUDA_CASCADA =
   "Las filas suman exacto el saldo disponible: lo cobrado de la venta del avión (más otros ingresos del avión) menos comisiones, gastos y la provisión AFAC. La reserva de overhaul va aparte: no se resta.";
+/** Con el combustible separado (API 0.0.103): las líneas del Excel, en su orden. */
+export const AYUDA_CASCADA_EXCEL =
+  "Las mismas líneas del Excel del balance y en el mismo orden: venta cobrada, menos comisiones, gastos directos y provisión AFAC, da la utilidad antes de gastos; menos combustible, gastos indirectos, permisos y fijos prorrateados, más otros ingresos del avión, da el saldo a repartir. La reserva de overhaul va aparte: no se resta.";
 export const TITULO_GASTOS_AVION = "Gastos del periodo";
 export const AYUDA_GASTOS_AVION =
   "Cada gasto tal cual se sumó en la cascada, agrupado como en el balance (directos, indirectos, permisos, fijos). Los que no restan al avión se listan al final con su motivo.";
+export const AYUDA_GASTOS_AVION_EXCEL =
+  "Cada gasto tal cual se sumó en la cascada, agrupado como en el balance (directos, combustible, indirectos, permisos, fijos); el combustible va aparte de los gastos directos, como en el Excel. Los que no restan al avión se listan al final con su motivo.";
+
+/** Ayuda de «Cómo se llega al saldo»: la del Excel solo con el combustible separado. */
+export function ayudaCascada(conCombustible: boolean): string {
+  return conCombustible ? AYUDA_CASCADA_EXCEL : AYUDA_CASCADA;
+}
+
+/** Ayuda de «Gastos del periodo»: ídem. */
+export function ayudaGastosAvion(conCombustible: boolean): string {
+  return conCombustible ? AYUDA_GASTOS_AVION_EXCEL : AYUDA_GASTOS_AVION;
+}
 export const TITULO_VUELOS_AVION = "Vuelos y otros ingresos del periodo";
 export const TITULO_SOCIOS_AVION = "Socios de este avión";
 export const AYUDA_SOCIOS_AVION =
@@ -199,6 +217,48 @@ export const ETIQUETAS_CASCADA = {
   saldo: "Saldo disponible",
   reserva: "Reserva de overhaul",
 } as const;
+
+/**
+ * COMBUSTIBLE SEPARADO (23-oct-2026, API 0.0.103, invariante 104). Pedido del
+ * cliente: «debemos separar gastos directos del combustible, porque los está
+ * uniendo, porque no nos está coincidiendo con el excel». Cuando el API manda
+ * `gastos.combustible_*` (`combustibleSeparado`), la cascada se pinta con las
+ * MISMAS líneas, etiquetas y orden del Excel «Balance» por avión:
+ *
+ *   Venta cobrada − Comisiones de venta − Gastos directos − Provisión AFAC
+ *   = Utilidad antes de gastos
+ *   − Combustible − Gastos indirectos − Permisos − Fijos prorrateados
+ *   + Otros ingresos del avión = Saldo a repartir
+ *
+ * Sin esas llaves (API previo) se pintan `ETIQUETAS_CASCADA` y la cascada de
+ * siempre, byte a byte.
+ */
+export const ETIQUETAS_CASCADA_EXCEL = {
+  cobrado: "Venta cobrada",
+  comisiones: "Comisiones de venta",
+  directos: "Gastos directos",
+  afac: "Provisión AFAC",
+  utilidadAntesGastos: "Utilidad antes de gastos",
+  combustible: "Combustible",
+  indirectos: "Gastos indirectos",
+  permisos: "Permisos",
+  fijos: "Fijos prorrateados",
+  otrosIngresos: ETIQUETA_FILA_OTROS_INGRESOS_AVION,
+  saldo: "Saldo a repartir",
+  reserva: ETIQUETAS_CASCADA.reserva,
+} as const;
+
+export const TITULO_FILA_DIRECTOS_SIN_COMBUSTIBLE =
+  "Gastos directos de los vuelos del periodo (aterrizajes, hotel, comida, taxi, piloto externo, comisariato…). El combustible va aparte, en su propia fila, como en el Excel del balance.";
+export const TITULO_FILA_COMBUSTIBLE =
+  "Gasavión / turbosina de los vuelos del periodo. Va aparte de los gastos directos, como en el Excel del balance.";
+export const TITULO_FILA_UTILIDAD_ANTES_GASTOS =
+  "Venta cobrada menos comisiones, gastos directos y provisión AFAC: la línea «Utilidad antes de gastos» del Excel del balance.";
+
+/** La etiqueta de la última fila: «Saldo a repartir» (Excel) o «Saldo disponible». */
+export function etiquetaSaldoCascada(avion: Pick<AvionReparto, "gastos">): string {
+  return combustibleSeparado(avion) ? ETIQUETAS_CASCADA_EXCEL.saldo : ETIQUETAS_CASCADA.saldo;
+}
 
 export const SUBLABEL_DIRECTOS = "combustible, aterrizajes, hotel, comida, piloto externo…";
 export const SUBLABEL_INDIRECTOS = "talleres, refacciones, servicios y gastos indirectos sellados al avión";
@@ -238,7 +298,8 @@ export interface FilaCascada {
   etiqueta: string;
   sublabel?: string;
   title?: string;
-  tipo: "ingreso" | "deduccion";
+  /** `subtotal` = la línea «Utilidad antes de gastos» del Excel (API 0.0.103). */
+  tipo: "ingreso" | "deduccion" | "subtotal";
   monto: MontoDoble;
 }
 
@@ -250,11 +311,54 @@ export interface OpcionesCascada {
 }
 
 /**
+ * «Utilidad antes de gastos» del Excel (API 0.0.103): el número del API
+ * (`utilidad_antes_gastos_*`) si viene; si no, la suma EN CENTAVOS de los
+ * componentes ya redondeados: cobrado − comisiones − directos − provisión
+ * AFAC (la AFAC solo con la cascada del balance). En pesos, si a algún
+ * componente le falta el peso, queda null (se dice; no se inventa).
+ */
+export function utilidadAntesGastos(
+  avion: AvionReparto,
+  comoBalance: boolean,
+): { usd: number; mxn: number | null } {
+  const neg = (v: number | null | undefined): number | null => {
+    const n = numero(v);
+    return n === null ? null : -n;
+  };
+  const afacUsd = comoBalance ? (numero(avion.afac_reservado_usd) ?? 0) : 0;
+  const afacMxn = comoBalance ? avion.afac_reservado_mxn : 0;
+  const usd =
+    numero(avion.utilidad_antes_gastos_usd) ??
+    sumaCentavosONull([
+      avion.ingresos.cobrado_usd,
+      neg(avion.ingresos.comisiones_venta_usd ?? 0),
+      neg(avion.gastos.directos_usd),
+      -afacUsd,
+    ]) ??
+    0;
+  const mxn =
+    numero(avion.utilidad_antes_gastos_mxn) ??
+    sumaCentavosONull([
+      avion.ingresos.cobrado_mxn,
+      neg(avion.ingresos.comisiones_venta_mxn),
+      neg(avion.gastos.directos_mxn),
+      neg(afacMxn),
+    ]);
+  return { usd, mxn };
+}
+
+/**
  * Las filas que SUMAN el saldo, en orden: cobrado, + otros ingresos del
  * avión (si hay), − comisiones (si hay), − directos, − indirectos, −
  * permisos, − fijos y, con la cascada del balance, − provisión AFAC. Sin la
  * bandera (API previo) la última fila es la reserva de overhaul, como
  * siempre. Los números son del API; aquí solo se visten.
+ *
+ * Con el COMBUSTIBLE SEPARADO (API 0.0.103, `combustibleSeparado`) las filas
+ * son las del Excel y en su orden: cobrado − comisiones − directos − AFAC =
+ * «Utilidad antes de gastos» (subtotal) − combustible − indirectos −
+ * permisos − fijos + otros ingresos. Todas las líneas se pintan aunque
+ * valgan 0 (se cuadra renglón por renglón contra el Excel).
  */
 export function filasCascadaAvion(avion: AvionReparto, o: OpcionesCascada): FilaCascada[] {
   const d = avion.detalle ?? null;
@@ -272,6 +376,87 @@ export function filasCascadaAvion(avion: AvionReparto, o: OpcionesCascada): Fila
     title: extra.title,
     monto: montoPrincipal(montos, o.enPesos, { deduccion: tipo === "deduccion", tc: extra.tc }),
   });
+  if (combustibleSeparado(avion)) {
+    const E = ETIQUETAS_CASCADA_EXCEL;
+    const excel: FilaCascada[] = [
+      fila("cobrado", E.cobrado, "ingreso", {
+        mxn: avion.ingresos.cobrado_mxn,
+        usd: avion.ingresos.cobrado_usd,
+      }),
+      fila(
+        "comisiones",
+        E.comisiones,
+        "deduccion",
+        { mxn: avion.ingresos.comisiones_venta_mxn, usd: avion.ingresos.comisiones_venta_usd ?? 0 },
+        { sublabel: SUBLABEL_COMISIONES_REPARTO },
+      ),
+      fila(
+        "directos",
+        E.directos,
+        "deduccion",
+        { mxn: avion.gastos.directos_mxn, usd: avion.gastos.directos_usd },
+        { title: TITULO_FILA_DIRECTOS_SIN_COMBUSTIBLE },
+      ),
+    ];
+    if (o.comoBalance) {
+      excel.push(
+        fila(
+          "afac",
+          E.afac,
+          "deduccion",
+          { mxn: avion.afac_reservado_mxn, usd: avion.afac_reservado_usd ?? 0 },
+          { sublabel: sublabelAfac(d?.afac), title: TITULO_FILA_AFAC },
+        ),
+      );
+    }
+    excel.push(
+      fila("utilidad_antes_gastos", E.utilidadAntesGastos, "subtotal", utilidadAntesGastos(avion, o.comoBalance), {
+        title: TITULO_FILA_UTILIDAD_ANTES_GASTOS,
+      }),
+      fila(
+        "combustible",
+        E.combustible,
+        "deduccion",
+        { mxn: avion.gastos.combustible_mxn, usd: avion.gastos.combustible_usd ?? 0 },
+        { title: TITULO_FILA_COMBUSTIBLE },
+      ),
+      fila("indirectos", E.indirectos, "deduccion", {
+        mxn: avion.gastos.indirectos_mxn,
+        usd: avion.gastos.indirectos_usd,
+      }),
+      fila("permisos", E.permisos, "deduccion", {
+        mxn: avion.gastos.permisos_mxn,
+        usd: avion.gastos.permisos_usd,
+      }),
+      fila("fijos", E.fijos, "deduccion", {
+        mxn: avion.gastos.otros_prorrateados_mxn,
+        usd: avion.gastos.otros_prorrateados_usd,
+      }),
+    );
+    if (!o.comoBalance) {
+      // Sin la cascada del balance (combinación que el API 0.0.103 no
+      // produce) la reserva sigue restando, como siempre.
+      excel.push(
+        fila(
+          "reserva",
+          E.reserva,
+          "deduccion",
+          { mxn: avion.reserva_overhaul_mxn, usd: avion.reserva_overhaul_usd },
+          { sublabel: sublabelReservaOverhaul(d?.reserva, avion.horas_voladas_hr), tc: d?.reserva.tc },
+        ),
+      );
+    }
+    excel.push(
+      fila(
+        "otros_ingresos",
+        E.otrosIngresos,
+        "ingreso",
+        { mxn: avion.ingresos.otros_ingresos_avion_mxn, usd: avion.ingresos.otros_ingresos_avion_usd ?? 0 },
+        { sublabel: SUBLABEL_OTROS_INGRESOS_AVION },
+      ),
+    );
+    return excel;
+  }
   const out: FilaCascada[] = [
     fila("cobrado", ETIQUETAS_CASCADA.cobrado, "ingreso", {
       mxn: avion.ingresos.cobrado_mxn,
@@ -406,9 +591,6 @@ export interface FilaSocioReparto {
   /** Lo que se le entrega. */
   aRecibir: MontoDoble;
 }
-
-const numero = (v: number | null | undefined): number | null =>
-  typeof v === "number" && Number.isFinite(v) ? v : null;
 
 /** Las filas de socios de la card y de la pantalla (reparto del compute). */
 export function filasSociosReparto(reparto: readonly RepartoSocio[], enPesos: boolean): FilaSocioReparto[] {
@@ -553,8 +735,10 @@ export function textoPorEntregarAvion(mxn: number): { texto: string; tono: "amba
 // Gastos del periodo (gasto por gasto)
 // =============================================================================
 
+/** Orden de la cascada (el grupo COMBUSTIBLE, API 0.0.103, va tras los directos como en el Excel). */
 export const ORDEN_GRUPOS_GASTO: readonly DetalleGastoGrupo[] = [
   "DIRECTO",
+  "COMBUSTIBLE",
   "INDIRECTO",
   "PERMISO",
   "FIJO",
@@ -563,6 +747,7 @@ export const ORDEN_GRUPOS_GASTO: readonly DetalleGastoGrupo[] = [
 
 export const ETIQUETA_GRUPO_GASTO: Readonly<Record<DetalleGastoGrupo, string>> = {
   DIRECTO: "Gastos directos",
+  COMBUSTIBLE: "Combustible",
   INDIRECTO: "Gastos indirectos",
   PERMISO: "Permisos",
   FIJO: "Fijos repartidos a mano a este avión",
@@ -571,11 +756,23 @@ export const ETIQUETA_GRUPO_GASTO: Readonly<Record<DetalleGastoGrupo, string>> =
 
 export const DESCRIPCION_GRUPO_GASTO: Readonly<Record<DetalleGastoGrupo, string>> = {
   DIRECTO: "Costo de cada vuelo: combustible, aterrizajes y pistas, hotel, comida, taxi, piloto externo, comisariato…",
+  COMBUSTIBLE: "Gasavión / turbosina de cada vuelo. Va aparte de los gastos directos, como en el Excel del balance.",
   INDIRECTO: "Del avión, no de un vuelo: talleres, refacciones, servicios y gastos indirectos sellados al avión (como en el balance).",
   PERMISO: "Permisos del avión. Los pagos de AFAC que paga VuelaTour no restan aquí: el avión paga la provisión AFAC de la cascada.",
   FIJO: "Gastos fijos de la empresa que se repartieron a mano a este avión. El prorrateo automático entre los aviones activos no se lista gasto por gasto: va en la fila «Fijos» de la cascada.",
   EXCLUIDO: "Gastos ligados al avión o a sus vuelos que NO le restan: TUA (traslado al pasajero), pagos al vendedor, pagos de AFAC, categorías de la empresa… El motivo va en cada renglón.",
 };
+
+/** Los directos cuando el combustible ya viene aparte (API 0.0.103). */
+export const DESCRIPCION_GRUPO_DIRECTO_SIN_COMBUSTIBLE =
+  "Costo de cada vuelo sin el combustible (que va aparte, como en el Excel): aterrizajes y pistas, hotel, comida, taxi, piloto externo, comisariato…";
+
+/** Descripción del grupo; la de DIRECTO cambia solo con el combustible separado. */
+export function descripcionGrupoGasto(grupo: DetalleGastoGrupo, conCombustible: boolean): string {
+  return grupo === "DIRECTO" && conCombustible
+    ? DESCRIPCION_GRUPO_DIRECTO_SIN_COMBUSTIBLE
+    : DESCRIPCION_GRUPO_GASTO[grupo];
+}
 
 export interface GrupoGastosDetalle {
   grupo: DetalleGastoGrupo;
@@ -604,9 +801,12 @@ function sumaCentavosONull(valores: ReadonlyArray<number | null | undefined>): n
  * Las filas de `detalle.gastos[]` por grupo, en el orden del balance y solo
  * los grupos con filas. El subtotal suma en centavos lo que ya mandó el API
  * (null si a alguna fila le falta el peso). Dentro del grupo, por fecha.
+ * `conCombustible` (API 0.0.103) solo cambia la descripción de los directos;
+ * el grupo «Combustible» aparece cuando el API manda filas `COMBUSTIBLE`.
  */
 export function agruparGastosDetalle(
   filas: readonly FilaGastoDetalle[] | null | undefined,
+  opts: { conCombustible?: boolean } = {},
 ): GrupoGastosDetalle[] {
   const lista = Array.isArray(filas) ? filas : [];
   return ORDEN_GRUPOS_GASTO.map((grupo) => {
@@ -616,7 +816,7 @@ export function agruparGastosDetalle(
     return {
       grupo,
       etiqueta: ETIQUETA_GRUPO_GASTO[grupo],
-      descripcion: DESCRIPCION_GRUPO_GASTO[grupo],
+      descripcion: descripcionGrupoGasto(grupo, opts.conCombustible === true),
       filas: propias,
       subtotalMxn: grupo === "EXCLUIDO" ? null : sumaCentavosONull(propias.map((f) => f.mxn)),
       subtotalUsd: grupo === "EXCLUIDO" ? null : sumaCentavosONull(propias.map((f) => f.usd)),
@@ -633,6 +833,11 @@ export function cascadaDelGrupo(
   switch (grupo) {
     case "DIRECTO":
       return { mxn: numero(avion.gastos.directos_mxn), usd: avion.gastos.directos_usd };
+    case "COMBUSTIBLE": {
+      // Solo con el combustible separado (API 0.0.103); si no, no hay fila con qué cuadrar.
+      const usd = numero(avion.gastos.combustible_usd);
+      return usd === null ? null : { mxn: numero(avion.gastos.combustible_mxn), usd };
+    }
     case "INDIRECTO":
       return { mxn: numero(avion.gastos.indirectos_mxn), usd: avion.gastos.indirectos_usd };
     case "PERMISO":
@@ -778,6 +983,8 @@ export interface ColumnaHistorico {
   principal: boolean;
   /** Dato que NO entra al saldo (la reserva). */
   informativa?: boolean;
+  /** Solo se pinta cuando el API manda el dato (llave ADITIVA: el combustible). */
+  soloSiViene?: boolean;
   title?: string;
 }
 
@@ -788,6 +995,15 @@ export const COLUMNAS_HISTORICO: readonly ColumnaHistorico[] = [
   { clave: "cobrado_mxn", etiqueta: "Cobrado", tipo: "mxn", principal: true },
   { clave: "comisiones_mxn", etiqueta: "Comisiones", tipo: "mxn", signo: "-", principal: false },
   { clave: "directos_mxn", etiqueta: "Directos", tipo: "mxn", signo: "-", principal: false },
+  {
+    clave: "combustible_mxn",
+    etiqueta: "Combustible",
+    tipo: "mxn",
+    signo: "-",
+    principal: false,
+    soloSiViene: true,
+    title: TITULO_FILA_COMBUSTIBLE,
+  },
   { clave: "indirectos_mxn", etiqueta: "Indirectos", tipo: "mxn", signo: "-", principal: false },
   { clave: "permisos_mxn", etiqueta: "Permisos", tipo: "mxn", signo: "-", principal: false },
   { clave: "otros_mxn", etiqueta: "Fijos", tipo: "mxn", signo: "-", principal: false, title: SUBLABEL_FIJOS },
@@ -806,9 +1022,26 @@ export const COLUMNAS_HISTORICO: readonly ColumnaHistorico[] = [
   { clave: "cierre", etiqueta: "Cierre", tipo: "texto", principal: true },
 ];
 
-/** Las columnas de la vista compacta. */
-export function columnasHistorico(completas: boolean): ColumnaHistorico[] {
-  return COLUMNAS_HISTORICO.filter((c) => completas || c.principal);
+/**
+ * Las columnas de la vista compacta (o todas). La de «Combustible» (API
+ * 0.0.103) solo con `conCombustible`: con un API previo no existe el dato y
+ * la tabla queda como siempre.
+ */
+export function columnasHistorico(
+  completas: boolean,
+  opts: { conCombustible?: boolean } = {},
+): ColumnaHistorico[] {
+  return COLUMNAS_HISTORICO.filter(
+    (c) => (completas || c.principal) && (!c.soloSiViene || opts.conCombustible === true),
+  );
+}
+
+/** ¿El histórico trae el combustible aparte? Si algún mes o los totales mandan `combustible_mxn`. */
+export function historicoConCombustible(
+  meses: ReadonlyArray<Pick<MesHistoricoAvion, "combustible_mxn">>,
+  totales?: Pick<TotalesHistoricoAvion, "combustible_mxn"> | null,
+): boolean {
+  return numero(totales?.combustible_mxn) !== null || meses.some((m) => numero(m.combustible_mxn) !== null);
 }
 
 export const ETIQUETA_VER_TODAS_COLUMNAS = "Ver todas las columnas";
@@ -1002,8 +1235,11 @@ const LLAVES_MES: ReadonlyArray<keyof TotalesHistoricoAvion> = [
 
 function totalesHistorico(raw: unknown): TotalesHistoricoAvion {
   const t = obj(raw) ?? {};
-  const out = {} as Record<keyof TotalesHistoricoAvion, number>;
+  const out = {} as TotalesHistoricoAvion;
   for (const k of LLAVES_MES) out[k] = num(t[k]);
+  // Combustible separado (API 0.0.103): ADITIVA, solo si viene (con un API
+  // previo la columna no existe y no se inventa un 0).
+  if (t.combustible_mxn != null) out.combustible_mxn = num(t.combustible_mxn);
   return out;
 }
 

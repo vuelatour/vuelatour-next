@@ -14,7 +14,9 @@ import { TEXTO_RESERVA_NO_RESTA } from "@/lib/admin/reparto-avion";
 import {
   HINT_SALDO_PESOS_INCOMPLETO,
   TITULO_SALDO_PESOS_INCOMPLETO,
+  combustibleSeparado,
   gastosMxnDeAvion,
+  hintKpiGastosPeriodo,
   hintKpiOtrosIngresosAvionesPesos,
   hintKpiOtrosVuelatourPesos,
   montoPrincipal,
@@ -68,16 +70,19 @@ export function KpiStrip({
   // de la comisión bancaria (regla de septiembre 2026, API 0.0.65) + los
   // pagos «Comisión del vendedor (avión)» (13-oct-2026, API 0.0.74); vale 0
   // si no hay nada que restar. Con la cascada del balance (API 0.0.101) la
-  // provisión AFAC también es un gasto del periodo.
+  // provisión AFAC también es un gasto del periodo. Con el combustible
+  // separado (API 0.0.103) `directos_usd` ya no lo trae: se suma aparte.
   const gastos = sum(
     (a) =>
       (a.ingresos.comisiones_venta_usd ?? 0) +
       a.gastos.directos_usd +
+      (a.gastos.combustible_usd ?? 0) +
       a.gastos.indirectos_usd +
       a.gastos.permisos_usd +
       a.gastos.otros_prorrateados_usd +
       (comoBalance ? (a.afac_reservado_usd ?? 0) : 0),
   );
+  const conCombustible = aviones.some(combustibleSeparado);
   // Desglose de otros ingresos para el tooltip (la comisión solo si el API
   // ya la manda). En pesos, los dólares llevan su sufijo.
   const usdOtros = enPesos ? textoUsd : fmtUsd;
@@ -146,7 +151,7 @@ export function KpiStrip({
         label="Gastos del periodo"
         value={gastosKpi.principal}
         informativo={gastosKpi.informativo}
-        hint={comoBalance ? "Directos, indirectos, permisos, fijos y provisión AFAC" : "Directos, indirectos, permisos y fijos"}
+        hint={hintKpiGastosPeriodo({ comoBalance, conCombustible })}
       />
       <Kpi
         icon={WrenchScrewdriverIcon}

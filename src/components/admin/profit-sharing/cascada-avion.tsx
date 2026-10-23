@@ -7,6 +7,7 @@ import {
   ETIQUETA_RESERVA_RETENIDA,
   TEXTO_RESERVA_NO_RESTA,
   TITULO_RESERVA_RETENIDA,
+  etiquetaSaldoCascada,
   filasCascadaAvion,
   reservaInformativa,
   saldoCascada,
@@ -29,9 +30,12 @@ import type { AvionReparto } from "@/types/profit-sharing";
  * comisiones, − directos, − indirectos, − permisos, − fijos, − provisión
  * AFAC) y, DEBAJO y aparte, la reserva de overhaul marcada «no se resta».
  * Sin la bandera `reparto_como_balance` (API previo) la reserva es la última
- * fila que resta y no hay AFAC. Sin hooks: la pintan la card (servidor) y
- * la pantalla del avión. Los números son del API; las etiquetas, de
- * `lib/admin/reparto-avion.ts`.
+ * fila que resta y no hay AFAC. Con el COMBUSTIBLE SEPARADO (23-oct-2026,
+ * API 0.0.103) las filas son las del Excel del cliente y en su orden, con el
+ * subtotal «Utilidad antes de gastos» y la fila «Combustible»; sin esas
+ * llaves, lo de siempre byte a byte. Sin hooks: la pintan la card (servidor)
+ * y la pantalla del avión. Los números son del API; las etiquetas y el
+ * orden, de `lib/admin/reparto-avion.ts`.
  */
 export function CascadaAvion({
   avion,
@@ -70,7 +74,7 @@ export function CascadaAvion({
         className="flex items-start justify-between gap-3 border-t border-border pt-1.5 font-semibold"
         data-fila-cascada="saldo"
       >
-        <span>{ETIQUETAS_CASCADA.saldo}</span>
+        <span>{etiquetaSaldoCascada(avion)}</span>
         <span className="text-right">
           <span
             className={`block font-mono tabular-nums ${
@@ -158,16 +162,25 @@ export function CascadaAvion({
   );
 }
 
-/** Una fila de la cascada: etiqueta (+ sublabel) y el monto a la derecha. */
+/**
+ * Una fila de la cascada: etiqueta (+ sublabel) y el monto a la derecha. El
+ * subtotal («Utilidad antes de gastos», API 0.0.103) lleva línea arriba y
+ * peso medio, como una línea de total intermedia del Excel.
+ */
 function FilaCascadaRow({ fila, title }: { fila: FilaCascada; title?: string }) {
+  const subtotal = fila.tipo === "subtotal";
   return (
     <div
-      className="flex items-start justify-between gap-3"
+      className={
+        subtotal
+          ? "mt-1 flex items-start justify-between gap-3 border-t border-border pt-1.5 font-medium"
+          : "flex items-start justify-between gap-3"
+      }
       title={title}
       data-fila-cascada={fila.clave}
       data-tipo={fila.tipo}
     >
-      <span className="text-muted-foreground">
+      <span className={subtotal ? "text-foreground" : "text-muted-foreground"}>
         {fila.etiqueta}
         {fila.sublabel && (
           <span className="ml-1.5 text-[11px] text-muted-foreground/70">{fila.sublabel}</span>
@@ -178,9 +191,13 @@ function FilaCascadaRow({ fila, title }: { fila: FilaCascada; title?: string }) 
         className={`shrink-0 text-right ${
           fila.tipo === "ingreso"
             ? "text-emerald-600 dark:text-emerald-400"
-            : fila.monto.valor === 0
-              ? "text-muted-foreground"
-              : ""
+            : subtotal
+              ? (fila.monto.valor ?? 0) < 0
+                ? "text-destructive"
+                : ""
+              : fila.monto.valor === 0
+                ? "text-muted-foreground"
+                : ""
         }`}
       />
     </div>

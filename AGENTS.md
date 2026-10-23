@@ -12188,6 +12188,37 @@ la pantalla del avión… todo en pesos, pagamos realmente en pesos».
 - Paridad con el repo hermano en Windows: `conciliacion-balance.test.ts` lee
   pyservices normalizando CRLF → LF (con `core.autocrlf` el `indexOf` de un
   bloque multilínea fallaba solo aquí).
+- **Combustible separado de los directos (23-oct-2026, API 0.0.103,
+  invariante 104 del API).** Pedido del cliente: «debemos separar gastos
+  directos del combustible, porque los está uniendo, porque no nos está
+  coincidiendo con el excel». Contrato ADITIVO: `gastos.directos_*` ya viene
+  SIN combustible y llegan `gastos.combustible_usd/_mxn` y
+  `utilidad_antes_gastos_usd/_mxn` por avión (compute y pantalla por avión),
+  el grupo `'COMBUSTIBLE'` en `detalle.gastos[]` / `gastos_por_categoria[]` y
+  `combustible_mxn` por mes y en los totales del histórico. Fuente única de la
+  lectura: `combustibleSeparado(avion)` (`reparto-pesos.ts`: solo si
+  `combustible_usd` o `_mxn` es número). Con ella `filasCascadaAvion` pinta la
+  cascada en el ORDEN DEL EXCEL con sus etiquetas (`ETIQUETAS_CASCADA_EXCEL`):
+  Venta cobrada − Comisiones de venta − Gastos directos − Provisión AFAC =
+  **Utilidad antes de gastos** (fila `tipo: "subtotal"`; el número del API o,
+  si falta, Σ en centavos de los componentes: `utilidadAntesGastos`) −
+  Combustible − Gastos indirectos − Permisos − Fijos prorrateados + Otros
+  ingresos del avión = **Saldo a repartir** (`etiquetaSaldoCascada`); todas
+  las líneas se pintan aunque valgan 0, para cuadrar renglón por renglón.
+  «Gastos del periodo» gana el grupo «Combustible» (tras los directos, cuadre
+  contra su fila; `descripcionGrupoGasto`), el histórico la columna
+  «Combustible» junto a «Directos» SOLO si el API la manda
+  (`historicoConCombustible`, `columnasHistorico(completas, { conCombustible })`;
+  la normalización no inventa un 0), el KPI «Gastos del periodo» suma
+  `combustible_*` y su hint lo dice (`hintKpiGastosPeriodo`), y las páginas
+  pintan `NOTA_COMBUSTIBLE_SEPARADO` y `ayudaCascada` / `ayudaGastosAvion`.
+  **FALLBACK**: sin las llaves (API ≤ 0.0.102) todo queda byte a byte como
+  antes (golden `reparto-pesos.golden.json` intacto). Fixture del ejemplo real
+  (N621TX sep-2026: 787,851.13 − 2,591.00 − 40,588.14 − 42,575.49 =
+  702,096.50; combustible 147,277.58, que antes se unía en «Gastos directos
+  187,865.72»): `avionCombustible()` / `sinCombustible()` en
+  `reparto-pesos.fixtures.ts`; tests en `reparto-avion.test.ts`,
+  `reparto-avion-pantalla.test.tsx` y `reparto-pesos` (lib y tsx).
 
 ## Cierre de mes: «Se queda en <mes>» para los cobrados después del corte (21-oct-2026, API 0.0.102, invariante 102 del API)
 

@@ -114,7 +114,19 @@ export interface TcOficialGastos {
   monto_mxn: number;
 }
 
-export type DetalleGastoGrupo = "DIRECTO" | "INDIRECTO" | "PERMISO" | "EXCLUIDO" | "FIJO";
+/**
+ * Grupo de un gasto en la cascada. `COMBUSTIBLE` es NUEVO (23-oct-2026, API
+ * 0.0.103, invariante 104): la categoría GAS («Gasavión / Turbosina») sale de
+ * `DIRECTO` y va en su propia fila, como en el Excel «Balance» del cliente.
+ * Con un API previo GAS sigue llegando como `DIRECTO`.
+ */
+export type DetalleGastoGrupo =
+  | "DIRECTO"
+  | "COMBUSTIBLE"
+  | "INDIRECTO"
+  | "PERMISO"
+  | "EXCLUIDO"
+  | "FIJO";
 
 /**
  * Un gasto del avión TAL CUAL se sumó en la cascada (pantalla por avión,
@@ -292,6 +304,9 @@ export interface AvionReparto {
   /** Horas de tacómetro voladas en el periodo (base de la reserva). */
   horas_voladas_hr: number;
   gastos: {
+    /** Gastos directos del vuelo. Desde el API 0.0.103 (23-oct-2026,
+        invariante 104) SIN el combustible, que viaja aparte en
+        `combustible_*`; con un API previo lo incluye. */
     directos_usd: number;
     indirectos_usd: number;
     permisos_usd: number;
@@ -307,6 +322,12 @@ export interface AvionReparto {
     indirectos_mxn?: number;
     permisos_mxn?: number;
     otros_prorrateados_mxn?: number;
+    /** ADITIVOS (combustible separado, 23-oct-2026, API 0.0.103, invariante
+        104): el combustible (categoría GAS) del periodo, que ya NO está en
+        `directos_*`. Ausentes con un API previo ⇒ la cascada de siempre
+        (fuente única: `combustibleSeparado` de `lib/admin/reparto-pesos.ts`). */
+    combustible_usd?: number;
+    combustible_mxn?: number;
   };
   reserva_overhaul_usd: number;
   reserva_overhaul_incompleta: boolean;
@@ -330,6 +351,15 @@ export interface AvionReparto {
   afac_reservado_mxn?: number | null;
   reserva_retenida_usd?: number | null;
   reserva_retenida_mxn?: number | null;
+  /** ADITIVOS (combustible separado, 23-oct-2026, API 0.0.103, invariante
+      104): el subtotal «Utilidad antes de gastos» del Excel del cliente
+      (= cobrado − comisiones − directos − afac_reservado). El saldo es
+      utilidad_antes_gastos − combustible − indirectos − permisos −
+      otros_prorrateados + otros_ingresos_avion. Ausentes con un API previo;
+      si faltan pero sí viene `gastos.combustible_*`, el panel los suma en
+      centavos con los componentes redondeados. */
+  utilidad_antes_gastos_usd?: number | null;
+  utilidad_antes_gastos_mxn?: number | null;
   reparto: RepartoSocio[];
   reparto_porcentaje_total: number;
   /** Opcional: el API viejo no lo manda; tratar siempre defensivo. */
@@ -483,6 +513,10 @@ export interface MesHistoricoAvion {
   pendiente_cobro_mxn: number;
   comisiones_mxn: number;
   directos_mxn: number;
+  /** ADITIVO (combustible separado, 23-oct-2026, API 0.0.103, invariante
+      104): el combustible del mes, que ya NO está en `directos_mxn`. Ausente
+      con un API previo ⇒ la columna no se pinta (nunca un 0 inventado). */
+  combustible_mxn?: number;
   indirectos_mxn: number;
   permisos_mxn: number;
   /** Fijos prorrateados (+ reparto manual). */

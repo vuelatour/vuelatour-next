@@ -16,28 +16,40 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  AYUDA_CASCADA,
+  AYUDA_CASCADA_EXCEL,
+  AYUDA_GASTOS_AVION,
+  AYUDA_GASTOS_AVION_EXCEL,
   COLUMNAS_HISTORICO,
+  DESCRIPCION_GRUPO_DIRECTO_SIN_COMBUSTIBLE,
   DESCRIPCION_GRUPO_GASTO,
   ETIQUETAS_CASCADA,
+  ETIQUETAS_CASCADA_EXCEL,
   ETIQUETA_GRUPO_GASTO,
   ETIQUETA_RESERVA_INFORMATIVA,
   MESES_HISTORICO_MAX,
   ORDEN_GRUPOS_GASTO,
   RUTA_REPARTO_AVIONES,
   TEXTO_RESERVA_NO_RESTA,
+  TITULO_FILA_COMBUSTIBLE,
   agruparGastosDetalle,
+  ayudaCascada,
+  ayudaGastosAvion,
   cascadaDelGrupo,
   celdasTotalesHistorico,
   columnasHistorico,
   confirmacionDescuentoReserva,
   contextoEntregaDesdeAvion,
+  descripcionGrupoGasto,
   diferenciaConCascada,
   etiquetaMesHistorico,
+  etiquetaSaldoCascada,
   filasCascadaAvion,
   filasHistorico,
   filasPropietarioDeSocio,
   filasSociosReparto,
   filtroMesesHistorico,
+  historicoConCombustible,
   hrefHistoricoAvion,
   hrefRepartoAvion,
   hrefRepartoConPeriodo,
@@ -65,8 +77,15 @@ import {
   textoTcGasto,
   textoVueloGasto,
   toastDescuentoReserva,
+  utilidadAntesGastos,
 } from "../reparto-avion";
-import { avionA, conPesos } from "@/components/admin/profit-sharing/__tests__/reparto-pesos.fixtures";
+import { combustibleSeparado } from "../reparto-pesos";
+import {
+  avionA,
+  avionCombustible,
+  conPesos,
+  sinCombustible,
+} from "@/components/admin/profit-sharing/__tests__/reparto-pesos.fixtures";
 import type { AvionReparto, FilaGastoDetalle, MesHistoricoAvion } from "@/types/profit-sharing";
 import type { AircraftOwner } from "@/types/aircraft";
 
@@ -394,8 +413,10 @@ describe("gastos del periodo, gasto por gasto", () => {
 
   it("se agrupan en el orden del balance (solo grupos con filas), por fecha, con subtotal en centavos", () => {
     const grupos = agruparGastosDetalle(filas);
-    expect(ORDEN_GRUPOS_GASTO).toEqual(["DIRECTO", "INDIRECTO", "PERMISO", "FIJO", "EXCLUIDO"]);
+    // COMBUSTIBLE (API 0.0.103) va tras los directos; sin filas suyas (API previo) no aparece.
+    expect(ORDEN_GRUPOS_GASTO).toEqual(["DIRECTO", "COMBUSTIBLE", "INDIRECTO", "PERMISO", "FIJO", "EXCLUIDO"]);
     expect(grupos.map((g) => g.grupo)).toEqual(["DIRECTO", "INDIRECTO", "PERMISO", "FIJO", "EXCLUIDO"]);
+    expect(grupos[0].descripcion).toBe(DESCRIPCION_GRUPO_GASTO.DIRECTO);
     const directos = grupos[0];
     expect(directos.filas.map((f) => f.id)).toEqual(["g-1", "g-2"]);
     expect(directos.subtotalMxn).toBe(27184);
@@ -488,13 +509,14 @@ describe("histórico mes a mes", () => {
     ...over,
   });
 
-  it("columnas en el orden de la cascada; la vista compacta deja las principales", () => {
+  it("columnas en el orden de la cascada; la vista compacta deja las principales; «Combustible» solo si el API la manda", () => {
     expect(COLUMNAS_HISTORICO.map((c) => c.clave)).toEqual([
       "horas_voladas_hr",
       "vuelos",
       "cobrado_mxn",
       "comisiones_mxn",
       "directos_mxn",
+      "combustible_mxn",
       "indirectos_mxn",
       "permisos_mxn",
       "otros_mxn",
@@ -514,7 +536,21 @@ describe("histórico mes a mes", () => {
       "entregado_mxn",
       "cierre",
     ]);
-    expect(columnasHistorico(true)).toHaveLength(COLUMNAS_HISTORICO.length);
+    // API previo: todas las columnas de siempre, SIN la de combustible.
+    expect(columnasHistorico(true).map((c) => c.clave)).not.toContain("combustible_mxn");
+    expect(columnasHistorico(true)).toHaveLength(COLUMNAS_HISTORICO.length - 1);
+    // API 0.0.103: «Combustible» junto a «Directos»; la vista compacta no cambia.
+    const completas = columnasHistorico(true, { conCombustible: true });
+    expect(completas).toHaveLength(COLUMNAS_HISTORICO.length);
+    expect(completas.map((c) => c.clave).indexOf("combustible_mxn")).toBe(
+      completas.map((c) => c.clave).indexOf("directos_mxn") + 1,
+    );
+    expect(completas.find((c) => c.clave === "combustible_mxn")).toMatchObject({
+      etiqueta: "Combustible",
+      signo: "-",
+      title: TITULO_FILA_COMBUSTIBLE,
+    });
+    expect(columnasHistorico(false, { conCombustible: true })).toEqual(columnasHistorico(false));
     expect(COLUMNAS_HISTORICO.find((c) => c.clave === "reserva_mxn")?.informativa).toBe(true);
   });
 
@@ -605,5 +641,332 @@ describe("normalización de las respuestas (forma sana; basura ⇒ null = fallo)
     expect(r?.reparto_como_balance).toBe(true);
     expect(normalizarAvionHistorico({ aeronave: { id: AV }, desde: "x", hasta: "2026-10" })).toBeNull();
     expect(normalizarAvionHistorico({})).toBeNull();
+  });
+});
+
+// =============================================================================
+// COMBUSTIBLE SEPARADO de los gastos directos (23-oct-2026, API 0.0.103,
+// invariante 104): la cascada en el ORDEN DEL EXCEL del cliente, con el
+// subtotal «Utilidad antes de gastos» y la fila «Combustible»; sin las llaves
+// (API previo) todo queda como antes. Números: N621TX, septiembre 2026.
+// =============================================================================
+
+describe("combustible separado (API 0.0.103): la cascada del Excel", () => {
+  const centavos = (v: number | null | undefined) => Math.round((v ?? Number.NaN) * 100);
+
+  it("se detecta solo cuando el API manda `gastos.combustible_usd` o `_mxn` como número", () => {
+    expect(combustibleSeparado(avionCombustible())).toBe(true);
+    expect(combustibleSeparado({ gastos: { combustible_usd: 0 } })).toBe(true);
+    expect(combustibleSeparado({ gastos: { combustible_mxn: 10 } })).toBe(true);
+    expect(combustibleSeparado(sinCombustible(avionCombustible()))).toBe(false);
+    expect(combustibleSeparado(avionBalance())).toBe(false);
+    expect(combustibleSeparado(conPesos(avionA()))).toBe(false);
+    expect(combustibleSeparado({ gastos: { combustible_usd: null, combustible_mxn: Number.NaN } })).toBe(false);
+    expect(combustibleSeparado(null)).toBe(false);
+  });
+
+  it("filas en el orden del Excel con sus etiquetas exactas; el subtotal es la línea «Utilidad antes de gastos»", () => {
+    const filas = filasCascadaAvion(avionCombustible(), { enPesos: true, comoBalance: true });
+    expect(filas.map((f) => f.clave)).toEqual([
+      "cobrado",
+      "comisiones",
+      "directos",
+      "afac",
+      "utilidad_antes_gastos",
+      "combustible",
+      "indirectos",
+      "permisos",
+      "fijos",
+      "otros_ingresos",
+    ]);
+    expect(filas.map((f) => f.etiqueta)).toEqual([
+      "Venta cobrada",
+      "Comisiones de venta",
+      "Gastos directos",
+      "Provisión AFAC",
+      "Utilidad antes de gastos",
+      "Combustible",
+      "Gastos indirectos",
+      "Permisos",
+      "Fijos prorrateados",
+      "Otros ingresos del avión",
+    ]);
+    expect(filas.map((f) => f.tipo)).toEqual([
+      "ingreso",
+      "deduccion",
+      "deduccion",
+      "deduccion",
+      "subtotal",
+      "deduccion",
+      "deduccion",
+      "deduccion",
+      "deduccion",
+      "ingreso",
+    ]);
+    expect(etiquetaSaldoCascada(avionCombustible())).toBe("Saldo a repartir");
+    expect(ETIQUETAS_CASCADA_EXCEL.saldo).toBe("Saldo a repartir");
+    expect(ETIQUETAS_CASCADA_EXCEL.reserva).toBe(ETIQUETAS_CASCADA.reserva);
+    const por = Object.fromEntries(filas.map((f) => [f.clave, f]));
+    expect(por.cobrado.monto.principal).toBe("$787,851.13 MXN");
+    expect(por.comisiones.monto.principal).toBe("−$2,591.00 MXN");
+    expect(por.directos.monto.principal).toBe("−$40,588.14 MXN");
+    expect(por.directos.title).toContain("El combustible va aparte");
+    expect(por.afac.monto.principal).toBe("−$42,575.49 MXN");
+    expect(por.afac.sublabel).toBe("$200 USD/hr × 12.50 hr cobradas");
+    expect(por.utilidad_antes_gastos.monto).toEqual({
+      principal: "$702,096.50 MXN",
+      informativo: "≈ $40,669.39 USD",
+      sinPesos: false,
+      valor: 702096.5,
+    });
+    expect(por.combustible.monto.principal).toBe("−$147,277.58 MXN");
+    expect(por.combustible.monto.informativo).toBe("≈ −$8,537.83 USD");
+    expect(por.combustible.title).toBe(TITULO_FILA_COMBUSTIBLE);
+    expect(por.indirectos.monto.principal).toBe("−$13,800.00 MXN");
+    expect(por.permisos.monto.principal).toBe("−$2,587.50 MXN");
+    expect(por.fijos.monto.principal).toBe("−$10,350.00 MXN");
+    expect(por.otros_ingresos.monto.principal).toBe("$46,550.80 MXN");
+    // Ya no se unen: la card decía «Gastos directos 187,865.72».
+    expect(filas.some((f) => f.monto.principal.includes("187,865.72"))).toBe(false);
+  });
+
+  it("las sumas cuadran al centavo, en pesos y en dólares: cobrado − comisiones − directos − AFAC = utilidad; utilidad − combustible − indirectos − permisos − fijos + otros = saldo", () => {
+    for (const enPesos of [true, false]) {
+      const a = avionCombustible();
+      const v = Object.fromEntries(
+        filasCascadaAvion(a, { enPesos, comoBalance: true }).map((f) => [f.clave, centavos(f.monto.valor)]),
+      );
+      expect(v.cobrado - v.comisiones - v.directos - v.afac).toBe(v.utilidad_antes_gastos);
+      expect(v.utilidad_antes_gastos).toBe(enPesos ? 70209650 : 4066939);
+      expect(v.utilidad_antes_gastos - v.combustible - v.indirectos - v.permisos - v.fijos + v.otros_ingresos).toBe(
+        centavos(enPesos ? a.saldo_disponible_mxn : a.saldo_disponible_usd),
+      );
+      expect(saldoCascada(a, enPesos).principal).toBe(enPesos ? "$574,632.22 MXN" : "$33,280.16");
+    }
+  });
+
+  it("sin `utilidad_antes_gastos_*` del API: se suma en centavos con los componentes redondeados; sin el peso de la AFAC, se dice", () => {
+    const a = avionCombustible();
+    const sinSubtotal: AvionReparto = { ...a, utilidad_antes_gastos_usd: undefined, utilidad_antes_gastos_mxn: undefined };
+    expect(utilidadAntesGastos(a, true)).toEqual({ usd: 40669.39, mxn: 702096.5 });
+    expect(utilidadAntesGastos(sinSubtotal, true)).toEqual({ usd: 40669.39, mxn: 702096.5 });
+    // Sin la cascada del balance (combinación que el API 0.0.103 no produce) la AFAC no entra.
+    expect(utilidadAntesGastos(sinSubtotal, false)).toEqual({ usd: 43169.39, mxn: 744671.99 });
+    const fila = filasCascadaAvion(sinSubtotal, { enPesos: true, comoBalance: true }).find(
+      (f) => f.clave === "utilidad_antes_gastos",
+    )!;
+    expect(fila.monto.principal).toBe("$702,096.50 MXN");
+    expect(fila.monto.informativo).toBe("≈ $40,669.39 USD");
+    // Un componente sin pesos ⇒ el subtotal en pesos no se inventa.
+    const sinPesoAfac = filasCascadaAvion(
+      { ...sinSubtotal, afac_reservado_mxn: null },
+      { enPesos: true, comoBalance: true },
+    ).find((f) => f.clave === "utilidad_antes_gastos")!;
+    expect(sinPesoAfac.monto.sinPesos).toBe(true);
+    expect(sinPesoAfac.monto.principal).toBe("$40,669.39 USD");
+    // En dólares (sin la bandera de pesos) el subtotal es el de siempre.
+    expect(
+      filasCascadaAvion(sinSubtotal, { enPesos: false, comoBalance: true }).find((f) => f.clave === "utilidad_antes_gastos")!
+        .monto.principal,
+    ).toBe("$40,669.39");
+  });
+
+  it("todas las líneas del Excel se pintan aunque valgan 0 (comisiones y otros ingresos incluidos)", () => {
+    const a = avionCombustible();
+    const cero: AvionReparto = {
+      ...a,
+      ingresos: { ...a.ingresos, comisiones_venta_usd: 0, comisiones_venta_mxn: 0, otros_ingresos_avion_usd: 0, otros_ingresos_avion_mxn: 0 },
+    };
+    const filas = filasCascadaAvion(cero, { enPesos: true, comoBalance: true });
+    expect(filas.map((f) => f.clave)).toContain("comisiones");
+    expect(filas.map((f) => f.clave)).toContain("otros_ingresos");
+    expect(filas.find((f) => f.clave === "comisiones")!.monto.valor).toBe(0);
+  });
+
+  it("sin la bandera del balance (skew improbable): la reserva resta tras los fijos y la utilidad no descuenta AFAC", () => {
+    const filas = filasCascadaAvion(avionCombustible(), { enPesos: true, comoBalance: false });
+    expect(filas.map((f) => f.clave)).toEqual([
+      "cobrado",
+      "comisiones",
+      "directos",
+      "utilidad_antes_gastos",
+      "combustible",
+      "indirectos",
+      "permisos",
+      "fijos",
+      "reserva",
+      "otros_ingresos",
+    ]);
+    expect(filas.find((f) => f.clave === "reserva")!.monto.principal).toBe("−$8,625.00 MXN");
+  });
+
+  it("FALLBACK: sin las llaves (API previo) la cascada, las etiquetas y el saldo son EXACTAMENTE los de antes", () => {
+    const viejo = sinCombustible(avionCombustible());
+    const filas = filasCascadaAvion(viejo, { enPesos: true, comoBalance: true });
+    expect(filas.map((f) => f.clave)).toEqual([
+      "cobrado",
+      "otros_ingresos",
+      "comisiones",
+      "directos",
+      "indirectos",
+      "permisos",
+      "fijos",
+      "afac",
+    ]);
+    expect(filas.map((f) => f.etiqueta)).toEqual([
+      ETIQUETAS_CASCADA.cobrado,
+      ETIQUETAS_CASCADA.otrosIngresos,
+      ETIQUETAS_CASCADA.comisiones,
+      ETIQUETAS_CASCADA.directos,
+      ETIQUETAS_CASCADA.indirectos,
+      ETIQUETAS_CASCADA.permisos,
+      ETIQUETAS_CASCADA.fijos,
+      ETIQUETAS_CASCADA.afac,
+    ]);
+    expect(filas.map((f) => f.etiqueta)).toEqual([
+      "Venta del avión cobrada",
+      "Otros ingresos del avión",
+      "Comisiones (banco + vendedor)",
+      "Gastos directos",
+      "Gastos indirectos",
+      "Permisos",
+      "Fijos (prorrateo + reparto manual)",
+      "Provisión AFAC",
+    ]);
+    expect(filas.some((f) => f.tipo === "subtotal")).toBe(false);
+    expect(filas.find((f) => f.clave === "directos")!.title).toBeUndefined();
+    expect(etiquetaSaldoCascada(viejo)).toBe("Saldo disponible");
+    expect(etiquetaSaldoCascada(avionBalance())).toBe("Saldo disponible");
+    // Y lo mismo con los fixtures del golden (API ≤ 0.0.92 y 0.0.101).
+    expect(filasCascadaAvion(avionA(), { enPesos: false, comoBalance: false }).map((f) => f.clave)).toEqual([
+      "cobrado",
+      "otros_ingresos",
+      "comisiones",
+      "directos",
+      "indirectos",
+      "permisos",
+      "fijos",
+      "reserva",
+    ]);
+  });
+
+  it("ayudas: las del Excel solo con el combustible separado", () => {
+    expect(ayudaCascada(true)).toBe(AYUDA_CASCADA_EXCEL);
+    expect(ayudaCascada(false)).toBe(AYUDA_CASCADA);
+    expect(AYUDA_CASCADA_EXCEL).toContain("utilidad antes de gastos");
+    expect(AYUDA_CASCADA_EXCEL).toContain("menos combustible");
+    expect(ayudaGastosAvion(true)).toBe(AYUDA_GASTOS_AVION_EXCEL);
+    expect(ayudaGastosAvion(false)).toBe(AYUDA_GASTOS_AVION);
+    expect(AYUDA_GASTOS_AVION_EXCEL).toContain("el combustible va aparte de los gastos directos");
+  });
+});
+
+describe("combustible separado: «Gastos del periodo» y el cuadre del grupo «Combustible»", () => {
+  const filas: FilaGastoDetalle[] = [
+    gasto({ id: "g-f1", fecha: "2026-09-08", grupo: "COMBUSTIBLE", monto: 100000, mxn: 100000, usd: 5797.1 }),
+    gasto({ id: "g-f2", fecha: "2026-09-18", grupo: "COMBUSTIBLE", monto: 47277.58, mxn: 47277.58, usd: 2740.73 }),
+    gasto({ id: "g-d1", fecha: "2026-09-10", categoria: "ATERRIZAJE", etiqueta: "Aterrizajes", clave: "ATERRIZAJE", monto: 25000, mxn: 25000, usd: 1449.28 }),
+    gasto({ id: "g-d2", fecha: "2026-09-12", categoria: "HOTEL", etiqueta: "Hotel", clave: "HOTEL", monto: 15588.14, mxn: 15588.14, usd: 903.66 }),
+  ];
+
+  it("el grupo «Combustible» va tras los directos, con su subtotal en centavos y su descripción; los directos dicen que el combustible va aparte", () => {
+    const grupos = agruparGastosDetalle(filas, { conCombustible: true });
+    expect(grupos.map((g) => g.grupo)).toEqual(["DIRECTO", "COMBUSTIBLE"]);
+    expect(grupos[0]).toMatchObject({ etiqueta: "Gastos directos", subtotalMxn: 40588.14, subtotalUsd: 2352.94 });
+    expect(grupos[0].descripcion).toBe(DESCRIPCION_GRUPO_DIRECTO_SIN_COMBUSTIBLE);
+    expect(grupos[1]).toMatchObject({ etiqueta: "Combustible", subtotalMxn: 147277.58, subtotalUsd: 8537.83, sinPesos: 0 });
+    expect(grupos[1].filas.map((f) => f.id)).toEqual(["g-f1", "g-f2"]);
+    expect(grupos[1].descripcion).toBe(DESCRIPCION_GRUPO_GASTO.COMBUSTIBLE);
+    expect(ETIQUETA_GRUPO_GASTO.COMBUSTIBLE).toBe("Combustible");
+    expect(descripcionGrupoGasto("DIRECTO", false)).toBe(DESCRIPCION_GRUPO_GASTO.DIRECTO);
+    expect(descripcionGrupoGasto("INDIRECTO", true)).toBe(DESCRIPCION_GRUPO_GASTO.INDIRECTO);
+  });
+
+  it("cuadra EN CENTAVOS con la fila «Combustible» de la cascada (y los directos con la suya, ya sin combustible)", () => {
+    const a = avionCombustible();
+    expect(cascadaDelGrupo(a, "COMBUSTIBLE")).toEqual({ mxn: 147277.58, usd: 8537.83 });
+    expect(cascadaDelGrupo(a, "DIRECTO")).toEqual({ mxn: 40588.14, usd: 2352.94 });
+    const grupos = agruparGastosDetalle(filas, { conCombustible: true });
+    expect(diferenciaConCascada("COMBUSTIBLE", grupos[1].subtotalMxn, 147277.58, 2)).toBeNull();
+    expect(diferenciaConCascada("DIRECTO", grupos[0].subtotalMxn, 40588.14, 2)).toBeNull();
+    expect(diferenciaConCascada("COMBUSTIBLE", 147300, 147277.58, 2)).toBe(22.42);
+    expect(textoCuadreGrupo("COMBUSTIBLE", null, "$147,277.58 MXN")).toBe(
+      "Cuadra con la fila «Combustible» de la cascada ($147,277.58 MXN).",
+    );
+    expect(textoCuadreGrupo("COMBUSTIBLE", 22.42, "$147,277.58 MXN")).toBe(
+      "No cuadra con la fila «Combustible» de la cascada ($147,277.58 MXN): diferencia de $22.42 MXN. Avisa a sistemas.",
+    );
+    // API previo: no hay fila de combustible con qué cuadrar.
+    expect(cascadaDelGrupo(sinCombustible(a), "COMBUSTIBLE")).toBeNull();
+    expect(cascadaDelGrupo(avionBalance(), "COMBUSTIBLE")).toBeNull();
+  });
+});
+
+describe("combustible separado: el histórico trae la columna «Combustible» junto a «Directos»", () => {
+  const mes = (over: Partial<MesHistoricoAvion>): MesHistoricoAvion => ({
+    mes: "2026-09",
+    en_curso: false,
+    horas_voladas_hr: 12.5,
+    vuelos: 3,
+    cobrado_mxn: 787851.13,
+    pendiente_cobro_mxn: 0,
+    comisiones_mxn: 2591,
+    directos_mxn: 40588.14,
+    combustible_mxn: 147277.58,
+    indirectos_mxn: 13800,
+    permisos_mxn: 2587.5,
+    otros_mxn: 10350,
+    afac_mxn: 42575.49,
+    otros_ingresos_mxn: 46550.8,
+    saldo_mxn: 574632.22,
+    reserva_mxn: 8625,
+    reserva_retenida_mxn: 3529.35,
+    entregado_mxn: 0,
+    pesos_sin_tc_usd: 0,
+    saldo_usd: 33280.16,
+    reparto: [],
+    cierre_estado: "ABIERTO",
+    ...over,
+  });
+
+  it("se detecta por mes o por totales; celdas y totales con «−»", () => {
+    expect(historicoConCombustible([mes({})], null)).toBe(true);
+    expect(historicoConCombustible([mes({ combustible_mxn: undefined })], { combustible_mxn: 147277.58 })).toBe(true);
+    expect(historicoConCombustible([mes({ combustible_mxn: undefined })], { combustible_mxn: undefined })).toBe(false);
+    expect(historicoConCombustible([], null)).toBe(false);
+    const col = COLUMNAS_HISTORICO.find((c) => c.clave === "combustible_mxn")!;
+    expect(textoCeldaHistorico(col, 147277.58)).toBe("−$147,277.58 MXN");
+    expect(textoCeldaHistorico(col, undefined)).toBe("—");
+    expect(filasHistorico([mes({})])[0].celdas.combustible_mxn).toBe("−$147,277.58 MXN");
+    expect(filasHistorico([mes({})])[0].celdas.directos_mxn).toBe("−$40,588.14 MXN");
+    expect(celdasTotalesHistorico({ ...mes({}), combustible_mxn: 294555.16 }).combustible_mxn).toBe("−$294,555.16 MXN");
+  });
+
+  it("normalización: `combustible_mxn` solo si viene (API previo ⇒ ausente, nunca un 0 inventado)", () => {
+    const base = {
+      aeronave: { id: AV, matricula: "N621TX", modelo: "Cessna 421C" },
+      desde: "2026-09",
+      hasta: "2026-09",
+      mes_actual: "2026-10",
+      socios: [],
+      entregas: [],
+    };
+    const nuevo = normalizarAvionHistorico({
+      ...base,
+      meses: [{ mes: "2026-09", directos_mxn: "40588.14", combustible_mxn: "147277.58" }],
+      totales: { directos_mxn: "40588.14", combustible_mxn: "147277.58" },
+    })!;
+    expect(nuevo.meses[0]).toMatchObject({ directos_mxn: 40588.14, combustible_mxn: 147277.58 });
+    expect(nuevo.totales.combustible_mxn).toBe(147277.58);
+    expect(historicoConCombustible(nuevo.meses, nuevo.totales)).toBe(true);
+    const viejo = normalizarAvionHistorico({
+      ...base,
+      meses: [{ mes: "2026-09", directos_mxn: "187865.72" }],
+      totales: { directos_mxn: "187865.72" },
+    })!;
+    expect(viejo.meses[0].directos_mxn).toBe(187865.72);
+    expect("combustible_mxn" in viejo.meses[0]).toBe(false);
+    expect("combustible_mxn" in viejo.totales).toBe(false);
+    expect(historicoConCombustible(viejo.meses, viejo.totales)).toBe(false);
   });
 });

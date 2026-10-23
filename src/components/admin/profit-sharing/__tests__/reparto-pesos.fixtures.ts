@@ -280,3 +280,116 @@ const PESOS: Record<string, (a: AvionReparto) => AvionReparto> = {
 export function conPesos(a: AvionReparto): AvionReparto {
   return PESOS[a.aeronave.id](a);
 }
+
+/**
+ * N621TX, septiembre 2026, con el COMBUSTIBLE SEPARADO (23-oct-2026, API
+ * 0.0.103, invariante 104): los pesos son los del Excel «Balance» real del
+ * cliente — venta 787,851.13 − comisiones 2,591.00 − directos 40,588.14 −
+ * AFAC 42,575.49 = utilidad antes de gastos 702,096.50; combustible
+ * 147,277.58 (antes la card unía 187,865.72 en «Gastos directos»); −
+ * indirectos 13,800 − permisos 2,587.50 − fijos 10,350 + otros ingresos
+ * 46,550.80 = saldo 574,632.22. Los dólares son informativos y cuadran igual
+ * (AFAC $200/hr × 12.5 hr = $2,500). Las banderas raíz (`reparto_en_pesos`,
+ * `reparto_como_balance`) van aparte, como siempre.
+ */
+export function avionCombustible(): AvionReparto {
+  return {
+    aeronave: { id: "av-621", matricula: "N621TX", modelo: "Cessna 421C" },
+    ingresos: {
+      cobrado_usd: 45672.53,
+      cobrado_bruto_usd: 47172.53,
+      otros_ingresos_vuelatour_usd: 1500,
+      otros_ingresos_vuelatour_pendiente_usd: 0,
+      comisiones_venta_usd: 150.2,
+      pendiente_cobro_usd: 0,
+      pendiente_bruto_usd: 0,
+      vuelos_cobrados: 3,
+      vuelos_pendientes: 0,
+      cobros_sin_tc_mxn: 0,
+      otros_ingresos_avion_usd: 2698.6,
+      otros_ingresos_avion_sin_tc_mxn: 0,
+      cobrado_mxn: 787851.13,
+      comisiones_venta_mxn: 2591,
+      pendiente_cobro_mxn: 0,
+      otros_ingresos_avion_mxn: 46550.8,
+    },
+    horas_voladas_hr: 12.5,
+    gastos: {
+      directos_usd: 2352.94,
+      indirectos_usd: 800,
+      permisos_usd: 150,
+      otros_prorrateados_usd: 600,
+      gastos_sin_tc_count: 0,
+      gastos_sin_tc_mxn: 0,
+      directos_mxn: 40588.14,
+      indirectos_mxn: 13800,
+      permisos_mxn: 2587.5,
+      otros_prorrateados_mxn: 10350,
+      combustible_usd: 8537.83,
+      combustible_mxn: 147277.58,
+    },
+    reserva_overhaul_usd: 500,
+    reserva_overhaul_mxn: 8625,
+    reserva_overhaul_incompleta: false,
+    saldo_disponible_usd: 33280.16,
+    saldo_disponible_mxn: 574632.22,
+    pesos_sin_tc_usd: 0,
+    afac_reservado_usd: 2500,
+    afac_reservado_mxn: 42575.49,
+    reserva_retenida_usd: 204.6,
+    reserva_retenida_mxn: 3529.35,
+    utilidad_antes_gastos_usd: 40669.39,
+    utilidad_antes_gastos_mxn: 702096.5,
+    reparto: [
+      {
+        socio_id: "s-hernan",
+        socio_nombre: "Hernán Pérez",
+        porcentaje: 40.92,
+        utilidad_usd: 13618.24,
+        utilidad_mxn: 235139.5,
+        reserva_usd: 204.6,
+        reserva_mxn: 3529.35,
+        descuenta_reserva: true,
+        monto_usd: 13413.64,
+        monto_mxn: 231610.15,
+      },
+      {
+        socio_id: "s-vt",
+        socio_nombre: "VuelaTour",
+        porcentaje: 59.08,
+        utilidad_usd: 19661.92,
+        utilidad_mxn: 339492.72,
+        reserva_usd: 295.4,
+        reserva_mxn: 5095.65,
+        descuenta_reserva: false,
+        monto_usd: 19661.92,
+        monto_mxn: 339492.72,
+      },
+    ],
+    reparto_porcentaje_total: 100,
+    detalle: {
+      vuelos: [],
+      gastos_por_categoria: [
+        { categoria: "GAS", grupo: "COMBUSTIBLE", count: 2, usd: 8537.83, sin_tc_count: 0, sin_tc_mxn: 0, etiqueta: "Combustible", mxn: 147277.58 },
+        { categoria: "ATERRIZAJE", grupo: "DIRECTO", count: 1, usd: 1449.28, sin_tc_count: 0, sin_tc_mxn: 0, etiqueta: "Aterrizajes", mxn: 25000 },
+        { categoria: "HOTEL", grupo: "DIRECTO", count: 1, usd: 903.66, sin_tc_count: 0, sin_tc_mxn: 0, etiqueta: "Hotel", mxn: 15588.14 },
+        { categoria: "HANGAR", grupo: "INDIRECTO", count: 1, usd: 800, sin_tc_count: 0, sin_tc_mxn: 0, etiqueta: "Hangar", mxn: 13800 },
+        { categoria: "PERMISO", grupo: "PERMISO", count: 1, usd: 150, sin_tc_count: 0, sin_tc_mxn: 0, etiqueta: "Permiso AFAC", mxn: 2587.5 },
+      ],
+      reserva: { horas_hr: 12.5, tarifa_hora_usd: 40, monto_usd: 500, monto_mxn: 8625, tc: 17.25 },
+      otros_ingresos_avion: [{ ...ING4, usd: 2698.6, mxn: 46550.8 }],
+      afac: { tarifa_usd_hr: 200, horas_cobradas_hr: 12.5, monto_usd: 2500, monto_mxn: 42575.49 },
+    },
+  };
+}
+
+/** El mismo avión como lo mandaría un API ≤ 0.0.102: sin las llaves del combustible ni el subtotal. */
+export function sinCombustible(a: AvionReparto): AvionReparto {
+  const gastos = { ...a.gastos };
+  delete gastos.combustible_usd;
+  delete gastos.combustible_mxn;
+  const out: AvionReparto = { ...a, gastos };
+  delete out.utilidad_antes_gastos_usd;
+  delete out.utilidad_antes_gastos_mxn;
+  return out;
+}

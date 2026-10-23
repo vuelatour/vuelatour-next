@@ -32,7 +32,7 @@ import {
   textoUsdGasto,
   textoVueloGasto,
 } from "@/lib/admin/reparto-avion";
-import { montoPrincipal } from "@/lib/admin/reparto-pesos";
+import { combustibleSeparado, montoPrincipal } from "@/lib/admin/reparto-pesos";
 import type { AvionReparto, FilaGastoDetalle } from "@/types/profit-sharing";
 import { MontoDobleCelda } from "./cascada-avion";
 
@@ -46,7 +46,9 @@ const BADGE_AMBAR = "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-a
  * concepto, vuelo (enlace), monto original, T.C. (badge si fue el oficial),
  * pesos y dólares; subtotal por grupo comparado con la fila de la cascada.
  * Es la respuesta a «para saber cuáles son esos permisos, gastos indirectos
- * y directos de los que habla el Excel». Sin hooks (servidor).
+ * y directos de los que habla el Excel». Con el combustible separado (API
+ * 0.0.103) el grupo «Combustible» va tras los directos y cuadra contra su
+ * fila de la cascada. Sin hooks (servidor).
  */
 export function GastosAvionTable({
   avion,
@@ -57,7 +59,7 @@ export function GastosAvionTable({
   filas: FilaGastoDetalle[] | null | undefined;
   enPesos: boolean;
 }) {
-  const grupos = agruparGastosDetalle(filas);
+  const grupos = agruparGastosDetalle(filas, { conCombustible: combustibleSeparado(avion) });
   if (grupos.length === 0) {
     return <p className="text-sm text-muted-foreground">{TEXTO_SIN_GASTOS_AVION}</p>;
   }
