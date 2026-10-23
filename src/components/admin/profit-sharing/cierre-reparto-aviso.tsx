@@ -5,6 +5,7 @@ import {
   folioDiferido,
   lineaDiferido,
   listasDiferidos,
+  noCoincideSnapshot,
   textoBadgeCierrePeriodo,
   textoNoCoincideSnapshot,
   tituloBloquePasan,
@@ -17,16 +18,18 @@ import type { CierrePeriodoAditivo, VueloDiferidoMarca } from "@/types/cierres";
 /**
  * Cierre de mes en el REPARTO (16-oct-2026, API 0.0.88). Sin hooks: sirve en
  * la página (servidor) y en la card por avión. Todo sale de `cierre` del
- * API: el estado del periodo, el aviso rojo si los números de hoy ya no
- * coinciden con el cierre guardado y las listas de vuelos que SALEN (pasan
- * al mes siguiente, no se reparten), ENTRAN (vienen de un mes anterior) o
- * PASARÍAN al cerrar un mes abierto. Sin `cierre` (API previo) ⇒ nada.
+ * API: el estado del periodo (desde el cierre por avión, API 0.0.104, puede
+ * ser «Parcial» con los aviones cerrados en el tooltip), el aviso rojo si
+ * los números de hoy ya no coinciden con lo congelado (flota cerrada o
+ * parcial) y las listas de vuelos que SALEN (pasan al mes siguiente, no se
+ * reparten), ENTRAN (vienen de un mes anterior) o PASARÍAN al cerrar un mes
+ * abierto. Sin `cierre` (API previo) ⇒ nada.
  */
 export function CierreRepartoAviso({ cierre }: { cierre: CierrePeriodoAditivo | null | undefined }) {
   if (!cierre || !cierre.disponible) return null;
   const badge = textoBadgeCierrePeriodo(cierre);
   const { salen, entran, pasarian } = listasDiferidos(cierre);
-  const noCoincide = cierre.estado === "CERRADO" && cierre.coincide_con_snapshot === false;
+  const noCoincide = noCoincideSnapshot(cierre);
   if (!badge && !noCoincide && salen.length + entran.length + pasarian.length === 0) return null;
   return (
     <div className="space-y-2" data-cierre-reparto>

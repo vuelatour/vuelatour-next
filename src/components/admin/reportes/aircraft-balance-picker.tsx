@@ -1,7 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
-import { descargaVistaBalance } from "@/lib/admin/balance-vista";
+import { ChipEstadoCierre } from "@/components/admin/chip-cierre";
+import { descargaVistaBalance, puedeAbrirBalances } from "@/lib/admin/balance-vista";
 import { tituloColorAvion } from "@/lib/admin/calendario-semaforo";
+import {
+  badgeEstadoCierre,
+  estadoAvionDeMes,
+  type MesDeVista,
+  type ModoCierre,
+} from "@/lib/admin/cierre-mes";
 import {
   ARIA_LISTA_AVIONES,
   ETIQUETA_EXCEL_AVION,
@@ -13,6 +20,8 @@ import {
   tituloExcelAvion,
   type AvionBalanceItem,
 } from "@/lib/admin/reportes-ui";
+import type { MesCierre } from "@/types/cierres";
+import { CierreAvionAcciones } from "./cierre-avion-acciones";
 import { VerEnPantallaLink } from "./ver-en-pantalla-link";
 
 /** El nombre de siempre, por compatibilidad: lo que cada tile necesita. */
@@ -43,18 +52,41 @@ export type AircraftPickItem = AvionBalanceItem;
  *   parten «Ver en pantalla» + «Excel» (~223 px) en dos renglones.
  * - `disponibles=false` = el catálogo NO cargó y se DICE; `[]` con
  *   `disponibles` = de verdad no hay aviones. Un 502 jamás se pinta como «sin aviones».
+ *
+ * CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105; pedido del
+ * cliente: «un botón de cierre de mes individual en cada avión»): con
+ * `periodo` (el mes del selector de arriba, `mesDeVistaCierre`) y `mesCierre`
+ * (la fila del mes de `GET /v1/cierres`), cada tile lleva el chip del estado
+ * de ESE avión y, para ADMIN/FACTURACION, «Cerrar <mes>» (o «Reabrir» si
+ * está cerrado y el rol puede) vía `CierreAvionAcciones` (cliente). En modo
+ * `GLOBAL` (API previo) el chip es el del mes global y no hay botones.
+ * `rol` decide además si se ofrecen los enlaces del libro
+ * (`puedeAbrirBalances`: ADMIN y ANALISTA); FACTURACION ve el tile con
+ * matrícula, modelo, chip y botón, sin «Ver en pantalla» ni «Excel».
  */
 export function AircraftBalancePicker({
   aircraft,
   disponibles = true,
   desde,
   hasta,
+  rol = null,
+  mesCierre = null,
+  periodo = null,
+  modoCierre = "GLOBAL",
 }: {
   aircraft: AircraftPickItem[];
   /** false = el catálogo NO cargó (se dice); true con [] = de verdad no hay aviones. */
   disponibles?: boolean;
   desde: string;
   hasta: string;
+  /** Rol de quien mira: enlaces del libro solo a quien los abre; botones de cierre según `cierre-mes.ts`. */
+  rol?: string | null;
+  /** La fila del mes de `GET /v1/cierres` (null = no se leyó o el mes no está en la lista). */
+  mesCierre?: MesCierre | null;
+  /** El mes del periodo elegido (null = el rango no es un mes: sin chips ni botones). */
+  periodo?: MesDeVista | null;
+  /** `POR_AVION` solo con `por_avion: true` del API; `GLOBAL` = chip del mes global, sin botones. */
+  modoCierre?: ModoCierre;
 }) {
   if (!disponibles) {
     return (
@@ -70,12 +102,19 @@ export function AircraftBalancePicker({
       </p>
     );
   }
+  const abreLibros = puedeAbrirBalances(rol);
+  // Modo GLOBAL: el mismo chip del mes para todos (solo si el mes está en la lista).
+  const badgeGlobal =
+    periodo && modoCierre === "GLOBAL" && mesCierre ? badgeEstadoCierre(mesCierre, periodo.mes, periodo.enCurso) : null;
   return (
     <ul role="list" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label={ARIA_LISTA_AVIONES}>
       {aircraft.map((avion) => {
         // MISMA ruta, archivo y query que la vista en pantalla (fuente única
         // congelada en balance-vista.test.ts).
-        const descarga = descargaVistaBalance({ tipo: "avion", avionId: avion.id }, desde, hasta, avion.matricula);
+        const descarga = abreLibros
+          ? descargaVistaBalance({ tipo: "avion", avionId: avion.id }, desde, hasta, avion.matricula)
+          : null;
+        const filaAvion = periodo && modoCierre === "POR_AVION" ? estadoAvionDeMes(mesCierre, avion.id) : null;
         return (
           <li
             key={avion.id}
@@ -105,25 +144,44 @@ export function AircraftBalancePicker({
               </p>
               <p className="truncate text-xs text-muted-foreground">{avion.modelo}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {/* «Ver en pantalla» PRIMERO: la posición es la jerarquía (prioridad a la vista, 12-oct-2026). */}
-              <VerEnPantallaLink
-                destino={{ tipo: "avion", avionId: avion.id }}
-                desde={desde}
-                hasta={hasta}
-                aria-label={ariaVerEnPantalla(avion.matricula)}
-              />
-              {descarga && (
-                <ExcelExportButton
-                  path={descarga.path}
-                  filename={descarga.filename}
-                  query={descarga.query}
-                  label={ETIQUETA_EXCEL_AVION}
-                  title={tituloExcelAvion(avion.matricula)}
-                  aria-label={tituloExcelAvion(avion.matricula)}
+            {abreLibros && (
+              <div className="flex flex-wrap gap-2">
+                {/* «Ver en pantalla» PRIMERO: la posición es la jerarquía (prioridad a la vista, 12-oct-2026). */}
+                <VerEnPantallaLink
+                  destino={{ tipo: "avion", avionId: avion.id }}
+                  desde={desde}
+                  hasta={hasta}
+                  aria-label={ariaVerEnPantalla(avion.matricula)}
                 />
-              )}
-            </div>
+                {descarga && (
+                  <ExcelExportButton
+                    path={descarga.path}
+                    filename={descarga.filename}
+                    query={descarga.query}
+                    label={ETIQUETA_EXCEL_AVION}
+                    title={tituloExcelAvion(avion.matricula)}
+                    aria-label={tituloExcelAvion(avion.matricula)}
+                  />
+                )}
+              </div>
+            )}
+            {/* CIERRE POR AVIÓN: chip del avión + «Cerrar <mes>» / «Reabrir»;
+                en modo GLOBAL, solo el chip del mes. */}
+            {periodo && modoCierre === "POR_AVION" && (
+              <CierreAvionAcciones
+                mes={periodo.mes}
+                enCurso={periodo.enCurso}
+                rol={rol}
+                avion={filaAvion}
+                aeronaveId={avion.id}
+                matricula={avion.matricula}
+              />
+            )}
+            {badgeGlobal && (
+              <div className="flex flex-wrap items-center gap-2" data-cierre-avion={avion.matricula}>
+                <ChipEstadoCierre badge={badgeGlobal} />
+              </div>
+            )}
           </li>
         );
       })}

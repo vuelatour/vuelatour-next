@@ -7936,6 +7936,16 @@ sin tocar `pre-cierre-card.tsx`, `pre-cierre-card-cargando.tsx`,
   ruta, archivo `balance-<matricula>-<desde>-<hasta>.xlsx` y query que la
   vista); `components/admin/texto-plegable.tsx` (`TextoPlegable`,
   server-safe, `<details>` cerrado sin memoria) es reutilizable.
+- **BALANCES lleva los botones de CIERRE (23-oct-2026, API 0.0.104)**: la
+  card «Balance mensual» termina con `CierreFlotaBloque` (chip de la flota
+  «Abierto · 0 de 7» / «Parcial · 3 de 7» / «Cerrado» + «Cerrar <mes> (los N
+  aviones abiertos)» / «Reabrir») y cada tile de «Balance por avión» lleva el
+  chip del avión y su «Cerrar <mes>» / «Reabrir» (`CierreAvionAcciones`,
+  cliente; el picker sigue server-safe con props aditivas `rol`, `mesCierre`,
+  `periodo`, `modoCierre`). La sección se pinta también a FACTURACION
+  (`muestraSeccionBalances`), sin los enlaces del libro. La burbuja «Cierre
+  formal del mes» de «Cierre y reparto del periodo» se retiró. Detalle en
+  «Cierre de mes POR AVIÓN y vuelos diferidos».
 - **`aircraft-balance-picker.tsx` ya es una GRILLA** (mismo archivo y mismo
   export `AircraftBalancePicker`; sin `"use client"`, sin `useState`, sin
   `SearchableSelect`, sin `descargarDelApi` ni toast propio): un `<li
@@ -11442,27 +11452,173 @@ y con la migración el shape viejo también AGREGA).
   confirmación, refresco al cerrar y visores). `verFacturaGastoAction` y
   `subirFacturaGastoAction` (una sola) se fueron: no tenían otros usuarios.
 
-## Cierre de mes y vuelos diferidos (16-oct-2026, API 0.0.88)
+## Cierre de mes POR AVIÓN y vuelos diferidos (23-oct-2026, API 0.0.104, invariante 105; antes 16-oct-2026, API 0.0.88)
 
-Pedido del cliente: «Necesito una opción para cerrar el mes que no es el
-corriente, para el mes anterior … y los vuelos que aún no se cobren se marquen
-en el balance y se muevan para el siguiente mes hasta que se cobre y
-complete». Decisiones ya tomadas (16-oct): el vuelo pasa COMPLETO (venta,
-gastos del vuelo, comisiones; las HORAS se quedan en su fecha real), un cobro
-parcial también pasa, mes cerrado = BLOQUEADO para capturas (409
-`MES_CERRADO`) y «Reabrir» solo ADMIN con confirmación. Contrato del API:
-invariante 89 (`cierre_mes`, `cierre_mes_vuelo`, `vuelo.periodo_contable` /
-`fecha_contable`, migración `20261016000004`). **El panel no calcula dinero
-ni decide qué vuelo pasa**: copia montos, leyendas (`leyenda`,
-`cierre_marca`) y textos de los 409 del API. Fuentes únicas PURAS:
-`lib/admin/cierre-mes.ts` (roles, textos, badge, normalización, chips) y
-`lib/admin/mes-cerrado.ts` (aviso del 409); pruebas en
-`lib/admin/__tests__/cierre-mes.test.ts`, `mes-cerrado.test.ts` y
-`components/admin/reportes/__tests__/cierre-mes-ui.test.tsx`. Tipos en
-`types/cierres.ts`.
+Pedido del cliente (23-oct-2026, con capturas de `/admin/reportes`):
+«eliminar la burbuja independiente de cierre de mes, y poner un botón de
+cierre de mes individual en cada avión». Pedido original (16-oct): «Necesito
+una opción para cerrar el mes que no es el corriente, para el mes anterior …
+y los vuelos que aún no se cobren se marquen en el balance y se muevan para
+el siguiente mes hasta que se cobre y complete».
 
-- **Reportes → «Cierre y reparto del periodo»** (`cierre-mes-card.tsx`,
-  servidor, en su PROPIO Suspense; `cierre-mes-acciones.tsx`, cliente). Lee
+**Modelo (contrato API 0.0.104, invariante 105)**: el cierre es POR AVIÓN y
+por mes (`cierre_mes_avion (periodo, aeronave_id)`): cerrar un avión congela
+SU reparto (snapshot), difiere SUS vuelos sin cobro completo al corte (el
+vuelo pasa COMPLETO: venta, gastos del vuelo, comisiones; las HORAS se quedan
+en su fecha real; un cobro parcial también pasa) y activa el candado 409
+`MES_CERRADO` para las capturas que tocan a ESE avión en ese mes. La fila
+global `cierre_mes` es DERIVADA: la escribe el API al cerrar el ÚLTIMO avión
+activo (y pasa a REABIERTO al reabrir uno), así que «mes cerrado = toda la
+flota activa cerrada» para los lectores globales de siempre. Estado del mes
+hacia afuera: `ABIERTO | PARCIAL | CERRADO | REABIERTO` (`PARCIAL` = algún
+avión cerrado y la flota activa incompleta; derivado). Los inactivos no
+cuentan para la flota pero se cierran si tienen fila. Multi-avión: el PRIMER
+avión que cierra decide por el vuelo entero (B lo ve como «compartido con A
+(cerrado)» y, si A lo dejó «Se queda», bloqueado con «decidido al cerrar
+A»); reabrir A rebota con 409 `OTRO_AVION_CERRADO` si comparte un vuelo
+diferido con otro avión cerrado. Bloqueantes «sin avión» bloquean a todos;
+los atribuibles solo al avión al que pertenecen (la previa trae
+`bloqueantes` propios + `bloqueantes_otros_aviones`, informativos).
+`MES_ANTERIOR_ABIERTO` es por avión. «Reabrir» solo ADMIN con motivo.
+Decisiones tomadas SIN el cliente (reversibles): multi-avión decide el
+primero; sin-avión bloquea a todos; registros sin avión solo con la flota
+cerrada; inactivos fuera de la flota.
+
+**El panel no calcula dinero ni decide qué vuelo pasa**: copia montos,
+leyendas (`leyenda`, `cierre_marca`) y textos de los 409 del API. Fuentes
+únicas PURAS: `lib/admin/cierre-mes.ts` (roles, textos, badges, resumen de
+flota, normalización defensiva, chips) y `lib/admin/mes-cerrado.ts` (aviso
+del 409); pruebas en `lib/admin/__tests__/cierre-mes.test.ts`,
+`mes-cerrado.test.ts`, `app/admin/reportes/__tests__/cierre-actions.test.ts`,
+`components/admin/reportes/__tests__/cierre-mes-ui.test.tsx` y
+`balances-hero.test.tsx`, `lib/admin/__tests__/reportes-balance.test.ts`.
+Tipos en `types/cierres.ts` (`EstadoCierreMes` gana `PARCIAL`,
+`EstadoCierreAvion`, `MesCierreAvion`, `MesCierre.aviones_activos /
+aviones_cerrados / aviones[]`, `CierresRespuesta.por_avion`,
+`PreviaCierre.aeronave / aviones_alcance / bloqueantes_otros_aviones`,
+`VueloDiferido.multi_avion / otros_aviones / decidido_por`,
+`CierreAvionAditivo` = `aviones[].cierre_avion` del reparto /
+`cierre.cierre_avion` de la pantalla por avión, `CierrePeriodoAditivo.
+aviones_cerrados / estado_flota`, `DetallesMesCerrado.aeronave`).
+
+- **Dónde se cierra (23-oct-2026)**: la burbuja «Cierre formal del mes» se
+  RETIRÓ de «Cierre y reparto del periodo» (esa card conserva el selector de
+  mes y las descargas); `cierre-mes-card.tsx` se borró. El cierre vive en
+  BALANCES de `/admin/reportes`, con el MES del selector de arriba
+  (`mesDeVistaCierre`: mes completo o «Este mes»):
+  - Card **«Balance mensual»** → `CierreFlotaBloque`
+    (`components/admin/reportes/cierre-flota-bloque.tsx`, server-safe):
+    rótulo «Cierre de septiembre 2026» + chip de la FLOTA (`resumenFlota`:
+    «Abierto · 0 de 7», «Parcial · 3 de 7» con `title` «3 de 7 aviones
+    cerrados», «Cerrado» (title «Cerrado el 16-oct-2026 por Ale · 7 de 7
+    aviones cerrados»), «Reabierto», «En curso (se cierra a partir del
+    1-nov)») + `AYUDA_CIERRE_AVION` + botones «Cerrar septiembre 2026 (los N
+    aviones abiertos)» / «… (el avión abierto)» (`etiquetaBotonCerrarFlota`;
+    ADMIN y FACTURACION; `POST /v1/cierres/:periodo` SIN `aeronave_id` cierra
+    en orden todos los activos abiertos con una sola previa) y «Reabrir mes»
+    (flota cerrada) / «Reabrir los 3 aviones cerrados» (mes parcial;
+    `etiquetaBotonReabrirFlota`; solo ADMIN). En «Este mes» el chip sí, los
+    botones no (y la guía «elige «Mes pasado · Septiembre 2026»»).
+  - Cada tile de **«Balance por avión»** (`aircraft-balance-picker.tsx`, sigue
+    server-safe; props ADITIVAS `rol`, `mesCierre`, `periodo`, `modoCierre`)
+    → hijo CLIENTE `CierreAvionAcciones` (`cierre-avion-acciones.tsx`): chip
+    del AVIÓN (`badgeEstadoAvion` de `meses[].aviones[]`: «Abierto» /
+    «Cerrado el 16-oct-2026 por Ale» / «Reabierto el … (motivo)» / «En
+    curso…») y, para ADMIN/FACTURACION, botón «Cerrar septiembre 2026»
+    (`aria-label`/`title` «Cerrar septiembre 2026 · N621TX») o «Reabrir»
+    (solo ADMIN, avión CERRADO). Deshabilitado con el texto por avión
+    (`textoNoCerrableDeAvion`: «N621TX: Para cerrar octubre 2026 primero
+    cierra septiembre 2026.»). ANALISTA ve chips sin botones. Un avión sin
+    fila en el mes (inactivo sin cierre) no lleva chip ni botón.
+  - **Roles**: la sección BALANCES se pinta también a FACTURACION
+    (`muestraSeccionBalances` = `puedeAbrirBalances` ∪ `puedeCerrarMes`,
+    `reportes-ui.ts`) pero SIN «Ver en pantalla» / «Excel» ni el plegable
+    (`puedeAbrirBalances` sigue siendo ADMIN y ANALISTA): sus cards llevan
+    `TEXTO_BALANCES_SOLO_CIERRE` / `DESCRIPCION_BALANCE_POR_AVION_SOLO_CIERRE`
+    y los tiles solo matrícula, modelo, chip y botón. COORDINADOR/SOCIO
+    siguen con la card con candado. Cerrar = ADMIN y FACTURACION
+    (`puedeCerrarMes` / `puedeCerrarAvion`), reabrir = ADMIN
+    (`puedeReabrirMes` / `puedeReabrirAvion`).
+  - **FALLBACK GLOBAL** (`modoCierreDelApi(cierres)` = `'GLOBAL'` cuando
+    `por_avion` ≠ `true`: API ≤ 0.0.103 o sin la migración por avión): el
+    bloque de «Balance mensual» ofrece SOLO el flujo global de hoy («Cerrar
+    septiembre 2026» / «Reabrir mes», badge largo de siempre) y los tiles
+    muestran el chip del mes GLOBAL sin botones. `GET /v1/cierres` se lee en
+    la página (`getCierres`, `react.cache`, nunca lanza) y sus fallos siguen
+    con su texto (API 0.0.87, sin migración, error; sin permiso ⇒ nada).
+- **Diálogo «Cerrar» generalizado** (`cierre-mes-acciones.tsx`:
+  `CierreMesAcciones` / `DialogoCerrar` con `alcance: {aeronaveId,
+  matricula} | null`; el cuerpo es `CuerpoPrevia`, exportado para probarlo):
+  la previa viaja con `aeronave_id` (`previaCierreAction(mes, incluir,
+  aeronaveId)` → `GET …/previa?aeronave_id=<uuid>&incluir=a,b`); título
+  «Cerrar septiembre 2026 · N621TX» y descripción por avión
+  (`textoDescripcionCerrarAvion`); la previa de la flota dice «Cierra N4142R,
+  N58BT y N621TX (3 aviones abiertos).» (`textoAlcancePrevia`); en la tabla
+  «Vuelos que pasarán…» el vuelo multi-avión lleva bajo la matrícula
+  «compartido con N58BT (cerrado)» (`notaMultiAvion`); la casilla «Se queda
+  en <mes>» va marcada y deshabilitada con tooltip «Se queda en septiembre
+  2026 (decidido al cerrar N58BT)» cuando viene `decidido_por`
+  (`textoDecididoPor`); bloqueantes propios arriba y «Bloqueantes de otros
+  aviones (no impiden este cierre) · N» en un `<details>` plegado; reparto
+  antes/después solo del alcance (lo limita el API); casilla «Entiendo que
+  N621TX quedará bloqueado para capturas en septiembre 2026»;
+  `cerrarMesAction(mes, idsVistosEnPrevia(previa), incluir, aeronaveId)` con
+  `vuelos_esperados` = pasan + incluidos del alcance (`vuelosEsperadosDeAlcance`).
+  Respuesta: `decidirRespuestaCerrar` ⇒ éxito con toast «N621TX · septiembre
+  2026 cerrado. 2 vuelos pasan a octubre 2026.» (`textoToastCerradoAvion`) o
+  «Septiembre 2026 cerrado (N4142R, N58BT y N621TX). …»
+  (`textoToastCerradoFlota`, matrículas de `cierres[]`); `PREVIA_CAMBIO`
+  repinta; **`parcial`** (la flota falló a la mitad: `details.cerrados`) ⇒
+  toast «Se cerraron N621TX y N58BT; XB-ANU no: <message>»
+  (`textoCierreFlotaParcial`), cierra y refresca (lo cerrado se queda
+  cerrado). `DialogoReabrir` con matrícula («¿Reabrir septiembre 2026 ·
+  N621TX?», `textoConfirmacionReabrirAvion`, toast
+  `textoToastReabiertoAvion`) y 409 `OTRO_AVION_CERRADO` legible: «Primero
+  reabre N58BT: comparte con N621TX un vuelo que pasó de mes al cerrar.»
+  (`mensajeErrorCierre(r, "reabrir", mes, matricula)` lee
+  `details.matriculas | aviones | cerrados`). `textoConfirmacionReabrir(mes,
+  null)` ya NO afirma «ningún vuelo había pasado»: con conteo desconocido
+  (reabrir varios aviones de un mes parcial) dice «los vuelos que pasaron…».
+- **Server actions** (`app/admin/reportes/actions.ts`): `previaCierreAction`,
+  `cerrarMesAction` y `reabrirMesAction` ganan `aeronaveId?` (body
+  `aeronave_id`); un `aeronaveId` que no es uuid se RECHAZA sin red («No se
+  reconoce el avión»): jamás se degrada en silencio a «toda la flota».
+  `revalidarCierre` suma `/admin/profit-sharing/aviones/[id]`
+  (`revalidatePath(…, 'page')`) a Reportes, balance en pantalla y reparto.
+- **Chips en el resto del panel**: `TonoEstadoCierre` gana `parcial` (ámbar
+  claro) y `BadgeEstadoCierre.title` (tooltip; `ChipEstadoCierre` lo pinta);
+  `textoBadgeCierrePeriodo` ⇒ «Parcial · 3 aviones» con `title` «Cerrados:
+  N621TX, N58BT y XB-ANU» (`aviones_cerrados`) y, en el balance por avión
+  (`estado` = el del avión), `title` «Toda la flota: parcial (cerrados: …)»
+  (`estado_flota`). Reparto: `CierreRepartoAviso` alerta «no coincide» con
+  flota CERRADA o PARCIAL (`noCoincideSnapshot`); cada `AvionRepartoCard`
+  pinta `badgeCierreAvion(avion.cierre_avion)` («Cerrado el … por …») y el
+  badge rojo «No coincide con el cierre» (`noCoincideSnapshotAvion`). Pantalla
+  por avión: `badgeCierreDelAvion(datos.cierre, avion.cierre_avion)` (el del
+  avión gana; sin él, el global). Histórico: `textoEstadoCierreMes` conoce
+  «Parcial». 409 `MES_CERRADO` con `details.aeronave` ⇒ `avisoMesCerrado`
+  trae `matricula` y el respaldo sin `message` dice «N621TX · septiembre 2026
+  ya está cerrado. Reábrelo en Reportes para corregir.»; `hrefReabrir` sigue
+  apuntando al mes completo en Reportes (ahí viven los «Reabrir»).
+- **Lectura defensiva**: `normalizarCierres` lee `por_avion` (solo `true`
+  literal), `aviones_activos/aviones_cerrados` (enteros ≥ 0) y `aviones[]`
+  (`normalizarMesAvion`: sin `aeronave_id`, sin matrícula o con un estado
+  desconocido la fila se DESCARTA; basura ⇒ sin la llave; jamás un estado
+  inventado); `normalizarPrevia` lee `aeronave` (solo con id y matrícula; si
+  no, «toda la flota»), `aviones_alcance` y `bloqueantes_otros_aviones` ([]
+  con API previo).
+- **Orden de deploy**: migración `20261023000001_cierre_mes_avion` ⇒ API
+  0.0.104 ⇒ panel. Con el API nuevo sin la migración, `por_avion: false` ⇒
+  el panel ofrece el flujo global; con el panel nuevo y el API viejo, ídem.
+
+Lo que sigue (16–21-oct-2026) describe el cierre GLOBAL de origen; sigue
+vigente como FALLBACK y como base de la previa, las tablas, los 409 y los
+chips. La «card del cierre» que menciona ya no existe: hoy es
+`CierreFlotaBloque` dentro de «Balance mensual».
+
+- **HISTÓRICO (hasta el 23-oct-2026) Reportes → «Cierre y reparto del
+  periodo»** (`cierre-mes-card.tsx`, servidor, en su PROPIO Suspense —
+  BORRADO el 23-oct; `cierre-mes-acciones.tsx`, cliente, sigue). Leía
   `GET /v1/cierres` (`lib/api/cierres-server.ts`, `react.cache`, nunca lanza)
   y evalúa el MES del periodo (`mesDeVistaCierre`: mes calendario completo o
   «Este mes»; otro rango ⇒ guía «elige «Mes pasado · Septiembre 2026»»).

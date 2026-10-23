@@ -16,11 +16,25 @@
  * 2026 · pendiente de cobro: …» o, si el vuelo ya se cobró después del
  * corte, «Pasa a octubre 2026 · cobrado el 14-oct, después del 30-sep (…)»)
  * los arma el API y el panel los copia.
+ *
+ * CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105). Pedido del
+ * cliente: «eliminar la burbuja independiente de cierre de mes, y poner un
+ * botón de cierre de mes individual en cada avión». El cierre es por AVIÓN
+ * y por mes (`cierre_mes_avion`); la fila global del mes la deriva el API al
+ * cerrar el último avión activo. El panel: chip por avión en cada tile de
+ * «Balance por avión», chip de la flota («Parcial · 3 de 7») en «Balance
+ * mensual», y el diálogo de siempre con un `alcance` (un avión o la flota).
+ * FALLBACK: con `por_avion` ≠ true (API previo o sin la migración) el panel
+ * ofrece SOLO el flujo global de hoy (`modoCierreDelApi` = 'GLOBAL').
  */
 import type {
+  CierreAvionAditivo,
   CierrePeriodoAditivo,
   CierresRespuesta,
+  EstadoCierreAvion,
+  EstadoCierreMes,
   MesCierre,
+  MesCierreAvion,
   MotivoNoCerrable,
   PreviaCierre,
   VueloDiferido,
@@ -217,6 +231,8 @@ export function normalizarCierres(raw: unknown): CierresRespuesta | null {
   const meses = Array.isArray(r.meses) ? r.meses.flatMap((m) => normalizarMes(m) ?? []) : [];
   return {
     disponible: r.disponible,
+    // CIERRE POR AVIÓN: solo `true` literal enciende el flujo por avión.
+    por_avion: r.por_avion === true,
     inicio_oficial: typeof r.inicio_oficial === "string" ? r.inicio_oficial : null,
     mes_en_curso: typeof r.mes_en_curso === "string" ? r.mes_en_curso : "",
     meses,
@@ -231,7 +247,10 @@ function usuario(raw: unknown): { id: string; nombre: string } | null {
   return { id: typeof u.id === "string" ? u.id : "", nombre: u.nombre };
 }
 
-const ESTADOS = new Set(["ABIERTO", "CERRADO", "REABIERTO"]);
+/** Estados de la FLOTA (`PARCIAL` desde el cierre por avión, API 0.0.104). */
+const ESTADOS = new Set(["ABIERTO", "PARCIAL", "CERRADO", "REABIERTO"]);
+/** Estados de UN avión: nunca PARCIAL. */
+const ESTADOS_AVION = new Set(["ABIERTO", "CERRADO", "REABIERTO"]);
 const MOTIVOS = new Set([
   "MES_EN_CURSO",
   "MES_ANTERIOR_ABIERTO",
@@ -240,15 +259,55 @@ const MOTIVOS = new Set([
   "PERIODO_ANTES_DEL_INICIO",
 ]);
 
+function motivoDe(raw: unknown): MotivoNoCerrable | null {
+  return typeof raw === "string" && MOTIVOS.has(raw) ? (raw as MotivoNoCerrable) : null;
+}
+
+function enteroONada(raw: unknown): number | undefined {
+  return typeof raw === "number" && Number.isInteger(raw) && raw >= 0 ? raw : undefined;
+}
+
+/**
+ * Un avión de `meses[].aviones` (API 0.0.104). Sin `aeronave_id` o sin
+ * matrícula, o con un estado que el panel no conoce, la fila se DESCARTA:
+ * jamás se inventa un estado para un avión.
+ */
+function normalizarMesAvion(raw: unknown): MesCierreAvion | null {
+  if (!raw || typeof raw !== "object") return null;
+  const a = raw as Record<string, unknown>;
+  if (typeof a.aeronave_id !== "string" || a.aeronave_id === "") return null;
+  if (typeof a.matricula !== "string" || a.matricula.trim() === "") return null;
+  if (typeof a.estado !== "string" || !ESTADOS_AVION.has(a.estado)) return null;
+  return {
+    aeronave_id: a.aeronave_id,
+    matricula: a.matricula.trim(),
+    modelo: typeof a.modelo === "string" ? a.modelo : null,
+    // Sin la llave se asume activo (el API lista los activos siempre).
+    activa: a.activa !== false,
+    estado: a.estado as EstadoCierreAvion,
+    cerrado_at: typeof a.cerrado_at === "string" ? a.cerrado_at : null,
+    cerrado_por: usuario(a.cerrado_por),
+    reabierto_at: typeof a.reabierto_at === "string" ? a.reabierto_at : null,
+    reabierto_por: usuario(a.reabierto_por),
+    reabierto_motivo: typeof a.reabierto_motivo === "string" ? a.reabierto_motivo : null,
+    version: typeof a.version === "number" ? a.version : 0,
+    puede_cerrar: a.puede_cerrar === true,
+    motivo_no_cerrable: motivoDe(a.motivo_no_cerrable),
+    totales: a.totales && typeof a.totales === "object" ? (a.totales as MesCierreAvion["totales"]) : null,
+  };
+}
+
 function normalizarMes(raw: unknown): MesCierre | null {
   if (!raw || typeof raw !== "object") return null;
   const m = raw as Record<string, unknown>;
   if (!esMesValido(m.periodo as string)) return null;
   const estado = typeof m.estado === "string" && ESTADOS.has(m.estado) ? m.estado : "ABIERTO";
-  const motivo =
-    typeof m.motivo_no_cerrable === "string" && MOTIVOS.has(m.motivo_no_cerrable)
-      ? (m.motivo_no_cerrable as MotivoNoCerrable)
-      : null;
+  const motivo = motivoDe(m.motivo_no_cerrable);
+  // CIERRE POR AVIÓN: las tres llaves son ADITIVAS; basura ⇒ sin ellas
+  // (el panel se queda con la fila global, nunca inventa aviones).
+  const activos = enteroONada(m.aviones_activos);
+  const cerrados = enteroONada(m.aviones_cerrados);
+  const aviones = Array.isArray(m.aviones) ? m.aviones.flatMap((a) => normalizarMesAvion(a) ?? []) : undefined;
   return {
     periodo: m.periodo as string,
     estado: estado as MesCierre["estado"],
@@ -261,6 +320,9 @@ function normalizarMes(raw: unknown): MesCierre | null {
     puede_cerrar: m.puede_cerrar === true,
     motivo_no_cerrable: motivo,
     totales: m.totales && typeof m.totales === "object" ? (m.totales as MesCierre["totales"]) : null,
+    ...(activos !== undefined ? { aviones_activos: activos } : {}),
+    ...(cerrados !== undefined ? { aviones_cerrados: cerrados } : {}),
+    ...(aviones !== undefined ? { aviones } : {}),
   };
 }
 
@@ -271,12 +333,24 @@ export function normalizarPrevia(raw: unknown): PreviaCierre | null {
   if (!esMesValido(p.periodo as string) || typeof p.listo !== "boolean") return null;
   const lista = (v: unknown): VueloDiferido[] =>
     Array.isArray(v) ? v.filter((x): x is VueloDiferido => !!x && typeof x === "object" && "id" in x) : [];
-  const motivo =
-    typeof p.motivo_no_cerrable === "string" && MOTIVOS.has(p.motivo_no_cerrable)
-      ? (p.motivo_no_cerrable as MotivoNoCerrable)
-      : null;
+  const motivo = motivoDe(p.motivo_no_cerrable);
   const t = (p.totales && typeof p.totales === "object" ? p.totales : {}) as Record<string, unknown>;
   const num = (k: string) => (typeof t[k] === "number" ? (t[k] as number) : 0);
+  // CIERRE POR AVIÓN (API 0.0.104): el alcance de la previa. `aeronave`
+  // solo con id Y matrícula (si no, se trata como «toda la flota»).
+  const ae = p.aeronave && typeof p.aeronave === "object" ? (p.aeronave as Record<string, unknown>) : null;
+  const aeronave =
+    ae && typeof ae.id === "string" && typeof ae.matricula === "string"
+      ? { id: ae.id, matricula: ae.matricula, modelo: typeof ae.modelo === "string" ? ae.modelo : null }
+      : null;
+  const alcance = Array.isArray(p.aviones_alcance)
+    ? p.aviones_alcance.flatMap((x) => {
+        const a = x && typeof x === "object" ? (x as Record<string, unknown>) : null;
+        return a && typeof a.aeronave_id === "string" && typeof a.matricula === "string"
+          ? [{ aeronave_id: a.aeronave_id, matricula: a.matricula }]
+          : [];
+      })
+    : [];
   return {
     periodo: p.periodo as string,
     estado: typeof p.estado === "string" && ESTADOS.has(p.estado) ? (p.estado as PreviaCierre["estado"]) : "ABIERTO",
@@ -284,7 +358,12 @@ export function normalizarPrevia(raw: unknown): PreviaCierre | null {
     motivo_no_cerrable: motivo,
     texto_no_cerrable:
       typeof p.texto_no_cerrable === "string" && p.texto_no_cerrable.trim() !== "" ? p.texto_no_cerrable.trim() : null,
+    aeronave,
+    aviones_alcance: alcance,
     bloqueantes: Array.isArray(p.bloqueantes) ? (p.bloqueantes as PreviaCierre["bloqueantes"]) : [],
+    bloqueantes_otros_aviones: Array.isArray(p.bloqueantes_otros_aviones)
+      ? (p.bloqueantes_otros_aviones as PreviaCierre["bloqueantes"])
+      : [],
     vuelos_que_pasan: lista(p.vuelos_que_pasan),
     vuelos_que_vienen: lista(p.vuelos_que_vienen),
     // INCLUIR EN EL MES (API 0.0.102): sin la llave, [] (API previo).
@@ -324,34 +403,69 @@ export function mesesCerrados(cierres: CierresRespuesta | null): string[] {
 // Badge de estado del mes
 // =============================================================================
 
-export type TonoEstadoCierre = "abierto" | "cerrado" | "reabierto" | "en-curso";
+export type TonoEstadoCierre = "abierto" | "parcial" | "cerrado" | "reabierto" | "en-curso";
 
 export interface BadgeEstadoCierre {
   tono: TonoEstadoCierre;
   texto: string;
+  /** Tooltip (p. ej. «3 de 7 aviones cerrados»); ausente ⇒ sin `title`. */
+  title?: string;
+}
+
+/** Lo que el badge necesita de un mes o de un avión del mes (misma forma). */
+type FilaEstadoCierre = Pick<
+  MesCierre,
+  "estado" | "cerrado_at" | "cerrado_por" | "reabierto_at" | "reabierto_por" | "reabierto_motivo"
+> &
+  Partial<Pick<MesCierre, "aviones_activos" | "aviones_cerrados">>;
+
+/** «Cerrado el 16-oct-2026 por Ale» (fecha Cancún + quién). */
+function textoCerradoEl(f: Pick<FilaEstadoCierre, "cerrado_at" | "cerrado_por">): string {
+  const por = f.cerrado_por?.nombre ? ` por ${f.cerrado_por.nombre}` : "";
+  return `Cerrado el ${fechaCortaCancun(f.cerrado_at)}${por}`;
+}
+
+/** «Reabierto el 17-oct-2026 por Ale (motivo)». */
+function textoReabiertoEl(f: Pick<FilaEstadoCierre, "reabierto_at" | "reabierto_por" | "reabierto_motivo">): string {
+  const por = f.reabierto_por?.nombre ? ` por ${f.reabierto_por.nombre}` : "";
+  const motivo = f.reabierto_motivo ? ` (${f.reabierto_motivo})` : "";
+  return `Reabierto el ${fechaCortaCancun(f.reabierto_at)}${por}${motivo}`;
+}
+
+/** «En curso (se cierra a partir del 1-nov)». */
+function badgeEnCurso(mes: string): BadgeEstadoCierre {
+  const sig = sumarMeses(mes, 1);
+  return {
+    tono: "en-curso",
+    texto: sig ? `En curso (se cierra a partir del 1-${MESES_CORTOS[Number(sig.slice(5, 7)) - 1]})` : "En curso",
+  };
+}
+
+/** «3 de 7 aviones cerrados» (solo con los dos conteos del API). */
+function textoAvionesCerrados(f: Partial<Pick<MesCierre, "aviones_activos" | "aviones_cerrados">>): string | null {
+  if (typeof f.aviones_activos !== "number" || typeof f.aviones_cerrados !== "number") return null;
+  return `${f.aviones_cerrados} de ${f.aviones_activos} aviones cerrados`;
 }
 
 /**
  * «Abierto» · «Cerrado el 16-oct-2026 por Ale» · «Reabierto el 17-oct-2026 por
- * Ale (motivo)» · «En curso (se cierra a partir del 1-nov)». Un mes cerrado
- * manda aunque sea el mes en curso (imposible hoy; se deja explícito).
+ * Ale (motivo)» · «En curso (se cierra a partir del 1-nov)» · «Parcial · 3
+ * de 7» (cierre por avión: `title` «3 de 7 aviones cerrados»). Sirve para la
+ * fila del mes (flota) y para la de UN avión (`MesCierreAvion`, misma forma).
+ * Un mes cerrado manda aunque sea el mes en curso (imposible hoy; se deja
+ * explícito).
  */
-export function badgeEstadoCierre(m: MesCierre | null, mes: string, enCurso: boolean): BadgeEstadoCierre {
-  if (m?.estado === "CERRADO") {
-    const por = m.cerrado_por?.nombre ? ` por ${m.cerrado_por.nombre}` : "";
-    return { tono: "cerrado", texto: `Cerrado el ${fechaCortaCancun(m.cerrado_at)}${por}` };
-  }
-  if (enCurso) {
-    const sig = sumarMeses(mes, 1);
+export function badgeEstadoCierre(m: FilaEstadoCierre | null, mes: string, enCurso: boolean): BadgeEstadoCierre {
+  if (m?.estado === "CERRADO") return { tono: "cerrado", texto: textoCerradoEl(m) };
+  if (enCurso) return badgeEnCurso(mes);
+  if (m?.estado === "REABIERTO") return { tono: "reabierto", texto: textoReabiertoEl(m) };
+  if (m?.estado === "PARCIAL") {
+    const conteo = textoAvionesCerrados(m);
     return {
-      tono: "en-curso",
-      texto: sig ? `En curso (se cierra a partir del 1-${MESES_CORTOS[Number(sig.slice(5, 7)) - 1]})` : "En curso",
+      tono: "parcial",
+      texto: conteo ? `Parcial · ${m.aviones_cerrados} de ${m.aviones_activos}` : "Parcial",
+      title: conteo ?? "Algunos aviones del mes ya están cerrados",
     };
-  }
-  if (m?.estado === "REABIERTO") {
-    const por = m.reabierto_por?.nombre ? ` por ${m.reabierto_por.nombre}` : "";
-    const motivo = m.reabierto_motivo ? ` (${m.reabierto_motivo})` : "";
-    return { tono: "reabierto", texto: `Reabierto el ${fechaCortaCancun(m.reabierto_at)}${por}${motivo}` };
   }
   return { tono: "abierto", texto: "Abierto" };
 }
@@ -431,8 +545,15 @@ export interface RespuestaAccionCierre {
  * aplicado ⇒ se pide recargar ANTES de reintentar (nunca «vuelve a
  * intentarlo» a ciegas sobre una escritura).
  */
-export function mensajeErrorCierre(r: RespuestaAccionCierre, accion: "cerrar" | "reabrir", mes: string): string {
+export function mensajeErrorCierre(
+  r: RespuestaAccionCierre,
+  accion: "cerrar" | "reabrir",
+  mes: string,
+  /** CIERRE POR AVIÓN: la matrícula del alcance (para el 409 `OTRO_AVION_CERRADO`). */
+  matricula?: string | null,
+): string {
   const m = mesEnMinuscula(mes);
+  const que = matricula ? `${matricula} · ${m}` : m;
   const hecho = accion === "cerrar" ? "quedó cerrado" : "quedó reabierto";
   if (r.status === 401) return "Tu sesión expiró. Vuelve a entrar e inténtalo de nuevo.";
   if (r.status === 403) {
@@ -445,38 +566,68 @@ export function mensajeErrorCierre(r: RespuestaAccionCierre, accion: "cerrar" | 
   }
   if (r.status === 503 && r.code === CODIGO_CIERRE_NO_DISPONIBLE) return TEXTO_CIERRE_SIN_MIGRACION;
   if (r.code === "SIN_CONEXION" || esErrorTecnico({ error: r.error, code: r.code })) {
-    return `No hubo respuesta del servidor. Recarga la página para ver si ${m} ${hecho} antes de volver a intentarlo.`;
+    return `No hubo respuesta del servidor. Recarga la página para ver si ${que} ${hecho} antes de volver a intentarlo.`;
+  }
+  if (r.code === CODIGO_OTRO_AVION_CERRADO) {
+    const legible = textoOtroAvionCerrado(r.details, matricula ?? null);
+    if (legible) return legible;
   }
   return (r.error ?? "").trim();
 }
 
 export type DecisionRespuestaCerrar =
-  | { tipo: "exito"; diferidos: number; incluidos: number }
+  | { tipo: "exito"; diferidos: number; incluidos: number; cerrados: string[] }
   | { tipo: "previa_nueva"; previa: PreviaCierre }
+  /** CIERRE POR AVIÓN (regla 7): la flota se cerró A MEDIAS (`details.cerrados`). */
+  | { tipo: "parcial"; cerrados: string[]; texto: string }
   | { tipo: "error"; texto: string };
+
+/** Las matrículas de una lista del API (`cierres[].matricula`, `details.cerrados`): texto u objetos con `matricula`. */
+export function matriculasDe(lista: unknown): string[] {
+  if (!Array.isArray(lista)) return [];
+  return lista.flatMap((x) => {
+    if (typeof x === "string") return x.trim() ? [x.trim()] : [];
+    const o = x && typeof x === "object" ? (x as { matricula?: unknown }) : null;
+    return typeof o?.matricula === "string" && o.matricula.trim() ? [o.matricula.trim()] : [];
+  });
+}
 
 /**
  * Qué hace el diálogo con la respuesta de `cerrarMesAction`: éxito (toast y
- * refresca), `PREVIA_CAMBIO` con la previa nueva (repinta, desmarca la
- * casilla) o el error con su texto. Cualquier rechazo deja la pantalla vieja
- * ⇒ el diálogo refresca al cerrarse.
+ * refresca; `cerrados` = matrículas de `cierres[]` o de `aeronave`),
+ * `PREVIA_CAMBIO` con la previa nueva (repinta, desmarca la casilla), el
+ * cierre de la flota que quedó a medias (`details.cerrados`: los que SÍ se
+ * cerraron se quedan cerrados ⇒ toast y refresca) o el error con su texto.
+ * Cualquier rechazo deja la pantalla vieja ⇒ el diálogo refresca al cerrarse.
  */
 export function decidirRespuestaCerrar(
-  r: RespuestaAccionCierre & { data?: { diferidos?: unknown[]; incluidos?: unknown[] } | null },
+  r: RespuestaAccionCierre & {
+    data?: { diferidos?: unknown[]; incluidos?: unknown[]; cierres?: unknown[]; aeronave?: unknown } | null;
+  },
   mes: string,
 ): DecisionRespuestaCerrar {
   if (r.ok && r.data) {
+    const deFilas = matriculasDe(r.data.cierres);
+    const cerrados = deFilas.length > 0 ? deFilas : matriculasDe([r.data.aeronave]);
     return {
       tipo: "exito",
       diferidos: Array.isArray(r.data.diferidos) ? r.data.diferidos.length : 0,
       incluidos: Array.isArray(r.data.incluidos) ? r.data.incluidos.length : 0,
+      cerrados,
     };
   }
   if (r.code === CODIGO_PREVIA_CAMBIO) {
     const nueva = previaDeDetails(r.details);
     if (nueva) return { tipo: "previa_nueva", previa: nueva };
   }
-  return { tipo: "error", texto: mensajeErrorCierre(r, "cerrar", mes) };
+  const texto = mensajeErrorCierre(r, "cerrar", mes);
+  const d = r.details && typeof r.details === "object" ? (r.details as { cerrados?: unknown; aeronave?: unknown }) : null;
+  const cerrados = matriculasDe(d?.cerrados);
+  if (cerrados.length > 0) {
+    const fallo = matriculasDe([d?.aeronave])[0] ?? null;
+    return { tipo: "parcial", cerrados, texto: textoCierreFlotaParcial(cerrados, fallo, texto) };
+  }
+  return { tipo: "error", texto };
 }
 
 // =============================================================================
@@ -612,17 +763,23 @@ export function textoToastReabierto(mes: string, revertidos: number): string {
 /**
  * Confirmación de «Reabrir mes»: «Al reabrir, los 5 vuelos que pasaron a
  * octubre regresan a septiembre y el mes vuelve a aceptar capturas. Octubre
- * debe estar abierto.» (con 0 diferidos se omite la primera parte).
+ * debe estar abierto.» Con 0 diferidos se dice que ninguno había pasado; con
+ * `null` (el conteo NO se conoce, p. ej. al reabrir varios aviones de un
+ * mes parcial) no se afirma ningún número.
  */
 export function textoConfirmacionReabrir(mes: string, nDiferidos: number | null): string {
   const sig = sumarMeses(mes, 1);
   const m = mesEnMinuscula(mes);
   const s = sig ? mesEnMinuscula(sig) : "el mes siguiente";
   const sMay = sig ? etiquetaMes(sig) : "El mes siguiente";
-  const regresan =
-    nDiferidos && nDiferidos > 0
-      ? `Al reabrir, ${nDiferidos === 1 ? "el vuelo que pasó" : `los ${nDiferidos} vuelos que pasaron`} a ${s} regresa${nDiferidos === 1 ? "" : "n"} a ${m} y el mes vuelve a aceptar capturas.`
-      : `Al reabrir, ${m} vuelve a aceptar capturas (ningún vuelo había pasado a ${s}).`;
+  let regresan: string;
+  if (nDiferidos === null) {
+    regresan = `Al reabrir, los vuelos que pasaron a ${s} regresan a ${m} y el mes vuelve a aceptar capturas.`;
+  } else if (nDiferidos > 0) {
+    regresan = `Al reabrir, ${nDiferidos === 1 ? "el vuelo que pasó" : `los ${nDiferidos} vuelos que pasaron`} a ${s} regresa${nDiferidos === 1 ? "" : "n"} a ${m} y el mes vuelve a aceptar capturas.`;
+  } else {
+    regresan = `Al reabrir, ${m} vuelve a aceptar capturas (ningún vuelo había pasado a ${s}).`;
+  }
   return `${regresan} ${sMay} debe estar abierto.`;
 }
 
@@ -705,6 +862,284 @@ export function previaDeDetails(details: unknown): PreviaCierre | null {
 }
 
 // =============================================================================
+// CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105)
+// =============================================================================
+
+/**
+ * Qué flujo ofrece el panel. `POR_AVION` solo con `por_avion: true` del API
+ * (la migración `cierre_mes_avion` aplicada). Con un API previo, sin la
+ * migración o sin respuesta ⇒ `GLOBAL`: el flujo de siempre desde la card
+ * «Balance mensual», sin botones por avión; los tiles muestran el chip del
+ * mes global.
+ */
+export type ModoCierre = "POR_AVION" | "GLOBAL";
+
+export function modoCierreDelApi(cierres: Pick<CierresRespuesta, "por_avion"> | null | undefined): ModoCierre {
+  return cierres?.por_avion === true ? "POR_AVION" : "GLOBAL";
+}
+
+/** El avión dentro del mes (null si el API no lo lista: sin fila y no activo, o API previo). */
+export function estadoAvionDeMes(m: MesCierre | null | undefined, aeronaveId: string): MesCierreAvion | null {
+  return m?.aviones?.find((a) => a.aeronave_id === aeronaveId) ?? null;
+}
+
+/** Los aviones ACTIVOS del mes que todavía no están cerrados (los que cierra «Cerrar <mes> (los N aviones abiertos)»). */
+export function avionesAbiertosDeMes(m: MesCierre | null | undefined): MesCierreAvion[] {
+  return (m?.aviones ?? []).filter((a) => a.activa && a.estado !== "CERRADO");
+}
+
+/** Los aviones del mes (activos o no) con fila CERRADO. */
+export function avionesCerradosDeMes(m: MesCierre | null | undefined): MesCierreAvion[] {
+  return (m?.aviones ?? []).filter((a) => a.estado === "CERRADO");
+}
+
+/**
+ * Cuántos aviones ACTIVOS siguen abiertos: de la lista si viene; si no, de
+ * los conteos `aviones_activos − aviones_cerrados`; sin nada ⇒ null.
+ */
+export function nAvionesAbiertos(m: MesCierre | null | undefined): number | null {
+  if (!m) return null;
+  if (m.aviones) return avionesAbiertosDeMes(m).length;
+  if (typeof m.aviones_activos === "number" && typeof m.aviones_cerrados === "number") {
+    return Math.max(0, m.aviones_activos - m.aviones_cerrados);
+  }
+  return null;
+}
+
+/**
+ * Chip de la FLOTA en la card «Balance mensual»: «Abierto · 0 de 7»,
+ * «Parcial · 3 de 7», «Cerrado», «Reabierto», «En curso (se cierra a partir
+ * del 1-nov)»; el `title` lleva el detalle (quién y cuándo, o el conteo).
+ * En modo GLOBAL (API previo) es el badge de siempre («Cerrado el 16-oct-2026
+ * por Ale»…).
+ */
+export function resumenFlota(
+  m: MesCierre | null,
+  mes: string,
+  enCurso: boolean,
+  modo: ModoCierre = "POR_AVION",
+): BadgeEstadoCierre {
+  if (modo === "GLOBAL") return badgeEstadoCierre(m, mes, enCurso);
+  const conteo = m ? textoAvionesCerrados(m) : null;
+  const sufijo =
+    m && typeof m.aviones_activos === "number" && typeof m.aviones_cerrados === "number"
+      ? ` · ${m.aviones_cerrados} de ${m.aviones_activos}`
+      : "";
+  if (m?.estado === "CERRADO") {
+    return { tono: "cerrado", texto: "Cerrado", title: [textoCerradoEl(m), conteo].filter(Boolean).join(" · ") };
+  }
+  if (enCurso) return badgeEnCurso(mes);
+  if (m?.estado === "REABIERTO") {
+    return { tono: "reabierto", texto: "Reabierto", title: [textoReabiertoEl(m), conteo].filter(Boolean).join(" · ") };
+  }
+  if (m?.estado === "PARCIAL") {
+    return { tono: "parcial", texto: `Parcial${sufijo}`, title: conteo ?? "Algunos aviones del mes ya están cerrados" };
+  }
+  return { tono: "abierto", texto: `Abierto${sufijo}`, title: conteo ?? "Ningún avión cerrado" };
+}
+
+/** Badge del AVIÓN en su tile (misma forma que la fila del mes). Sin fila ⇒ null (nada que decir). */
+export function badgeEstadoAvion(avion: MesCierreAvion | null, mes: string, enCurso: boolean): BadgeEstadoCierre | null {
+  if (!avion) return null;
+  return badgeEstadoCierre(avion, mes, enCurso);
+}
+
+/** ¿Se le OFRECE «Cerrar <mes>» en el tile de este avión? Rol + fila del avión no cerrada. */
+export function puedeCerrarAvion(avion: MesCierreAvion | null | undefined, rol?: string | null): boolean {
+  return !!avion && avion.estado !== "CERRADO" && puedeCerrarMes(rol);
+}
+
+/** ¿Se le OFRECE «Reabrir» en el tile de este avión? Rol + fila CERRADO. */
+export function puedeReabrirAvion(avion: MesCierreAvion | null | undefined, rol?: string | null): boolean {
+  return !!avion && avion.estado === "CERRADO" && puedeReabrirMes(rol);
+}
+
+/**
+ * Por qué el tile NO ofrece cerrar ESTE avión (botón deshabilitado con el
+ * texto): el código de su fila manda (`MES_ANTERIOR_ABIERTO` es por avión:
+ * «N621TX: Para cerrar octubre 2026 primero cierra septiembre 2026.»); el
+ * mes en curso es el mismo texto para todos; un `puede_cerrar:false` con un
+ * código desconocido igual deshabilita.
+ */
+export function textoNoCerrableDeAvion(avion: MesCierreAvion, mes: string, enCurso: boolean): string | null {
+  if (avion.estado === "CERRADO") return null;
+  const motivo = enCurso && !avion.motivo_no_cerrable ? "MES_EN_CURSO" : avion.motivo_no_cerrable;
+  if (motivo === "MES_EN_CURSO") return textoMotivoNoCerrable(motivo, mes);
+  if (motivo) return `${avion.matricula}: ${textoMotivoNoCerrable(motivo, mes)}`;
+  return avion.puede_cerrar ? null : `${avion.matricula}: ${etiquetaMes(mes)} todavía no se puede cerrar.`;
+}
+
+/** Alcance de un cierre/reapertura: UN avión o, con null, toda la flota (los activos abiertos). */
+export interface AlcanceCierre {
+  aeronaveId: string;
+  matricula: string;
+}
+
+/**
+ * `vuelos_esperados` de un alcance = los ids que la previa MOSTRÓ (pasan +
+ * se quedan, ya limitados por el API a los vuelos que tocan el alcance;
+ * incluye los «decididos» por otro avión, que viajan en `vuelos_incluidos`).
+ */
+export function vuelosEsperadosDeAlcance(previa: Pick<PreviaCierre, "vuelos_que_pasan" | "vuelos_incluidos">): string[] {
+  return idsVistosEnPrevia(previa);
+}
+
+/** «N4142R, N58BT y N621TX» (es-MX: coma y «y»). */
+export function listaMatriculas(matriculas: readonly string[]): string {
+  const l = matriculas.filter((m) => typeof m === "string" && m.trim()).map((m) => m.trim());
+  if (l.length === 0) return "";
+  if (l.length === 1) return l[0];
+  return `${l.slice(0, -1).join(", ")} y ${l[l.length - 1]}`;
+}
+
+export const AYUDA_CIERRE_AVION =
+  "El cierre es por avión y por mes completo, en orden: elige «Mes pasado», revisa el pre-cierre y cierra cada avión desde su tile, o todos los abiertos desde aquí. Al cerrar un avión, sus vuelos completados sin cobro completo al último día del mes pasan completos al mes siguiente (venta, gastos del vuelo y comisiones; las horas se quedan en su fecha real) y ese avión queda bloqueado para capturas en ese mes. Con toda la flota cerrada, el mes queda cerrado.";
+
+/** «Cerrar septiembre 2026 (los 3 aviones abiertos)» / «… (el avión abierto)»; sin conteo, «Cerrar septiembre 2026». */
+export function etiquetaBotonCerrarFlota(mes: string, nAbiertos: number | null): string {
+  const base = etiquetaBotonCerrar(mes);
+  if (nAbiertos === null || nAbiertos <= 0) return base;
+  return nAbiertos === 1 ? `${base} (el avión abierto)` : `${base} (los ${nAbiertos} aviones abiertos)`;
+}
+
+/** «Reabrir mes» con la flota cerrada; en un mes parcial, «Reabrir los 3 aviones cerrados» / «Reabrir el avión cerrado». */
+export function etiquetaBotonReabrirFlota(estado: EstadoCierreMes, nCerrados: number | null): string {
+  if (estado === "CERRADO" || nCerrados === null || nCerrados <= 0) return ETIQUETA_BOTON_REABRIR;
+  return nCerrados === 1 ? "Reabrir el avión cerrado" : `Reabrir los ${nCerrados} aviones cerrados`;
+}
+
+/** Título del diálogo y nombre accesible del botón del tile: «Cerrar septiembre 2026 · N621TX». */
+export function tituloCerrarAvion(mes: string, matricula: string): string {
+  return `${etiquetaBotonCerrar(mes)} · ${matricula}`;
+}
+
+/** «N621TX · septiembre 2026 cerrado» (estado corto del avión). */
+export function tituloAvionCerrado(mes: string, matricula: string): string {
+  return `${matricula} · ${mesEnMinuscula(mes)} cerrado`;
+}
+
+/** Línea del alcance de una previa de la flota: «Cierra N4142R, N58BT y N621TX (3 aviones abiertos).» */
+export function textoAlcancePrevia(previa: Pick<PreviaCierre, "aeronave" | "aviones_alcance">): string | null {
+  if (previa.aeronave) return null;
+  const l = (previa.aviones_alcance ?? []).map((a) => a.matricula);
+  if (l.length === 0) return null;
+  return l.length === 1
+    ? `Cierra ${l[0]} (el único avión abierto).`
+    : `Cierra ${listaMatriculas(l)} (${l.length} aviones abiertos).`;
+}
+
+export function textoCheckboxCerrarAvion(mes: string, matricula: string): string {
+  return `Entiendo que ${matricula} quedará bloqueado para capturas en ${mesEnMinuscula(mes)}`;
+}
+
+/** Descripción del diálogo de cierre de UN avión (misma regla que la global, acotada al avión). */
+export function textoDescripcionCerrarAvion(mes: string, destino: string, matricula: string): string {
+  return `Al cerrar, ${matricula} queda bloqueado para capturas de ${mesEnMinuscula(mes)} (gastos, cobros, ingresos, caja chica y cotizaciones que toquen a este avión). Sus vuelos que no estén cobrados completos al ${ultimoDiaCorto(mes)} pasan completos a ${mesEnMinuscula(destino)}, también los que se cobraron después de esa fecha: su dinero cuenta en ese mes. Un vuelo compartido con otro avión pasa entero.`;
+}
+
+/** Toast tras cerrar UN avión: «N621TX · septiembre 2026 cerrado. 2 vuelos pasan a octubre 2026.» */
+export function textoToastCerradoAvion(mes: string, matricula: string, n: number, destino: string, incluidos = 0): string {
+  return `${matricula} · ${textoToastCerrado(mes, n, destino, incluidos)[0].toLowerCase()}${textoToastCerrado(mes, n, destino, incluidos).slice(1)}`;
+}
+
+/** Toast tras cerrar la FLOTA: «Septiembre 2026 cerrado (N4142R, N58BT y N621TX). 5 vuelos pasan a octubre 2026.»; sin matrículas, el de siempre. */
+export function textoToastCerradoFlota(
+  mes: string,
+  cerrados: readonly string[],
+  n: number,
+  destino: string,
+  incluidos = 0,
+): string {
+  const base = textoToastCerrado(mes, n, destino, incluidos);
+  if (cerrados.length === 0) return base;
+  return base.replace(`${etiquetaMes(mes)} cerrado.`, `${etiquetaMes(mes)} cerrado (${listaMatriculas(cerrados)}).`);
+}
+
+/**
+ * El cierre de la flota falló A MEDIAS (regla 7): «Se cerraron N621TX y
+ * N58BT; XB-ANU no: <message del API>». Sin saber cuál falló: «Se cerraron
+ * N621TX y N58BT; el siguiente no: …».
+ */
+export function textoCierreFlotaParcial(cerrados: readonly string[], fallo: string | null, error: string): string {
+  const quien = fallo ? `${fallo} no` : "el siguiente no";
+  const detalle = error.trim() ? `: ${error.trim()}` : ".";
+  const verbo = cerrados.length === 1 ? "Se cerró" : "Se cerraron";
+  return `${verbo} ${listaMatriculas(cerrados)}; ${quien}${detalle}`;
+}
+
+export function tituloReabrirAvion(mes: string, matricula: string): string {
+  return `¿Reabrir ${mesEnMinuscula(mes)} · ${matricula}?`;
+}
+
+/**
+ * Confirmación de reabrir UN avión: «Al reabrir N621TX, los 2 vuelos que
+ * pasaron a octubre 2026 regresan a septiembre 2026 y el avión vuelve a
+ * aceptar capturas en ese mes. Octubre 2026 de N621TX debe estar abierto.»
+ */
+export function textoConfirmacionReabrirAvion(mes: string, matricula: string, nDiferidos: number | null): string {
+  const sig = sumarMeses(mes, 1);
+  const m = mesEnMinuscula(mes);
+  const s = sig ? mesEnMinuscula(sig) : "el mes siguiente";
+  const sMay = sig ? etiquetaMes(sig) : "El mes siguiente";
+  let regresan: string;
+  if (nDiferidos === null) {
+    regresan = `Al reabrir ${matricula}, sus vuelos que pasaron a ${s} regresan a ${m} y el avión vuelve a aceptar capturas en ese mes.`;
+  } else if (nDiferidos > 0) {
+    regresan = `Al reabrir ${matricula}, ${nDiferidos === 1 ? "el vuelo que pasó" : `los ${nDiferidos} vuelos que pasaron`} a ${s} regresa${nDiferidos === 1 ? "" : "n"} a ${m} y el avión vuelve a aceptar capturas en ese mes.`;
+  } else {
+    regresan = `Al reabrir ${matricula}, el avión vuelve a aceptar capturas en ${m} (ningún vuelo suyo había pasado a ${s}).`;
+  }
+  return `${regresan} ${sMay} de ${matricula} debe estar abierto.`;
+}
+
+/** Toast tras reabrir UN avión: «N621TX · septiembre 2026 reabierto. 2 vuelos regresan a septiembre 2026.» */
+export function textoToastReabiertoAvion(mes: string, matricula: string, revertidos: number): string {
+  const m = mesEnMinuscula(mes);
+  if (revertidos === 0) return `${matricula} · ${m} reabierto. Ningún vuelo regresa; el avión vuelve a aceptar capturas.`;
+  return `${matricula} · ${m} reabierto. ${revertidos} vuelo${revertidos === 1 ? "" : "s"} regresa${revertidos === 1 ? "" : "n"} a ${m}.`;
+}
+
+/** 409 al reabrir un avión (regla 2): otro avión CERRADO comparte un vuelo que pasó de mes. */
+export const CODIGO_OTRO_AVION_CERRADO = "OTRO_AVION_CERRADO";
+
+/** Las matrículas de `details` del 409 (`matriculas`, `aviones[]` o `cerrados`), en el orden del API. */
+export function matriculasOtroAvionCerrado(details: unknown): string[] {
+  if (!details || typeof details !== "object") return [];
+  const d = details as { matriculas?: unknown; aviones?: unknown; cerrados?: unknown };
+  return matriculasDe(d.matriculas ?? d.aviones ?? d.cerrados);
+}
+
+/**
+ * «Primero reabre N58BT: comparte con N621TX un vuelo que pasó de mes al
+ * cerrar.» Sin matrículas legibles ⇒ null (se usa el `message` del API).
+ */
+export function textoOtroAvionCerrado(details: unknown, matricula: string | null): string | null {
+  const l = matriculasOtroAvionCerrado(details);
+  if (l.length === 0) return null;
+  const comparte = l.length === 1 ? "comparte" : "comparten";
+  const con = matricula ? ` con ${matricula}` : "";
+  return `Primero reabre ${listaMatriculas(l)}: ${comparte}${con} un vuelo que pasó de mes al cerrar.`;
+}
+
+/** Nota bajo la matrícula de un vuelo multi-avión: «compartido con N58BT (abierto)». Sin otros aviones ⇒ null. */
+export function notaMultiAvion(v: Pick<VueloDiferido, "multi_avion" | "otros_aviones">): string | null {
+  const otros = (v.otros_aviones ?? []).filter((o) => o && typeof o.matricula === "string" && o.matricula.trim());
+  if (!v.multi_avion && otros.length === 0) return null;
+  if (otros.length === 0) return "compartido con otro avión";
+  const estado = (e: EstadoCierreAvion) => (e === "CERRADO" ? "cerrado" : e === "REABIERTO" ? "reabierto" : "abierto");
+  return `compartido con ${listaMatriculas(otros.map((o) => `${o.matricula} (${estado(o.estado)})`))}`;
+}
+
+/** Tooltip de la casilla «Se queda» bloqueada: «Se queda en septiembre 2026 (decidido al cerrar N58BT)». */
+export function textoDecididoPor(mes: string, v: Pick<VueloDiferido, "decidido_por">): string | null {
+  const por = v.decidido_por?.matricula;
+  if (!por) return null;
+  return `Se queda en ${mesEnMinuscula(mes)} (decidido al cerrar ${por})`;
+}
+
+export const TITULO_BLOQUEANTES_OTROS_AVIONES = "Bloqueantes de otros aviones (no impiden este cierre)";
+
+// =============================================================================
 // Chips y marcas (copiadas del API) en reparto, balances, pre-cierre y vuelo
 // =============================================================================
 
@@ -741,15 +1176,93 @@ export function diferidosDelAvion(lista: readonly VueloDiferidoMarca[], matricul
   return lista.filter((v) => v.matricula === matricula);
 }
 
-/** Badge del periodo en el reparto: «Cerrado el 16-oct por Ale» / «Reabierto» / «Abierto». */
+/**
+ * Badge del periodo en el reparto, el pre-cierre y los balances: «Cerrado el
+ * 16-oct por Ale» / «Reabierto» / «Abierto» / «Parcial» (cierre por avión:
+ * el `title` nombra los aviones cerrados, `aviones_cerrados`). En el balance
+ * por avión `estado` es el del AVIÓN y `estado_flota` va al `title`.
+ */
 export function textoBadgeCierrePeriodo(cierre: CierrePeriodoAditivo | null | undefined): BadgeEstadoCierre | null {
   if (!cierre || !cierre.disponible || !cierre.periodo) return null;
+  const flota = cierre.estado_flota ? textoEstadoFlota(cierre.estado_flota, cierre.aviones_cerrados) : null;
+  const conFlota = (b: BadgeEstadoCierre): BadgeEstadoCierre => (flota ? { ...b, title: `Toda la flota: ${flota}` } : b);
   if (cierre.estado === "CERRADO") {
     const por = cierre.cerrado_por_nombre ? ` por ${cierre.cerrado_por_nombre}` : "";
-    return { tono: "cerrado", texto: `Cerrado el ${fechaCortaCancun(cierre.cerrado_at)}${por}` };
+    return conFlota({ tono: "cerrado", texto: `Cerrado el ${fechaCortaCancun(cierre.cerrado_at)}${por}` });
   }
-  if (cierre.estado === "REABIERTO") return { tono: "reabierto", texto: "Reabierto" };
-  return { tono: "abierto", texto: "Abierto" };
+  if (cierre.estado === "REABIERTO") return conFlota({ tono: "reabierto", texto: "Reabierto" });
+  if (cierre.estado === "PARCIAL") {
+    const lista = (cierre.aviones_cerrados ?? []).filter((m) => typeof m === "string" && m.trim());
+    const n = lista.length;
+    return {
+      tono: "parcial",
+      texto: n > 0 ? `Parcial · ${n} avi${n === 1 ? "ón" : "ones"}` : "Parcial",
+      title: n > 0 ? `Cerrados: ${listaMatriculas(lista)}` : "Algunos aviones del mes ya están cerrados",
+    };
+  }
+  return conFlota({ tono: "abierto", texto: "Abierto" });
+}
+
+/** «Parcial (cerrados: N621TX, N58BT)» / «Cerrada» / «Reabierta» / «Abierta» para el `title`. */
+function textoEstadoFlota(estado: EstadoCierreMes, cerrados: string[] | undefined): string {
+  switch (estado) {
+    case "CERRADO":
+      return "cerrada";
+    case "REABIERTO":
+      return "reabierta";
+    case "PARCIAL": {
+      const lista = (cerrados ?? []).filter((m) => typeof m === "string" && m.trim());
+      return lista.length > 0 ? `parcial (cerrados: ${listaMatriculas(lista)})` : "parcial";
+    }
+    default:
+      return "abierta";
+  }
+}
+
+/**
+ * Badge del cierre de UN avión (`cierre_avion`, API 0.0.104) en las cards
+ * del reparto y en la pantalla por avión: «Abierto» / «Cerrado el 16-oct por
+ * Ale» / «Reabierto». Sin el bloque (API previo) ⇒ null.
+ */
+export function badgeCierreAvion(cierreAvion: CierreAvionAditivo | null | undefined): BadgeEstadoCierre | null {
+  if (!cierreAvion || typeof cierreAvion !== "object") return null;
+  if (cierreAvion.estado === "CERRADO") {
+    const por = cierreAvion.cerrado_por_nombre ? ` por ${cierreAvion.cerrado_por_nombre}` : "";
+    return { tono: "cerrado", texto: `Cerrado el ${fechaCortaCancun(cierreAvion.cerrado_at)}${por}` };
+  }
+  if (cierreAvion.estado === "REABIERTO") return { tono: "reabierto", texto: "Reabierto" };
+  if (cierreAvion.estado === "ABIERTO") return { tono: "abierto", texto: "Abierto" };
+  return null;
+}
+
+/**
+ * El badge que ve la pantalla de UN avión: el de ESE avión cuando el API lo
+ * manda (`cierre.cierre_avion` o `aviones[].cierre_avion`), si no el global
+ * del mes (API previo). Con un bloque global sin `periodo` (rango que no es
+ * un mes) no hay badge.
+ */
+export function badgeCierreDelAvion(
+  cierre: CierrePeriodoAditivo | null | undefined,
+  cierreAvion?: CierreAvionAditivo | null,
+): BadgeEstadoCierre | null {
+  if (!cierre || !cierre.disponible || !cierre.periodo) return null;
+  return badgeCierreAvion(cierre.cierre_avion ?? cierreAvion) ?? textoBadgeCierrePeriodo(cierre);
+}
+
+/**
+ * ¿Los números de hoy ya no coinciden con lo congelado? Global: con la flota
+ * cerrada o parcial (`coincide_con_snapshot` = AND de los aviones cerrados).
+ * Por avión: con su propio `coincide_con_snapshot`.
+ */
+export function noCoincideSnapshot(
+  cierre: Pick<CierrePeriodoAditivo, "estado" | "coincide_con_snapshot"> | null | undefined,
+): boolean {
+  if (!cierre) return false;
+  return (cierre.estado === "CERRADO" || cierre.estado === "PARCIAL") && cierre.coincide_con_snapshot === false;
+}
+
+export function noCoincideSnapshotAvion(cierreAvion: CierreAvionAditivo | null | undefined): boolean {
+  return cierreAvion?.estado === "CERRADO" && cierreAvion.coincide_con_snapshot === false;
 }
 
 /*

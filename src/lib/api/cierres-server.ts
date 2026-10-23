@@ -46,12 +46,25 @@ export const getCierres = cache(async (): Promise<CargaCierres<CierresRespuesta>
   }
 });
 
-/** `GET /v1/cierres/:periodo/previa`: qué pasaría al cerrar (lectura pesada). */
-export async function getPreviaCierre(periodo: string, incluir: string[] = []): Promise<CargaCierres<PreviaCierre>> {
+/**
+ * `GET /v1/cierres/:periodo/previa`: qué pasaría al cerrar (lectura pesada).
+ * CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): con `aeronaveId` la previa es
+ * la de ESE avión (`?aeronave_id=<uuid>`); sin él, la de toda la flota
+ * abierta. Quien llama ya validó el uuid (jamás se manda basura).
+ */
+export async function getPreviaCierre(
+  periodo: string,
+  incluir: string[] = [],
+  aeronaveId: string | null = null,
+): Promise<CargaCierres<PreviaCierre>> {
   try {
     // INCLUIR EN EL MES (21-oct-2026): la previa se recalcula con los vuelos
     // que la oficina marcó para quedarse (`?incluir=id,id`).
-    const q = incluir.length > 0 ? `?incluir=${encodeURIComponent(incluir.join(","))}` : "";
+    const partes = [
+      ...(aeronaveId ? [`aeronave_id=${encodeURIComponent(aeronaveId)}`] : []),
+      ...(incluir.length > 0 ? [`incluir=${encodeURIComponent(incluir.join(","))}`] : []),
+    ];
+    const q = partes.length > 0 ? `?${partes.join("&")}` : "";
     const raw = await apiServer<unknown>(`/v1/cierres/${periodo}/previa${q}`, { cache: "no-store" });
     const datos = normalizarPrevia(raw);
     if (!datos) {

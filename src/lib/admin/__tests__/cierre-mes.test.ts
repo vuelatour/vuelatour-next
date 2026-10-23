@@ -64,8 +64,44 @@ import {
   tituloVuelosQueSeQuedan,
   notaQuedarseEnMes,
   idsVistosEnPrevia,
+  AYUDA_CIERRE_AVION,
+  CODIGO_OTRO_AVION_CERRADO,
+  TITULO_BLOQUEANTES_OTROS_AVIONES,
+  avionesAbiertosDeMes,
+  avionesCerradosDeMes,
+  badgeCierreAvion,
+  badgeCierreDelAvion,
+  badgeEstadoAvion,
+  estadoAvionDeMes,
+  etiquetaBotonCerrarFlota,
+  etiquetaBotonReabrirFlota,
+  listaMatriculas,
+  matriculasDe,
+  modoCierreDelApi,
+  nAvionesAbiertos,
+  noCoincideSnapshot,
+  noCoincideSnapshotAvion,
+  notaMultiAvion,
+  puedeCerrarAvion,
+  puedeReabrirAvion,
+  resumenFlota,
+  textoAlcancePrevia,
+  textoCheckboxCerrarAvion,
+  textoCierreFlotaParcial,
+  textoConfirmacionReabrirAvion,
+  textoDecididoPor,
+  textoDescripcionCerrarAvion,
+  textoNoCerrableDeAvion,
+  textoOtroAvionCerrado,
+  textoToastCerradoAvion,
+  textoToastCerradoFlota,
+  textoToastReabiertoAvion,
+  tituloAvionCerrado,
+  tituloCerrarAvion,
+  tituloReabrirAvion,
+  vuelosEsperadosDeAlcance,
 } from "@/lib/admin/cierre-mes";
-import type { MesCierre, PreviaCierre } from "@/types/cierres";
+import type { MesCierre, MesCierreAvion, PreviaCierre } from "@/types/cierres";
 
 const SEP_CERRADO: MesCierre = {
   periodo: "2026-09",
@@ -335,7 +371,11 @@ describe("diálogos: toasts, confirmación y motivo", () => {
       "Al reabrir, los 5 vuelos que pasaron a octubre 2026 regresan a septiembre 2026 y el mes vuelve a aceptar capturas. Octubre 2026 debe estar abierto.",
     );
     expect(textoConfirmacionReabrir("2026-09", 1)).toMatch(/^Al reabrir, el vuelo que pasó a octubre 2026 regresa a/);
-    expect(textoConfirmacionReabrir("2026-09", null)).toMatch(/ningún vuelo había pasado/);
+    expect(textoConfirmacionReabrir("2026-09", 0)).toMatch(/ningún vuelo había pasado/);
+    // Conteo desconocido (varios aviones de un mes parcial): no se afirma un número.
+    expect(textoConfirmacionReabrir("2026-09", null)).toBe(
+      "Al reabrir, los vuelos que pasaron a octubre 2026 regresan a septiembre 2026 y el mes vuelve a aceptar capturas. Octubre 2026 debe estar abierto.",
+    );
   });
   it("motivo 5–300 tras recortar", () => {
     expect(validarMotivoReabrir("  abc ")).toMatch(/al menos 5/);
@@ -660,8 +700,9 @@ describe("revisión adversaria (16-oct-2026): el texto del API gana y nada se co
       tipo: "exito",
       diferidos: 5,
       incluidos: 0,
+      cerrados: [],
     });
-    expect(decidirRespuestaCerrar({ ok: true, data: {} }, "2026-09")).toEqual({ tipo: "exito", diferidos: 0, incluidos: 0 });
+    expect(decidirRespuestaCerrar({ ok: true, data: {} }, "2026-09")).toEqual({ tipo: "exito", diferidos: 0, incluidos: 0, cerrados: [] });
     const cambio = decidirRespuestaCerrar(
       { ok: false, status: 409, code: "PREVIA_CAMBIO", error: "La lista cambió…", details: { previa: PREVIA_SEP } },
       "2026-09",
@@ -674,6 +715,354 @@ describe("revisión adversaria (16-oct-2026): el texto del API gana y nada se co
     ).toEqual({ tipo: "error", texto: "La lista cambió…" });
     // ok sin data (respuesta vacía) NO es éxito: no se pinta «cerrado» sin confirmación del API.
     expect(decidirRespuestaCerrar({ ok: true, data: null }, "2026-09").tipo).toBe("error");
+  });
+});
+
+describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105)", () => {
+  const avion = (over: Partial<MesCierreAvion> & Pick<MesCierreAvion, "aeronave_id" | "matricula">): MesCierreAvion => ({
+    modelo: "Cessna",
+    activa: true,
+    estado: "ABIERTO",
+    cerrado_at: null,
+    cerrado_por: null,
+    reabierto_at: null,
+    reabierto_por: null,
+    reabierto_motivo: null,
+    version: 0,
+    puede_cerrar: true,
+    motivo_no_cerrable: null,
+    totales: null,
+    ...over,
+  });
+  const N621 = avion({ aeronave_id: "a5", matricula: "N621TX" });
+  const N58BT = avion({
+    aeronave_id: "a4",
+    matricula: "N58BT",
+    estado: "CERRADO",
+    cerrado_at: "2026-10-16T19:02:00Z",
+    cerrado_por: { id: "u1", nombre: "Ale" },
+    version: 1,
+    puede_cerrar: false,
+    motivo_no_cerrable: "YA_CERRADO",
+    totales: { vuelos_diferidos: 2 },
+  });
+  const INACTIVO = avion({ aeronave_id: "a7", matricula: "XB-IJP", activa: false, estado: "CERRADO" });
+  const PARCIAL: MesCierre = {
+    ...SEP_CERRADO,
+    estado: "PARCIAL",
+    cerrado_at: null,
+    cerrado_por: null,
+    puede_cerrar: true,
+    motivo_no_cerrable: null,
+    totales: null,
+    aviones_activos: 2,
+    aviones_cerrados: 1,
+    aviones: [N58BT, N621, INACTIVO],
+  };
+
+  it("modoCierreDelApi: solo `por_avion: true` enciende el flujo por avión (API previo / basura ⇒ GLOBAL)", () => {
+    expect(modoCierreDelApi({ por_avion: true })).toBe("POR_AVION");
+    expect(modoCierreDelApi({ por_avion: false })).toBe("GLOBAL");
+    expect(modoCierreDelApi({})).toBe("GLOBAL");
+    expect(modoCierreDelApi(null)).toBe("GLOBAL");
+    expect(normalizarCierres({ disponible: true, meses: [] })?.por_avion).toBe(false);
+    expect(normalizarCierres({ disponible: true, por_avion: "sí", meses: [] })?.por_avion).toBe(false);
+    expect(normalizarCierres({ disponible: true, por_avion: true, meses: [] })?.por_avion).toBe(true);
+  });
+
+  it("normalizarCierres lee PARCIAL, los conteos y los aviones; basura ⇒ sin aviones, jamás un estado inventado", () => {
+    const r = normalizarCierres({
+      disponible: true,
+      por_avion: true,
+      meses: [
+        {
+          periodo: "2026-09",
+          estado: "PARCIAL",
+          aviones_activos: 7,
+          aviones_cerrados: 3,
+          aviones: [
+            { aeronave_id: "a5", matricula: "N621TX", modelo: "Kodiak 100", activa: true, estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z", cerrado_por: { id: "u1", nombre: "Ale" }, version: 1, puede_cerrar: false, motivo_no_cerrable: "YA_CERRADO", totales: { vuelos: 14 } },
+            { aeronave_id: "a4", matricula: "N58BT", estado: "ABIERTO", puede_cerrar: false, motivo_no_cerrable: "MES_ANTERIOR_ABIERTO" },
+            { aeronave_id: "a9", matricula: "XB-RARO", estado: "RARO" },
+            { matricula: "SIN-ID", estado: "ABIERTO" },
+            null,
+          ],
+        },
+        { periodo: "2026-10", estado: "ABIERTO", aviones_activos: "siete", aviones: "nada" },
+      ],
+    });
+    const sep = r!.meses[0];
+    expect(sep.estado).toBe("PARCIAL");
+    expect(sep.aviones_activos).toBe(7);
+    expect(sep.aviones_cerrados).toBe(3);
+    expect(sep.aviones?.map((a) => a.matricula)).toEqual(["N621TX", "N58BT"]);
+    expect(sep.aviones?.[0]).toMatchObject({ estado: "CERRADO", activa: true, version: 1, cerrado_por: { nombre: "Ale" }, totales: { vuelos: 14 } });
+    expect(sep.aviones?.[1]).toMatchObject({ estado: "ABIERTO", activa: true, puede_cerrar: false, motivo_no_cerrable: "MES_ANTERIOR_ABIERTO", modelo: null });
+    const oct = r!.meses[1];
+    expect(oct).not.toHaveProperty("aviones");
+    expect(oct).not.toHaveProperty("aviones_activos");
+    expect(mesesCerrados(r)).toEqual([]);
+  });
+
+  it("normalizarPrevia lee el alcance, los bloqueantes de otros aviones, multi_avion/otros_aviones y decidido_por; API previo ⇒ null / []", () => {
+    const p = normalizarPrevia({
+      ...PREVIA_SEP,
+      aeronave: { id: "a5", matricula: "N621TX" },
+      aviones_alcance: [{ aeronave_id: "a5", matricula: "N621TX" }, { sin: "nada" }],
+      bloqueantes_otros_aviones: [{ clave: "cobros_sin_tc", titulo: "Cobros sin T.C.", count: 1 }],
+    })!;
+    expect(p.aeronave).toEqual({ id: "a5", matricula: "N621TX", modelo: null });
+    expect(p.aviones_alcance).toEqual([{ aeronave_id: "a5", matricula: "N621TX" }]);
+    expect(p.bloqueantes_otros_aviones).toHaveLength(1);
+    const viejo = normalizarPrevia(PREVIA_SEP)!;
+    expect(viejo.aeronave).toBeNull();
+    expect(viejo.aviones_alcance).toEqual([]);
+    expect(viejo.bloqueantes_otros_aviones).toEqual([]);
+    // Una `aeronave` sin matrícula no se cree (sería «toda la flota»).
+    expect(normalizarPrevia({ ...PREVIA_SEP, aeronave: { id: "a5" } })!.aeronave).toBeNull();
+  });
+
+  it("estadoAvionDeMes / aviones abiertos y cerrados / nAvionesAbiertos", () => {
+    expect(estadoAvionDeMes(PARCIAL, "a5")?.matricula).toBe("N621TX");
+    expect(estadoAvionDeMes(PARCIAL, "zzz")).toBeNull();
+    expect(estadoAvionDeMes(SEP_CERRADO, "a5")).toBeNull();
+    expect(avionesAbiertosDeMes(PARCIAL).map((a) => a.matricula)).toEqual(["N621TX"]);
+    // El inactivo cerrado cuenta como cerrado, pero no como «abierto» para la flota.
+    expect(avionesCerradosDeMes(PARCIAL).map((a) => a.matricula)).toEqual(["N58BT", "XB-IJP"]);
+    expect(nAvionesAbiertos(PARCIAL)).toBe(1);
+    expect(nAvionesAbiertos({ ...PARCIAL, aviones: undefined, aviones_activos: 7, aviones_cerrados: 3 })).toBe(4);
+    expect(nAvionesAbiertos(SEP_CERRADO)).toBeNull();
+    expect(nAvionesAbiertos(null)).toBeNull();
+  });
+
+  it("resumenFlota: «Abierto · 0 de 7», «Parcial · 3 de 7», «Cerrado», «Reabierto», «En curso»; en GLOBAL el badge de siempre", () => {
+    expect(resumenFlota(PARCIAL, "2026-09", false)).toEqual({ tono: "parcial", texto: "Parcial · 1 de 2", title: "1 de 2 aviones cerrados" });
+    expect(resumenFlota({ ...PARCIAL, estado: "ABIERTO", aviones_cerrados: 0 }, "2026-09", false)).toEqual({
+      tono: "abierto",
+      texto: "Abierto · 0 de 2",
+      title: "0 de 2 aviones cerrados",
+    });
+    expect(resumenFlota({ ...SEP_CERRADO, aviones_activos: 7, aviones_cerrados: 7 }, "2026-09", false)).toEqual({
+      tono: "cerrado",
+      texto: "Cerrado",
+      title: "Cerrado el 16-oct-2026 por Ale · 7 de 7 aviones cerrados",
+    });
+    expect(
+      resumenFlota(
+        { ...SEP_CERRADO, estado: "REABIERTO", reabierto_at: "2026-10-17T15:00:00Z", reabierto_por: { id: "u1", nombre: "Ale" }, reabierto_motivo: "T.C." },
+        "2026-09",
+        false,
+      ),
+    ).toEqual({ tono: "reabierto", texto: "Reabierto", title: "Reabierto el 17-oct-2026 por Ale (T.C.)" });
+    expect(resumenFlota({ ...PARCIAL, estado: "ABIERTO" }, "2026-10", true).texto).toBe("En curso (se cierra a partir del 1-nov)");
+    // Sin conteos (API que no los manda): sin el sufijo.
+    expect(resumenFlota({ ...PARCIAL, aviones_activos: undefined, aviones_cerrados: undefined }, "2026-09", false).texto).toBe("Parcial");
+    expect(resumenFlota(null, "2026-09", false)).toEqual({ tono: "abierto", texto: "Abierto", title: "Ningún avión cerrado" });
+    // FALLBACK GLOBAL: el badge largo de siempre.
+    expect(resumenFlota(SEP_CERRADO, "2026-09", false, "GLOBAL")).toEqual({ tono: "cerrado", texto: "Cerrado el 16-oct-2026 por Ale" });
+    expect(resumenFlota(null, "2026-09", false, "GLOBAL")).toEqual({ tono: "abierto", texto: "Abierto" });
+  });
+
+  it("badge por avión y PARCIAL en badgeEstadoCierre", () => {
+    expect(badgeEstadoAvion(N58BT, "2026-09", false)).toEqual({ tono: "cerrado", texto: "Cerrado el 16-oct-2026 por Ale" });
+    expect(badgeEstadoAvion(N621, "2026-09", false)).toEqual({ tono: "abierto", texto: "Abierto" });
+    expect(badgeEstadoAvion(N621, "2026-10", true)?.tono).toBe("en-curso");
+    expect(badgeEstadoAvion(null, "2026-09", false)).toBeNull();
+    expect(badgeEstadoCierre(PARCIAL, "2026-09", false)).toEqual({ tono: "parcial", texto: "Parcial · 1 de 2", title: "1 de 2 aviones cerrados" });
+  });
+
+  it("roles por avión: cerrar ADMIN/FACTURACION con fila no cerrada; reabrir solo ADMIN con fila CERRADO; sin fila nada", () => {
+    expect(puedeCerrarAvion(N621, "ADMIN")).toBe(true);
+    expect(puedeCerrarAvion(N621, "FACTURACION")).toBe(true);
+    expect(puedeCerrarAvion(N621, "ANALISTA")).toBe(false);
+    expect(puedeCerrarAvion(N58BT, "ADMIN")).toBe(false);
+    expect(puedeCerrarAvion({ ...N58BT, estado: "REABIERTO" }, "ADMIN")).toBe(true);
+    expect(puedeCerrarAvion(null, "ADMIN")).toBe(false);
+    expect(puedeReabrirAvion(N58BT, "ADMIN")).toBe(true);
+    expect(puedeReabrirAvion(N58BT, "FACTURACION")).toBe(false);
+    expect(puedeReabrirAvion(N621, "ADMIN")).toBe(false);
+  });
+
+  it("textoNoCerrableDeAvion: el código del avión manda y nombra la matrícula; el mes en curso es el mismo texto para todos", () => {
+    expect(textoNoCerrableDeAvion(N621, "2026-09", false)).toBeNull();
+    expect(textoNoCerrableDeAvion({ ...N621, puede_cerrar: false, motivo_no_cerrable: "MES_ANTERIOR_ABIERTO" }, "2026-10", false)).toBe(
+      "N621TX: Para cerrar octubre 2026 primero cierra septiembre 2026.",
+    );
+    expect(textoNoCerrableDeAvion({ ...N621, puede_cerrar: false, motivo_no_cerrable: "PRECIERRE_NO_LISTO" }, "2026-09", false)).toBe(
+      "N621TX: Antes de cerrar septiembre 2026 resuelve los pendientes que bloquean el pre-cierre.",
+    );
+    expect(textoNoCerrableDeAvion({ ...N621, puede_cerrar: false }, "2026-09", false)).toBe("N621TX: Septiembre 2026 todavía no se puede cerrar.");
+    expect(textoNoCerrableDeAvion(N621, "2026-10", true)).toBe("Octubre 2026 todavía está en curso: se cierra a partir del 1 de noviembre.");
+    expect(textoNoCerrableDeAvion(N58BT, "2026-09", false)).toBeNull();
+  });
+
+  it("etiquetas de la flota y textos por avión", () => {
+    expect(etiquetaBotonCerrarFlota("2026-09", 3)).toBe("Cerrar septiembre 2026 (los 3 aviones abiertos)");
+    expect(etiquetaBotonCerrarFlota("2026-09", 1)).toBe("Cerrar septiembre 2026 (el avión abierto)");
+    expect(etiquetaBotonCerrarFlota("2026-09", null)).toBe("Cerrar septiembre 2026");
+    expect(etiquetaBotonCerrarFlota("2026-09", 0)).toBe("Cerrar septiembre 2026");
+    expect(etiquetaBotonReabrirFlota("CERRADO", 7)).toBe("Reabrir mes");
+    expect(etiquetaBotonReabrirFlota("PARCIAL", 3)).toBe("Reabrir los 3 aviones cerrados");
+    expect(etiquetaBotonReabrirFlota("PARCIAL", 1)).toBe("Reabrir el avión cerrado");
+    expect(etiquetaBotonReabrirFlota("PARCIAL", null)).toBe("Reabrir mes");
+    expect(tituloCerrarAvion("2026-09", "N621TX")).toBe("Cerrar septiembre 2026 · N621TX");
+    expect(tituloAvionCerrado("2026-09", "N621TX")).toBe("N621TX · septiembre 2026 cerrado");
+    expect(tituloReabrirAvion("2026-09", "N621TX")).toBe("¿Reabrir septiembre 2026 · N621TX?");
+    expect(textoCheckboxCerrarAvion("2026-09", "N621TX")).toBe("Entiendo que N621TX quedará bloqueado para capturas en septiembre 2026");
+    expect(textoDescripcionCerrarAvion("2026-09", "2026-10", "N621TX")).toMatch(
+      /^Al cerrar, N621TX queda bloqueado para capturas de septiembre 2026 .* pasan completos a octubre 2026, también los que se cobraron después de esa fecha: su dinero cuenta en ese mes\. Un vuelo compartido con otro avión pasa entero\.$/,
+    );
+    expect(AYUDA_CIERRE_AVION).toMatch(/por avión y por mes completo/);
+    expect(AYUDA_CIERRE_AVION).toMatch(/Con toda la flota cerrada, el mes queda cerrado/);
+    expect(TITULO_BLOQUEANTES_OTROS_AVIONES).toBe("Bloqueantes de otros aviones (no impiden este cierre)");
+    expect(listaMatriculas(["N4142R", "N58BT", "N621TX"])).toBe("N4142R, N58BT y N621TX");
+    expect(listaMatriculas(["N621TX"])).toBe("N621TX");
+    expect(listaMatriculas([])).toBe("");
+  });
+
+  it("toasts por avión y de la flota; el cierre de la flota a medias", () => {
+    expect(textoToastCerradoAvion("2026-09", "N621TX", 2, "2026-10")).toBe("N621TX · septiembre 2026 cerrado. 2 vuelos pasan a octubre 2026.");
+    expect(textoToastCerradoAvion("2026-09", "N621TX", 0, "2026-10", 1)).toBe(
+      "N621TX · septiembre 2026 cerrado. Ningún vuelo pasa a octubre 2026. 1 vuelo cobrado después del corte se queda en septiembre 2026.",
+    );
+    expect(textoToastCerradoFlota("2026-09", ["N4142R", "N621TX"], 5, "2026-10")).toBe(
+      "Septiembre 2026 cerrado (N4142R y N621TX). 5 vuelos pasan a octubre 2026.",
+    );
+    expect(textoToastCerradoFlota("2026-09", [], 5, "2026-10")).toBe("Septiembre 2026 cerrado. 5 vuelos pasan a octubre 2026.");
+    expect(textoToastReabiertoAvion("2026-09", "N621TX", 2)).toBe("N621TX · septiembre 2026 reabierto. 2 vuelos regresan a septiembre 2026.");
+    expect(textoToastReabiertoAvion("2026-09", "N621TX", 0)).toBe(
+      "N621TX · septiembre 2026 reabierto. Ningún vuelo regresa; el avión vuelve a aceptar capturas.",
+    );
+    expect(textoCierreFlotaParcial(["N621TX", "N58BT"], "XB-ANU", "Antes de cerrar septiembre 2026 resuelve los pendientes.")).toBe(
+      "Se cerraron N621TX y N58BT; XB-ANU no: Antes de cerrar septiembre 2026 resuelve los pendientes.",
+    );
+    expect(textoCierreFlotaParcial(["N621TX"], null, "")).toBe("Se cerró N621TX; el siguiente no.");
+    expect(textoConfirmacionReabrirAvion("2026-09", "N621TX", 2)).toBe(
+      "Al reabrir N621TX, los 2 vuelos que pasaron a octubre 2026 regresan a septiembre 2026 y el avión vuelve a aceptar capturas en ese mes. Octubre 2026 de N621TX debe estar abierto.",
+    );
+    expect(textoConfirmacionReabrirAvion("2026-09", "N621TX", 0)).toMatch(/ningún vuelo suyo había pasado a octubre 2026/);
+    expect(textoConfirmacionReabrirAvion("2026-09", "N621TX", null)).toMatch(/^Al reabrir N621TX, sus vuelos que pasaron a octubre 2026 regresan/);
+  });
+
+  it("decidirRespuestaCerrar: éxito con las matrículas de `cierres[]` (o de `aeronave`); la flota a medias es «parcial» con `details.cerrados`", () => {
+    expect(decidirRespuestaCerrar({ ok: true, data: { diferidos: [{}], cierres: [{ matricula: "N4142R" }, { matricula: "N621TX" }] } }, "2026-09")).toEqual({
+      tipo: "exito",
+      diferidos: 1,
+      incluidos: 0,
+      cerrados: ["N4142R", "N621TX"],
+    });
+    expect(decidirRespuestaCerrar({ ok: true, data: { diferidos: [], aeronave: { id: "a5", matricula: "N621TX" } } }, "2026-09")).toMatchObject({
+      tipo: "exito",
+      cerrados: ["N621TX"],
+    });
+    expect(decidirRespuestaCerrar({ ok: true, data: { diferidos: [] } }, "2026-09")).toMatchObject({ tipo: "exito", cerrados: [] });
+    const parcial = decidirRespuestaCerrar(
+      {
+        ok: false,
+        status: 409,
+        code: "PRECIERRE_NO_LISTO",
+        error: "Antes de cerrar septiembre 2026 resuelve los pendientes que bloquean el pre-cierre.",
+        details: { cerrados: ["N621TX", "N58BT"], aeronave: { id: "a6", matricula: "XB-ANU" } },
+      },
+      "2026-09",
+    );
+    expect(parcial).toEqual({
+      tipo: "parcial",
+      cerrados: ["N621TX", "N58BT"],
+      texto: "Se cerraron N621TX y N58BT; XB-ANU no: Antes de cerrar septiembre 2026 resuelve los pendientes que bloquean el pre-cierre.",
+    });
+    // Sin `cerrados` (o vacío) sigue siendo un error normal.
+    expect(decidirRespuestaCerrar({ ok: false, status: 409, code: "YA_CERRADO", error: "Ya.", details: { cerrados: [] } }, "2026-09")).toEqual({
+      tipo: "error",
+      texto: "Ya.",
+    });
+    expect(matriculasDe(["N621TX", { matricula: "N58BT" }, { nada: 1 }, 3, " "])).toEqual(["N621TX", "N58BT"]);
+    expect(matriculasDe(null)).toEqual([]);
+  });
+
+  it("mensajeErrorCierre: OTRO_AVION_CERRADO legible («Primero reabre …»); sin matrículas, el message del API", () => {
+    const r = { ok: false, status: 409, code: CODIGO_OTRO_AVION_CERRADO, error: "Otro avión cerrado.", details: { matriculas: ["N58BT", "XB-ANU"] } };
+    expect(mensajeErrorCierre(r, "reabrir", "2026-09", "N621TX")).toBe(
+      "Primero reabre N58BT y XB-ANU: comparten con N621TX un vuelo que pasó de mes al cerrar.",
+    );
+    expect(mensajeErrorCierre({ ...r, details: { aviones: [{ matricula: "N58BT" }] } }, "reabrir", "2026-09", "N621TX")).toBe(
+      "Primero reabre N58BT: comparte con N621TX un vuelo que pasó de mes al cerrar.",
+    );
+    expect(mensajeErrorCierre({ ...r, details: {} }, "reabrir", "2026-09", "N621TX")).toBe("Otro avión cerrado.");
+    expect(textoOtroAvionCerrado({ matriculas: ["N58BT"] }, null)).toBe("Primero reabre N58BT: comparte un vuelo que pasó de mes al cerrar.");
+    // Sin respuesta con alcance: el texto pide recargar nombrando al avión.
+    expect(mensajeErrorCierre({ ok: false, code: "SIN_CONEXION" }, "cerrar", "2026-09", "N621TX")).toBe(
+      "No hubo respuesta del servidor. Recarga la página para ver si N621TX · septiembre 2026 quedó cerrado antes de volver a intentarlo.",
+    );
+  });
+
+  it("vuelos del diálogo: alcance, compartidos y «Se queda» decidido por otro avión", () => {
+    expect(vuelosEsperadosDeAlcance({ vuelos_que_pasan: [{ id: "a" }], vuelos_incluidos: [{ id: "b" }] } as never)).toEqual(["a", "b"]);
+    expect(textoAlcancePrevia({ aeronave: null, aviones_alcance: [{ aeronave_id: "1", matricula: "N4142R" }, { aeronave_id: "2", matricula: "N621TX" }] })).toBe(
+      "Cierra N4142R y N621TX (2 aviones abiertos).",
+    );
+    expect(textoAlcancePrevia({ aeronave: null, aviones_alcance: [{ aeronave_id: "2", matricula: "N621TX" }] })).toBe("Cierra N621TX (el único avión abierto).");
+    expect(textoAlcancePrevia({ aeronave: { id: "2", matricula: "N621TX" }, aviones_alcance: [{ aeronave_id: "2", matricula: "N621TX" }] })).toBeNull();
+    expect(textoAlcancePrevia({ aeronave: null, aviones_alcance: [] })).toBeNull();
+    expect(notaMultiAvion({ multi_avion: true, otros_aviones: [{ aeronave_id: "x", matricula: "N58BT", estado: "ABIERTO" }] })).toBe("compartido con N58BT (abierto)");
+    expect(
+      notaMultiAvion({
+        multi_avion: true,
+        otros_aviones: [
+          { aeronave_id: "x", matricula: "N58BT", estado: "CERRADO" },
+          { aeronave_id: "y", matricula: "XB-ANU", estado: "REABIERTO" },
+        ],
+      }),
+    ).toBe("compartido con N58BT (cerrado) y XB-ANU (reabierto)");
+    expect(notaMultiAvion({ multi_avion: true, otros_aviones: [] })).toBe("compartido con otro avión");
+    expect(notaMultiAvion({ multi_avion: false })).toBeNull();
+    expect(notaMultiAvion({})).toBeNull();
+    expect(textoDecididoPor("2026-09", { decidido_por: { aeronave_id: "x", matricula: "N58BT" } })).toBe("Se queda en septiembre 2026 (decidido al cerrar N58BT)");
+    expect(textoDecididoPor("2026-09", { decidido_por: null })).toBeNull();
+    expect(textoDecididoPor("2026-09", {})).toBeNull();
+  });
+
+  it("chips de los libros: PARCIAL con los aviones cerrados; el balance por avión dice la flota en el title; badge por avión y snapshot", () => {
+    expect(textoBadgeCierrePeriodo({ disponible: true, periodo: "2026-09", estado: "PARCIAL", aviones_cerrados: ["N621TX", "N58BT", "XB-ANU"] })).toEqual({
+      tono: "parcial",
+      texto: "Parcial · 3 aviones",
+      title: "Cerrados: N621TX, N58BT y XB-ANU",
+    });
+    expect(textoBadgeCierrePeriodo({ disponible: true, periodo: "2026-09", estado: "PARCIAL" })).toEqual({
+      tono: "parcial",
+      texto: "Parcial",
+      title: "Algunos aviones del mes ya están cerrados",
+    });
+    expect(
+      textoBadgeCierrePeriodo({ disponible: true, periodo: "2026-09", estado: "ABIERTO", estado_flota: "PARCIAL", aviones_cerrados: ["N58BT"] }),
+    ).toEqual({ tono: "abierto", texto: "Abierto", title: "Toda la flota: parcial (cerrados: N58BT)" });
+    expect(textoBadgeCierrePeriodo({ disponible: true, periodo: "2026-09", estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z", estado_flota: "CERRADO" })).toEqual({
+      tono: "cerrado",
+      texto: "Cerrado el 16-oct-2026",
+      title: "Toda la flota: cerrada",
+    });
+    expect(badgeCierreAvion({ estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z", cerrado_por_nombre: "Ale" })).toEqual({
+      tono: "cerrado",
+      texto: "Cerrado el 16-oct-2026 por Ale",
+    });
+    expect(badgeCierreAvion({ estado: "ABIERTO" })).toEqual({ tono: "abierto", texto: "Abierto" });
+    expect(badgeCierreAvion({ estado: "REABIERTO" })).toEqual({ tono: "reabierto", texto: "Reabierto" });
+    expect(badgeCierreAvion(null)).toBeNull();
+    expect(badgeCierreAvion({ estado: "RARO" as never })).toBeNull();
+    // La pantalla por avión: el del avión gana; sin él, el global; sin `periodo`, nada.
+    const global = { disponible: true, periodo: "2026-09", estado: "PARCIAL" as const, aviones_cerrados: ["N58BT"] };
+    expect(badgeCierreDelAvion({ ...global, cierre_avion: { estado: "ABIERTO" } })?.texto).toBe("Abierto");
+    expect(badgeCierreDelAvion(global, { estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z" })?.texto).toBe("Cerrado el 16-oct-2026");
+    expect(badgeCierreDelAvion(global)?.texto).toBe("Parcial · 1 avión");
+    expect(badgeCierreDelAvion({ ...global, periodo: null }, { estado: "CERRADO" })).toBeNull();
+    expect(badgeCierreDelAvion(null)).toBeNull();
+    expect(noCoincideSnapshot({ estado: "PARCIAL", coincide_con_snapshot: false })).toBe(true);
+    expect(noCoincideSnapshot({ estado: "CERRADO", coincide_con_snapshot: false })).toBe(true);
+    expect(noCoincideSnapshot({ estado: "ABIERTO", coincide_con_snapshot: false })).toBe(false);
+    expect(noCoincideSnapshot({ estado: "CERRADO", coincide_con_snapshot: null })).toBe(false);
+    expect(noCoincideSnapshotAvion({ estado: "CERRADO", coincide_con_snapshot: false })).toBe(true);
+    expect(noCoincideSnapshotAvion({ estado: "ABIERTO", coincide_con_snapshot: false })).toBe(false);
+    expect(noCoincideSnapshotAvion(null)).toBe(false);
   });
 });
 
@@ -723,11 +1112,13 @@ describe("INCLUIR EN EL MES (21-oct-2026): los cobrados después del corte se qu
       tipo: "exito",
       diferidos: 1,
       incluidos: 2,
+      cerrados: [],
     });
     expect(decidirRespuestaCerrar({ ok: true, data: { diferidos: [] } }, "2026-09")).toEqual({
       tipo: "exito",
       diferidos: 0,
       incluidos: 0,
+      cerrados: [],
     });
   });
 });

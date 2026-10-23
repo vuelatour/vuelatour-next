@@ -16,6 +16,7 @@ import {
   TITULO_AVION_INACTIVO,
   type AvionBalanceItem,
 } from "@/lib/admin/reportes-ui";
+import type { MesCierre, MesCierreAvion } from "@/types/cierres";
 
 /** Lo que recibe cada `ExcelExportButton` (testigo). */
 interface PropsBotonExcel {
@@ -40,6 +41,15 @@ vi.mock("@/components/admin/excel-export-button", () => ({
     );
   },
 }));
+// CIERRE POR AVIÓN (23-oct-2026): el tile monta `CierreAvionAcciones`
+// (cliente) → las server actions del cierre (→ `@/lib/env`), sonner y el router.
+vi.mock("@/app/admin/reportes/actions", () => ({
+  previaCierreAction: async () => ({ ok: false }),
+  cerrarMesAction: async () => ({ ok: false }),
+  reabrirMesAction: async () => ({ ok: false }),
+}));
+vi.mock("sonner", () => ({ toast: Object.assign(() => {}, { error: () => {}, success: () => {} }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
 
 const { AircraftBalancePicker } = await import("../aircraft-balance-picker");
 const { AtajosPeriodoReportes } = await import("../atajos-periodo-reportes");
@@ -174,6 +184,134 @@ describe("AircraftBalancePicker: un tile por avión, en el orden recibido", () =
     expect(src).not.toContain("descargarDelApi");
     expect(src).not.toContain("Sin aeronaves");
     expect(src).not.toContain("opacity-");
+  });
+});
+
+describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): chip y botón de cierre en cada tile", () => {
+  const fila = (id: string, matricula: string, over: Partial<MesCierreAvion> = {}): MesCierreAvion => ({
+    aeronave_id: id,
+    matricula,
+    modelo: null,
+    activa: true,
+    estado: "ABIERTO",
+    cerrado_at: null,
+    cerrado_por: null,
+    reabierto_at: null,
+    reabierto_por: null,
+    reabierto_motivo: null,
+    version: 0,
+    puede_cerrar: true,
+    motivo_no_cerrable: null,
+    totales: null,
+    ...over,
+  });
+  /** Septiembre PARCIAL: N58BT cerrado, los demás activos abiertos; XB-IJP (inactivo) sin fila. */
+  const SEP: MesCierre = {
+    periodo: "2026-09",
+    estado: "PARCIAL",
+    cerrado_at: null,
+    cerrado_por: null,
+    reabierto_at: null,
+    reabierto_por: null,
+    reabierto_motivo: null,
+    version: 0,
+    puede_cerrar: true,
+    motivo_no_cerrable: null,
+    totales: null,
+    aviones_activos: 6,
+    aviones_cerrados: 1,
+    aviones: [
+      fila(UUID(3), "N4142R"),
+      fila(UUID(4), "N58BT", { estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z", cerrado_por: { id: "u1", nombre: "Ale" }, puede_cerrar: false, motivo_no_cerrable: "YA_CERRADO" }),
+      fila(UUID(5), "N621TX"),
+      fila(UUID(2), "XA-VGV"),
+      fila(UUID(6), "XB-ANU"),
+      fila(UUID(1), "XB-PEV"),
+    ],
+  };
+  const PERIODO = { mes: "2026-09", enCurso: false };
+  const pintar = (p: { rol?: string | null; mesCierre?: MesCierre | null; periodo?: { mes: string; enCurso: boolean } | null; modoCierre?: "POR_AVION" | "GLOBAL" }) => {
+    botonesExcel.length = 0;
+    return renderToStaticMarkup(
+      <AircraftBalancePicker
+        aircraft={FLOTA}
+        desde="2026-09-01"
+        hasta="2026-09-30"
+        rol={p.rol ?? null}
+        mesCierre={p.mesCierre === undefined ? SEP : p.mesCierre}
+        periodo={p.periodo === undefined ? PERIODO : p.periodo}
+        modoCierre={p.modoCierre ?? "POR_AVION"}
+      />,
+    );
+  };
+  const tile = (html: string, matricula: string) => {
+    const i = html.indexOf(`data-avion="${matricula}"`);
+    const j = html.indexOf("<li ", i + 1);
+    return html.slice(i, j === -1 ? undefined : j);
+  };
+
+  it("ADMIN: cada tile con su chip y «Cerrar septiembre 2026» (aria-label con la matrícula); el cerrado con «Reabrir»; sin fila (XB-IJP) nada; los enlaces del libro siguen", () => {
+    const html = pintar({ rol: "ADMIN" });
+    const n621 = tile(html, "N621TX");
+    expect(n621).toContain('data-cierre-avion="N621TX"');
+    expect(n621).toContain(">Abierto<");
+    expect(n621).toContain('aria-label="Cerrar septiembre 2026 · N621TX"');
+    expect(n621).toContain(">Ver en pantalla<");
+    const n58 = tile(html, "N58BT");
+    expect(n58).toContain("Cerrado el 16-oct-2026 por Ale");
+    expect(n58).toContain('aria-label="¿Reabrir septiembre 2026 · N58BT?"');
+    expect(n58).not.toContain("Cerrar septiembre");
+    expect(tile(html, "XB-IJP")).not.toContain("data-cierre-avion");
+    expect((html.match(/aria-label="Cerrar septiembre 2026 · /g) ?? []).length).toBe(5);
+    expect(botonesExcel).toHaveLength(7);
+  });
+
+  it("FACTURACION: tiles con matrícula, modelo, chip y botón, SIN «Ver en pantalla» ni «Excel»; no reabre", () => {
+    const html = pintar({ rol: "FACTURACION" });
+    expect(html).not.toContain("Ver en pantalla");
+    expect(botonesExcel).toHaveLength(0);
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("Cessna Caravan");
+    expect((html.match(/aria-label="Cerrar septiembre 2026 · /g) ?? []).length).toBe(5);
+    expect(tile(html, "N58BT")).toContain("Cerrado el 16-oct-2026 por Ale");
+    expect(html).not.toContain("Reabrir");
+  });
+
+  /** ¿Hay algún botón de cierre/reapertura? (los «Excel» del libro también son botones). */
+  const conBotonesCierre = (html: string) => /data-cierre-acciones=|Cerrar septiembre|Reabrir/.test(html);
+
+  it("ANALISTA: chips sin botones de cierre, con los enlaces del libro", () => {
+    const html = pintar({ rol: "ANALISTA" });
+    expect(conBotonesCierre(html)).toBe(false);
+    expect((html.match(/data-estado-cierre="abierto"/g) ?? []).length).toBe(5);
+    expect(html).toContain('data-estado-cierre="cerrado"');
+    expect((html.match(/>Ver en pantalla</g) ?? []).length).toBe(7);
+  });
+
+  it("FALLBACK (`por_avion` false): el chip del mes GLOBAL en cada tile y ningún botón de cierre", () => {
+    const global: MesCierre = { ...SEP, estado: "ABIERTO", aviones: undefined, aviones_activos: undefined, aviones_cerrados: undefined };
+    const html = pintar({ rol: "ADMIN", mesCierre: global, modoCierre: "GLOBAL" });
+    expect((html.match(/>Abierto</g) ?? []).length).toBe(7);
+    expect(conBotonesCierre(html)).toBe(false);
+  });
+
+  it("«Este mes»: chip «En curso» y sin botones; rango que no es un mes o mes sin fila: ni chip ni botón", () => {
+    const enCurso = pintar({ rol: "ADMIN", periodo: { mes: "2026-10", enCurso: true } });
+    expect(enCurso).toContain("En curso (se cierra a partir del 1-nov)");
+    expect(conBotonesCierre(enCurso)).toBe(false);
+    const sinMes = pintar({ rol: "ADMIN", periodo: null });
+    expect(sinMes).not.toContain("data-cierre-avion");
+    expect(conBotonesCierre(sinMes)).toBe(false);
+    const sinFila = pintar({ rol: "ADMIN", mesCierre: null });
+    expect(sinFila).not.toContain("data-cierre-avion");
+  });
+
+  it("el picker sigue server-safe (sin hooks): el botón vive en el hijo cliente", () => {
+    const src = leer("components/admin/reportes/aircraft-balance-picker.tsx");
+    expect(src).not.toContain('"use client"');
+    expect(src).not.toContain("useState");
+    expect(src).toContain("<CierreAvionAcciones");
+    expect(leer("components/admin/reportes/cierre-avion-acciones.tsx")).toMatch(/^"use client";/);
   });
 });
 

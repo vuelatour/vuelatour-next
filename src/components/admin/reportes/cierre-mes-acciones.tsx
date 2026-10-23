@@ -1,19 +1,31 @@
 "use client";
 
 /**
- * Botones «Cerrar <mes>» y «Reabrir mes» de la card del cierre formal
- * (16-oct-2026, API 0.0.88) con sus diálogos de confirmación (regla
- * permanente: toda acción que cambia el estado del dinero confirma).
+ * Botones «Cerrar <mes>» y «Reabrir» del cierre formal (16-oct-2026, API
+ * 0.0.88) con sus diálogos de confirmación (regla permanente: toda acción
+ * que cambia el estado del dinero confirma).
+ *
+ * CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105): los mismos
+ * botones y diálogos sirven para UN avión (`alcance = {aeronaveId,
+ * matricula}`, desde el tile de «Balance por avión») o para la flota
+ * (`alcance = null`, desde la card «Balance mensual»: cierra en orden todos
+ * los aviones activos abiertos con una sola previa). La previa viaja con
+ * `aeronave_id`; el título, la casilla, los toasts y los textos de error
+ * llevan la matrícula; los vuelos multi-avión dicen con quién se comparten
+ * y una decisión «Se queda» tomada por otro avión se ve bloqueada.
  *
  * «Cerrar»: al ABRIR pide la previa (lectura pesada: dos repartos + el
- * pre-cierre) y la pinta: bloqueantes, los vuelos que pasarán al mes
+ * pre-cierre) y la pinta: bloqueantes propios (y los de OTROS aviones,
+ * plegados: no impiden este cierre), los vuelos que pasarán al mes
  * siguiente (folio · cliente · avión · venta · cobrado al corte · por cobrar
  * al corte · cobrado después con su fecha), los totales y el reparto
- * antes/después por avión. Exige
- * la casilla «Entiendo que … quedará bloqueado» y manda `vuelos_esperados`
- * (los ids que se vieron): si el API responde `PREVIA_CAMBIO`, el diálogo se
- * repinta con la previa nueva y hay que volver a confirmar. Cualquier otro
- * rechazo: el `message` del API tal cual.
+ * antes/después de los aviones del alcance. Exige la casilla «Entiendo que
+ * … quedará bloqueado» y manda `vuelos_esperados` (los ids que se vieron):
+ * si el API responde `PREVIA_CAMBIO`, el diálogo se repinta con la previa
+ * nueva y hay que volver a confirmar. Cualquier otro rechazo: el `message`
+ * del API tal cual. Si el cierre de la flota falló A MEDIAS
+ * (`details.cerrados`), los que sí cerraron se quedan cerrados: toast con
+ * las matrículas y la pantalla se refresca.
  *
  * «Reabrir» (solo ADMIN): motivo 5–300 + confirmación con lo que regresa.
  *
@@ -48,22 +60,33 @@ import {
   ETIQUETA_CONFIRMAR_REABRIR,
   MOTIVO_REABRIR_MAX,
   TEXTO_PREVIA_CAMBIO,
+  TITULO_BLOQUEANTES_OTROS_AVIONES,
   TITULO_BLOQUEANTE_SIN_VERIFICAR,
   decidirRespuestaCerrar,
   deltasReparto,
   etiquetaBotonCerrar,
   mensajeErrorCierre,
   mesEnMinuscula,
+  notaMultiAvion,
   porCobrarYaSeCobro,
   puedeConfirmarCierre,
   resumenPrevia,
+  textoAlcancePrevia,
   textoCheckboxCerrar,
+  textoCheckboxCerrarAvion,
   textoCobradoPosterior,
   textoConfirmacionReabrir,
+  textoConfirmacionReabrirAvion,
+  textoDecididoPor,
   textoDescripcionCerrar,
+  textoDescripcionCerrarAvion,
   textoNoCerrableDePrevia,
-  textoToastCerrado,
+  textoToastCerradoAvion,
+  textoToastCerradoFlota,
   textoToastReabierto,
+  textoToastReabiertoAvion,
+  tituloCerrarAvion,
+  tituloReabrirAvion,
   tituloVuelosQuePasan,
   tituloVuelosQueVienen,
   ultimoDiaCorto,
@@ -74,6 +97,7 @@ import {
   puedeQuedarseEnMes,
   textoQuedarseEnMes,
   tituloVuelosQueSeQuedan,
+  type AlcanceCierre,
 } from "@/lib/admin/cierre-mes";
 import { sumarMeses } from "@/lib/admin/reparto-pagos";
 import {
@@ -94,60 +118,83 @@ const PREVIA_SIN_RESPUESTA =
   "No se pudo revisar el mes: el servidor no respondió. Cierra este cuadro y vuelve a abrirlo para reintentar.";
 /** La server action no contestó (Vercel 504, deploy en curso…): el POST pudo aplicarse. */
 const sinRespuesta = <T,>(): ActionResult<T> => ({ ok: false, code: "SIN_CONEXION" });
+/** Más tiempo que el toast de siempre: hay que leer qué aviones sí cerraron. */
+const DURACION_TOAST_PARCIAL_MS = 15_000;
 
 export function CierreMesAcciones({
   mes,
-  cerrado,
   ofreceCerrar,
   ofreceReabrir,
   motivoNoCerrable,
   nDiferidos,
+  alcance = null,
+  etiquetaCerrar,
+  etiquetaReabrir,
 }: {
   mes: string;
-  cerrado: boolean;
+  /** ¿Se pinta «Cerrar»? (rol + estado; lo decide quien monta). */
   ofreceCerrar: boolean;
+  /** ¿Se pinta «Reabrir»? (solo ADMIN + algo cerrado). */
   ofreceReabrir: boolean;
   /** Texto de por qué no se puede cerrar (orden / mes en curso); null = se puede intentar. */
   motivoNoCerrable: string | null;
-  /** Vuelos que pasaron al mes siguiente con el cierre vigente (de `totales`). */
+  /** Vuelos que pasaron al mes siguiente con el cierre vigente (de `totales`); null = no se sabe. */
   nDiferidos: number | null;
+  /** CIERRE POR AVIÓN: el avión (tile) o null = la flota / el mes global. */
+  alcance?: AlcanceCierre | null;
+  /** Texto del botón «Cerrar» (default «Cerrar septiembre 2026»; la flota: «… (los 3 aviones abiertos)»). */
+  etiquetaCerrar?: string;
+  /** Texto del botón «Reabrir» (default «Reabrir mes»). */
+  etiquetaReabrir?: string;
 }) {
   const [abrirCerrar, setAbrirCerrar] = useState(false);
   const [abrirReabrir, setAbrirReabrir] = useState(false);
   if (!ofreceCerrar && !ofreceReabrir) return null;
+  const nombreCerrar = alcance ? tituloCerrarAvion(mes, alcance.matricula) : undefined;
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {ofreceCerrar && !cerrado && (
+    <div className="flex flex-wrap items-center gap-2" data-cierre-acciones={alcance?.matricula ?? "flota"}>
+      {ofreceCerrar && (
         <>
           <Button
             type="button"
             size="sm"
             className="cursor-pointer"
             disabled={!!motivoNoCerrable}
-            title={motivoNoCerrable ?? undefined}
+            title={motivoNoCerrable ?? nombreCerrar}
+            aria-label={nombreCerrar}
             onClick={() => setAbrirCerrar(true)}
           >
             <LockClosedIcon className="h-4 w-4" aria-hidden />
-            {etiquetaBotonCerrar(mes)}
+            {etiquetaCerrar ?? etiquetaBotonCerrar(mes)}
           </Button>
           {motivoNoCerrable && <span className="text-xs text-muted-foreground">{motivoNoCerrable}</span>}
-          {abrirCerrar && <DialogoCerrar mes={mes} open={abrirCerrar} onOpenChange={setAbrirCerrar} />}
+          {abrirCerrar && (
+            <DialogoCerrar mes={mes} alcance={alcance} open={abrirCerrar} onOpenChange={setAbrirCerrar} />
+          )}
         </>
       )}
-      {ofreceReabrir && cerrado && (
+      {ofreceReabrir && (
         <>
           <Button
             type="button"
             size="sm"
             variant="outline"
             className="cursor-pointer"
+            title={alcance ? tituloReabrirAvion(mes, alcance.matricula) : undefined}
+            aria-label={alcance ? tituloReabrirAvion(mes, alcance.matricula) : undefined}
             onClick={() => setAbrirReabrir(true)}
           >
             <LockOpenIcon className="h-4 w-4" aria-hidden />
-            {ETIQUETA_BOTON_REABRIR}
+            {etiquetaReabrir ?? ETIQUETA_BOTON_REABRIR}
           </Button>
           {abrirReabrir && (
-            <DialogoReabrir mes={mes} nDiferidos={nDiferidos} open={abrirReabrir} onOpenChange={setAbrirReabrir} />
+            <DialogoReabrir
+              mes={mes}
+              alcance={alcance}
+              nDiferidos={nDiferidos}
+              open={abrirReabrir}
+              onOpenChange={setAbrirReabrir}
+            />
           )}
         </>
       )}
@@ -156,7 +203,7 @@ export function CierreMesAcciones({
 }
 
 // =============================================================================
-// «Cerrar <mes>»
+// «Cerrar <mes>» (un avión o la flota)
 // =============================================================================
 
 type EstadoPrevia =
@@ -166,10 +213,12 @@ type EstadoPrevia =
 
 function DialogoCerrar({
   mes,
+  alcance,
   open,
   onOpenChange,
 }: {
   mes: string;
+  alcance: AlcanceCierre | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
@@ -186,6 +235,7 @@ function DialogoCerrar({
   const refrescarAlCerrar = useRef(false);
   // ¿Ya hubo una previa? (se escribe en el efecto, nunca en el render).
   const cargadaRef = useRef(false);
+  const aeronaveId = alcance?.aeronaveId ?? null;
 
   // La previa se pide al montar (el diálogo se monta al abrir y se desmonta
   // al cerrar: cada apertura relee) y cada vez que cambia `incluir`.
@@ -193,7 +243,7 @@ function DialogoCerrar({
     let vivo = true;
     const primera = !cargadaRef.current;
     if (!primera) setRecalculando(true);
-    void previaCierreAction(mes, incluir)
+    void previaCierreAction(mes, incluir, aeronaveId)
       .catch(() => ({ ok: false as const, error: PREVIA_SIN_RESPUESTA, data: undefined }))
       .then((r) => {
         if (!vivo) return;
@@ -207,7 +257,7 @@ function DialogoCerrar({
     return () => {
       vivo = false;
     };
-  }, [mes, incluir]);
+  }, [mes, incluir, aeronaveId]);
 
   const cambiarQuedarse = (id: string, quedarse: boolean) => {
     setError(null);
@@ -225,7 +275,6 @@ function DialogoCerrar({
 
   const previa = estado.tipo === "ok" ? estado.previa : null;
   const destino = sumarMeses(mes, 1) ?? mes;
-  const bloqueado = !puedeConfirmarCierre(previa, true);
   const puedeConfirmar = puedeConfirmarCierre(previa, entiendo);
 
   const cerrar = () => {
@@ -233,14 +282,26 @@ function DialogoCerrar({
     enviandoRef.current = true;
     setEnviando(true);
     setError(null);
-    void cerrarMesAction(mes, idsVistosEnPrevia(previa), incluir)
+    void cerrarMesAction(mes, idsVistosEnPrevia(previa), incluir, aeronaveId)
       .catch(sinRespuesta<ResultadoCerrarMes>)
       .then((r) => {
         enviandoRef.current = false;
         setEnviando(false);
         const d = decidirRespuestaCerrar(r, mes);
         if (d.tipo === "exito") {
-          toast.success(textoToastCerrado(mes, d.diferidos, destino, d.incluidos));
+          toast.success(
+            alcance
+              ? textoToastCerradoAvion(mes, alcance.matricula, d.diferidos, destino, d.incluidos)
+              : textoToastCerradoFlota(mes, d.cerrados, d.diferidos, destino, d.incluidos),
+          );
+          refrescarAlCerrar.current = false;
+          onOpenChange(false);
+          router.refresh();
+          return;
+        }
+        if (d.tipo === "parcial") {
+          // Los que sí cerraron se quedan cerrados: la pantalla ya cambió.
+          toast.error(d.texto, { duration: DURACION_TOAST_PARCIAL_MS });
           refrescarAlCerrar.current = false;
           onOpenChange(false);
           router.refresh();
@@ -262,9 +323,9 @@ function DialogoCerrar({
     <AlertDialog open={open} onOpenChange={cambiarAbierto}>
       <AlertDialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto data-[size=default]:sm:max-w-3xl">
         <AlertDialogHeader>
-          <AlertDialogTitle>{`${etiquetaBotonCerrar(mes)}`}</AlertDialogTitle>
+          <AlertDialogTitle>{alcance ? tituloCerrarAvion(mes, alcance.matricula) : etiquetaBotonCerrar(mes)}</AlertDialogTitle>
           <AlertDialogDescription>
-            {textoDescripcionCerrar(mes, destino)}
+            {alcance ? textoDescripcionCerrarAvion(mes, destino, alcance.matricula) : textoDescripcionCerrar(mes, destino)}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -280,91 +341,20 @@ function DialogoCerrar({
         )}
 
         {previa && (
-          <div className="space-y-3 text-sm">
-            {estado.tipo === "ok" && estado.cambio && (
-              <p role="status" className="rounded-lg border border-amber-400/50 bg-amber-50 px-3 py-2 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                {TEXTO_PREVIA_CAMBIO}
-              </p>
-            )}
-            <p className="text-muted-foreground" data-resumen-previa>
-              {resumenPrevia(previa)}
-            </p>
-
-            {previa.motivo_no_cerrable &&
-              (previa.motivo_no_cerrable !== "PRECIERRE_NO_LISTO" || previa.bloqueantes.length === 0) && (
-              <p role="alert" className="flex items-start gap-1.5 text-destructive">
-                <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                {textoNoCerrableDePrevia(previa)}
-              </p>
-            )}
-
-            {previa.bloqueantes.length > 0 && (
-              <div className="rounded-lg border border-amber-400/50 p-3" data-bloqueantes>
-                <p className="font-medium">Pendientes que impiden cerrar</p>
-                <ListaBloqueantesPrevia bloqueantes={previa.bloqueantes} />
-                <a
-                  href={`#${ANCLA_PRE_CIERRE}`}
-                  onClick={() => cambiarAbierto(false)}
-                  className="mt-2 inline-block cursor-pointer text-xs font-medium underline underline-offset-2"
-                >
-                  Resolver en el pre-cierre →
-                </a>
-              </div>
-            )}
-
-            <TablaVuelos
-              titulo={tituloVuelosQuePasan(destino)}
-              vacio={`Ningún vuelo pasa a ${mesEnMinuscula(destino)}: todo lo completado está cobrado al ${ultimoDiaCorto(mes)}.`}
-              vuelos={previa.vuelos_que_pasan}
-              corte={ultimoDiaCorto(mes)}
-              quedarse={{ mes, marcados: incluir, onCambiar: cambiarQuedarse, ocupado: recalculando || enviando }}
-            />
-            {previa.vuelos_que_pasan.some(puedeQuedarseEnMes) && (
-              <p className="text-xs text-muted-foreground" data-nota-quedarse>
-                {notaQuedarseEnMes(mes, destino)}
-              </p>
-            )}
-            {(previa.vuelos_incluidos ?? []).length > 0 && (
-              <TablaVuelos
-                titulo={tituloVuelosQueSeQuedan(mes)}
-                vacio=""
-                vuelos={previa.vuelos_incluidos ?? []}
-                corte={ultimoDiaCorto(mes)}
-                clave="quedan"
-                quedarse={{ mes, marcados: incluir, onCambiar: cambiarQuedarse, ocupado: recalculando || enviando }}
-              />
-            )}
-            {recalculando && (
-              <p className="text-xs text-muted-foreground" role="status">
-                Recalculando la previa…
-              </p>
-            )}
-
-            {previa.vuelos_que_vienen.length > 0 && (
-              <TablaVuelos
-                titulo={tituloVuelosQueVienen(previa.vuelos_que_vienen[0]?.origen || (sumarMeses(mes, -1) ?? mes))}
-                vacio=""
-                vuelos={previa.vuelos_que_vienen}
-                corte={ultimoDiaCorto(mes)}
-                informativo
-              />
-            )}
-
-            <RepartoAntesDespues previa={previa} />
-
-            {!bloqueado && (
-              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 cursor-pointer"
-                  checked={entiendo}
-                  onChange={(e) => setEntiendo(e.target.checked)}
-                  disabled={enviando}
-                />
-                <span>{textoCheckboxCerrar(mes)}</span>
-              </label>
-            )}
-          </div>
+          <CuerpoPrevia
+            mes={mes}
+            destino={destino}
+            alcance={alcance}
+            previa={previa}
+            cambio={estado.tipo === "ok" && estado.cambio}
+            incluir={incluir}
+            onCambiarQuedarse={cambiarQuedarse}
+            recalculando={recalculando}
+            enviando={enviando}
+            entiendo={entiendo}
+            onEntiendo={setEntiendo}
+            cerrarDialogo={() => cambiarAbierto(false)}
+          />
         )}
 
         {error && (
@@ -389,6 +379,148 @@ function DialogoCerrar({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/**
+ * El CUERPO del diálogo con la previa ya leída (sin estado propio: lo
+ * exporta para probarlo con `react-dom/server`): alcance, resumen, motivo,
+ * bloqueantes propios y de otros aviones (plegados), tablas de vuelos
+ * (pasan / se quedan / vienen), reparto antes/después y la casilla.
+ */
+export function CuerpoPrevia({
+  mes,
+  destino,
+  alcance,
+  previa,
+  cambio,
+  incluir,
+  onCambiarQuedarse,
+  recalculando,
+  enviando,
+  entiendo,
+  onEntiendo,
+  cerrarDialogo,
+}: {
+  mes: string;
+  destino: string;
+  alcance: AlcanceCierre | null;
+  previa: PreviaCierre;
+  cambio: boolean;
+  incluir: readonly string[];
+  onCambiarQuedarse: (id: string, quedarse: boolean) => void;
+  recalculando: boolean;
+  enviando: boolean;
+  entiendo: boolean;
+  onEntiendo: (v: boolean) => void;
+  cerrarDialogo: () => void;
+}) {
+  const bloqueado = !puedeConfirmarCierre(previa, true);
+  const otros = previa.bloqueantes_otros_aviones ?? [];
+  const alcanceTexto = textoAlcancePrevia(previa);
+  const quedarse = { mes, marcados: incluir, onCambiar: onCambiarQuedarse, ocupado: recalculando || enviando };
+  return (
+    <div className="space-y-3 text-sm" data-cuerpo-previa={alcance?.matricula ?? "flota"}>
+      {cambio && (
+        <p role="status" className="rounded-lg border border-amber-400/50 bg-amber-50 px-3 py-2 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          {TEXTO_PREVIA_CAMBIO}
+        </p>
+      )}
+      {alcanceTexto && (
+        <p className="font-medium" data-alcance-previa>
+          {alcanceTexto}
+        </p>
+      )}
+      <p className="text-muted-foreground" data-resumen-previa>
+        {resumenPrevia(previa)}
+      </p>
+
+      {previa.motivo_no_cerrable &&
+        (previa.motivo_no_cerrable !== "PRECIERRE_NO_LISTO" || previa.bloqueantes.length === 0) && (
+        <p role="alert" className="flex items-start gap-1.5 text-destructive">
+          <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          {textoNoCerrableDePrevia(previa)}
+        </p>
+      )}
+
+      {previa.bloqueantes.length > 0 && (
+        <div className="rounded-lg border border-amber-400/50 p-3" data-bloqueantes>
+          <p className="font-medium">Pendientes que impiden cerrar</p>
+          <ListaBloqueantesPrevia bloqueantes={previa.bloqueantes} />
+          <a
+            href={`#${ANCLA_PRE_CIERRE}`}
+            onClick={cerrarDialogo}
+            className="mt-2 inline-block cursor-pointer text-xs font-medium underline underline-offset-2"
+          >
+            Resolver en el pre-cierre →
+          </a>
+        </div>
+      )}
+
+      {/* CIERRE POR AVIÓN: lo que bloquea a OTROS aviones se informa plegado
+          (no impide cerrar este). */}
+      {otros.length > 0 && (
+        <details className="rounded-lg border border-border px-3 py-2" data-bloqueantes-otros>
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+            {TITULO_BLOQUEANTES_OTROS_AVIONES} · {otros.length}
+          </summary>
+          <ListaBloqueantesPrevia bloqueantes={otros} />
+        </details>
+      )}
+
+      <TablaVuelos
+        titulo={tituloVuelosQuePasan(destino)}
+        vacio={`Ningún vuelo pasa a ${mesEnMinuscula(destino)}: todo lo completado está cobrado al ${ultimoDiaCorto(mes)}.`}
+        vuelos={previa.vuelos_que_pasan}
+        corte={ultimoDiaCorto(mes)}
+        quedarse={quedarse}
+      />
+      {previa.vuelos_que_pasan.some(puedeQuedarseEnMes) && (
+        <p className="text-xs text-muted-foreground" data-nota-quedarse>
+          {notaQuedarseEnMes(mes, destino)}
+        </p>
+      )}
+      {(previa.vuelos_incluidos ?? []).length > 0 && (
+        <TablaVuelos
+          titulo={tituloVuelosQueSeQuedan(mes)}
+          vacio=""
+          vuelos={previa.vuelos_incluidos ?? []}
+          corte={ultimoDiaCorto(mes)}
+          clave="quedan"
+          quedarse={quedarse}
+        />
+      )}
+      {recalculando && (
+        <p className="text-xs text-muted-foreground" role="status">
+          Recalculando la previa…
+        </p>
+      )}
+
+      {previa.vuelos_que_vienen.length > 0 && (
+        <TablaVuelos
+          titulo={tituloVuelosQueVienen(previa.vuelos_que_vienen[0]?.origen || (sumarMeses(mes, -1) ?? mes))}
+          vacio=""
+          vuelos={previa.vuelos_que_vienen}
+          corte={ultimoDiaCorto(mes)}
+          informativo
+        />
+      )}
+
+      <RepartoAntesDespues previa={previa} />
+
+      {!bloqueado && (
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 cursor-pointer"
+            checked={entiendo}
+            onChange={(e) => onEntiendo(e.target.checked)}
+            disabled={enviando}
+          />
+          <span>{alcance ? textoCheckboxCerrarAvion(mes, alcance.matricula) : textoCheckboxCerrar(mes)}</span>
+        </label>
+      )}
+    </div>
   );
 }
 
@@ -441,6 +573,8 @@ function TablaVuelos({
   /**
    * INCLUIR EN EL MES (21-oct-2026): la casilla «Se queda en <mes>» por fila
    * (solo para los ya cobrados después del corte, `puedeQuedarseEnMes`).
+   * CIERRE POR AVIÓN: una decisión tomada al cerrar OTRO avión
+   * (`decidido_por`) se pinta marcada y bloqueada, con el tooltip que lo dice.
    */
   quedarse?: {
     mes: string;
@@ -479,51 +613,72 @@ function TablaVuelos({
               </tr>
             </thead>
             <tbody>
-              {vuelos.map((v) => (
-                <tr key={v.id} className="border-t border-border" title={v.leyenda}>
-                  <td className="px-2 py-1 font-mono">
-                    <a href={`/admin/flights/${v.id}`} className="cursor-pointer underline underline-offset-2">
-                      {v.folio != null && v.folio > 0 ? `#${v.folio}` : "vuelo"}
-                    </a>
-                  </td>
-                  <td className="max-w-40 truncate px-2 py-1">{v.cliente ?? "—"}</td>
-                  <td className="px-2 py-1 font-mono">{v.aeronave?.matricula ?? "—"}</td>
-                  <td className="whitespace-nowrap px-2 py-1">{v.fecha_vuelo ? fmtDate(v.fecha_vuelo) : "—"}</td>
-                  <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.venta_usd, "USD")}</td>
-                  <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.cobrado_usd, "USD")}</td>
-                  {/* Caso #351: ya cobrado después ⇒ gris (el ámbar se leía «se debe»). */}
-                  <td
-                    className={`px-2 py-1 text-right font-mono ${
-                      porCobrarYaSeCobro(v) ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300"
-                    }`}
-                  >
-                    {fmtMonto(v.por_cobrar_usd, "USD")}
-                  </td>
-                  {!informativo && (
-                    <td className="whitespace-nowrap px-2 py-1 text-right font-mono">{textoCobradoPosterior(v)}</td>
-                  )}
-                  {quedarse && (
-                    <td className="px-2 py-1 text-center">
-                      {puedeQuedarseEnMes(v) ? (
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 cursor-pointer accent-brand-600"
-                          checked={quedarse.marcados.includes(v.id)}
-                          disabled={quedarse.ocupado}
-                          onChange={(e) => quedarse.onCambiar(v.id, e.target.checked)}
-                          aria-label={textoQuedarseEnMes(quedarse.mes, v)}
-                          title={textoQuedarseEnMes(quedarse.mes, v)}
-                          data-quedarse={v.id}
-                        />
-                      ) : (
-                        <span className="text-muted-foreground" title="Sin cobro completo: pasa al mes siguiente">
-                          —
+              {vuelos.map((v) => {
+                const compartido = notaMultiAvion(v);
+                const decidido = quedarse ? textoDecididoPor(quedarse.mes, v) : null;
+                return (
+                  <tr key={v.id} className="border-t border-border" title={v.leyenda}>
+                    <td className="px-2 py-1 font-mono">
+                      <a href={`/admin/flights/${v.id}`} className="cursor-pointer underline underline-offset-2">
+                        {v.folio != null && v.folio > 0 ? `#${v.folio}` : "vuelo"}
+                      </a>
+                    </td>
+                    <td className="max-w-40 truncate px-2 py-1">{v.cliente ?? "—"}</td>
+                    <td className="px-2 py-1">
+                      <span className="font-mono">{v.aeronave?.matricula ?? "—"}</span>
+                      {compartido && (
+                        <span className="block text-[11px] text-muted-foreground" data-multi-avion={v.id}>
+                          {compartido}
                         </span>
                       )}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="whitespace-nowrap px-2 py-1">{v.fecha_vuelo ? fmtDate(v.fecha_vuelo) : "—"}</td>
+                    <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.venta_usd, "USD")}</td>
+                    <td className="px-2 py-1 text-right font-mono">{fmtMonto(v.cobrado_usd, "USD")}</td>
+                    {/* Caso #351: ya cobrado después ⇒ gris (el ámbar se leía «se debe»). */}
+                    <td
+                      className={`px-2 py-1 text-right font-mono ${
+                        porCobrarYaSeCobro(v) ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300"
+                      }`}
+                    >
+                      {fmtMonto(v.por_cobrar_usd, "USD")}
+                    </td>
+                    {!informativo && (
+                      <td className="whitespace-nowrap px-2 py-1 text-right font-mono">{textoCobradoPosterior(v)}</td>
+                    )}
+                    {quedarse && (
+                      <td className="px-2 py-1 text-center">
+                        {decidido ? (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 cursor-not-allowed accent-brand-600"
+                            checked
+                            disabled
+                            aria-label={decidido}
+                            title={decidido}
+                            data-decidido-por={v.decidido_por?.matricula}
+                          />
+                        ) : puedeQuedarseEnMes(v) ? (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 cursor-pointer accent-brand-600"
+                            checked={quedarse.marcados.includes(v.id)}
+                            disabled={quedarse.ocupado}
+                            onChange={(e) => quedarse.onCambiar(v.id, e.target.checked)}
+                            aria-label={textoQuedarseEnMes(quedarse.mes, v)}
+                            title={textoQuedarseEnMes(quedarse.mes, v)}
+                            data-quedarse={v.id}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground" title="Sin cobro completo: pasa al mes siguiente">
+                            —
+                          </span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -561,16 +716,18 @@ function RepartoAntesDespues({ previa }: { previa: PreviaCierre }) {
 }
 
 // =============================================================================
-// «Reabrir mes»
+// «Reabrir» (un avión o el mes / los aviones cerrados)
 // =============================================================================
 
 function DialogoReabrir({
   mes,
+  alcance,
   nDiferidos,
   open,
   onOpenChange,
 }: {
   mes: string;
+  alcance: AlcanceCierre | null;
   nDiferidos: number | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -597,22 +754,26 @@ function DialogoReabrir({
     enviandoRef.current = true;
     setEnviando(true);
     setError(null);
-    void reabrirMesAction(mes, motivo)
+    void reabrirMesAction(mes, motivo, alcance?.aeronaveId ?? null)
       .catch(sinRespuesta<ResultadoReabrirMes>)
       .then((r) => {
         enviandoRef.current = false;
         setEnviando(false);
         if (r.ok && r.data) {
-          toast.success(textoToastReabierto(mes, r.data.revertidos ?? 0));
+          toast.success(
+            alcance
+              ? textoToastReabiertoAvion(mes, alcance.matricula, r.data.revertidos ?? 0)
+              : textoToastReabierto(mes, r.data.revertidos ?? 0),
+          );
           refrescarAlCerrar.current = false;
           onOpenChange(false);
           router.refresh();
           return;
         }
-        // NO_ESTA_CERRADO / MES_SIGUIENTE_CERRADO / sin respuesta: la card
-        // está vieja ⇒ se refresca al cerrar el diálogo.
+        // NO_ESTA_CERRADO / MES_SIGUIENTE_CERRADO / OTRO_AVION_CERRADO / sin
+        // respuesta: la pantalla está vieja ⇒ se refresca al cerrar el diálogo.
         refrescarAlCerrar.current = true;
-        setError(mensajeErrorCierre(r, "reabrir", mes));
+        setError(mensajeErrorCierre(r, "reabrir", mes, alcance?.matricula ?? null));
       });
   };
 
@@ -620,8 +781,14 @@ function DialogoReabrir({
     <AlertDialog open={open} onOpenChange={cambiarAbierto}>
       <AlertDialogContent className="data-[size=default]:sm:max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>{`¿Reabrir ${mesEnMinuscula(mes)}?`}</AlertDialogTitle>
-          <AlertDialogDescription>{textoConfirmacionReabrir(mes, nDiferidos)}</AlertDialogDescription>
+          <AlertDialogTitle>
+            {alcance ? tituloReabrirAvion(mes, alcance.matricula) : `¿Reabrir ${mesEnMinuscula(mes)}?`}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {alcance
+              ? textoConfirmacionReabrirAvion(mes, alcance.matricula, nDiferidos)
+              : textoConfirmacionReabrir(mes, nDiferidos)}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-1.5">
           <Label htmlFor="motivo-reabrir" className="text-xs font-medium">

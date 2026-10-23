@@ -65,16 +65,34 @@ export function ChipCierre({
 
 const CLASE_POR_ESTADO: Record<TonoEstadoCierre, string> = {
   abierto: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200",
+  // CIERRE POR AVIÓN (API 0.0.104): «Parcial · 3 de 7» = a medio camino (ámbar claro, como «pasaría»).
+  parcial: CLASE_POR_TONO.pasaria,
   cerrado: CLASE_POR_TONO.cerrado,
   reabierto: CLASE_POR_TONO.pasa,
   "en-curso": "border-border bg-muted text-muted-foreground",
 };
 
-/** Badge del ESTADO del mes («Abierto», «Cerrado el 16-oct-2026 por Ale»…). */
-export function ChipEstadoCierre({ badge, className }: { badge: BadgeEstadoCierre | null; className?: string }) {
+/**
+ * Badge del ESTADO del mes o de un avión («Abierto», «Cerrado el 16-oct-2026
+ * por Ale», «Parcial · 3 de 7»…). El `title` del badge (si lo trae) va al
+ * tooltip; `title` en props gana.
+ */
+export function ChipEstadoCierre({
+  badge,
+  className,
+  title,
+}: {
+  badge: BadgeEstadoCierre | null;
+  className?: string;
+  title?: string;
+}) {
   if (!badge) return null;
   return (
-    <span data-estado-cierre={badge.tono} className={`${CLASE_BASE} ${CLASE_POR_ESTADO[badge.tono]} ${className ?? ""}`}>
+    <span
+      data-estado-cierre={badge.tono}
+      title={title ?? badge.title}
+      className={`${CLASE_BASE} ${CLASE_POR_ESTADO[badge.tono]} ${className ?? ""}`}
+    >
       {badge.tono === "cerrado" && <LockClosedIcon className="mr-1 h-3 w-3" aria-hidden />}
       {badge.texto}
     </span>

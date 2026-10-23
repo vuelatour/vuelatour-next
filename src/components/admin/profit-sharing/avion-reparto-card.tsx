@@ -13,6 +13,8 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
+import { ChipEstadoCierre } from "@/components/admin/chip-cierre";
+import { badgeCierreAvion, noCoincideSnapshotAvion, textoNoCoincideSnapshot } from "@/lib/admin/cierre-mes";
 import { CierreRepartoAvion } from "./cierre-reparto-aviso";
 import type { CierrePeriodoAditivo } from "@/types/cierres";
 import { SociosSection } from "./socios-section";
@@ -135,6 +137,20 @@ export function AvionRepartoCard({
           </div>
         </div>
         <div className="mt-1 flex flex-wrap gap-1.5">
+          {/* CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): el estado de ESTE
+              avión en el mes (`cierre_avion`); sin él (API previo) nada: el
+              global ya va arriba, en `CierreRepartoAviso`. */}
+          <ChipEstadoCierre badge={badgeCierreAvion(avion.cierre_avion)} />
+          {noCoincideSnapshotAvion(avion.cierre_avion) && (
+            <Badge
+              variant="outline"
+              className="border-destructive/40 bg-destructive/5 text-destructive"
+              title={textoNoCoincideSnapshot(avion.cierre_avion?.cerrado_at)}
+              data-no-coincide-snapshot={avion.aeronave.matricula}
+            >
+              No coincide con el cierre
+            </Badge>
+          )}
           <Badge variant="outline" className="gap-1">
             <ClockIcon />
             {fmtDecimal(avion.horas_voladas_hr, 1)} hr

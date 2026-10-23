@@ -50,7 +50,7 @@ import { todayCancun } from "@/lib/datetime";
 import { fmtDecimal } from "@/lib/format";
 import { esUuid } from "@/lib/admin/url-params";
 import { cn } from "@/lib/utils";
-import { textoBadgeCierrePeriodo } from "@/lib/admin/cierre-mes";
+import { badgeCierreDelAvion } from "@/lib/admin/cierre-mes";
 import {
   mesActual,
   mesDePeriodo,
@@ -226,7 +226,10 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
   const saldo = saldoCascada(avion, enPesos);
   const positivo = (saldo.valor ?? avion.saldo_disponible_usd) >= 0;
   const detalle = avion.detalle ?? null;
-  const badgeCierre = textoBadgeCierrePeriodo(datos.cierre);
+  // CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): el chip «Mes:» es el de
+  // ESTE avión (`cierre.cierre_avion` / `avion.cierre_avion`); con un API
+  // previo, el global del mes.
+  const badgeCierre = badgeCierreDelAvion(datos.cierre, avion.cierre_avion);
   // Lo por entregar de TODA la cuenta de cada socio (para el diálogo) sale
   // del resumen de cuentas; sin él, el diálogo abre con lo mínimo.
   const resumenPorSocio = new Map<string, ResumenCuentaSocio>(

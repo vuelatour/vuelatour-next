@@ -61,6 +61,35 @@ describe("avisoMesCerrado", () => {
   });
 });
 
+describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): el 409 con el avión del candado", () => {
+  const CON_AVION = { ...DETAILS, aeronave: { id: "a5", matricula: "N621TX" } };
+  it("`details.aeronave` se lee y viaja en el aviso; el `message` del API sigue ganando", () => {
+    expect(detallesMesCerrado(CON_AVION)?.aeronave).toEqual({ id: "a5", matricula: "N621TX" });
+    expect(detallesMesCerrado({ ...DETAILS, aeronave: null })?.aeronave).toBeNull();
+    expect(detallesMesCerrado(DETAILS)).not.toHaveProperty("aeronave");
+    const texto = "N621TX · septiembre 2026 ya está cerrado (Ale, 16-oct). Reábrelo en Reportes para corregir.";
+    expect(avisoMesCerrado({ ok: false, error: texto, code: CODIGO_MES_CERRADO, details: CON_AVION, status: 409 })).toEqual({
+      texto,
+      href: "/admin/reportes?desde=2026-09-01&hasta=2026-09-30",
+      periodo: "2026-09",
+      matricula: "N621TX",
+    });
+  });
+  it("sin `message`: el respaldo nombra al avión («N621TX · septiembre 2026 ya está cerrado…»)", () => {
+    expect(avisoMesCerrado({ ok: false, code: CODIGO_MES_CERRADO, details: CON_AVION })?.texto).toBe(
+      "N621TX · septiembre 2026 ya está cerrado. Reábrelo en Reportes para corregir.",
+    );
+    expect(textoMesCerradoRespaldo("2026-09", "N621TX")).toBe("N621TX · septiembre 2026 ya está cerrado. Reábrelo en Reportes para corregir.");
+    expect(textoMesCerradoRespaldo(null, "N621TX")).toBe("N621TX · ese mes ya está cerrado. Reábrelo en Reportes para corregir.");
+    expect(textoMesCerradoRespaldo("2026-09")).toBe("Septiembre 2026 ya está cerrado. Reábrelo en Reportes para corregir.");
+  });
+  it("el enlace sigue yendo al mes completo en Reportes (ahí viven «Reabrir» del tile y de la flota)", () => {
+    expect(avisoMesCerrado({ ok: false, code: CODIGO_MES_CERRADO, details: CON_AVION })?.href).toBe(
+      "/admin/reportes?desde=2026-09-01&hasta=2026-09-30",
+    );
+  });
+});
+
 describe("detallesMesCerrado / hrefReabrir", () => {
   it("valida el periodo", () => {
     expect(detallesMesCerrado(DETAILS)).toEqual({

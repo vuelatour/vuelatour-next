@@ -23,11 +23,13 @@ import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { PreCierreCard } from "@/components/admin/reportes/pre-cierre-card";
 import { PreCierreCardCargando } from "@/components/admin/reportes/pre-cierre-card-cargando";
 import { VerEnPantallaLink } from "@/components/admin/reportes/ver-en-pantalla-link";
-import { CierreMesCard, CierreMesCardCargando } from "@/components/admin/reportes/cierre-mes-card";
+import { CierreFlotaBloque } from "@/components/admin/reportes/cierre-flota-bloque";
 import { listFlights } from "@/lib/api/flights-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
+import { getCierres } from "@/lib/api/cierres-server";
 import { getInicioOficial } from "@/lib/api/inicio-oficial";
+import { mesCierreDe, mesDeVistaCierre, modoCierreDelApi } from "@/lib/admin/cierre-mes";
 import { ajustarRangoAlInicio } from "@/lib/admin/inicio-oficial";
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 import { Degradaciones } from "@/lib/api/degradar";
@@ -47,6 +49,7 @@ import {
 } from "@/lib/admin/balance-vista";
 import {
   DESCRIPCION_BALANCE_POR_AVION,
+  DESCRIPCION_BALANCE_POR_AVION_SOLO_CIERRE,
   DESCRIPCION_CIERRE_REPARTO,
   DETALLE_BALANCE_POR_AVION,
   ETIQUETA_DEGRADADO_AVIONES,
@@ -57,9 +60,11 @@ import {
   KICKER_OTROS,
   SUBTITULO_REPORTES,
   SUBTITULO_REPORTES_SIN_BALANCES,
+  TEXTO_BALANCES_SOLO_CIERRE,
   TITULO_BALANCE_POR_AVION,
   ariaVerEnPantalla,
   avionBalanceDeAeronave,
+  muestraSeccionBalances,
   ordenarAvionesBalance,
   puedeExportarHorasPiloto,
 } from "@/lib/admin/reportes-ui";
@@ -87,8 +92,20 @@ interface PageProps {
  * opciones de balance por avión y general que son las 2 cosas que más se
  * consultan aquí». De arriba abajo: periodo (+ atajos) → BALANCES (flota,
  * avión, «¿Qué trae cada libro?») → CIERRE DEL MES (pre-cierre entero +
- * cierre) → OTROS REPORTES (vuelo, exports). Textos y reglas en
+ * descargas) → OTROS REPORTES (vuelo, exports). Textos y reglas en
  * `lib/admin/reportes-ui.ts`; los libros en `lib/admin/reportes-balance.ts`.
+ *
+ * CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105). Pedido del
+ * cliente: «eliminar la burbuja independiente de cierre de mes, y poner un
+ * botón de cierre de mes individual en cada avión». La burbuja «Cierre
+ * formal del mes» se retiró de «Cierre y reparto del periodo»; el cierre
+ * vive en BALANCES: la card «Balance mensual» lleva el chip de la flota y
+ * «Cerrar <mes> (los N aviones abiertos)» / «Reabrir» (`CierreFlotaBloque`)
+ * y cada tile de «Balance por avión» su chip y su «Cerrar <mes>» / «Reabrir»
+ * (`AircraftBalancePicker` + `CierreAvionAcciones`). Por eso la sección se
+ * pinta también a FACTURACION (cierra, no abre libros: sin enlaces). El mes
+ * es el del selector (`mesDeVistaCierre`); `GET /v1/cierres` se lee aquí
+ * (`getCierres`, barato, nunca lanza).
  */
 export default async function ReportesPage({ searchParams }: PageProps) {
   const sp = await searchParams;
@@ -111,12 +128,22 @@ export default async function ReportesPage({ searchParams }: PageProps) {
   // Catálogos ACCESORIOS: degradan POR TARJETA y se AVISA (regla «degradar sin
   // mentir»). `null` = NO cargó (se dice) ≠ `[]` = no hay.
   const degradado = new Degradaciones();
-  const [me, vuelos, aeronaves] = await Promise.all([
+  // `getCierres` nunca lanza y distingue sus fallos (api-previo, sin
+  // migración, sin permiso, error): el bloque del cierre los dice.
+  const [me, vuelos, aeronaves, cierres] = await Promise.all([
     degradado.opcional(ETIQUETA_DEGRADADO_USUARIO, getMe(), null),
     degradado.opcional(ETIQUETA_DEGRADADO_VUELOS, listFlights({ limit: 100, offset: 0 }), null),
     degradado.opcional(ETIQUETA_DEGRADADO_AVIONES, listAircraft({ limit: 100, offset: 0 }), null),
+    getCierres(),
   ]);
   const rol = me?.rol ?? null;
+
+  // CIERRE POR AVIÓN: el mes que se cierra es el del selector (mes completo
+  // o «Este mes»); con otro rango no hay chips ni botones en los tiles.
+  const datosCierres = cierres.estado === "ok" ? cierres.datos : null;
+  const vistaCierre = mesDeVistaCierre(desde, hasta, hoy);
+  const modoCierre = modoCierreDelApi(datosCierres);
+  const mesCierre = vistaCierre ? mesCierreDe(datosCierres, vistaCierre.mes) : null;
 
   // Vuelos recientes para el selector del reporte por vuelo.
   const flightsPick: FlightPickItem[] = (vuelos?.data ?? []).map((f) => {
@@ -145,6 +172,8 @@ export default async function ReportesPage({ searchParams }: PageProps) {
   const librosBalance = librosBalanceVuelaTour(desde, hasta);
   // Sin `/me` se ofrece todo: el API es el candado.
   const abreBalances = puedeAbrirBalances(rol);
+  // La sección también para quien solo CIERRA (FACTURACION): tiles sin enlaces.
+  const veBalances = muestraSeccionBalances(rol);
 
   return (
     <div className="space-y-6">
@@ -175,63 +204,71 @@ export default async function ReportesPage({ searchParams }: PageProps) {
           </h2>
           <span className="text-xs text-muted-foreground">{textoPeriodoVista(desde, hasta)}</span>
         </div>
-        {abreBalances ? (
+        {veBalances ? (
           <>
             {/* El libro de la FLOTA va PRIMERO (en móvil queda a un scroll,
-                no a ocho). */}
+                no a ocho). Debajo, el cierre de la FLOTA (chip + botones). */}
             <Card>
               <CardHeader>
                 <CardTitle id="reportes-balances-flota" className="text-base">
                   {TITULO_CARD_BALANCE_VUELATOUR}
                 </CardTitle>
-                <CardDescription>{NOTA_BALANCE_VUELATOUR}</CardDescription>
+                <CardDescription>{abreBalances ? NOTA_BALANCE_VUELATOUR : TEXTO_BALANCES_SOLO_CIERRE}</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 {/* `role="list"`: sin él, VoiceOver no anuncia la lista (el
                     preflight quita las viñetas); el nombre es el título de la
-                    card, una sola vez. */}
-                <ul
-                  role="list"
-                  aria-labelledby="reportes-balances-flota"
-                  className="grid gap-3 sm:grid-cols-2"
-                >
-                  {librosBalance.map((libro) => (
-                    <li
-                      key={libro.modo}
-                      data-libro={libro.modo}
-                      className="flex flex-col gap-3 rounded-lg border border-border p-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">{libro.nombre}</p>
-                        <p className="text-xs text-muted-foreground">{libro.resumen}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {/* «Ver en pantalla» PRIMERO en todos los tiles: la
-                            posición es la jerarquía (prioridad a la vista). */}
-                        <VerEnPantallaLink
-                          destino={{ tipo: "vuelatour", modo: libro.modo }}
-                          desde={desde}
-                          hasta={hasta}
-                          aria-label={ariaVerEnPantalla(libro.nombre)}
-                        />
-                        <ExcelExportButton
-                          path={libro.path}
-                          filename={libro.filename}
-                          label={libro.etiqueta}
-                          query={libro.query}
-                        />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                    card, una sola vez. Solo a quien abre los libros. */}
+                {abreBalances && (
+                  <ul
+                    role="list"
+                    aria-labelledby="reportes-balances-flota"
+                    className="grid gap-3 sm:grid-cols-2"
+                  >
+                    {librosBalance.map((libro) => (
+                      <li
+                        key={libro.modo}
+                        data-libro={libro.modo}
+                        className="flex flex-col gap-3 rounded-lg border border-border p-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{libro.nombre}</p>
+                          <p className="text-xs text-muted-foreground">{libro.resumen}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {/* «Ver en pantalla» PRIMERO en todos los tiles: la
+                              posición es la jerarquía (prioridad a la vista). */}
+                          <VerEnPantallaLink
+                            destino={{ tipo: "vuelatour", modo: libro.modo }}
+                            desde={desde}
+                            hasta={hasta}
+                            aria-label={ariaVerEnPantalla(libro.nombre)}
+                          />
+                          <ExcelExportButton
+                            path={libro.path}
+                            filename={libro.filename}
+                            label={libro.etiqueta}
+                            query={libro.query}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {/* Cierre de la FLOTA (23-oct-2026, API 0.0.104): chip
+                    «Abierto · 0 de 7» / «Parcial · 3 de 7» / «Cerrado» y
+                    «Cerrar <mes> (los N aviones abiertos)» / «Reabrir». */}
+                <CierreFlotaBloque carga={cierres} desde={desde} hasta={hasta} hoy={hoy} inicio={inicio} rol={rol} />
               </CardContent>
             </Card>
 
-            {/* Un tile por AVIÓN. */}
+            {/* Un tile por AVIÓN, con su chip de cierre y su botón. */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">{TITULO_BALANCE_POR_AVION}</CardTitle>
-                <CardDescription>{DESCRIPCION_BALANCE_POR_AVION}</CardDescription>
+                <CardDescription>
+                  {abreBalances ? DESCRIPCION_BALANCE_POR_AVION : DESCRIPCION_BALANCE_POR_AVION_SOLO_CIERRE}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <AircraftBalancePicker
@@ -239,29 +276,35 @@ export default async function ReportesPage({ searchParams }: PageProps) {
                   disponibles={avionesDisponibles}
                   desde={desde}
                   hasta={hasta}
+                  rol={rol}
+                  mesCierre={mesCierre}
+                  periodo={vistaCierre}
+                  modoCierre={modoCierre}
                 />
               </CardContent>
             </Card>
 
             {/* Las descripciones largas, plegadas y SIEMPRE en el DOM (el SSR
-                las imprime). */}
-            <TextoPlegable titulo={TITULO_DETALLE_LIBROS}>
-              {librosBalance.map((libro) => (
-                <p key={libro.modo}>
-                  <span className="font-medium text-foreground">{`${libro.nombre}:`}</span>{" "}
-                  {libro.detalle}
+                las imprime). Solo a quien abre los libros. */}
+            {abreBalances && (
+              <TextoPlegable titulo={TITULO_DETALLE_LIBROS}>
+                {librosBalance.map((libro) => (
+                  <p key={libro.modo}>
+                    <span className="font-medium text-foreground">{`${libro.nombre}:`}</span>{" "}
+                    {libro.detalle}
+                  </p>
+                ))}
+                <p>
+                  <span className="font-medium text-foreground">{`${TITULO_BALANCE_POR_AVION}:`}</span>{" "}
+                  {DETALLE_BALANCE_POR_AVION}
                 </p>
-              ))}
-              <p>
-                <span className="font-medium text-foreground">{`${TITULO_BALANCE_POR_AVION}:`}</span>{" "}
-                {DETALLE_BALANCE_POR_AVION}
-              </p>
-            </TextoPlegable>
+              </TextoPlegable>
+            )}
           </>
         ) : (
-          /* FACTURACION (u otro rol fuera de ADMIN/ANALISTA): el API responde
-             403 a los cuatro endpoints; se explica en vez de pintar botones
-             que fallan. */
+          /* COORDINADOR, SOCIO u otro rol que ni abre los balances ni cierra
+             el mes: el API responde 403 a los endpoints; se explica en vez de
+             pintar botones que fallan. */
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -294,12 +337,8 @@ export default async function ReportesPage({ searchParams }: PageProps) {
             <CardDescription>{DESCRIPCION_CIERRE_REPARTO}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Cierre FORMAL del mes (16-oct-2026, API 0.0.88): estado,
-                «Cerrar <mes>» y «Reabrir mes». Su propio Suspense: con un API
-                lento no detiene las descargas. */}
-            <Suspense key={`cierre:${desde}:${hasta}`} fallback={<CierreMesCardCargando />}>
-              <CierreMesCard desde={desde} hasta={hasta} hoy={hoy} inicio={inicio} rol={rol} />
-            </Suspense>
+            {/* Hasta el 23-oct-2026 aquí iba la burbuja «Cierre formal del
+                mes»; el cierre vive ahora en BALANCES (por avión y de la flota). */}
             <CierreRepartoSection desde={desde} hasta={hasta} rol={rol ?? undefined} />
           </CardContent>
         </Card>

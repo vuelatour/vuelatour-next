@@ -1156,11 +1156,13 @@ export function textoCeldaHistorico(col: ColumnaHistorico, valor: number | null 
   return "";
 }
 
-/** «Abierto» · «Cerrado» · «Reabierto» · null (sin cierre). */
+/** «Abierto» · «Cerrado» · «Reabierto» · «Parcial» (flota, API 0.0.104) · null (sin cierre). */
 export function textoEstadoCierreMes(estado: string | null | undefined): string | null {
   switch (estado) {
     case "ABIERTO":
       return "Abierto";
+    case "PARCIAL":
+      return "Parcial";
     case "CERRADO":
       return "Cerrado";
     case "REABIERTO":

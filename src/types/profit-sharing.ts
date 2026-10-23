@@ -1,4 +1,4 @@
-import type { CierrePeriodoAditivo } from "./cierres";
+import type { CierreAvionAditivo, CierrePeriodoAditivo } from "./cierres";
 import type { PagoSocio } from "./reparto-pagos";
 
 export interface RepartoSocio {
@@ -364,6 +364,10 @@ export interface AvionReparto {
   reparto_porcentaje_total: number;
   /** Opcional: el API viejo no lo manda; tratar siempre defensivo. */
   detalle?: AvionRepartoDetalle | null;
+  /** ADITIVO (CIERRE POR AVIÓN, 23-oct-2026, API 0.0.104, invariante 105):
+      el estado del cierre de ESTE avión en el mes (SIEMPRE con ese API,
+      'ABIERTO' por defecto). Ausente con un API previo ⇒ el global. */
+  cierre_avion?: CierreAvionAditivo | null;
 }
 
 /** Vuelos EXTERNOS del periodo (sin avión de flota): bloque informativo — su

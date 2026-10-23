@@ -40,10 +40,15 @@ import {
 } from "../reportes-balance";
 import { TEXTO_BALANCES_SIN_PERMISO, textoPeriodoVista } from "../balance-vista";
 import {
+  DESCRIPCION_BALANCE_POR_AVION_SOLO_CIERRE,
   SUBTITULO_REPORTES,
   SUBTITULO_REPORTES_SIN_BALANCES,
+  TEXTO_BALANCES_SOLO_CIERRE,
+  muestraSeccionBalances,
   type AvionBalanceItem,
 } from "../reportes-ui";
+import type { CargaCierres } from "@/lib/api/cierres-server";
+import type { CierresRespuesta, MesCierre } from "@/types/cierres";
 
 /** Lo que recibe cada `ExcelExportButton` de la página (testigo). */
 interface PropsBotonExcel {
@@ -60,6 +65,10 @@ interface PropsPicker {
   disponibles?: boolean;
   desde: string;
   hasta: string;
+  rol?: string | null;
+  mesCierre?: MesCierre | null;
+  periodo?: { mes: string; enCurso: boolean } | null;
+  modoCierre?: "POR_AVION" | "GLOBAL";
 }
 const pickerProps: PropsPicker[] = [];
 
@@ -70,11 +79,33 @@ interface PropsVuelos {
 }
 const vueloProps: PropsVuelos[] = [];
 
+/** Septiembre 2026 PARCIAL (3 de 7 cerrados) tal como lo normaliza `getCierres` (API 0.0.104). */
+const SEP_PARCIAL: MesCierre = {
+  periodo: "2026-09",
+  estado: "PARCIAL",
+  cerrado_at: null,
+  cerrado_por: null,
+  reabierto_at: null,
+  reabierto_por: null,
+  reabierto_motivo: null,
+  version: 0,
+  puede_cerrar: true,
+  motivo_no_cerrable: null,
+  totales: null,
+  aviones_activos: 7,
+  aviones_cerrados: 3,
+};
+const CIERRES_POR_AVION: CargaCierres<CierresRespuesta> = {
+  estado: "ok",
+  datos: { disponible: true, por_avion: true, inicio_oficial: "2026-09-01", mes_en_curso: "2026-10", meses: [SEP_PARCIAL], siguiente_a_cerrar: "2026-09" },
+};
+
 /** Respuestas del API, reemplazables por prueba (se restauran en `afterEach`). */
 const api = {
   aviones: async (): Promise<{ data: unknown[]; count: number }> => ({ data: [], count: 0 }),
   vuelos: async (): Promise<{ data: unknown[]; count: number }> => ({ data: [], count: 0 }),
   me: async (): Promise<{ rol: string }> => ({ rol: "ADMIN" }),
+  cierres: async (): Promise<CargaCierres<CierresRespuesta>> => CIERRES_POR_AVION,
 };
 const apiDefault = { ...api };
 
@@ -107,12 +138,19 @@ vi.mock("@/components/admin/reportes/aircraft-balance-picker", () => ({
 vi.mock("@/components/admin/reportes/pre-cierre-card", () => ({
   PreCierreCard: () => null,
 }));
-// Cierre formal del mes (16-oct-2026, API 0.0.88): lee `GET /v1/cierres` con
-// `apiServer` (→ `@/lib/env`); aquí se apaga como el pre-cierre.
-vi.mock("@/components/admin/reportes/cierre-mes-card", () => ({
-  CierreMesCard: () => null,
-  CierreMesCardCargando: () => null,
+// CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): la página lee `GET /v1/cierres`
+// (`getCierres` → `apiServer` → `@/lib/env`) y monta los botones del cierre
+// (cliente: server actions, sonner, router). Aquí se simulan.
+vi.mock("@/lib/api/cierres-server", () => ({
+  getCierres: () => api.cierres(),
 }));
+vi.mock("@/app/admin/reportes/actions", () => ({
+  previaCierreAction: async () => ({ ok: false }),
+  cerrarMesAction: async () => ({ ok: false }),
+  reabrirMesAction: async () => ({ ok: false }),
+}));
+vi.mock("sonner", () => ({ toast: Object.assign(() => {}, { error: () => {}, success: () => {} }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {} }) }));
 vi.mock("@/lib/api/flights-server", () => ({
   listFlights: () => api.vuelos(),
 }));
@@ -131,6 +169,7 @@ afterEach(() => {
   api.aviones = apiDefault.aviones;
   api.vuelos = apiDefault.vuelos;
   api.me = apiDefault.me;
+  api.cierres = apiDefault.cierres;
   vi.restoreAllMocks();
 });
 
@@ -357,7 +396,7 @@ describe("cableado de la página /admin/reportes", () => {
     expect(src).toContain('from "@/lib/admin/reportes-balance"');
     expect(src).toContain("librosBalanceVuelaTour(desde, hasta)");
     expect(src).toContain("{TITULO_CARD_BALANCE_VUELATOUR}");
-    expect(src).toContain("{NOTA_BALANCE_VUELATOUR}");
+    expect(src).toContain("NOTA_BALANCE_VUELATOUR");
     expect(src).not.toContain("Descargar balance general VuelaTour");
     expect(src).not.toContain("balance-general-vuelatour-");
     expect(src).not.toMatch(/modo[=:]\s*["']/);
@@ -438,36 +477,84 @@ describe("los balances al frente (12-oct-2026)", () => {
 });
 
 describe("los balances solo se OFRECEN a quien puede abrirlos (ADMIN y ANALISTA, como el API)", () => {
-  it("FACTURACION: en lugar del hero, la card con candado; quedan los exports que su rol puede usar", async () => {
+  it("FACTURACION (desde el cierre por avión, 23-oct-2026): ve la sección con los tiles y el cierre de la flota, SIN los libros; quedan los exports que su rol puede usar", async () => {
     api.me = async () => ({ rol: "FACTURACION" });
-    const texto = await pintarPagina({ desde: "2026-10-01", hasta: "2026-10-12" });
-    // Sin «Horas por piloto» (`@Roles(ADMIN, COORDINADOR)`): no se ofrece un botón que responde 403.
+    const texto = await pintarPagina({ desde: "2026-09-01", hasta: "2026-09-30" });
+    // Sin el botón del libro mensual ni «Horas por piloto» (`@Roles(ADMIN, COORDINADOR)`).
     expect(botonesExcel.map((b) => b.path)).toEqual(EXPORTS_SIN_HORAS_PILOTO);
-    expect(pickerProps).toHaveLength(0);
-    expect(texto).toContain(TEXTO_BALANCES_SIN_PERMISO.titulo);
-    expect(texto).toContain("ADMIN y ANALISTA");
-    expect(texto).not.toContain(CONTRATO.titulo);
-    // La cabecera tampoco lo invita a abrir balances.
+    expect(texto).not.toContain(CONTRATO.mensual.resumen);
+    expect(texto).not.toContain("Ver en pantalla");
+    expect(texto).not.toContain(CONTRATO.tituloDetalle);
+    expect(texto).not.toContain(TEXTO_BALANCES_SIN_PERMISO.titulo);
+    // Las dos cards siguen, con la descripción de «solo cierre».
+    expect(texto).toContain(CONTRATO.titulo);
+    expect(texto).toContain(TEXTO_BALANCES_SOLO_CIERRE);
+    expect(texto).toContain("Balance por avión");
+    expect(texto).toContain(DESCRIPCION_BALANCE_POR_AVION_SOLO_CIERRE);
+    // El picker recibe el rol (sin enlaces), el mes y el modo.
+    expect(pickerProps).toHaveLength(1);
+    expect(pickerProps[0]).toMatchObject({ rol: "FACTURACION", mesCierre: SEP_PARCIAL, periodo: { mes: "2026-09", enCurso: false }, modoCierre: "POR_AVION" });
+    // El cierre de la flota: chip y botón de cerrar; sin «Reabrir» (solo ADMIN).
+    expect(texto).toContain("Parcial · 3 de 7");
+    expect(texto).toContain("Cerrar septiembre 2026 (los 4 aviones abiertos)");
+    expect(texto).not.toContain("Reabrir");
+    // La cabecera no lo invita a abrir balances.
     expect(texto).toContain(SUBTITULO_REPORTES_SIN_BALANCES);
     expect(texto).not.toContain(SUBTITULO_REPORTES);
-    // El pre-cierre, el cierre y los demás reportes siguen.
+    // El pre-cierre, las descargas del cierre y los demás reportes siguen.
     expect(texto).toContain("Cierre y reparto del periodo");
     expect(texto).toContain("Reporte por vuelo");
+    expect(muestraSeccionBalances("FACTURACION")).toBe(true);
+    expect(muestraSeccionBalances("SOCIO")).toBe(false);
   });
 
-  it("ANALISTA abre los balances; «Horas por piloto» no se le ofrece (el API se lo niega)", async () => {
+  it("ADMIN: la card «Balance mensual» lleva el chip de la flota y «Cerrar … (los N aviones abiertos)» + «Reabrir los N aviones cerrados»; la burbuja ya no existe", async () => {
+    const texto = await pintarPagina({ desde: "2026-09-01", hasta: "2026-09-30" });
+    expect(texto).toContain("Cierre de septiembre 2026");
+    expect(texto).toContain("Parcial · 3 de 7");
+    expect(texto).toContain("Cerrar septiembre 2026 (los 4 aviones abiertos)");
+    expect(texto).toContain("Reabrir los 3 aviones cerrados");
+    expect(texto).not.toContain("Cierre formal del mes");
+    // El bloque de la flota vive en «Balance mensual», ANTES de la card de los aviones.
+    expect(texto.indexOf("Cierre de septiembre 2026")).toBeLessThan(texto.indexOf("El libro completo de cada avión"));
+    expect(pickerProps[0]).toMatchObject({ rol: "ADMIN", mesCierre: SEP_PARCIAL, periodo: { mes: "2026-09", enCurso: false }, modoCierre: "POR_AVION" });
+  });
+
+  it("FALLBACK (`por_avion` false, API previo): el flujo global de siempre («Cerrar septiembre 2026») y los tiles en modo GLOBAL", async () => {
+    const global: MesCierre = { ...SEP_PARCIAL, estado: "ABIERTO", aviones_activos: undefined, aviones_cerrados: undefined };
+    api.cierres = async () => ({ estado: "ok", datos: { ...CIERRES_POR_AVION.datos, por_avion: false, meses: [global] } });
+    const texto = await pintarPagina({ desde: "2026-09-01", hasta: "2026-09-30" });
+    expect(texto).toContain("Cerrar septiembre 2026");
+    expect(texto).not.toContain("aviones abiertos");
+    expect(texto).not.toContain("Parcial");
+    expect(pickerProps[0]).toMatchObject({ modoCierre: "GLOBAL", mesCierre: global });
+  });
+
+  it("`GET /v1/cierres` no se pudo leer: la línea que lo dice, ningún botón de cierre y el picker sin mes", async () => {
+    api.cierres = async () => ({ estado: "error" });
+    const texto = await pintarPagina({ desde: "2026-09-01", hasta: "2026-09-30" });
+    expect(texto).toContain("No se pudo leer el estado del cierre");
+    expect(texto).not.toContain("Cerrar septiembre 2026");
+    expect(pickerProps[0]).toMatchObject({ mesCierre: null, modoCierre: "GLOBAL" });
+  });
+
+  it("ANALISTA abre los balances; «Horas por piloto» no se le ofrece (el API se lo niega); ve el chip de la flota sin botones", async () => {
     api.me = async () => ({ rol: "ANALISTA" });
-    const texto = await pintarPagina({ desde: "2026-10-01", hasta: "2026-10-12" });
+    const texto = await pintarPagina({ desde: "2026-09-01", hasta: "2026-09-30" });
     expect(botonesExcel.map((b) => b.path)).toEqual([CONTRATO.ruta, ...EXPORTS_SIN_HORAS_PILOTO]);
     expect(pickerProps).toHaveLength(1);
     expect(texto).toContain(SUBTITULO_REPORTES);
+    expect(texto).toContain("Parcial · 3 de 7");
+    expect(texto).not.toContain("Cerrar septiembre 2026");
   });
 
-  it("COORDINADOR (sin balances) sí recibe «Horas por piloto»", async () => {
+  it("COORDINADOR (sin balances ni cierre): la card con candado y «Horas por piloto»", async () => {
     api.me = async () => ({ rol: "COORDINADOR" });
-    await pintarPagina({ desde: "2026-10-01", hasta: "2026-10-12" });
+    const texto = await pintarPagina({ desde: "2026-10-01", hasta: "2026-10-12" });
     expect(botonesExcel.map((b) => b.path)).toEqual(EXPORTS);
     expect(pickerProps).toHaveLength(0);
+    expect(texto).toContain(TEXTO_BALANCES_SIN_PERMISO.titulo);
+    expect(texto).not.toContain(CONTRATO.titulo);
   });
 
   it("`/me` caído (502): se ofrece TODO (el API es el candado) y se avisa", async () => {
@@ -482,9 +569,11 @@ describe("los balances solo se OFRECEN a quien puede abrirlos (ADMIN y ANALISTA,
   it("cableado del fuente: la decisión y el rol viajan por el helper", () => {
     const src = readFileSync(RUTA_PAGINA, "utf8");
     expect(src).toContain("puedeAbrirBalances(rol)");
+    expect(src).toContain("muestraSeccionBalances(rol)");
     expect(src).toContain("puedeExportarHorasPiloto(rol)");
     expect(src).toContain("rol={rol ?? undefined}");
     expect(src).toContain("{TEXTO_BALANCES_SIN_PERMISO.titulo}");
     expect(src).toContain("{abreBalances ? SUBTITULO_REPORTES : SUBTITULO_REPORTES_SIN_BALANCES}");
+    expect(src).toContain("{abreBalances ? NOTA_BALANCE_VUELATOUR : TEXTO_BALANCES_SOLO_CIERRE}");
   });
 });

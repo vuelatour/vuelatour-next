@@ -17,7 +17,8 @@
  */
 import { textoDegradado } from "@/lib/api/degradar";
 import type { Aircraft } from "@/types/aircraft";
-import { hrefReportesDesdeVista, periodoDefaultVista, textoPeriodoVista } from "./balance-vista";
+import { hrefReportesDesdeVista, periodoDefaultVista, puedeAbrirBalances, textoPeriodoVista } from "./balance-vista";
+import { puedeCerrarMes } from "./cierre-mes";
 import { etiquetaMes, mesActual, mesAnterior, rangoMesPasado } from "./reparto-pagos";
 import { atajoAntesDelInicio, type InicioOficial } from "./inicio-oficial";
 
@@ -50,6 +51,30 @@ export const TITULO_BALANCE_POR_AVION = "Balance por avión";
 /** Una línea bajo el título de la card (la larga va en el plegable). */
 export const DESCRIPCION_BALANCE_POR_AVION =
   "El libro completo de cada avión en el periodo elegido arriba: ábrelo en pantalla o descárgalo en Excel.";
+
+// =============================================================================
+// CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): la sección Balances también para quien solo cierra
+// =============================================================================
+
+/**
+ * ¿Se pinta la sección BALANCES (cards «Balance mensual» y «Balance por
+ * avión»)? A quien abre los libros (ADMIN y ANALISTA) y, desde el cierre por
+ * avión, también a quien CIERRA el mes (FACTURACION): sus tiles llevan el
+ * chip y el botón de cierre, sin los enlaces del libro. Los demás roles
+ * (COORDINADOR, SOCIO…) siguen viendo la card con candado. Sin rol (`/me`
+ * falló) sí: el API es el candado.
+ */
+export function muestraSeccionBalances(rol?: string | null): boolean {
+  return puedeAbrirBalances(rol) || puedeCerrarMes(rol);
+}
+
+/** Descripción de «Balance mensual» para quien NO abre los libros pero sí cierra el mes. */
+export const TEXTO_BALANCES_SOLO_CIERRE =
+  "Tu usuario no abre ni descarga los balances (solo ADMIN y ANALISTA): desde aquí cierras el mes de toda la flota o de cada avión.";
+
+/** Descripción de «Balance por avión» para quien NO abre los libros pero sí cierra el mes. */
+export const DESCRIPCION_BALANCE_POR_AVION_SOLO_CIERRE =
+  "El estado del cierre de cada avión en el mes elegido arriba: ciérralo desde su tile.";
 
 /**
  * La descripción larga de siempre de la card del avión, en minúscula inicial

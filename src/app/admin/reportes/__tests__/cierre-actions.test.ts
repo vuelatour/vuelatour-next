@@ -23,6 +23,8 @@ const { cerrarMesAction, reabrirMesAction, previaCierreAction } = await import("
 
 const V316 = "0b6f5f4e-6a0e-4d0c-9a51-1d2c3b4a5e6f";
 const V337 = "1c7a6b5d-7b1f-4e1d-8b62-2e3d4c5b6a7f";
+/** N621TX (cierre por avión, API 0.0.104). */
+const AVION = "3f9a1c2e-0000-4000-8000-000000000005";
 
 beforeEach(() => {
   apiServer.mockReset();
@@ -49,9 +51,27 @@ describe("cerrarMesAction", () => {
     expect(r).toEqual({ ok: true, data });
     expect(revalidatePath.mock.calls.map((c) => c[0]).sort()).toEqual([
       "/admin/profit-sharing",
+      "/admin/profit-sharing/aviones/[id]",
       "/admin/reportes",
       "/admin/reportes/balance",
     ]);
+    // La pantalla por avión es dinámica: se revalida como `page`.
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/profit-sharing/aviones/[id]", "page");
+  });
+
+  it("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): con `aeronaveId` el body lleva `aeronave_id`; uno inválido NO sale a la red (jamás se degrada a toda la flota)", async () => {
+    apiServer.mockResolvedValueOnce({ aeronave: { id: AVION, matricula: "N621TX" }, cierres: [], diferidos: [] });
+    await cerrarMesAction("2026-09", [V316], [], AVION);
+    expect(apiServer.mock.calls[0][1].body).toEqual({ confirmar: true, aeronave_id: AVION, vuelos_esperados: [V316] });
+    const r = await cerrarMesAction("2026-09", [V316], [], "basura");
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/No se reconoce el avión/);
+    expect(apiServer).toHaveBeenCalledTimes(1);
+    expect(revalidatePath).toHaveBeenCalledTimes(4);
+    // Sin avión (null / undefined): el body de siempre, sin la llave.
+    apiServer.mockResolvedValueOnce({ cierres: [], diferidos: [] });
+    await cerrarMesAction("2026-09", [V316], [], null);
+    expect(apiServer.mock.calls[1][1].body).toEqual({ confirmar: true, vuelos_esperados: [V316] });
   });
 
   it("sin vuelos que pasen, igual manda la lista VACÍA (el API compara contra lo que hay hoy)", async () => {
@@ -121,7 +141,34 @@ describe("reabrirMesAction", () => {
       body: { confirmar: true, motivo: "Faltó un gasto de septiembre" },
     });
     expect(r.ok).toBe(true);
-    expect(revalidatePath).toHaveBeenCalledTimes(3);
+    expect(revalidatePath).toHaveBeenCalledTimes(4);
+  });
+
+  it("CIERRE POR AVIÓN: con `aeronaveId` reabre solo ese avión; inválido ⇒ sin red", async () => {
+    apiServer.mockResolvedValueOnce({ aeronave: { id: AVION, matricula: "N621TX" }, cierres: [], revertidos: 1, no_revertidos: [] });
+    const r = await reabrirMesAction("2026-09", "Corregir un cobro de N621TX", AVION);
+    expect(apiServer).toHaveBeenCalledWith("/v1/cierres/2026-09/reabrir", {
+      method: "POST",
+      body: { confirmar: true, motivo: "Corregir un cobro de N621TX", aeronave_id: AVION },
+    });
+    expect(r.ok).toBe(true);
+    const malo = await reabrirMesAction("2026-09", "Corregir un cobro", "no-es-uuid");
+    expect(malo.ok).toBe(false);
+    expect(apiServer).toHaveBeenCalledTimes(1);
+  });
+
+  it("409 OTRO_AVION_CERRADO (reabrir un avión): conserva code/details y el message; sin revalidar", async () => {
+    apiServer.mockRejectedValueOnce(
+      new ApiError({
+        statusCode: 409,
+        code: "OTRO_AVION_CERRADO",
+        message: "N58BT está cerrado y comparte un vuelo diferido.",
+        details: { matriculas: ["N58BT"] },
+      }),
+    );
+    const r = await reabrirMesAction("2026-09", "Corregir un cobro", AVION);
+    expect(r).toMatchObject({ ok: false, code: "OTRO_AVION_CERRADO", status: 409, details: { matriculas: ["N58BT"] } });
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("409 MES_SIGUIENTE_CERRADO: el texto del API tal cual y sin revalidar", async () => {
@@ -163,6 +210,37 @@ describe("previaCierreAction con `incluir` (21-oct-2026)", () => {
     apiServer.mockResolvedValueOnce({ periodo: "2026-09", listo: true, totales: {} });
     await previaCierreAction("2026-09");
     expect(apiServer).toHaveBeenCalledWith("/v1/cierres/2026-09/previa", { cache: "no-store" });
+  });
+  it("CIERRE POR AVIÓN: `?aeronave_id=` primero y luego `incluir`; la previa normalizada trae el alcance, los otros bloqueantes y `decidido_por`", async () => {
+    apiServer.mockResolvedValueOnce({
+      periodo: "2026-09",
+      estado: "ABIERTO",
+      listo: true,
+      aeronave: { id: AVION, matricula: "N621TX", modelo: "Kodiak 100" },
+      aviones_alcance: [{ aeronave_id: AVION, matricula: "N621TX" }],
+      bloqueantes: [],
+      bloqueantes_otros_aviones: [{ clave: "tacos_en_revision", titulo: "Tacómetros en revisión", count: 1 }],
+      vuelos_que_pasan: [{ id: V316, motivo: "SIN_COBRO", multi_avion: true, otros_aviones: [{ aeronave_id: "x", matricula: "N58BT", estado: "ABIERTO" }] }],
+      vuelos_incluidos: [{ id: V337, motivo: "COBRO_POSTERIOR", decidido_por: { aeronave_id: "x", matricula: "N58BT" } }],
+      totales: { pasan: 1, incluidos: 1 },
+      reparto: null,
+    });
+    const r = await previaCierreAction("2026-09", [V337], AVION);
+    expect(apiServer).toHaveBeenCalledWith(`/v1/cierres/2026-09/previa?aeronave_id=${AVION}&incluir=${V337}`, { cache: "no-store" });
+    expect(r.ok).toBe(true);
+    expect(r.data?.aeronave).toEqual({ id: AVION, matricula: "N621TX", modelo: "Kodiak 100" });
+    expect(r.data?.aviones_alcance).toEqual([{ aeronave_id: AVION, matricula: "N621TX" }]);
+    expect(r.data?.bloqueantes_otros_aviones?.map((b) => b.clave)).toEqual(["tacos_en_revision"]);
+    expect(r.data?.vuelos_que_pasan[0].otros_aviones?.[0].matricula).toBe("N58BT");
+    expect(r.data?.vuelos_incluidos?.[0].decidido_por?.matricula).toBe("N58BT");
+    // Solo el avión, sin `incluir`.
+    apiServer.mockResolvedValueOnce({ periodo: "2026-09", listo: true, totales: {} });
+    await previaCierreAction("2026-09", [], AVION);
+    expect(apiServer).toHaveBeenLastCalledWith(`/v1/cierres/2026-09/previa?aeronave_id=${AVION}`, { cache: "no-store" });
+    // Un avión inválido no sale a la red.
+    const malo = await previaCierreAction("2026-09", [], "basura");
+    expect(malo.ok).toBe(false);
+    expect(apiServer).toHaveBeenCalledTimes(2);
   });
 });
 

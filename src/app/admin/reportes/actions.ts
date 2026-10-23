@@ -17,11 +17,17 @@ import type { PreviaCierre, ResultadoCerrarMes, ResultadoReabrirMes } from "@/ty
  * hablar con el API; el error conserva `code`/`details` (el diálogo repinta
  * la previa nueva ante `PREVIA_CAMBIO` y muestra el `message` del API tal
  * cual en los demás 409). Solo el ÉXITO revalida Reportes, el balance en
- * pantalla y el reparto (todos cambian de eje con un cierre); el diálogo
- * cierra y hace `router.refresh()`.
+ * pantalla, el reparto y la pantalla por avión (todos cambian de eje con un
+ * cierre); el diálogo cierra y hace `router.refresh()`.
  *
  * `previaCierreAction` lee la previa al ABRIR el diálogo (es la lectura
  * pesada: dos repartos + el pre-cierre), no en cada render de la página.
+ *
+ * CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105): las tres
+ * reciben `aeronaveId?` (uuid). Con él, la previa / el cierre / la
+ * reapertura son de ESE avión (`?aeronave_id=` / `aeronave_id` en el body);
+ * sin él, de toda la flota (como hoy). Un `aeronaveId` que NO es uuid se
+ * rechaza SIN ir a la red: jamás se degrada en silencio a «toda la flota».
  */
 
 export interface ActionResult<T = unknown> {
@@ -35,11 +41,20 @@ export interface ActionResult<T = unknown> {
 
 const SIN_CONEXION = "No hay conexión con el servidor. Revisa tu internet y vuelve a intentarlo.";
 const PERIODO_INVALIDO = "No se reconoce el mes. Recarga la página.";
+const AVION_INVALIDO = "No se reconoce el avión. Recarga la página.";
 
 function revalidarCierre() {
   revalidatePath("/admin/reportes");
   revalidatePath("/admin/reportes/balance");
   revalidatePath("/admin/profit-sharing");
+  // Pantalla por avión (20-oct-2026): su chip «Mes:» y su reparto cambian con el cierre del avión.
+  revalidatePath("/admin/profit-sharing/aviones/[id]", "page");
+}
+
+/** `aeronaveId` opcional: ausente ⇒ null (toda la flota); presente y no uuid ⇒ `undefined` (inválido). */
+function avionDeAlcance(aeronaveId: string | null | undefined): string | null | undefined {
+  if (aeronaveId === undefined || aeronaveId === null || aeronaveId === "") return null;
+  return esUuid(aeronaveId) ? aeronaveId : undefined;
 }
 
 function fail<T>(err: unknown): ActionResult<T> {
@@ -61,9 +76,15 @@ function idsLimpios(ids: string[] | undefined): string[] {
  * `incluir` (21-oct-2026): los vuelos que la oficina marcó para quedarse en
  * el mes; la previa vuelve recalculada con ellos adentro.
  */
-export async function previaCierreAction(periodo: string, incluir?: string[]): Promise<ActionResult<PreviaCierre>> {
+export async function previaCierreAction(
+  periodo: string,
+  incluir?: string[],
+  aeronaveId?: string | null,
+): Promise<ActionResult<PreviaCierre>> {
   if (!esMesValido(periodo)) return { ok: false, error: PERIODO_INVALIDO };
-  const carga: CargaCierres<PreviaCierre> = await getPreviaCierre(periodo, idsLimpios(incluir));
+  const avion = avionDeAlcance(aeronaveId);
+  if (avion === undefined) return { ok: false, error: AVION_INVALIDO };
+  const carga: CargaCierres<PreviaCierre> = await getPreviaCierre(periodo, idsLimpios(incluir), avion);
   if (carga.estado === "ok") return { ok: true, data: carga.datos };
   if (carga.estado === "sin-permiso") {
     return { ok: false, error: "Tu usuario no puede revisar el cierre del mes.", code: "SIN_PERMISO", status: 403 };
@@ -81,14 +102,18 @@ export async function cerrarMesAction(
   periodo: string,
   vuelosEsperados: string[],
   incluirVuelos?: string[],
+  aeronaveId?: string | null,
 ): Promise<ActionResult<ResultadoCerrarMes>> {
   if (!esMesValido(periodo)) return { ok: false, error: PERIODO_INVALIDO };
+  const avion = avionDeAlcance(aeronaveId);
+  if (avion === undefined) return { ok: false, error: AVION_INVALIDO };
   const incluir = idsLimpios(incluirVuelos);
   try {
     const data = await apiServer<ResultadoCerrarMes>(`/v1/cierres/${periodo}`, {
       method: "POST",
       body: {
         confirmar: true,
+        ...(avion ? { aeronave_id: avion } : {}),
         vuelos_esperados: vuelosEsperados,
         ...(incluir.length > 0 ? { incluir_vuelos: incluir } : {}),
       },
@@ -103,15 +128,21 @@ export async function cerrarMesAction(
   }
 }
 
-/** `POST /v1/cierres/:periodo/reabrir` (solo ADMIN; el API es el candado). */
-export async function reabrirMesAction(periodo: string, motivo: string): Promise<ActionResult<ResultadoReabrirMes>> {
+/** `POST /v1/cierres/:periodo/reabrir` (solo ADMIN; el API es el candado). Con `aeronaveId`, solo ese avión. */
+export async function reabrirMesAction(
+  periodo: string,
+  motivo: string,
+  aeronaveId?: string | null,
+): Promise<ActionResult<ResultadoReabrirMes>> {
   if (!esMesValido(periodo)) return { ok: false, error: PERIODO_INVALIDO };
+  const avion = avionDeAlcance(aeronaveId);
+  if (avion === undefined) return { ok: false, error: AVION_INVALIDO };
   const invalido = validarMotivoReabrir(motivo);
   if (invalido) return { ok: false, error: invalido };
   try {
     const data = await apiServer<ResultadoReabrirMes>(`/v1/cierres/${periodo}/reabrir`, {
       method: "POST",
-      body: { confirmar: true, motivo: motivo.trim() },
+      body: { confirmar: true, motivo: motivo.trim(), ...(avion ? { aeronave_id: avion } : {}) },
     });
     revalidarCierre();
     return { ok: true, data };

@@ -173,6 +173,31 @@ describe("la card resumida del reparto", () => {
     expect(html).toMatch(/data-reserva-socio="descuenta"[^>]*>reserva \$3,529\.35 MXN · se le descuenta</);
     expect(html).toMatch(/data-reserva-socio="informativa"[^>]*>guardar \$5,095\.65 MXN · solo informativa</);
   });
+
+  it("CIERRE POR AVIÓN (API 0.0.104): con `cierre_avion` la card pinta el estado de ESE avión (y el aviso si no coincide con su snapshot); sin él, nada", () => {
+    // Sin la llave (API previo): ningún chip de estado en la card.
+    expect(html).not.toContain("data-estado-cierre");
+    const cerrado = renderToStaticMarkup(
+      <AvionRepartoCard
+        avion={{ ...avionBalance(), cierre_avion: { estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z", cerrado_por_nombre: "Ale", coincide_con_snapshot: false } }}
+        desde="2026-09-01"
+        hasta="2026-09-30"
+        rol="ADMIN"
+        usuarioId={ALE.id}
+        enPesos
+        comoBalance
+      />,
+    );
+    expect(cerrado).toContain('data-estado-cierre="cerrado"');
+    expect(cerrado).toContain("Cerrado el 16-oct-2026 por Ale");
+    expect(cerrado).toContain('data-no-coincide-snapshot="N621TX"');
+    expect(cerrado).toContain(">No coincide con el cierre<");
+    const abierto = renderToStaticMarkup(
+      <AvionRepartoCard avion={{ ...avionBalance(), cierre_avion: { estado: "ABIERTO" } }} desde="2026-09-01" hasta="2026-09-30" rol="ADMIN" usuarioId={ALE.id} enPesos comoBalance />,
+    );
+    expect(abierto).toContain('data-estado-cierre="abierto"');
+    expect(abierto).not.toContain("data-no-coincide-snapshot");
+  });
 });
 
 describe("gastos del periodo (GastosAvionTable)", () => {
