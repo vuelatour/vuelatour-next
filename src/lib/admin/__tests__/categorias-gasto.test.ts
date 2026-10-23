@@ -417,7 +417,7 @@ describe("tablero de Gastos y reparto: textos de la «(avión)»", () => {
 
   it("renglón de gastos de la EMPRESA: dice todo lo que suma el API (categorías de empresa, «(VuelaTour)» y remanentes)", () => {
     expect(textoTableroGastosEmpresa(4250.3)).toBe(
-      "$4,250.30 en gastos de la empresa VuelaTour: categorías de empresa (Otros gastos VuelaTour, Nómina, Gasolina (vehículos), Gasto fijo, Visita y Paquetería), «Comisión del vendedor (VuelaTour)» y remanentes de repartos. No se imputan a aeronaves.",
+      "$4,250.30 en gastos de la empresa VuelaTour: categorías de empresa (Otros gastos VuelaTour, Nómina, Gasolina (vehículos), Gasto fijo, Visita y Paquetería), «Comisión del vendedor (VuelaTour)», «Otros movimientos (VuelaTour)» y remanentes de repartos. No se imputan a aeronaves.",
     );
     // La «(avión)» NO está ahí: tiene su propio renglón.
     expect(textoTableroGastosEmpresa(1)).not.toContain(ETIQUETA_AV);

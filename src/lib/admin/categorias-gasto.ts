@@ -598,7 +598,9 @@ function unirTextos(partes: readonly string[]): string {
 export function textoTableroGastosEmpresa(usd: number | null | undefined): string | null {
   if (usd == null || !(usd > 0)) return null;
   const empresa = unirTextos([...CATEGORIAS_EMPRESA].map(categoriaGastoLabel));
-  return `${fmtUsd(usd)} en gastos de la empresa VuelaTour: categorías de empresa (${empresa}), «${categoriaGastoLabel(CATEGORIA_PAGO_VENDEDOR)}» y remanentes de repartos. No se imputan a aeronaves.`;
+  // «Otros movimientos (VuelaTour)» (23-oct-2026, API 0.0.106, invariante 107)
+  // también suma ahí (`categoriaFueraDelAvion`, como la comisión «(VuelaTour)»).
+  return `${fmtUsd(usd)} en gastos de la empresa VuelaTour: categorías de empresa (${empresa}), «${categoriaGastoLabel(CATEGORIA_PAGO_VENDEDOR)}», «${categoriaGastoLabel(CATEGORIA_OTROS_MOVIMIENTOS)}» y remanentes de repartos. No se imputan a aeronaves.`;
 }
 
 const HOJA_OTROS_GASTOS_SIN_NADA =
