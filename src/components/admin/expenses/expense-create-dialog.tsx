@@ -111,7 +111,9 @@ import { NotaFechaPorPagar } from "@/components/admin/expenses/nota-por-pagar";
 import { avionPorMatricula } from "@/lib/admin/matricula";
 import {
   AYUDA_COMISARIATO,
+  AYUDA_OTROS_MOVIMIENTOS,
   CATEGORIA_COMISARIATO,
+  CATEGORIA_OTROS_MOVIMIENTOS,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
   HINT_VUELO_COMISION,
@@ -1526,6 +1528,16 @@ export function ExpenseCreateDialog({
             {watch("categoria") === CATEGORIA_COMISARIATO && (
               <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                 <span className="font-medium">Comisariato.</span> {AYUDA_COMISARIATO}
+              </p>
+            )}
+            {/* «Otros movimientos (VuelaTour)» (23-oct-2026, API 0.0.106):
+                egreso de VuelaTour apareado en «otros movimientos» del
+                Balance general. Vuelo OPCIONAL (con vuelo, en el bloque del
+                vuelo; sin vuelo, fila suelta), avión solo referencia, nunca
+                costo del avión. Sin candado nuevo: la oficina lo captura. */}
+            {watch("categoria") === CATEGORIA_OTROS_MOVIMIENTOS && (
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium">Otros movimientos (VuelaTour).</span> {AYUDA_OTROS_MOVIMIENTOS}
               </p>
             )}
             {/* REFACCIÓN (21-oct-2026): un gasto normal. La nota dice a dónde

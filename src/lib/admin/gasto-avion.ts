@@ -1,9 +1,11 @@
 import { fmtMonto } from "@/lib/format";
 import {
+  CATEGORIA_OTROS_MOVIMIENTOS,
   CATEGORIA_PAGO_VENDEDOR,
   CATEGORIAS_EMPRESA,
   CATEGORIAS_REPARTIBLES,
   categoriaLlevaAvion,
+  esCategoriaOtrosMovimientos,
   esCategoriaPagoVendedor,
   hojaDestinoGasto,
 } from "@/lib/admin/categorias-gasto";
@@ -39,9 +41,11 @@ const CATEGORIA_NOMINA_AVION = "NOMINA";
  *     balance hasta repartirla entre aviones desde el módulo Nómina. Espejo
  *     EXACTO del API (`expenses/gasto-avion.util.ts#celdaAvionGasto`): texto
  *     plano «Sin repartir» / «Sin repartir (ref. N4142R)».
- *  3. Empresa o «Comisión del vendedor (VuelaTour)» ⇒ «VuelaTour» SIEMPRE,
- *     aunque traiga avión sellado (queda de «ref.»: la categoría de empresa
- *     manda sobre el vuelo, regla del 11-sep-2026).
+ *  3. Empresa, «Comisión del vendedor (VuelaTour)» u «Otros movimientos
+ *     (VuelaTour)» (23-oct-2026, API 0.0.106: egreso de VuelaTour en «otros
+ *     movimientos») ⇒ «VuelaTour» SIEMPRE, aunque traiga avión sellado (queda
+ *     de «ref.»: la categoría de empresa manda sobre el vuelo, regla del
+ *     11-sep-2026).
  *  3b. PERMISO marcado «Pago de AFAC» (16-oct-2026, API 0.0.89, invariante
  *     90) ⇒ «VuelaTour · pago de AFAC» aunque traiga avión o vuelo (quedan de
  *     «ref.»): lo paga VuelaTour y no le resta al avión; vive en el Balance
@@ -121,12 +125,15 @@ export function tituloFueraDelAvion(
   tieneVuelo: boolean,
   tieneAvion: boolean,
 ): string {
-  // Sin vuelo ni avión: el texto general mandaría a otra pantalla.
+  // Sin vuelo ni avión: el texto general mandaría a otra pantalla. Las que
+  // van a «otros movimientos» (las comisiones y «Otros movimientos
+  // (VuelaTour)») y el gasto personal conservan su hoja de siempre.
   if (
     !tieneVuelo &&
     !tieneAvion &&
     categoria !== "PERSONAL_DUENO" &&
-    !esCategoriaPagoVendedor(categoria)
+    !esCategoriaPagoVendedor(categoria) &&
+    !esCategoriaOtrosMovimientos(categoria)
   ) {
     return `Va a: ${
       CATEGORIAS_REPARTIBLES.has(categoria) ? DESTINO_VUELATOUR_REPARTIBLE_TABLA : DESTINO_VUELATOUR_TABLA
@@ -202,7 +209,11 @@ export function estadoAvionGasto(
   if (g.categoria === CATEGORIA_NOMINA_AVION) {
     return fuera(ETIQUETA_AVION_SIN_REPARTIR, TITULO_NOMINA_SIN_REPARTIR);
   }
-  if (CATEGORIAS_EMPRESA.has(g.categoria) || g.categoria === CATEGORIA_PAGO_VENDEDOR) {
+  if (
+    CATEGORIAS_EMPRESA.has(g.categoria) ||
+    g.categoria === CATEGORIA_PAGO_VENDEDOR ||
+    g.categoria === CATEGORIA_OTROS_MOVIMIENTOS
+  ) {
     return fuera(ETIQUETA_AVION_VUELATOUR);
   }
   if (esPagoAfac(g)) {

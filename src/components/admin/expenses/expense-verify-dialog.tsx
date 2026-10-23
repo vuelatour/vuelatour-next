@@ -199,8 +199,10 @@ import {
 } from "@/lib/admin/combustibles";
 import {
   AYUDA_COMISARIATO,
+  AYUDA_OTROS_MOVIMIENTOS,
   AYUDA_RECLASIFICAR_COMISION,
   CATEGORIA_COMISARIATO,
+  CATEGORIA_OTROS_MOVIMIENTOS,
   CATEGORIAS_CAPTURA,
   CATEGORIAS_REPARTIBLES,
   HINT_VUELO_COMISION,
@@ -2923,6 +2925,16 @@ export function ExpenseVerifyDialog({
           {watch("categoria") === CATEGORIA_COMISARIATO && (
             <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
               <span className="font-medium">Comisariato.</span> {AYUDA_COMISARIATO}
+            </p>
+          )}
+          {/* «Otros movimientos (VuelaTour)» (23-oct-2026, API 0.0.106):
+              reclasificar aquí un «Otros gastos VuelaTour» a esta categoría
+              es el camino manual para una captura vieja que debía ir a la
+              hoja «otros movimientos» (sale de «otros gastos»). Vuelo
+              opcional: el selector conserva «Sin vuelo». */}
+          {watch("categoria") === CATEGORIA_OTROS_MOVIMIENTOS && (
+            <p className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-medium">Otros movimientos (VuelaTour).</span> {AYUDA_OTROS_MOVIMIENTOS}
             </p>
           )}
 

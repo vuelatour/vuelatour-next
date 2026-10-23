@@ -15,7 +15,7 @@ import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import {
   categoriaGastoLabel,
   destinoPorDefecto,
-  esCategoriaPagoVendedor,
+  destinoVisibleEnGastosDelVuelo,
 } from "@/lib/admin/categorias-gasto";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
@@ -81,12 +81,14 @@ export function FlightGastosTable({
       cell: (g) => (
         <>
           {categoriaGastoLabel(g.categoria)}
-          {/* Las dos comisiones del vendedor (28-sep-2026 y 13-oct-2026): se
-              dice a dónde va cada pago — «(VuelaTour)» a «otros movimientos»
-              del Balance general (no es costo del avión) y «(avión)» a la
-              columna COMISIONES del balance del avión. Así en «Gastos del
-              vuelo» se ve quién paga cada uno. Comparación EXACTA. */}
-          {esCategoriaPagoVendedor(g.categoria) && (
+          {/* Las dos comisiones del vendedor (28-sep-2026 y 13-oct-2026) y
+              «Otros movimientos (VuelaTour)» (23-oct-2026): se dice a dónde
+              va cada pago — «(VuelaTour)» y «Otros movimientos» a «otros
+              movimientos» del Balance general (no son costo del avión) y
+              «(avión)» a la columna COMISIONES del balance del avión. Así en
+              «Gastos del vuelo» se ve quién paga cada uno. Comparación
+              EXACTA (`destinoVisibleEnGastosDelVuelo`). */}
+          {destinoVisibleEnGastosDelVuelo(g.categoria) && (
             <p className="text-[11px] text-green-600 dark:text-green-400">
               {destinoPorDefecto(g.categoria)}
             </p>

@@ -5,9 +5,11 @@ import {
   AYUDA_COMISARIATO,
   AYUDA_COMISION_VENDEDOR,
   AYUDA_COMISION_VENDEDOR_AVION,
+  AYUDA_OTROS_MOVIMIENTOS,
   AYUDA_RECLASIFICAR_COMISION,
   CATEGORIA_COMISARIATO,
   CATEGORIA_GASTO_LABELS,
+  CATEGORIA_OTROS_MOVIMIENTOS,
   CATEGORIA_PAGO_VENDEDOR,
   CATEGORIA_PAGO_VENDEDOR_AVION,
   CATEGORIAS_CAPTURA,
@@ -16,8 +18,13 @@ import {
   CATEGORIAS_PAGO_VENDEDOR,
   CATEGORIAS_REPARTIBLES,
   CATEGORIAS_SIN_AVION,
+  CATEGORIAS_SOLO_DECIDE_LA_OFICINA,
+  DESTINO_OTROS_MOVIMIENTOS,
   DESTINO_POR_DEFECTO,
   HINT_VUELO_COMISION,
+  HOJA_OTROS_MOVIMIENTOS_CON_AVION,
+  HOJA_OTROS_MOVIMIENTOS_CON_VUELO,
+  HOJA_OTROS_MOVIMIENTOS_SIN_NADA,
   MSG_GASTO_REQUIERE_VUELO_COMISION,
   NOTA_PAGO_VENDEDOR_REPARTO,
   SUBLABEL_COMISIONES_REPARTO,
@@ -28,7 +35,9 @@ import {
   categoriaGastoLabel,
   categoriaLlevaAvion,
   destinoPorDefecto,
+  destinoVisibleEnGastosDelVuelo,
   errorVueloObligatorio,
+  esCategoriaOtrosMovimientos,
   esCategoriaPagoVendedor,
   HOJA_NOMINA_SIN_REPARTIR,
   hojaDestinoGasto,
@@ -38,6 +47,8 @@ import {
   textoTableroComisionVendedorAvion,
   textoTableroGastosEmpresa,
 } from "@/lib/admin/categorias-gasto";
+import { CATEGORIAS_TUA_INCLUIDA } from "@/lib/admin/tua-incluida";
+import { CATEGORIAS_COMPRA } from "@/types/compras";
 import { CategoriaEnum, GastoCreateSchema, GastoVerifySchema } from "@/app/admin/expenses/schema";
 
 /**
@@ -570,10 +581,10 @@ describe("tabla canónica de COMISARIATO (== API == app)", () => {
   });
 });
 
-describe("paridad del enum de categorías (24 valores con Otros directos del vuelo y Paquetería)", () => {
-  it("el zod, las etiquetas y los destinos tienen EXACTAMENTE los mismos 24 códigos", () => {
+describe("paridad del enum de categorías (25 valores con Otros directos del vuelo, Paquetería y Otros movimientos)", () => {
+  it("el zod, las etiquetas y los destinos tienen EXACTAMENTE los mismos 25 códigos", () => {
     const enumZod = [...(CategoriaEnum.options as readonly string[])].sort();
-    expect(enumZod).toHaveLength(24);
+    expect(enumZod).toHaveLength(25);
     expect(Object.keys(CATEGORIA_GASTO_LABELS).sort()).toEqual(enumZod);
     expect(Object.keys(DESTINO_POR_DEFECTO).sort()).toEqual(enumZod);
     // Toda categoría que se ofrece pasa el enum (las 3 legado/de verificación
@@ -590,6 +601,11 @@ describe("paridad del enum de categorías (24 valores con Otros directos del vue
     "src/common/categoria-gasto.util.ts",
   );
   const fuenteApi = existsSync(API) ? readFileSync(API, "utf8") : null;
+  /** `export const NOMBRE =\n  '…'` del API (p. ej. `DESTINO_OTROS_MOVIMIENTOS`). */
+  const constanteApi = (nombre: string): string | null => {
+    const m = new RegExp(`export const ${nombre}\\s*=\\s*'([^']*)'`).exec(fuenteApi ?? "");
+    return m ? m[1] : null;
+  };
   const tablaApi = (nombre: string): Record<string, string> => {
     const ini = (fuenteApi ?? "").indexOf(`export const ${nombre}`);
     const fin = (fuenteApi ?? "").indexOf("};", ini);
@@ -597,6 +613,12 @@ describe("paridad del enum de categorías (24 valores con Otros directos del vue
     const out: Record<string, string> = {};
     for (const m of bloque.matchAll(/^\s*([A-Z_]+):\s*'([^']*)'/gm)) out[m[1]] = m[2];
     for (const m of bloque.matchAll(/^\s*([A-Z_]+):\s*\n\s*'([^']*)'/gm)) out[m[1]] = m[2];
+    // Valor por REFERENCIA a una constante del mismo archivo (23-oct-2026:
+    // `OTROS_MOVIMIENTOS: DESTINO_OTROS_MOVIMIENTOS,`): se resuelve al literal.
+    for (const m of bloque.matchAll(/^\s*([A-Z_]+):\s*([A-Z_]+),/gm)) {
+      const valor = constanteApi(m[2]);
+      if (valor !== null) out[m[1]] = valor;
+    }
     return out;
   };
 
@@ -616,10 +638,10 @@ describe("paridad del enum de categorías (24 valores con Otros directos del vue
 /**
  * Tabla única de Gastos (14-oct-2026): «Falta avión» en la columna «Avión ·
  * vuelo» es ESPEJO de la bandeja de pendientes del API, y el filtro
- * «Categoría» ofrece las 24.
+ * «Categoría» ofrece las 25.
  */
 describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)", () => {
-  it("las de empresa + INDIRECTO + PERSONAL_DUENO + la comisión (VuelaTour); SIN la «(avión)»", () => {
+  it("las de empresa + INDIRECTO + PERSONAL_DUENO + la comisión (VuelaTour) + Otros movimientos (VuelaTour); SIN la «(avión)»", () => {
     expect([...CATEGORIAS_SIN_AVION].sort()).toEqual([
       "COMISION_VENDEDOR",
       "FIJO",
@@ -627,6 +649,7 @@ describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)"
       "INDIRECTO",
       "NOMINA",
       "OTRO",
+      "OTROS_MOVIMIENTOS",
       "PAQUETERIA",
       "PERSONAL_DUENO",
       "VISITA",
@@ -647,6 +670,8 @@ describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)"
     expect(categoriaLlevaAvion("otro")).toBe(true);
     expect(categoriaLlevaAvion("OTROS_DIRECTOS_VUELO")).toBe(true);
     expect(categoriaLlevaAvion("PAQUETERIA")).toBe(false);
+    // 23-oct-2026: el avión de «Otros movimientos (VuelaTour)» es solo referencia.
+    expect(categoriaLlevaAvion("OTROS_MOVIMIENTOS")).toBe(false);
     expect(Object.keys(CATEGORIA_GASTO_LABELS).filter((c) => categoriaLlevaAvion(c))).toHaveLength(15);
   });
 
@@ -674,12 +699,156 @@ describe("categorías sin avión (espejo de CATEGORIAS_GASTO_SIN_AVION del API)"
 });
 
 describe("filtro «Categoría» de Gastos (CATEGORIAS_FILTRO_GASTO)", () => {
-  it("las 24 sin repetir = llaves de CATEGORIA_GASTO_LABELS, en el orden de captura + ATERRIZAJE, FIJO, VISITA", () => {
-    expect(CATEGORIAS_FILTRO_GASTO).toHaveLength(24);
-    expect(new Set(CATEGORIAS_FILTRO_GASTO).size).toBe(24);
+  it("las 25 sin repetir = llaves de CATEGORIA_GASTO_LABELS, en el orden de captura + ATERRIZAJE, FIJO, VISITA", () => {
+    expect(CATEGORIAS_FILTRO_GASTO).toHaveLength(25);
+    expect(new Set(CATEGORIAS_FILTRO_GASTO).size).toBe(25);
     expect([...CATEGORIAS_FILTRO_GASTO].sort()).toEqual(Object.keys(CATEGORIA_GASTO_LABELS).sort());
     expect(CATEGORIAS_FILTRO_GASTO).toEqual([...CATEGORIAS_CAPTURA, "ATERRIZAJE", "FIJO", "VISITA"]);
     // Las opciones salen de la MISMA función de la captura (etiqueta + destino).
     expect(opcionCategoriaGasto(CATEGORIAS_FILTRO_GASTO[0]).label).toBe("Gasavión / Turbosina");
+  });
+});
+
+// =====================================================================
+// «OTROS MOVIMIENTOS (VUELATOUR)» (23-oct-2026, API 0.0.106, invariante
+// 107). Pedido del cliente (con la captura del selector de categorías):
+// «Falta la opción de agregar un gasto a la hoja de "otros movimientos" en
+// el balance general». Egreso de VuelaTour apareado en esa hoja con los
+// ingresos de VuelaTour del vuelo (TUAs, extras, pernocta, comisión); vuelo
+// OPCIONAL, avión solo referencia, NUNCA costo del avión ni «otros gastos».
+// La tabla canónica es la MISMA en los tres repos.
+// =====================================================================
+
+const OM = "OTROS_MOVIMIENTOS";
+const ETIQUETA_OM = "Otros movimientos (VuelaTour)";
+const DESTINO_OM = "Otros movimientos (Balance general VuelaTour)";
+
+describe("tabla canónica de OTROS_MOVIMIENTOS (== API == app)", () => {
+  it("código, etiqueta y destino exactos (destino PROPIO: ni el de empresa ni el directo del vuelo)", () => {
+    expect(CATEGORIA_OTROS_MOVIMIENTOS).toBe(OM);
+    expect(CATEGORIA_GASTO_LABELS[OM]).toBe(ETIQUETA_OM);
+    expect(categoriaGastoLabel(OM)).toBe(ETIQUETA_OM);
+    expect(DESTINO_OTROS_MOVIMIENTOS).toBe(DESTINO_OM);
+    expect(destinoPorDefecto(OM)).toBe(DESTINO_OM);
+    expect(destinoPorDefecto(OM)).not.toBe(destinoPorDefecto("OTRO"));
+    expect(destinoPorDefecto(OM).startsWith("Gastos directos del vuelo")).toBe(false);
+    expect(opcionCategoriaGasto(OM)).toEqual({
+      value: OM,
+      label: ETIQUETA_OM,
+      description: DESTINO_OM,
+      descriptionClassName: expect.stringContaining("text-green-600!"),
+    });
+    // Nadie más tiene ese destino (si otra categoría lo tomara, el API la
+    // derivaría a otra lista sin que nadie lo decidiera).
+    expect(
+      Object.entries(DESTINO_POR_DEFECTO)
+        .filter(([, d]) => d === DESTINO_OM)
+        .map(([c]) => c),
+    ).toEqual([OM]);
+  });
+
+  it("en el selector va ÚLTIMA, justo después de «Otros gastos VuelaTour», una sola vez; el filtro de Gastos la trae", () => {
+    expect(CATEGORIAS_CAPTURA.slice(-2)).toEqual(["OTRO", OM]);
+    expect(CATEGORIAS_CAPTURA.filter((c) => c === OM)).toHaveLength(1);
+    expect(CATEGORIAS_FILTRO_GASTO).toContain(OM);
+  });
+
+  it("listas: NO es de empresa, NO repartible, NO lleva avión (sin avión no es pendiente), NO de compra, sin TUA incluida", () => {
+    expect(CATEGORIAS_EMPRESA.has(OM)).toBe(false);
+    expect([...CATEGORIAS_EMPRESA].sort()).toEqual(["FIJO", "GASOLINA", "NOMINA", "OTRO", "PAQUETERIA", "VISITA"]);
+    expect(CATEGORIAS_REPARTIBLES.has(OM)).toBe(false);
+    expect([...CATEGORIAS_REPARTIBLES].sort()).toEqual(
+      ["FIJO", "GASOLINA", "INDIRECTO", "NOMINA", "OTRO", "VISITA"],
+    );
+    expect(CATEGORIAS_SIN_AVION.has(OM)).toBe(true);
+    expect(categoriaLlevaAvion(OM)).toBe(false);
+    expect(CATEGORIAS_COMPRA.has(OM)).toBe(false);
+    expect(CATEGORIAS_TUA_INCLUIDA).not.toContain(OM);
+    expect(esCategoriaPagoVendedor(OM)).toBe(false);
+  });
+
+  it("vuelo OPCIONAL: no exige vuelo a ningún rol (sin vuelo = fila suelta)", () => {
+    expect(categoriaExigeVueloSiempre(OM)).toBe(false);
+    expect(errorVueloObligatorio(OM, null)).toBeNull();
+    expect(errorVueloObligatorio(OM, "")).toBeNull();
+    expect(errorVueloObligatorio(OM, VUELO)).toBeNull();
+  });
+
+  it("predicados EXACTOS: esCategoriaOtrosMovimientos y el destino visible en «Gastos del vuelo»", () => {
+    expect(esCategoriaOtrosMovimientos(OM)).toBe(true);
+    for (const c of ["OTRO", "OTROS_MOVIMIENTOSX", "otros_movimientos", "OTROS_DIRECTOS_VUELO", "", null, undefined]) {
+      expect(esCategoriaOtrosMovimientos(c), String(c)).toBe(false);
+    }
+    expect(destinoVisibleEnGastosDelVuelo(OM)).toBe(true);
+    expect(destinoVisibleEnGastosDelVuelo(VT)).toBe(true);
+    expect(destinoVisibleEnGastosDelVuelo(AV)).toBe(true);
+    for (const c of ["OTRO", "COMIDA", "COMISARIATO", "TUAS", "COMISION_VENDEDOR_AVIONX", "", null, undefined]) {
+      expect(destinoVisibleEnGastosDelVuelo(c), String(c)).toBe(false);
+    }
+  });
+
+  it("la IA ni la propone ni la pisa (la decide la oficina, como las dos comisiones)", () => {
+    expect([...CATEGORIAS_SOLO_DECIDE_LA_OFICINA].sort()).toEqual([VT, AV, OM]);
+    expect(iaPuedeCambiarCategoria(OM, "OPERACIONES")).toBe(false);
+    expect(iaPuedeCambiarCategoria(OM, "OTRO")).toBe(false);
+    expect(iaPuedeCambiarCategoria(OM, VT)).toBe(false);
+    expect(iaPuedeCambiarCategoria("OTRO", OM)).toBe(false);
+    expect(iaPuedeCambiarCategoria("OPERACIONES", OM)).toBe(false);
+    // El caso de siempre sigue igual.
+    expect(iaPuedeCambiarCategoria("OTRO", "COMIDA")).toBe(true);
+  });
+
+  it("«Con lo elegido cae en:» SIEMPRE «otros movimientos»: el vuelo decide el bloque y el avión es referencia", () => {
+    expect(hojaDestinoGasto(OM, true, true)).toBe(HOJA_OTROS_MOVIMIENTOS_CON_VUELO);
+    expect(hojaDestinoGasto(OM, true, false)).toBe(HOJA_OTROS_MOVIMIENTOS_CON_VUELO);
+    expect(hojaDestinoGasto(OM, false, true)).toBe(HOJA_OTROS_MOVIMIENTOS_CON_AVION);
+    expect(hojaDestinoGasto(OM, false, false)).toBe(HOJA_OTROS_MOVIMIENTOS_SIN_NADA);
+    expect(HOJA_OTROS_MOVIMIENTOS_CON_VUELO).toBe(
+      "Balance general VuelaTour · Otros movimientos (en el bloque de ese vuelo, junto a sus ingresos de VuelaTour; no es costo del avión)",
+    );
+    expect(HOJA_OTROS_MOVIMIENTOS_CON_AVION).toBe(
+      "Balance general VuelaTour · Otros movimientos (fila suelta sin vuelo; el avión queda solo como referencia; no es costo del avión)",
+    );
+    expect(HOJA_OTROS_MOVIMIENTOS_SIN_NADA).toBe(
+      "Balance general VuelaTour · Otros movimientos (fila suelta sin vuelo; no es costo del avión)",
+    );
+    for (const h of [HOJA_OTROS_MOVIMIENTOS_CON_VUELO, HOJA_OTROS_MOVIMIENTOS_CON_AVION, HOJA_OTROS_MOVIMIENTOS_SIN_NADA]) {
+      expect(h.startsWith("Balance general VuelaTour · Otros movimientos")).toBe(true);
+      expect(h).not.toContain("Otros gastos");
+      expect(h).not.toContain("Balance del avión");
+    }
+    // «Otros gastos VuelaTour» no cambia: sigue en «otros gastos».
+    expect(hojaDestinoGasto("OTRO", true, true)).toContain("Otros gastos");
+  });
+
+  it("ayuda exacta: egreso de VuelaTour, con/sin vuelo, nunca costo del avión, «Otros gastos VuelaTour» para la empresa", () => {
+    expect(AYUDA_OTROS_MOVIMIENTOS).toBe(
+      "Egreso de VuelaTour que entra a la hoja «otros movimientos» del Balance general, apareado con los ingresos de VuelaTour del vuelo (TUAs, extras, pernocta, comisión). Con vuelo va en el bloque de ese vuelo; sin vuelo queda como fila suelta. Nunca es costo del avión (no entra al reparto ni a los balances por avión) ni va a la hoja «otros gastos»: para un gasto de la empresa usa «Otros gastos VuelaTour». El avión, si lo eliges, queda solo como referencia.",
+    );
+    expect(AYUDA_OTROS_MOVIMIENTOS).toContain("Nunca es costo del avión");
+    expect(AYUDA_OTROS_MOVIMIENTOS).toContain("usa «Otros gastos VuelaTour»");
+  });
+
+  it("schema zod: el enum la acepta justo después de OTRO; alta con y sin vuelo; Verificar con y sin vuelo", () => {
+    expect(CategoriaEnum.safeParse(OM).success).toBe(true);
+    expect(CategoriaEnum.safeParse("OTROS_MOVIMIENTOSX").success).toBe(false);
+    const opciones = CategoriaEnum.options as readonly string[];
+    expect(opciones[opciones.indexOf("OTRO") + 1]).toBe(OM);
+    const base = {
+      categoria: OM,
+      monto: "1250",
+      moneda: "MXN",
+      fecha_gasto: "2026-10-23",
+      medio_pago: "TRANSFERENCIA",
+    };
+    const conVuelo = GastoCreateSchema.safeParse({ ...base, vuelo_id: VUELO });
+    expect(conVuelo.success).toBe(true);
+    if (conVuelo.success) {
+      expect(conVuelo.data.monto).toBe(1250);
+      expect(conVuelo.data.vuelo_id).toBe(VUELO);
+    }
+    expect(GastoCreateSchema.safeParse(base).success).toBe(true);
+    expect(GastoVerifySchema.safeParse({ categoria: OM, vuelo_id: VUELO }).success).toBe(true);
+    expect(GastoVerifySchema.safeParse({ categoria: OM }).success).toBe(true);
   });
 });

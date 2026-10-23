@@ -61,6 +61,12 @@ export const CategoriaEnum = z.enum([
   // jamás lleva vuelo ni avión; vive en Otros gastos y es repartible a mano.
   "VISITA",
   "OTRO",
+  // «Otros movimientos (VuelaTour)» (23-oct-2026, API 0.0.106, invariante
+  // 107): egreso de VuelaTour apareado en la hoja «otros movimientos» del
+  // Balance general; vuelo OPCIONAL, avión solo referencia, nunca costo del
+  // avión ni «otros gastos». El API 0.0.105 la rechaza (IsEnum): el panel
+  // sale DESPUÉS del API.
+  "OTROS_MOVIMIENTOS",
   // Paquetería (20-oct-2026, API 0.0.99): envíos de la empresa; hoja «otros
   // gastos» del Balance general. El API 0.0.98 la rechaza.
   "PAQUETERIA",

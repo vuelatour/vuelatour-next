@@ -4483,6 +4483,50 @@ movimientos: queda duplicado». Hasta hoy el pago al vendedor solo existía como
 PROVISIÓN calculada. Contrato con el API **0.0.39** (migraciones
 20260928000001 enum y 20260928000002 CHECK; invariante 31 del API).
 
+- **23-oct-2026 (API 0.0.106, invariante 107 del API): categoría «Otros
+  movimientos (VuelaTour)»** (`OTROS_MOVIMIENTOS`). Pedido del cliente (con la
+  captura del selector de categorías del gasto): «Falta la opción de agregar
+  un gasto a la hoja de "otros movimientos" en el balance general». Es el
+  egreso GENÉRICO de VuelaTour que se aparea en la hoja «otros movimientos»
+  del Balance general con los ingresos de VuelaTour del vuelo (TUAs, extras,
+  pernocta, comisión); las dos «Comisión del vendedor» siguen siendo
+  categorías propias. Tabla canónica (== API == app): etiqueta «Otros
+  movimientos (VuelaTour)», destino NUEVO `DESTINO_OTROS_MOVIMIENTOS` =
+  «Otros movimientos (Balance general VuelaTour)» — distinto del de empresa
+  («Otros gastos (Balance general VuelaTour)») a propósito: `CATEGORIAS_EMPRESA`
+  NO cambia y `/admin/otros-gastos` no la lista (el API arma esa pantalla con
+  `CATEGORIAS_GASTO_EMPRESA`). Reglas (las decide el API; el panel etiqueta,
+  ofrece y explica): vuelo OPCIONAL para todos los roles
+  (`categoriaExigeVueloSiempre` no la incluye: el selector conserva «Sin
+  vuelo»; con vuelo cae en el bloque de ese vuelo, sin vuelo es fila suelta);
+  avión opcional y SOLO referencia (está en `CATEGORIAS_SIN_AVION`: nunca
+  «Falta avión», la celda «Avión · vuelo» dice «VuelaTour» con «ref. N4142R»
+  si trae avión, espejo de `CATEGORIAS_GASTO_SIN_AVION` del API); NUNCA
+  costo del avión (ni reparto ni balances por avión); no repartible
+  (`CATEGORIAS_REPARTIBLES` sin cambio), no ligable a compras
+  (`CATEGORIAS_COMPRA` es lista blanca), sin TUA incluida, T.C. como
+  cualquier gasto; la captura la oficina (el piloto no la ve en la app).
+  Orden en `CATEGORIAS_CAPTURA`: ÚLTIMA, justo después de «Otros gastos
+  VuelaTour» (así en `CategoriaEnum` del zod y en el filtro «Categoría» de
+  Gastos: **25 valores**). `hojaDestinoGasto` ⇒ «Balance general VuelaTour ·
+  Otros movimientos (…)» por rama (`HOJA_OTROS_MOVIMIENTOS_CON_VUELO` /
+  `_CON_AVION` / `_SIN_NADA`), antes de la rama de empresa. Cuadro de ayuda
+  `AYUDA_OTROS_MOVIMIENTOS` en el alta y en Verificar / editar (mismo patrón
+  que Comisariato: sin candado nuevo). «Gastos del vuelo» pinta su destino en
+  verde bajo la etiqueta (`destinoVisibleEnGastosDelVuelo` = las dos
+  comisiones + esta), para que se vea que no es costo del avión. La IA ni la
+  propone ni la pisa (`CATEGORIAS_SOLO_DECIDE_LA_OFICINA` en
+  `iaPuedeCambiarCategoria`, como las comisiones: una lectura de ticket no
+  sabe que el pago va a «otros movimientos» y pisarla lo volvería costo del
+  avión en silencio). Pruebas: `lib/admin/__tests__/categorias-gasto.test.ts`
+  (tabla, orden, listas, hojas, ayuda, IA, zod, paridad de 25 y espejo del
+  API), `lib/admin/__tests__/gasto-avion.test.ts` (celda «VuelaTour») y
+  `components/admin/expenses/__tests__/otros-movimientos-ui.test.tsx` (hint,
+  cableado de los dos diálogos, «Gastos del vuelo», golden del alta). El
+  golden `alta-gasto.golden.json` se regeneró por la opción nueva
+  (`ACTUALIZAR_GOLDEN=1 npx vitest run alta-con-cargos-ui.test.tsx`). Orden
+  de deploy: API 0.0.106 → **panel** (el 0.0.105 rechaza la categoría con el
+  400 de `IsEnum`; el toast lo dice tal cual).
 - **13-oct-2026 (API 0.0.74, invariante 61 del API): DOS categorías.** Esta
   categoría se llama ahora **«Comisión del vendedor (VuelaTour)»** (mismo
   código `COMISION_VENDEDOR`, solo cambia la etiqueta: donde esta sección
@@ -9387,7 +9431,8 @@ DTO ya aceptaba `categoria`, `pendientes` y `duplicados` también en
   barra (cliente): de `lib/api/expenses-server.ts` solo `import type`.
 - **«Falta avión» = espejo EXACTO de la bandeja del API**:
   `CATEGORIAS_SIN_AVION` (categorias-gasto.ts) = empresa + INDIRECTO +
-  PERSONAL_DUENO + «Comisión del vendedor (VuelaTour)», sin la «(avión)» (igual
+  PERSONAL_DUENO + «Comisión del vendedor (VuelaTour)» + «Otros movimientos
+  (VuelaTour)» (23-oct-2026), sin la «(avión)» (igual
   que `CATEGORIAS_GASTO_SIN_AVION` de `common/categoria-gasto.util.ts`; la
   prueba de paridad lee el repo del API). `estadoAvionGasto`: reparto ⇒
   «Repartido:» + insignias (remanente en centavos ⇒ «VuelaTour»);

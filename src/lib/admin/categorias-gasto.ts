@@ -67,6 +67,11 @@ export const CATEGORIA_GASTO_LABELS: Record<string, string> = {
   // /admin/otros-gastos y la hoja "otros gastos" del Balance general
   // conservan su nombre (son gastos de EMPRESA, no esta categoría).
   OTRO: "Otros gastos VuelaTour",
+  // Egreso de VuelaTour que se aparea en la hoja «otros movimientos» del
+  // Balance general con los ingresos de VuelaTour del vuelo (23-oct-2026,
+  // API 0.0.106, invariante 107): vuelo opcional, avión solo referencia,
+  // NUNCA costo del avión ni «otros gastos» de la empresa.
+  OTROS_MOVIMIENTOS: "Otros movimientos (VuelaTour)",
   // Envíos y mensajería de la empresa (20-oct-2026, invariante 97 del API):
   // gasto de EMPRESA, hoja «otros gastos» del Balance general.
   PAQUETERIA: "Paquetería",
@@ -83,6 +88,14 @@ export function categoriaGastoLabel(cat: string): string {
 const DESTINO_DIRECTO_VUELO = "Gastos directos del vuelo (en el balance del avión)";
 const DESTINO_INDIRECTO_AVION = "Gastos indirectos del avión (en el balance del avión)";
 const DESTINO_OTROS_EMPRESA = "Otros gastos (Balance general VuelaTour)";
+/**
+ * Destino de «Otros movimientos (VuelaTour)» (23-oct-2026, API 0.0.106):
+ * la hoja «otros movimientos» del Balance general. Es OTRO destino que el de
+ * empresa (`DESTINO_OTROS_EMPRESA`, hoja «otros gastos») a propósito: por él
+ * la categoría NO entra a `CATEGORIAS_EMPRESA` (el API deriva
+ * `CATEGORIAS_GASTO_EMPRESA` del destino de empresa, literal).
+ */
+export const DESTINO_OTROS_MOVIMIENTOS = "Otros movimientos (Balance general VuelaTour)";
 
 /**
  * "¿A dónde se va el gasto POR DEFAULT?" — texto que acompaña (en verde) a
@@ -122,6 +135,9 @@ export const DESTINO_POR_DEFECTO: Record<string, string> = {
   NOMINA: DESTINO_OTROS_EMPRESA,
   GASOLINA: DESTINO_OTROS_EMPRESA,
   OTRO: DESTINO_OTROS_EMPRESA,
+  // Otros movimientos (23-oct-2026): destino PROPIO (hoja «otros
+  // movimientos»); no es el de empresa ⇒ fuera de CATEGORIAS_EMPRESA.
+  OTROS_MOVIMIENTOS: DESTINO_OTROS_MOVIMIENTOS,
   // Paquetería (20-oct-2026): destino de EMPRESA ⇒ entra a CATEGORIAS_EMPRESA.
   PAQUETERIA: DESTINO_OTROS_EMPRESA,
   FIJO: DESTINO_OTROS_EMPRESA,
@@ -175,12 +191,17 @@ export const CATEGORIAS_CAPTURA: readonly string[] = [
   "PAQUETERIA",
   "PERSONAL_DUENO",
   "OTRO",
+  // Egreso de VuelaTour en «otros movimientos» del Balance general
+  // (23-oct-2026, API 0.0.106): justo después de «Otros gastos VuelaTour»,
+  // para que las dos de VuelaTour queden juntas y se lea la diferencia de
+  // hoja en el destino verde.
+  "OTROS_MOVIMIENTOS",
 ];
 
 /**
  * Opciones del filtro «Categoría» de Gastos (14-oct-2026, una sola tabla):
  * las de captura en su orden y al final las tres que solo se verifican o
- * son legado (ATERRIZAJE, FIJO, VISITA). Son las 24 del enum sin repetir
+ * son legado (ATERRIZAJE, FIJO, VISITA). Son las 25 del enum sin repetir
  * (= llaves de CATEGORIA_GASTO_LABELS); `?categoria=` se valida contra esta
  * lista con `valorDeCatalogo` (desconocida o en minúsculas ⇒ se ignora y
  * jamás viaja al API). Las opciones son `CATEGORIAS_FILTRO_GASTO.map(
@@ -254,6 +275,10 @@ export const CATEGORIA_COMISARIATO = "COMISARIATO";
  *  20-oct-2026, invariante 97): columna OTROS de la fila del vuelo, como
  *  Comisariato. */
 export const CATEGORIA_OTROS_DIRECTOS_VUELO = "OTROS_DIRECTOS_VUELO";
+
+/** Código de «Otros movimientos (VuelaTour)» (espejo del enum del API,
+ *  23-oct-2026, invariante 107): ver «Otros movimientos (VuelaTour)» abajo. */
+export const CATEGORIA_OTROS_MOVIMIENTOS = "OTROS_MOVIMIENTOS";
 
 /** Columna OTROS de costos directos del vuelo: Comisariato y los otros
  *  directos (20-oct-2026). */
@@ -404,20 +429,81 @@ export function errorVueloObligatorio(
   return vueloId ? null : mensajeGastoRequiereVuelo(categoria);
 }
 
+// ===== «Otros movimientos (VuelaTour)» (23-oct-2026, API 0.0.106, invariante 107) =====
+//
+// Pedido del cliente (con la captura del selector de categorías): «Falta la
+// opción de agregar un gasto a la hoja de "otros movimientos" en el balance
+// general». Es el egreso GENÉRICO de VuelaTour que se aparea en esa hoja con
+// los ingresos de VuelaTour del vuelo (TUAs, extras, pernocta, comisión); la
+// comisión del vendedor conserva sus dos categorías propias. Reglas (las
+// decide el API; el panel etiqueta, ofrece y explica):
+//  - vuelo OPCIONAL para todos los roles (con vuelo cae en el bloque de ese
+//    vuelo; sin vuelo es fila suelta) ⇒ `categoriaExigeVueloSiempre` NO la
+//    incluye y el selector conserva «Sin vuelo»;
+//  - avión opcional y SOLO referencia ⇒ está en `CATEGORIAS_SIN_AVION`
+//    (nunca «Falta avión»; la celda «Avión · vuelo» dice «VuelaTour»);
+//  - NUNCA es costo del avión (ni reparto ni balances por avión) ni «otros
+//    gastos» de la empresa (destino propio ⇒ fuera de `CATEGORIAS_EMPRESA`);
+//  - no repartible, no ligable a compras (`CATEGORIAS_COMPRA` es lista
+//    blanca), sin TUA incluida, T.C. como cualquier gasto;
+//  - la captura la oficina (ADMIN, FACTURACION, ANALISTA, COORDINADOR); el
+//    piloto no la ve en la app.
+
+/** Cuadro de ayuda de «Otros movimientos (VuelaTour)» (alta y Verificar / editar). */
+export const AYUDA_OTROS_MOVIMIENTOS =
+  "Egreso de VuelaTour que entra a la hoja «otros movimientos» del Balance general, apareado con los ingresos de VuelaTour del vuelo (TUAs, extras, pernocta, comisión). Con vuelo va en el bloque de ese vuelo; sin vuelo queda como fila suelta. Nunca es costo del avión (no entra al reparto ni a los balances por avión) ni va a la hoja «otros gastos»: para un gasto de la empresa usa «Otros gastos VuelaTour». El avión, si lo eliges, queda solo como referencia.";
+
+/** «Con lo elegido cae en:» de «Otros movimientos (VuelaTour)», por rama. */
+export const HOJA_OTROS_MOVIMIENTOS_CON_VUELO =
+  "Balance general VuelaTour · Otros movimientos (en el bloque de ese vuelo, junto a sus ingresos de VuelaTour; no es costo del avión)";
+export const HOJA_OTROS_MOVIMIENTOS_CON_AVION =
+  "Balance general VuelaTour · Otros movimientos (fila suelta sin vuelo; el avión queda solo como referencia; no es costo del avión)";
+export const HOJA_OTROS_MOVIMIENTOS_SIN_NADA =
+  "Balance general VuelaTour · Otros movimientos (fila suelta sin vuelo; no es costo del avión)";
+
+/** ¿Es «Otros movimientos (VuelaTour)»? Igualdad EXACTA. */
+export function esCategoriaOtrosMovimientos(cat: string | null | undefined): boolean {
+  return cat === CATEGORIA_OTROS_MOVIMIENTOS;
+}
+
+/**
+ * Categorías cuyo destino en verde se pinta bajo la etiqueta en «Gastos del
+ * vuelo»: las que viven en un vuelo pero NO por el eje genérico del costo
+ * del avión — las dos del pago al vendedor (se ve quién paga) y «Otros
+ * movimientos (VuelaTour)» (se ve que es egreso de VuelaTour, no del avión).
+ * Las directas del vuelo (comida, FBO, comisariato…) no lo llevan.
+ */
+export function destinoVisibleEnGastosDelVuelo(cat: string | null | undefined): boolean {
+  return esCategoriaPagoVendedor(cat) || esCategoriaOtrosMovimientos(cat);
+}
+
+/**
+ * Categorías que SOLO decide la oficina: las dos del pago al vendedor y
+ * «Otros movimientos (VuelaTour)» (23-oct-2026). Una lectura de ticket no
+ * sabe que un pago es la comisión o un egreso apareado en «otros
+ * movimientos»; si la IA pisara la elección, el gasto se volvería costo del
+ * avión en silencio.
+ */
+export const CATEGORIAS_SOLO_DECIDE_LA_OFICINA: ReadonlySet<string> = new Set([
+  ...CATEGORIAS_PAGO_VENDEDOR,
+  CATEGORIA_OTROS_MOVIMIENTOS,
+]);
+
 /**
  * La IA jamás pisa una categoría que no sabe sugerir: si el humano eligió
- * cualquiera de las dos «Comisión del vendedor», la lectura del ticket (que
- * llega segundos después) no la cambia. Tampoco PROPONE ninguna de las dos
- * (pyservices no las sugiere; si algún día llegara, un pago al vendedor —y
- * quién lo paga— lo decide la oficina, no la IA).
+ * cualquiera de las dos «Comisión del vendedor» u «Otros movimientos
+ * (VuelaTour)», la lectura del ticket (que llega segundos después) no la
+ * cambia. Tampoco PROPONE ninguna de ellas (pyservices no las sugiere; si
+ * algún día llegara, un pago al vendedor —y quién lo paga— o un egreso de
+ * «otros movimientos» lo decide la oficina, no la IA).
  */
 export function iaPuedeCambiarCategoria(
   actual: string,
   sugerida: string | null | undefined,
 ): boolean {
   if (!sugerida) return false;
-  if (esCategoriaPagoVendedor(actual)) return false;
-  return !esCategoriaPagoVendedor(sugerida);
+  if (CATEGORIAS_SOLO_DECIDE_LA_OFICINA.has(actual)) return false;
+  return !CATEGORIAS_SOLO_DECIDE_LA_OFICINA.has(sugerida);
 }
 
 /**
@@ -471,19 +557,22 @@ export const CATEGORIAS_EMPRESA: ReadonlySet<string> = new Set([
  * `CATEGORIAS_GASTO_SIN_AVION` del API (`common/categoria-gasto.util.ts`),
  * la fuente única de la bandeja `?pendientes=true`, de «Sugerir
  * asignaciones», de la alerta diaria y del pre-cierre: las de EMPRESA,
- * INDIRECTO (sin avión por diseño), PERSONAL_DUENO (jamás lleva avión) y la
- * «Comisión del vendedor (VuelaTour)». `COMISION_VENDEDOR_AVION` NO está, a
- * propósito, igual que en el API (una «(avión)» sin avión SÍ sale en la
- * bandeja). La columna «Avión · vuelo» de Gastos pinta «Falta avión» con
- * esta regla, así su conteo es el de la pestaña «Pendientes» (14-oct-2026).
- * Comparaciones SOLO con `Set.has` (el prefijo COMISION_VENDEDOR lo vigila
- * el guardián de las pruebas). La paridad con el API la congela la prueba.
+ * INDIRECTO (sin avión por diseño), PERSONAL_DUENO (jamás lleva avión), la
+ * «Comisión del vendedor (VuelaTour)» y, desde el 23-oct-2026, «Otros
+ * movimientos (VuelaTour)» (egreso de VuelaTour: el avión es solo
+ * referencia). `COMISION_VENDEDOR_AVION` NO está, a propósito, igual que en
+ * el API (una «(avión)» sin avión SÍ sale en la bandeja). La columna «Avión ·
+ * vuelo» de Gastos pinta «Falta avión» con esta regla, así su conteo es el de
+ * la pestaña «Pendientes» (14-oct-2026). Comparaciones SOLO con `Set.has` (el
+ * prefijo COMISION_VENDEDOR lo vigila el guardián de las pruebas). La paridad
+ * con el API la congela la prueba.
  */
 export const CATEGORIAS_SIN_AVION: ReadonlySet<string> = new Set([
   ...CATEGORIAS_EMPRESA,
   "INDIRECTO",
   "PERSONAL_DUENO",
   CATEGORIA_PAGO_VENDEDOR,
+  CATEGORIA_OTROS_MOVIMIENTOS,
 ]);
 
 /** ¿La categoría necesita avión? (lo contrario de `CATEGORIAS_SIN_AVION`, igualdad exacta). */
@@ -537,6 +626,9 @@ export const HOJA_NOMINA_SIN_REPARTIR =
  * - COMISION_VENDEDOR_AVION («(avión)», 13-oct-2026) → columna COMISIONES
  *   del balance del avión y reparto a socios, en el mes del vuelo (en «otros
  *   movimientos» sale con egreso $0.00 «a cargo del avión»);
+ * - OTROS_MOVIMIENTOS (23-oct-2026, API 0.0.106) → «otros movimientos» del
+ *   general: con vuelo en el bloque de ese vuelo, sin vuelo fila suelta (el
+ *   avión, si lo trae, solo referencia); nunca costo del avión;
  * - NOMINA (16-oct-2026, API 0.0.90) → el módulo Nómina: sin reparto no
  *   entra a ningún balance (`HOJA_NOMINA_SIN_REPARTIR`);
  * - EMPRESA (OTRO/GASOLINA/FIJO/VISITA/PAQUETERIA) → SIEMPRE «otros gastos» del
@@ -565,6 +657,13 @@ export function hojaDestinoGasto(
   }
   if (categoria === CATEGORIA_PAGO_VENDEDOR_AVION) {
     return "Balance del avión · columna COMISIONES y reparto a socios, en el mes del vuelo (con el vuelo completado; en «otros movimientos» sale con egreso $0.00 «a cargo del avión»)";
+  }
+  // «Otros movimientos (VuelaTour)» (23-oct-2026, API 0.0.106): la hoja
+  // «otros movimientos» pase lo que pase; el vuelo decide el bloque y el
+  // avión es solo referencia.
+  if (categoria === CATEGORIA_OTROS_MOVIMIENTOS) {
+    if (tieneVuelo) return HOJA_OTROS_MOVIMIENTOS_CON_VUELO;
+    return tieneAvion ? HOJA_OTROS_MOVIMIENTOS_CON_AVION : HOJA_OTROS_MOVIMIENTOS_SIN_NADA;
   }
   // Nómina (16-oct-2026, API 0.0.90, invariante 91): vive en su módulo y no
   // entra a ningún balance hasta repartirla; ya no va a «otros gastos».

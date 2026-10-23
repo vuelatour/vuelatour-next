@@ -9,6 +9,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CATEGORIA_GASTO_LABELS,
+  HOJA_OTROS_MOVIMIENTOS_CON_VUELO,
+  HOJA_OTROS_MOVIMIENTOS_SIN_NADA,
   categoriaLlevaAvion,
 } from "@/lib/admin/categorias-gasto";
 import {
@@ -46,12 +48,23 @@ const gasto = (over: Partial<Gasto> = {}): G => ({
   ...over,
 });
 
-const VUELATOUR_SIN_AVION = ["OTRO", "GASOLINA", "FIJO", "VISITA", "PAQUETERIA", "COMISION_VENDEDOR", "INDIRECTO"];
+// Empresa (menos NÓMINA), «Comisión del vendedor (VuelaTour)», INDIRECTO y,
+// desde el 23-oct-2026 (API 0.0.106), «Otros movimientos (VuelaTour)».
+const VUELATOUR_SIN_AVION = [
+  "OTRO",
+  "GASOLINA",
+  "FIJO",
+  "VISITA",
+  "PAQUETERIA",
+  "COMISION_VENDEDOR",
+  "INDIRECTO",
+  "OTROS_MOVIMIENTOS",
+];
 
-describe("estadoAvionGasto · sin avión ni reparto (las 24 categorías)", () => {
-  it("empresa, comisión (VuelaTour) e INDIRECTO ⇒ «VuelaTour»; PERSONAL_DUENO ⇒ «Personal»; NOMINA ⇒ «Sin repartir»; las 15 restantes ⇒ «Falta avión»", () => {
+describe("estadoAvionGasto · sin avión ni reparto (las 25 categorías)", () => {
+  it("empresa, comisión (VuelaTour), Otros movimientos (VuelaTour) e INDIRECTO ⇒ «VuelaTour»; PERSONAL_DUENO ⇒ «Personal»; NOMINA ⇒ «Sin repartir»; las 15 restantes ⇒ «Falta avión»", () => {
     const todas = Object.keys(CATEGORIA_GASTO_LABELS);
-    expect(todas).toHaveLength(24);
+    expect(todas).toHaveLength(25);
     const faltan: string[] = [];
     for (const categoria of todas) {
       const e = estadoAvionGasto(gasto({ categoria }));
@@ -116,8 +129,8 @@ describe("estadoAvionGasto · NÓMINA (16-oct-2026, API 0.0.90)", () => {
 });
 
 describe("estadoAvionGasto · con avión", () => {
-  it("empresa y comisión (VuelaTour) ⇒ «VuelaTour» con la matrícula de referencia (aunque traiga avión)", () => {
-    for (const categoria of ["OTRO", "GASOLINA", "COMISION_VENDEDOR"]) {
+  it("empresa, comisión (VuelaTour) y Otros movimientos (VuelaTour) ⇒ «VuelaTour» con la matrícula de referencia (aunque traiga avión)", () => {
+    for (const categoria of ["OTRO", "GASOLINA", "COMISION_VENDEDOR", "OTROS_MOVIMIENTOS"]) {
       const e = estadoAvionGasto(
         gasto({ categoria, aeronave_id: "av-1", aeronave: { matricula: "N4142R" }, vuelo_id: "v-1" }),
       );
@@ -154,6 +167,28 @@ describe("estadoAvionGasto · con avión", () => {
     expect(e).toMatchObject({
       titulo: "Va a: Balance general VuelaTour · Otros gastos (el vuelo queda solo como referencia).",
     });
+  });
+
+  it("«Otros movimientos (VuelaTour)» (23-oct-2026): «VuelaTour» con el vuelo y el avión de referencia; el title va a «otros movimientos», nunca a «otros gastos»", () => {
+    const conVuelo = estadoAvionGasto(
+      gasto({ categoria: "OTROS_MOVIMIENTOS", aeronave_id: "av-1", aeronave: { matricula: "N4142R" }, vuelo_id: "v-1" }),
+    );
+    expect(conVuelo).toEqual({
+      tipo: "FUERA_DEL_AVION",
+      etiqueta: "VuelaTour",
+      referencia: "N4142R",
+      titulo: `Va a: ${HOJA_OTROS_MOVIMIENTOS_CON_VUELO}.`,
+    });
+    const suelto = estadoAvionGasto(gasto({ categoria: "OTROS_MOVIMIENTOS" }));
+    expect(suelto).toEqual({
+      tipo: "FUERA_DEL_AVION",
+      etiqueta: "VuelaTour",
+      referencia: null,
+      titulo: `Va a: ${HOJA_OTROS_MOVIMIENTOS_SIN_NADA}.`,
+    });
+    expect(tituloFueraDelAvion("OTROS_MOVIMIENTOS", false, false)).not.toContain("Otros gastos");
+    expect(tituloFueraDelAvion("OTROS_MOVIMIENTOS", false, false)).not.toContain("Repartir");
+    expect(etiquetaAvionGasto(suelto)).toBe("VuelaTour");
   });
 });
 

@@ -10,7 +10,10 @@
  *     selectores: «Otros gastos directos del vuelo», «Paquetería» y
  *     «Efectivo de la empresa (no de fondo)»; el 21-oct-2026, porque la
  *     refacción dejó de tener el bloque «¿A dónde va la refacción?»:
- *     ahora es un gasto normal con una nota, invariante 101 del API);
+ *     ahora es un gasto normal con una nota, invariante 101 del API; el
+ *     23-oct-2026, por la opción nueva «Otros movimientos (VuelaTour)» del
+ *     selector de categoría y su cuadro de ayuda, API 0.0.106 — se regenera
+ *     con `ACTUALIZAR_GOLDEN=1 npx vitest run <este archivo>`);
  *  2. con ellas, la refacción pinta la MISMA nota que sin ellas (ya no hay
  *     destino que forzar) y, en lo demás, el MISMO formulario;
  *  3. cableado por regex: las dos llaves viajan SOLO con los cargos, la
@@ -21,7 +24,7 @@
  * El runner no tiene DOM: render estático (los efectos no corren) + lectura
  * del fuente.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { ReactNode } from "react";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -92,7 +95,7 @@ afterAll(() => vi.useRealTimers());
 const { ExpenseCreateDialog } = await import("../expense-create-dialog");
 
 const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
-const GOLDEN = JSON.parse(leer("./alta-gasto.golden.json")) as Record<string, string>;
+const RUTA_GOLDEN = path.resolve(__dirname, "./alta-gasto.golden.json");
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const FLOTA: AvionCatalogoGasto[] = [
@@ -115,6 +118,41 @@ const abierta = (extra: Record<string, unknown> = {}) =>
     <ExpenseCreateDialog aircraft={FLOTA} providers={PROV} abierto onAbiertoChange={() => {}} {...extra} />,
   );
 
+/** El alta desde «Gastos del vuelo» (vuelo, avión y piloto prefijados). */
+const PROPS_VUELO = {
+  defaultVueloId: "b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+  defaultVueloFolio: 104,
+  defaultAeronaveId: "e1a85e5b-9eaa-4367-9920-68d5d78883e8",
+  defaultCategoria: "REFACCION",
+  defaultPilotoNombre: "Juan",
+};
+
+// Solo tras un cambio INTENCIONAL del marcado (nunca para tapar una
+// regresión): `ACTUALIZAR_GOLDEN=1 npx vitest run <este archivo>`. Se
+// regeneró el 23-oct-2026 por la opción nueva «Otros movimientos (VuelaTour)»
+// (API 0.0.106) en el selector de categoría.
+if (process.env.ACTUALIZAR_GOLDEN) {
+  writeFileSync(
+    RUTA_GOLDEN,
+    `${JSON.stringify(
+      {
+        boton: renderToStaticMarkup(<ExpenseCreateDialog aircraft={FLOTA} providers={PROV} />),
+        boton_primario: renderToStaticMarkup(
+          <ExpenseCreateDialog aircraft={FLOTA} providers={PROV} varianteBoton="default" />,
+        ),
+        operaciones: abierta({ titulo: "Crear el gasto con la suma de 2 cargos", contexto: "Contexto de prueba." }),
+        refaccion: abierta({ defaultCategoria: "REFACCION" }),
+        otro: abierta({ defaultCategoria: "OTRO" }),
+        vuelo: abierta(PROPS_VUELO),
+      },
+      null,
+      2,
+    )}
+`,
+  );
+}
+const GOLDEN = JSON.parse(readFileSync(RUTA_GOLDEN, "utf8")) as Record<string, string>;
+
 describe("sin las props nuevas: el alta de SIEMPRE (golden del 14-oct, antes del cambio)", () => {
   it("botón propio (outline y primario): idéntico", () => {
     expect(renderToStaticMarkup(<ExpenseCreateDialog aircraft={FLOTA} providers={PROV} />)).toBe(GOLDEN.boton);
@@ -134,15 +172,7 @@ describe("sin las props nuevas: el alta de SIEMPRE (golden del 14-oct, antes del
     expect(GOLDEN.refaccion).toContain("data-refaccion-nota");
     expect(GOLDEN.refaccion).toContain(esc(NOTA_REFACCION_SIN_AVION));
     expect(abierta({ defaultCategoria: "OTRO" })).toBe(GOLDEN.otro);
-    expect(
-      abierta({
-        defaultVueloId: "b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
-        defaultVueloFolio: 104,
-        defaultAeronaveId: "e1a85e5b-9eaa-4367-9920-68d5d78883e8",
-        defaultCategoria: "REFACCION",
-        defaultPilotoNombre: "Juan",
-      }),
-    ).toBe(GOLDEN.vuelo);
+    expect(abierta(PROPS_VUELO)).toBe(GOLDEN.vuelo);
   });
 });
 
