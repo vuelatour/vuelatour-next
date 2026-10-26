@@ -191,7 +191,7 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   tabla vuelve a la página 1 al cambiar el orden. El valor vive en la URL
   (`?orden=`, default fuera de la URL) y el componente lo LEE con
   `useSearchParams` (la elección del clic solo gana mientras la URL no se
-  asiente y luego caduca: `resolverOrdenInventario`, puro + test), **nunca**
+  asiente y luego caduca: `resolverOrden` de `lib/admin/orden-lista.ts`, puro + test), **nunca**
   con `useState(propDelServer)`: al volver del detalle
   (BackLink = `router.back()`) Next reusa el payload viejo de la página y esa
   prop es la de la primera carga — la URL decía `?orden=se-acaban` y la tabla
@@ -199,7 +199,7 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   `inventory/__tests__/items-table-orden.test.tsx`).
   Ejemplar: inventario (`lib/admin/inventario-orden.ts` +
   `inventory/items-table.tsx`, «Se están acabando primero» = Bajo primero y
-  luego stock ascendente, desconocidos al final).
+  luego stock ascendente, desconocidos al final) y Vencimientos (`lib/admin/vencimientos-orden.ts`, 26-oct-2026); las piezas comunes del patrón viven en `lib/admin/orden-lista.ts`.
   **Filas que el operador está viendo** (opcional, 25-sep-2026): prop
   `alCambiarFiltradas(filas)` — DataTable avisa, en un EFECTO y solo cuando
   cambia el conjunto (clave = ids unidos), las filas que quedan tras la
@@ -12575,3 +12575,42 @@ token.
 `; en Windows con `core.autocrlf=true` un checkout los
   reescribe en CRLF y fallan sin que haya bug. Los repos locales quedaron con
   `core.autocrlf=false` (22-oct-2026).
+
+## Vencimientos: orden por «Vence» / «Restante» (26-oct-2026)
+
+Pedido del cliente (captura de `/admin/expirations` con las columnas «Vence»
+y «Restante» encerradas en rojo): «agregar un filtro para ordenar los
+vencimientos por orden de fecha de vencimiento o de tiempo restante…
+Tenemos filtros de otras cosas, pero nada más falta eso». Mismo patrón de
+orden de las tablas de lista (sección «Tablas de LISTA», ejemplar
+inventario): encabezados «Vence» y «Restante» clicables ↑/↓ y atajos
+«Ordenar: Primero lo que vence antes · Primero lo que vence más tarde» junto
+al buscador; el valor viaja en `?orden=` (default `vence`, fuera de la URL)
+y NO se manda al API.
+- `lib/admin/vencimientos-orden.ts` (puro, test
+  `lib/admin/__tests__/vencimientos-orden.test.ts`): `vence(-desc)` por la
+  fecha calendario — es el orden con el que el API ya entregaba la lista
+  (`fecha_vencimiento` ascendente, nulos al final), ahora visible en el
+  encabezado y reversible; permanentes y «solo por horas» AL FINAL en las dos
+  direcciones (un `PERMANENTE` con fecha guardada cuenta como sin fecha,
+  igual que lo pinta la celda). `restante(-desc)` por lo que dice la columna:
+  primero los que tienen días (por días; negativo = vencido), luego los que
+  SOLO tienen horas (por horas), sin dato al final — días y horas no se
+  comparan entre sí; un límite doble (horas + calendario) va por sus días.
+  Empates: documento A–Z → objetivo A–Z → id.
+- Las piezas comunes del patrón (dirección por columna, clic que invierte,
+  elección vs URL viva `resolverOrden`, `nulosAlFinal`, colador es-MX,
+  `numeroONulo`/`textoONulo`) salieron a `lib/admin/orden-lista.ts`;
+  `inventario-orden.ts` las usa desde ahí con las MISMAS firmas (sus tests
+  no cambiaron). Una tabla nueva con orden importa de `orden-lista.ts` y
+  define solo su catálogo, sus claves y sus atajos.
+- `expirations/expirations-table.tsx`: lee `?orden=` con `useSearchParams`
+  (respaldo `ordenInicial` del server solo sin router), ordena las filas
+  COMPLETAS (hasta las 500 que carga la página) antes de la búsqueda y del
+  paginado, y escribe `orden` con `replaceState`. La página valida `sp.orden`
+  con `ordenVencimientosDeUrl` (basura ⇒ default, jamás un 400). Test de
+  marcado `expirations/__tests__/expirations-table-orden.test.tsx` (el
+  vencido más viejo sale en la primera página aunque llegue al final;
+  `aria-sort` solo en Vence/Restante; la URL viva manda sobre `ordenInicial`).
+- La barra de filtros conserva `?orden=` al cambiar un filtro (`pushQuery`
+  copia los params) y su «Limpiar» NO lo toca: el orden no es un filtro.

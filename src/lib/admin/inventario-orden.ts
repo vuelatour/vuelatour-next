@@ -30,10 +30,27 @@
  * `count`), así que el orden se aplica sobre TODOS los ítems antes de la
  * búsqueda y del paginado de la tabla, nunca solo sobre la página visible.
  *
- * Todo aquí es PURO (prueba `__tests__/inventario-orden.test.ts`).
+ * Todo aquí es PURO (prueba `__tests__/inventario-orden.test.ts`). Las
+ * piezas que no dependen del inventario (dirección por columna, clic que
+ * invierte, elección vs URL viva, nulos al final, colador es-MX) viven en
+ * `orden-lista.ts` desde el 26-oct-2026 (también las usa Vencimientos).
  */
 
+import {
+  coladorEsMx as colador,
+  compararIds,
+  direccionDeColumna as direccionDeColumnaLista,
+  nulosAlFinal,
+  numeroONulo,
+  ordenAlPulsarColumna as ordenAlPulsarColumnaLista,
+  resolverOrden,
+  textoONulo,
+  type DireccionOrden,
+  type EleccionOrden as EleccionOrdenLista,
+} from "./orden-lista";
 import { valorDeCatalogo } from "./url-params";
+
+export type { DireccionOrden };
 
 export const ORDENES_INVENTARIO = [
   "nombre",
@@ -64,7 +81,6 @@ export const ORDEN_INVENTARIO_DEFAULT: OrdenInventario = "nombre";
 
 /** Columnas de la tabla que se pueden ordenar con clic en su encabezado. */
 export type ColumnaInventario = "nombre" | "categoria" | "stock" | "utilidad" | "ubicacion";
-export type DireccionOrden = "asc" | "desc";
 
 /** Atajos visibles arriba de la tabla (lo que el operador pidió, sin jerga). */
 export const ATAJOS_ORDEN_INVENTARIO: ReadonlyArray<{
@@ -94,10 +110,6 @@ const PRIMERA_DIRECCION: Record<ColumnaInventario, DireccionOrden> = {
   ubicacion: "asc",
 };
 
-function ordenDe(columna: ColumnaInventario, dir: DireccionOrden): OrdenInventario {
-  return (dir === "asc" ? columna : `${columna}-desc`) as OrdenInventario;
-}
-
 /**
  * `?orden=` → orden válido. Fuera de catálogo (enlace viejo, dedazo) o
  * ausente ⇒ el default A–Z: la lista sale completa y en su orden de siempre,
@@ -116,9 +128,7 @@ export function direccionDeColumna(
   columna: ColumnaInventario,
   orden: OrdenInventario,
 ): DireccionOrden | null {
-  if (orden === columna) return "asc";
-  if (orden === `${columna}-desc`) return "desc";
-  return null;
+  return direccionDeColumnaLista(columna, orden);
 }
 
 /**
@@ -129,35 +139,22 @@ export function ordenAlPulsarColumna(
   columna: ColumnaInventario,
   actual: OrdenInventario,
 ): OrdenInventario {
-  const dir = direccionDeColumna(columna, actual);
-  if (dir === "asc") return ordenDe(columna, "desc");
-  if (dir === "desc") return ordenDe(columna, "asc");
-  return ordenDe(columna, PRIMERA_DIRECCION[columna]);
+  return ordenAlPulsarColumnaLista(columna, actual, PRIMERA_DIRECCION);
 }
 
 /** Elección del clic mientras la URL (replaceState) se asienta. */
-export interface EleccionOrden {
-  /** `?orden=` vigente cuando se hizo clic. */
-  base: OrdenInventario;
-  valor: OrdenInventario;
-}
+export type EleccionOrden = EleccionOrdenLista<OrdenInventario>;
 
 /**
- * Qué orden se PINTA. La URL viva manda (al volver del detalle con
- * router.back() Next reusa el payload viejo de la página, así que una prop
- * del server no sirve); la elección del clic solo gana mientras la URL siga
- * en el valor sobre el que se tomó, para responder al instante. En cuanto la
- * URL cambia, la elección CADUCA (`eleccion: null`): si no, resucitaría
- * cuando la URL regresara a su base (p. ej. el menú lateral «Inventario»
- * limpia `?orden=` sin remontar la tabla). Devuelve la MISMA elección si
- * sigue vigente (el componente solo actualiza su estado si cambió).
+ * Qué orden se PINTA: la URL viva manda y la elección del clic solo gana
+ * mientras la URL siga en el valor sobre el que se tomó (regla común en
+ * `orden-lista.ts#resolverOrden`).
  */
 export function resolverOrdenInventario(
   eleccion: EleccionOrden | null,
   ordenUrl: OrdenInventario,
 ): { orden: OrdenInventario; eleccion: EleccionOrden | null } {
-  if (eleccion && eleccion.base === ordenUrl) return { orden: eleccion.valor, eleccion };
-  return { orden: ordenUrl, eleccion: null };
+  return resolverOrden(eleccion, ordenUrl);
 }
 
 /** Lo mínimo que se necesita de un ítem para ordenarlo. */
@@ -187,33 +184,11 @@ export interface OpcionesOrdenInventario {
   ordenUbicacion?: ReadonlyMap<string, number>;
 }
 
-const colador = new Intl.Collator("es-MX", { sensitivity: "base", numeric: true });
-
-/** Número conocido o null (null, undefined, "" y NaN son «no se sabe»). */
-function numeroONulo(v: number | string | null | undefined): number | null {
-  if (v == null || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-function textoONulo(v: string | null | undefined): string | null {
-  const t = (v ?? "").trim();
-  return t ? t : null;
-}
-
-/** Desconocidos AL FINAL sin importar la dirección; si ambos se conocen, `cmp`. */
-function nulosAlFinal<V>(a: V | null, b: V | null, cmp: (x: V, y: V) => number): number {
-  if (a == null && b == null) return 0;
-  if (a == null) return 1;
-  if (b == null) return -1;
-  return cmp(a, b);
-}
-
 /** Desempate universal: producto A–Z y, si se llaman igual, id (determinista). */
 function desempate(a: ItemOrdenable, b: ItemOrdenable): number {
   const porNombre = colador.compare(a.nombre ?? "", b.nombre ?? "");
   if (porNombre !== 0) return porNombre;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  return compararIds(a.id, b.id);
 }
 
 /**
@@ -259,7 +234,7 @@ function comparador(
     case "nombre-desc":
       return (a, b) => {
         const c = colador.compare(a.nombre ?? "", b.nombre ?? "") * signo;
-        return c !== 0 ? c : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+        return c !== 0 ? c : compararIds(a.id, b.id);
       };
     case "categoria":
     case "categoria-desc":

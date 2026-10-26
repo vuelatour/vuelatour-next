@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ExclamationTriangleIcon,
   PaperClipIcon,
@@ -7,7 +9,11 @@ import {
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtDecimal } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
-import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableOrden,
+} from "@/components/admin/data-table";
 import { ExpirationActions } from "@/components/admin/expirations/expiration-actions";
 import { VerDocumentoButton } from "@/components/admin/expirations/ver-documento-button";
 import type {
@@ -15,6 +21,18 @@ import type {
   EngineOption,
   PilotOption,
 } from "@/components/admin/expirations/expiration-form-dialog";
+import {
+  ATAJOS_ORDEN_VENCIMIENTOS,
+  ORDEN_VENCIMIENTOS_DEFAULT,
+  direccionDeColumna,
+  ordenAlPulsarColumna,
+  ordenVencimientosDeUrl,
+  ordenarVencimientos,
+  resolverOrdenVencimientos,
+  type ColumnaVencimientos,
+  type EleccionOrden,
+  type OrdenVencimientos,
+} from "@/lib/admin/vencimientos-orden";
 import type { DocumentType, EstadoVencimiento, Expiration } from "@/types/expirations";
 
 const ESTADO_STYLES: Record<EstadoVencimiento, string> = {
@@ -45,8 +63,42 @@ interface ExpirationsTableProps {
   /** false para MECANICO: consulta la lista pero editar/borrar/ver documento
    *  son de oficina (el API le respondería 403 — no pintarle botones rotos). */
   canManage?: boolean;
+  /**
+   * `?orden=` ya validado por la página (server). Solo RESPALDO cuando no hay
+   * router (tests): en el panel manda la URL viva (`useSearchParams`).
+   */
+  ordenInicial?: OrdenVencimientos;
 }
 
+/** Key de columna de la tabla → columna del orden. */
+const COLUMNA_DE_KEY: Record<string, ColumnaVencimientos> = {
+  vence: "vence",
+  restante: "restante",
+};
+
+/**
+ * Escribe `?orden=` SIN recargar ni ensuciar el historial (replaceState,
+ * integrado con el router de Next; el mismo mecanismo que la búsqueda y la
+ * página de DataTable). El default no se escribe: la URL limpia es la de
+ * siempre. Conserva los demás parámetros (los filtros del server).
+ */
+function escribirOrdenEnUrl(orden: OrdenVencimientos) {
+  const url = new URL(window.location.href);
+  if (orden === ORDEN_VENCIMIENTOS_DEFAULT) url.searchParams.delete("orden");
+  else url.searchParams.set("orden", orden);
+  window.history.replaceState(null, "", url.toString());
+}
+
+/**
+ * Tabla de Vencimientos — Documento · Objetivo · Vence · Restante · Estado · ⋯.
+ *
+ * Orden (26-oct-2026, pedido del cliente con «Vence» y «Restante» encerradas
+ * en su captura): esos dos encabezados son clicables ↑/↓ y hay atajos
+ * «Ordenar: Primero lo que vence antes · Primero lo que vence más tarde»
+ * junto al buscador. Se aplica sobre la lista COMPLETA, antes de la búsqueda
+ * y del paginado. Lógica pura en `lib/admin/vencimientos-orden.ts`; el valor
+ * viaja en `?orden=` (default `vence`, fuera de la URL).
+ */
 export function ExpirationsTable({
   rows,
   documentTypes,
@@ -54,7 +106,41 @@ export function ExpirationsTable({
   pilots,
   engines,
   canManage = true,
+  ordenInicial = ORDEN_VENCIMIENTOS_DEFAULT,
 }: ExpirationsTableProps) {
+  // La URL VIVA manda (misma regla que inventario, AGENTS «Tablas de LISTA»):
+  // al volver del detalle Next reusa el payload ya pintado de esta página y
+  // `ordenInicial` sería el de la primera carga, no el que el operador eligió.
+  const sp = useSearchParams();
+  const ordenUrl = sp ? ordenVencimientosDeUrl(sp.get("orden")) : ordenInicial;
+  // Clic = respuesta INMEDIATA: la elección local gana mientras la URL siga
+  // en el valor sobre el que se tomó (ver `resolverOrdenVencimientos`).
+  const [eleccion, setEleccion] = useState<EleccionOrden | null>(null);
+  const resuelto = resolverOrdenVencimientos(eleccion, ordenUrl);
+  if (resuelto.eleccion !== eleccion) setEleccion(resuelto.eleccion);
+  const orden = resuelto.orden;
+
+  const ordenadas = useMemo(() => ordenarVencimientos(rows, orden), [rows, orden]);
+
+  const cambiarOrden = (nuevo: OrdenVencimientos) => {
+    setEleccion({ base: ordenUrl, valor: nuevo });
+    escribirOrdenEnUrl(nuevo);
+  };
+
+  const ordenTabla: DataTableOrden = {
+    direccion: (key) => {
+      const col = COLUMNA_DE_KEY[key];
+      return col ? direccionDeColumna(col, orden) : null;
+    },
+    alPulsarColumna: (key) => {
+      const col = COLUMNA_DE_KEY[key];
+      if (col) cambiarOrden(ordenAlPulsarColumna(col, orden));
+    },
+    atajos: ATAJOS_ORDEN_VENCIMIENTOS,
+    atajoActivo: orden,
+    alElegirAtajo: (valor) => cambiarOrden(ordenVencimientosDeUrl(valor)),
+  };
+
   const columns: Array<DataTableColumn<ExpirationRow>> = [
     {
       key: "documento",
@@ -101,6 +187,7 @@ export function ExpirationsTable({
     {
       key: "vence",
       header: "Vence",
+      ordenable: true,
       cellClassName: "text-xs",
       cell: (e) =>
         e.vence_por === "FECHA" && e.fecha_vencimiento
@@ -113,6 +200,7 @@ export function ExpirationsTable({
     {
       key: "restante",
       header: "Restante",
+      ordenable: true,
       headClassName: "text-right",
       cellClassName: "text-right text-xs font-mono",
       cell: (e) => {
@@ -164,7 +252,8 @@ export function ExpirationsTable({
   return (
     <DataTable
       columns={columns}
-      rows={rows}
+      rows={ordenadas}
+      orden={ordenTabla}
       rowKey={(e) => e.id}
       searchText={(e) =>
         `${e.tipo?.nombre ?? ""} ${e.objetivo} ${e.referencia ?? ""} ${ESTADO_LABELS[e.estado]}`

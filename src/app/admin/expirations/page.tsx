@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { uuidFiltro } from "@/lib/admin/url-params";
+import { ordenVencimientosDeUrl } from "@/lib/admin/vencimientos-orden";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,8 @@ interface ExpirationsPageProps {
     estado?: string;
     aeronave_id?: string;
     piloto_id?: string;
+    /** Orden de la tabla (`lib/admin/vencimientos-orden.ts`); NO se manda al API. */
+    orden?: string | string[];
   }>;
 }
 
@@ -38,6 +41,9 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
   // oficina (el API le responde 403): no pintarle botones que fallan.
   const me = await getMe();
   const canManage = me.rol === "ADMIN" || me.rol === "COORDINADOR";
+  // `?orden=` validado aquí (fuera de catálogo ⇒ default); la tabla lo relee
+  // de la URL viva y esto es solo su respaldo.
+  const ordenInicial = ordenVencimientosDeUrl(sp.orden);
 
   // Los VENCIMIENTOS son el dato principal; los catálogos resuelven nombres
   // y llenan selectores: degradan con aviso (21-sep-2026).
@@ -164,6 +170,7 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
               pilots={pilotOpts}
               engines={engineOpts}
               canManage={canManage}
+              ordenInicial={ordenInicial}
             />
           </CardContent>
         </Card>
