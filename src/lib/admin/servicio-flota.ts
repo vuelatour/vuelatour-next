@@ -31,8 +31,10 @@ import { fmtDateOnly } from "@/lib/datetime";
 import {
   dentroDelUmbral,
   estadoOrdenServicio,
+  estaVencido,
   faltanHoras,
   TEXTO_EN_TALLER,
+  textoHorasRestantes,
   type EstadoServicioUi,
   type ProximoServicioUi,
 } from "./proximo-servicio";
@@ -144,16 +146,15 @@ export function textoSiguienteServicio(
 /**
  * «Tiempo restante para servicio». Vencido = «vencido por 30.0 h» (el «−30»
  * rojo del pizarrón, dicho con palabras para quien no lee la hoja a diario).
+ * El texto lo redacta `textoHorasRestantes` (`proximo-servicio.ts`): la
+ * MISMA cadena que el KPI del expediente.
  */
 export function textoRestante(
   servicio: ServicioFlota | null | undefined,
 ): string {
   const crudo = faltanHoras(proximoUi(servicio));
   if (crudo === null) return GUION;
-  const n = decima(crudo);
-  return n < 0
-    ? `vencido por ${Math.abs(n).toFixed(1)} h`
-    : `faltan ${n.toFixed(1)} h`;
+  return textoHorasRestantes(crudo);
 }
 
 /**
@@ -167,7 +168,7 @@ export function tonoRestante(
   const crudo = faltanHoras(prox);
   if (crudo === null) return null;
   // Se decide con la décima que se PINTA: así nunca sale «vencido por 0.0 h».
-  if (decima(crudo) < 0) return "rojo";
+  if (estaVencido(prox)) return "rojo";
   return dentroDelUmbral(prox) ? "ambar" : "ok";
 }
 

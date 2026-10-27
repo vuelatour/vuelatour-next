@@ -24,8 +24,10 @@ import { fmtDateTime } from "@/lib/datetime";
 import { fmtDecimal } from "@/lib/format";
 import {
   CLASE_TONO_SERVICIO,
+  decimaDeHora,
   dentroDelUmbral,
   estadoOrdenServicio,
+  estaVencido,
 } from "@/lib/admin/proximo-servicio";
 import {
   aircraftTacometrosAction,
@@ -230,7 +232,10 @@ export function AircraftTacometrosCard({
   };
 
   const prox = data?.proximo_servicio;
-  const vencido = prox != null && prox.faltan <= 0;
+  // Vencido = hito ya alcanzado con su orden abierta (API 0.0.107): el número
+  // llega negativo y aquí se pinta «Vencido por · 14.2 h» en rojo. Misma
+  // regla (décima pintada) que el KPI y la lista de flota.
+  const vencido = estaVencido(prox);
   // Misma línea que el KPI del expediente (fuente única): si la orden ya
   // existe se dice aquí, junto al «faltan X h» que la dispara.
   const estadoServicio = estadoOrdenServicio(prox);
@@ -278,8 +283,14 @@ export function AircraftTacometrosCard({
             hint={prox?.nombre ?? undefined}
           />
           <Metric
-            label="Faltan"
-            value={prox ? `${prox.faltan} h` : "—"}
+            label={vencido ? "Vencido por" : "Faltan"}
+            value={
+              prox
+                ? vencido
+                  ? `${Math.abs(decimaDeHora(prox.faltan)).toFixed(1)} h`
+                  : `${prox.faltan} h`
+                : "—"
+            }
             tone={
               prox
                 ? vencido

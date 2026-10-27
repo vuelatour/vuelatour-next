@@ -112,6 +112,44 @@ export function faltanHoras(
   return Number.isFinite(n) ? n : null;
 }
 
+/** Décima de hora: lo que se PINTA y lo que decide vencido/no vencido
+ *  («−0.04» ⇒ 0, sin el −0 de JavaScript). */
+export function decimaDeHora(n: number): number {
+  const d = Math.round(n * 10) / 10;
+  return d === 0 ? 0 : d;
+}
+
+/**
+ * ¿El hito ya quedó atrás? Se decide con la décima que se pinta («−0.04»
+ * redondea a 0.0 y NO es vencido; «0.0» es «toca hoy»). Desde el API 0.0.107
+ * (invariante 108, 27-oct-2026) `faltan` sale NEGATIVO mientras la orden del
+ * hito siga ABIERTA: el programa ya no brinca al siguiente servicio hasta que
+ * esa orden se marque COMPLETADO. El panel no calcula el número: lo lee.
+ */
+export function estaVencido(
+  prox: ProximoServicioUi | null | undefined,
+): boolean {
+  const faltan = faltanHoras(prox);
+  return faltan != null && decimaDeHora(faltan) < 0;
+}
+
+/**
+ * «faltan 9.8 h» / «vencido por 14.2 h» / «—» (sin número). FUENTE ÚNICA del
+ * texto de horas restantes: lo usan el KPI del expediente, la card de
+ * tacómetros y la lista de flota. Un «faltan −14.2 h» es justo lo que el
+ * operador no debe ver; un «faltan 0.0 h» (−0.04 redondeado) sí es correcto.
+ */
+export function textoHorasRestantes(
+  faltan: number | string | null | undefined,
+): string {
+  const n = faltanHoras({ faltan_hr: faltan });
+  if (n === null) return "—";
+  const d = decimaDeHora(n);
+  return d < 0
+    ? `vencido por ${Math.abs(d).toFixed(1)} h`
+    : `faltan ${d.toFixed(1)} h`;
+}
+
 /**
  * Margen VIGENTE, en horas: el que manda el API (`aviso_automatico.umbral_hr`)
  * y, sin él, la constante espejo. Un override explícito gana siempre.
@@ -186,6 +224,11 @@ export function estadoOrdenServicio(
   const { umbralHr, hrefBase = "", formatearFecha = fmtDateOnly } = opciones;
   const href = `${hrefBase}${ANCLA_MANTENIMIENTOS}`;
   const orden = prox.orden;
+  // Hito ya alcanzado con la orden abierta (API 0.0.107): el tooltip explica
+  // por qué el número va en negativo y qué lo destraba.
+  const notaVencido = estaVencido(prox)
+    ? " El hito ya se alcanzó: el programa no pasa al siguiente servicio hasta que esta orden quede COMPLETADA."
+    : "";
 
   if (!orden) {
     if (!dentroDelUmbral(prox, umbralHr)) return null;
@@ -215,7 +258,7 @@ export function estadoOrdenServicio(
     return {
       texto: TEXTO_EN_TALLER,
       tono: "info",
-      detalle: `El servicio ya está en proceso. ${origenDeOrden(orden)}`,
+      detalle: `El servicio ya está en proceso. ${origenDeOrden(orden)}${notaVencido}`,
       accion: { texto: "Ver mantenimiento", href },
     };
   }
@@ -226,7 +269,7 @@ export function estadoOrdenServicio(
       return {
         texto: "Orden programada · falta confirmar fecha",
         tono: "ambar",
-        detalle: `La orden de servicio ya existe, solo falta acordar el día con el taller. ${origenDeOrden(orden)}`,
+        detalle: `La orden de servicio ya existe, solo falta acordar el día con el taller. ${origenDeOrden(orden)}${notaVencido}`,
         // «Poner fecha» y no «Confirmar fecha»: el texto de la línea ya dice
         // qué falta, y repetirlo en el enlace se lee como un trabalenguas.
         accion: { texto: "Poner fecha", href },
@@ -235,7 +278,7 @@ export function estadoOrdenServicio(
     return {
       texto: `Orden programada para ${formatearFecha(fecha)}`,
       tono: "info",
-      detalle: `El servicio ya tiene día. ${origenDeOrden(orden)}`,
+      detalle: `El servicio ya tiene día. ${origenDeOrden(orden)}${notaVencido}`,
       accion: { texto: "Ver mantenimiento", href },
     };
   }
@@ -245,7 +288,7 @@ export function estadoOrdenServicio(
   return {
     texto: "Orden de servicio registrada",
     tono: "info",
-    detalle: origenDeOrden(orden),
+    detalle: `${origenDeOrden(orden)}${notaVencido}`,
     accion: { texto: "Ver mantenimiento", href },
   };
 }

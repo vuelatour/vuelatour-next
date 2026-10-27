@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   ANCLA_MANTENIMIENTOS,
   CLASE_TONO_SERVICIO,
+  decimaDeHora,
   dentroDelUmbral,
   estadoOrdenServicio,
+  estaVencido,
   faltaConfirmarFecha,
   faltanHoras,
+  textoHorasRestantes,
   UMBRAL_ORDEN_HR,
   umbralServicio,
 } from "../proximo-servicio";
@@ -265,5 +268,81 @@ describe("aviso_automatico: el margen y la promesa salen del API", () => {
     };
     expect(umbralServicio(prox, 5)).toBe(5);
     expect(estadoOrdenServicio(prox, { ...opts, umbralHr: 5 })).toBeNull();
+  });
+});
+
+/**
+ * HITO VENCIDO (27-oct-2026, API 0.0.107 / invariante 108). Pedido del
+ * cliente: «la app marca cuánto falta para el siguiente servicio, pero
+ * cuando no se pudo hacer en tiempo y forma se brinca al siguiente; que
+ * tenga un contador negativo hasta que se marque de concluido». El API ya
+ * manda `faltan` negativo mientras la orden siga abierta; aquí se cuida que
+ * el panel lo DIGA bien («vencido por 14.2 h», nunca «faltan −14.2 h»).
+ */
+describe("hito vencido: textoHorasRestantes / estaVencido", () => {
+  it("XA-VGV el 27-oct: −14.2 h ⇒ «vencido por 14.2 h» y vencido", () => {
+    expect(textoHorasRestantes(-14.2)).toBe("vencido por 14.2 h");
+    expect(estaVencido({ faltan_hr: -14.2 })).toBe(true);
+    expect(estaVencido({ faltan: "-14.2" })).toBe(true);
+  });
+
+  it("positivo y cero siguen siendo «faltan» (0.0 = toca hoy, no vencido)", () => {
+    expect(textoHorasRestantes(9.8)).toBe("faltan 9.8 h");
+    expect(textoHorasRestantes(0)).toBe("faltan 0.0 h");
+    expect(estaVencido({ faltan_hr: 0 })).toBe(false);
+    expect(estaVencido({ faltan_hr: 9.8 })).toBe(false);
+  });
+
+  it("−0.04 redondea a 0.0: no se anuncia un vencido que no existe", () => {
+    expect(decimaDeHora(-0.04)).toBe(0);
+    expect(textoHorasRestantes(-0.04)).toBe("faltan 0.0 h");
+    expect(estaVencido({ faltan_hr: -0.04 })).toBe(false);
+    // Media décima exacta también redondea a 0.0 (JavaScript redondea −0.5
+    // hacia arriba): es la misma tolerancia ±0.05 del hito en el API.
+    expect(textoHorasRestantes(-0.05)).toBe("faltan 0.0 h");
+    expect(textoHorasRestantes(-0.06)).toBe("vencido por 0.1 h");
+    expect(estaVencido({ faltan_hr: -0.06 })).toBe(true);
+  });
+
+  it("numeric en string, un decimal y sin número ⇒ guion", () => {
+    expect(textoHorasRestantes("-30")).toBe("vencido por 30.0 h");
+    expect(textoHorasRestantes("42")).toBe("faltan 42.0 h");
+    expect(textoHorasRestantes(null)).toBe("—");
+    expect(textoHorasRestantes(undefined)).toBe("—");
+    expect(textoHorasRestantes("basura")).toBe("—");
+    expect(estaVencido(null)).toBe(false);
+    expect(estaVencido({ faltan_hr: null })).toBe(false);
+  });
+});
+
+describe("estadoOrdenServicio con el hito vencido", () => {
+  const vencidoConOrden = (orden: OrdenServicioProgramada) =>
+    estadoOrdenServicio({ faltan_hr: -14.2, orden }, opts);
+
+  it("orden PROGRAMADA con fecha: la línea no cambia, el detalle explica el negativo", () => {
+    const e = vencidoConOrden({ ...ordenAuto, automatica: false, fecha_programada: "2026-10-23" });
+    expect(e?.texto).toBe("Orden programada para día 2026-10-23");
+    expect(e?.tono).toBe("info");
+    expect(e?.detalle).toContain("El hito ya se alcanzó");
+    expect(e?.detalle).toContain("COMPLETADA");
+    expect(e?.accion).toEqual({ texto: "Ver mantenimiento", href: ANCLA_MANTENIMIENTOS });
+  });
+
+  it("sin fecha y EN_TALLER también lo dicen en el detalle (misma frase)", () => {
+    const sinFecha = vencidoConOrden(ordenAuto);
+    expect(sinFecha?.texto).toBe("Orden programada · falta confirmar fecha");
+    expect(sinFecha?.detalle).toContain("El hito ya se alcanzó");
+    const taller = vencidoConOrden({ ...ordenAuto, estado: "EN_TALLER" });
+    expect(taller?.detalle).toContain("El hito ya se alcanzó");
+  });
+
+  it("con el hito todavía adelante la frase NO aparece", () => {
+    const e = estadoOrdenServicio({ faltan_hr: 9.8, orden: ordenAuto }, opts);
+    expect(e?.detalle).not.toContain("El hito ya se alcanzó");
+  });
+
+  it("vencido SIN orden: se conserva lo de siempre (dentro del umbral ⇒ se genera sola)", () => {
+    const e = estadoOrdenServicio({ faltan_hr: -14.2, orden: null }, opts);
+    expect(e?.texto).toBe("La orden se genera sola en unos minutos");
   });
 });

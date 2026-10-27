@@ -138,4 +138,31 @@ describe("AircraftKpiStrip · próximo servicio", () => {
     expect(html).toContain("Sin programa");
     expect(html).not.toContain("#mantenimientos");
   });
+
+  it("hito VENCIDO (API 0.0.107, 27-oct): «vencido por 14.2 h» en rojo con la orden programada, nunca «faltan −14.2 h»", () => {
+    // XA-VGV el 27-oct-2026: Hobbs 2,264.2 contra el hito de 2,250 con la
+    // orden PROGRAMADA para el 23-oct todavía abierta.
+    const html = render({
+      ...metricsXaVgv,
+      horas_actuales: 2264.2,
+      proximo_servicio: {
+        ...metricsXaVgv.proximo_servicio!,
+        faltan_hr: -14.2,
+        orden: {
+          id: "af81ccf5",
+          estado: "PROGRAMADO",
+          fecha_programada: "2026-10-23",
+          automatica: false,
+        },
+      },
+    });
+    expect(html).toContain("Servicio 500 hrs · vencido por 14.2 h");
+    expect(html).not.toContain("faltan -14.2");
+    expect(html).not.toContain("faltan −14.2");
+    expect(html).toContain("a las 2,250 h");
+    expect(html).toContain("text-destructive");
+    expect(html).toContain("Orden programada para");
+    expect(html).toContain("El hito ya se alcanzó");
+    expect(html).toContain("Ver mantenimiento");
+  });
 });

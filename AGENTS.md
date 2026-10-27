@@ -12614,3 +12614,40 @@ y NO se manda al API.
   `aria-sort` solo en Vence/Restante; la URL viva manda sobre `ordenInicial`).
 - La barra de filtros conserva `?orden=` al cambiar un filtro (`pushQuery`
   copia los params) y su «Limpiar» NO lo toca: el orden no es un filtro.
+
+## Próximo servicio VENCIDO: el contador va en negativo hasta cerrar la orden (27-oct-2026)
+
+- Pedido del cliente (capturas de la fila del XA-VGV en `/admin/aircraft` y
+  del formulario de la orden «Servicio de 500 hrs», horas programadas 2,250):
+  «la app marca cuánto tiempo le falta para el siguiente servicio, pero
+  cuando no se pudo llevar en tiempo y forma se brinca al siguiente
+  servicio; que tenga un contador negativo hasta que se marque de concluido
+  el servicio de mantenimiento». Con el Hobbs en 2,264.2 la fila decía
+  «faltan 39.3 h» al hito de 2,300 como si el de 2,250 no existiera.
+- **La regla es del API (0.0.107, invariante 108), el panel solo la
+  pinta**: una orden ABIERTA (PROGRAMADO / EN_TALLER) del avión cuyo hito ya
+  se alcanzó SOSTIENE el próximo servicio — `faltan_hr`/`faltan` llegan
+  NEGATIVOS y `orden` trae esa orden — hasta que se marque COMPLETADO (o
+  hasta que otro registro HECHO de la misma etapa la atienda). Sin orden
+  abierta alcanzada el programa cíclico sigue igual que siempre (un avión
+  con historial sin capturar NO amanece «vencido»). Lista, expediente y
+  programa automático leen la misma fuente del API; aquí no se calcula nada.
+- **FUENTE ÚNICA del texto**: `textoHorasRestantes(faltan)` en
+  `lib/admin/proximo-servicio.ts` — «faltan 9.8 h» / **«vencido por 14.2 h»**
+  / «—» — y `estaVencido(prox)` (décima pintada `< 0`; «−0.04» ⇒ 0.0 ⇒ no
+  vencido; «0.0» = toca hoy, ámbar). La lista (`servicio-flota.ts
+  textoRestante`/`tonoRestante`) delega en ellas; sus textos y tonos no
+  cambiaron. Nunca se pinta «faltan −14.2 h».
+- Dónde se ve: KPI «Próximo servicio» del expediente (`aircraft-kpi-strip`:
+  hint «Servicio 500 hrs · vencido por 14.2 h», valor en `text-destructive`,
+  debajo la línea de la orden) y card de tacómetros (`aircraft-tacometros-card`:
+  la métrica pasa de «Faltan · −14.2 h» a **«Vencido por · 14.2 h»** en rojo).
+  `estadoOrdenServicio` añade al `detalle` (tooltip) de la orden, solo con el
+  hito vencido: «El hito ya se alcanzó: el programa no pasa al siguiente
+  servicio hasta que esta orden quede COMPLETADA.» — la línea y el enlace
+  («Ver mantenimiento» / «Poner fecha») no cambian: ahí se cierra la orden.
+- Con el API viejo (0.0.106) nada cambia: el número nunca llega negativo por
+  una orden abierta y los helpers se comportan como antes.
+- Pruebas: `lib/admin/__tests__/proximo-servicio.test.ts` (texto, vencido,
+  redondeo, detalle) y `aircraft/__tests__/aircraft-kpi-strip.test.tsx`
+  (cableado del caso real).

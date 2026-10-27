@@ -123,7 +123,12 @@ export interface ServicioFlota {
     hobbs_hr: number | string;
     intervalo_hr: number | string;
     etiqueta: string;
-    /** NEGATIVO cuando el hito ya se pasó (el pizarrón lo escribe «−30»). */
+    /**
+     * NEGATIVO cuando el hito ya se pasó (el pizarrón lo escribe «−30»).
+     * Desde el API 0.0.107 (invariante 108) pasa de verdad: una orden ABIERTA
+     * ya alcanzada sostiene el hito —`orden` la trae— hasta marcarse
+     * COMPLETADO; el programa ya no brinca al siguiente servicio.
+     */
     faltan_hr: number | string;
     orden: OrdenServicioProgramada | null;
   } | null;
@@ -191,6 +196,8 @@ export interface TacometroHistorial {
   proximo_servicio: {
     a_las: number;
     intervalo: number;
+    /** Negativo = vencido: el hito se alcanzó y su orden sigue abierta (API
+     *  0.0.107, invariante 108). Se pinta con `textoHorasRestantes`. */
     faltan: number;
     /** Nombre de la etapa ganadora, si lo tiene. */
     nombre?: string | null;

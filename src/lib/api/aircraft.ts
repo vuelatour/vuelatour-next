@@ -67,6 +67,9 @@ export interface AircraftMetricsDetalle extends AircraftMetrics {
   proximo_servicio?: {
     titulo: string;
     horas_objetivo: number;
+    /** Negativo = vencido: el hito se alcanzó y su orden sigue abierta (API
+     *  0.0.107, invariante 108). Se pinta con `textoHorasRestantes`, nunca
+     *  como «faltan −14.2 h». */
     faltan_hr: number;
     /** Checklist de la(s) etapa(s) que caen en ese hito. */
     tareas?: string[];

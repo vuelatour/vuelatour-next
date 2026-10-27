@@ -11,6 +11,8 @@ import {
   CLASE_TONO_SERVICIO,
   dentroDelUmbral,
   estadoOrdenServicio,
+  estaVencido,
+  textoHorasRestantes,
   type EstadoServicioUi,
 } from "@/lib/admin/proximo-servicio";
 import { rotuloAcumuladoFinanzas, rotuloHorasMesAnio } from "@/lib/admin/inicio-oficial";
@@ -48,6 +50,10 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
   // si el sistema está por crearla. Textos y reglas: lib/admin/proximo-servicio.
   const estadoServicio = estadoOrdenServicio(prox);
   const cercaDelServicio = dentroDelUmbral(prox);
+  // Hito ya alcanzado con la orden abierta (API 0.0.107, invariante 108): el
+  // número llega NEGATIVO y se dice «vencido por 14.2 h» en rojo, no
+  // «faltan −14.2 h». El programa no brinca hasta que la orden se complete.
+  const vencido = estaVencido(prox);
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -94,7 +100,7 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
         }
         hint={
           prox
-            ? `${prox.titulo} · faltan ${fmtDecimal(prox.faltan_hr, 1)} h`
+            ? `${prox.titulo} · ${textoHorasRestantes(prox.faltan_hr)}`
             : metrics.programa_configurado === false
               ? "Sin vigilancia por horas: configúralo en Tacómetros → Editar programa"
               : undefined
@@ -108,11 +114,13 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
             : undefined
         }
         valueClass={
-          cercaDelServicio
-            ? "text-amber-600 dark:text-amber-400"
-            : metrics.programa_configurado === false
+          vencido
+            ? "text-destructive"
+            : cercaDelServicio
               ? "text-amber-600 dark:text-amber-400"
-              : undefined
+              : metrics.programa_configurado === false
+                ? "text-amber-600 dark:text-amber-400"
+                : undefined
         }
       />
       <Kpi
