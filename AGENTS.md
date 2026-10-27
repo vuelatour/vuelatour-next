@@ -12724,3 +12724,61 @@ y NO se manda al API.
 - Pruebas: `lib/admin/__tests__/caja-chica-madre.test.ts` (sección nueva con
   las cifras reales de Mary) y
   `caja-chica/__tests__/resumen-madre.test.tsx` (marcado + cableado).
+
+## «Es el pago al operador externo» en Gastos (27-oct-2026, API 0.0.110, invariante 110 del API)
+
+Caso #453 (oscar02-251026, Simon Herrera, 25-oct-2026): la cotización decía
+$840 USD y Ale capturó el pago real, $18,182.00 MXN (840 + IVA al T.C. del
+día), como gasto OPERACIONES del vuelo; el API solo reconocía el pago si
+coincidía ±1 % con lo cotizado (invariante 88) y el Balance general sumaba los
+dos en OPERACIONES. Pedido de la oficina: «que lo que yo ponga en la
+cotización simplemente sea informativo … y que tomen nada más de referencia
+el gasto que puso Ale». Decisión: el gasto que la oficina MARCA es el costo
+real en los libros; lo de la cotización es el «costo cotizado» (referencia
+del margen al cotizar) y no se suma además.
+
+- **Regla pura** `lib/admin/pago-operador-externo.ts`:
+  `esPagoOperadorExterno` (`es_pago_operador_externo === true`),
+  `apiConPagoOperador` (la llave booleana = API 0.0.110+),
+  `puedeMarcarPagoOperador(me)` (ADMIN / FACTURACION / COORDINADOR),
+  `categoriaPuedeSerPagoOperador` (espejo de `gastoRestaEnColumnasDelVuelo`
+  del API: ni TUAS/GAS/PERMISO/INDIRECTO ni empresa, pago al vendedor u
+  «otros movimientos»), `vueloExternoDe` (`VueloCercano` o `gasto.vuelo` ⇒
+  {externo, operador}), `casillaPagoOperadorVisible` (vuelo externo +
+  categoría del vuelo + rol), `pagoOperadorPorDefecto` (vuelo externo +
+  OPERACIONES ⇒ nace marcada: la oficina solo supervisa),
+  `pagoOperadorParaAlta` (viaja SOLO `true` y visible), `pagoOperadorParaPatch`
+  (SOLO visible y si cambió contra la BASE de la sesión), `pagoOperadorSeQuita`
+  (marcado y el vuelo/categoría ya no cumplen ⇒ aviso: el API y su trigger
+  la quitan en la misma escritura) y `pagosAlOperadorPorMoneda` (Σ por
+  moneda de los marcados, sin convertir: los libros son la fuente).
+- **Dónde**: `CasillaPagoOperador` («Es el pago al operador externo (Simon
+  Herrera)» + ayuda) en el alta y en «Verificar / editar», DENTRO del
+  Fragment de la casilla AFAC (no corre los ids de `useId`; el golden del
+  alta sigue byte a byte porque sin vuelo externo no se pinta). En el alta,
+  el default se recalcula al cambiar vuelo o categoría (lo que el operador
+  cambie a mano vale hasta el siguiente cambio) y se limpia al guardar y al
+  cerrar. Provider `PagoOperadorProvider` / `usePuedeMarcarPagoOperador`
+  montado en `AdminShell` con `puedeMarcarPagoOperador(me)`. El selector de
+  vuelos (`VueloCercano`, `buscarVuelosCercanosAction`) trae `es_externo` y
+  `operador_externo` del `GET /v1/flights`; en «Verificar», si el vuelo del
+  gasto queda fuera de la ventana de ±15 días, manda el embed
+  `gasto.vuelo.es_externo` / `operador_externo` del API. Tabla de Gastos:
+  chip ámbar «Pago operador». Historial: «Pago al operador externo: No →
+  Sí». Ficha del vuelo (card «Apoyo externo»): «Costo cotizado del operador
+  externo», «Margen cotizado vs cobro» y «Pagado al operador (gastos
+  marcados)» por moneda (o la nota de cómo marcarlo). Cotización
+  (`quote-operador-externo.tsx`) y «Cubrir con externo»: «Lo que cobra el
+  operador externo (costo cotizado)», resumen «costo cotizado … · margen
+  cotizado …», «Margen cotizado VuelaTour: …».
+- **Schemas**: `es_pago_operador_externo: z.boolean().optional()` en alta y
+  verificar (sin declararla el z.object la tira).
+- **Skew**: el API 0.0.109 rechaza la llave (`forbidNonWhitelisted`) ⇒ el
+  panel se despliega DESPUÉS del API 0.0.110 (orden: migración ⇒ API ⇒
+  panel). Un gasto sin la llave (API previo) no pinta la casilla en
+  «Verificar» ni manda nada; un vuelo sin `es_externo` en la lista tampoco.
+- **Pruebas**: `lib/admin/__tests__/pago-operador-externo.test.ts` (regla,
+  categorías, casilla, default, qué viaja, Σ por moneda) y
+  `components/admin/expenses/__tests__/pago-operador-ui.test.tsx` (render de
+  la casilla; cableado del alta, verificar, schemas, Provider, selector,
+  tabla, historial, ficha del vuelo y cotización).

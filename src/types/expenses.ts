@@ -90,6 +90,13 @@ export interface Gasto {
    *  PERMISO (trigger en la BD). undefined = API sin la columna ⇒ el panel no
    *  pinta ni manda la casilla. Leerlo SIEMPRE vía `@/lib/admin/pago-afac`. */
   es_pago_afac?: boolean;
+  /** ADITIVO (27-oct-2026, API 0.0.110 + migración 20261027000001,
+   *  invariante 110): «Es el pago al operador externo» — este gasto es el
+   *  costo REAL del operador que cubrió el vuelo; el costo cotizado de la
+   *  cotización deja de sumarse en los libros. Solo con vuelo cubierto por
+   *  externo (trigger en la BD). undefined = API previo ⇒ el panel no pinta
+   *  ni manda la casilla. Leerlo SIEMPRE vía `@/lib/admin/pago-operador-externo`. */
+  es_pago_operador_externo?: boolean;
   /** ADITIVOS (19-oct-2026, API 0.0.95, gastos «por pagar»): la columna y
    *  el estado que CALCULA el API (conciliado ⇒ PAGADO; fecha < hoy ⇒
    *  VENCIDO). Sin la migración no viajan ⇒ el panel no pinta nada. Leerlos
@@ -156,7 +163,15 @@ export interface Gasto {
   /** `fecha_vuelo` (ADITIVO, API 0.0.96): `timestamptz` de la salida; la
    *  tabla de Gastos pinta su día Cancún bajo «Vuelo #375». Con un API previo
    *  no viaja y no se pinta nada. */
-  vuelo?: { folio: string | null; fecha_vuelo?: string | null } | null;
+  vuelo?: {
+    folio: string | null;
+    fecha_vuelo?: string | null;
+    /** ADITIVOS (API 0.0.110): el vuelo cubierto por externo y su operador,
+     *  para ofrecer «Es el pago al operador externo» en «Verificar / editar»
+     *  aunque el vuelo quede fuera de la lista de vuelos cercanos. */
+    es_externo?: boolean | null;
+    operador_externo?: string | null;
+  } | null;
   /** Reparto entre aviones (tabla hija): la fila del gasto NUNCA se parte —
    *  conciliación y anti-duplicados siguen viendo un solo gasto. El monto de
    *  cada parte va en la MONEDA del gasto (numeric → puede llegar string).

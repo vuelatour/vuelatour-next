@@ -240,7 +240,7 @@ export function CubrirExternoDialog({
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">
-              Lo que cobra el operador externo (costo)
+              Lo que cobra el operador externo (costo cotizado)
             </Label>
             <div className="flex items-center gap-2">
               <Input

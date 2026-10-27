@@ -5,10 +5,12 @@ import { AdminTopbar } from "./admin-topbar";
 import { NotificationsProvider } from "./notifications/notifications-provider";
 import { InicioOficialProvider } from "./inicio-oficial-provider";
 import { AfacRealProvider } from "./afac-real-provider";
+import { PagoOperadorProvider } from "./pago-operador-provider";
 import { PorPagarProvider } from "./por-pagar-provider";
 import { CatalogosGastoProvider } from "./catalogos-gasto-provider";
 import { inicioOficialDeMe } from "@/lib/admin/inicio-oficial";
 import { puedeEditarAfacReal } from "@/lib/admin/libro-afac";
+import { puedeMarcarPagoOperador } from "@/lib/admin/pago-operador-externo";
 import { capacidadPorPagarDeMe } from "@/lib/admin/gasto-por-pagar";
 import type { MeResponse } from "@/types/me";
 
@@ -24,6 +26,9 @@ export function AdminShell({ me, children }: AdminShellProps) {
       {/* AFAC por vuelo (16-oct-2026, API 0.0.89): sin `config.afac_real` o
           sin rol de oficina ⇒ false ⇒ sin la casilla «Es pago de AFAC». */}
       <AfacRealProvider puedeMarcarPagoAfac={puedeEditarAfacReal(me)}>
+        {/* «Es el pago al operador externo» (27-oct-2026, API 0.0.110): rol de
+            oficina ⇒ la casilla en los gastos de vuelos cubiertos por externo. */}
+        <PagoOperadorProvider puedeMarcar={puedeMarcarPagoOperador(me)}>
         {/* Gastos por pagar (19-oct-2026, API 0.0.95): sin
             `config.gastos_por_pagar` ⇒ sin capacidad ⇒ todo como antes. */}
         <PorPagarProvider capacidad={capacidadPorPagarDeMe(me)}>
@@ -48,6 +53,7 @@ export function AdminShell({ me, children }: AdminShellProps) {
         </NotificationsProvider>
         </CatalogosGastoProvider>
         </PorPagarProvider>
+        </PagoOperadorProvider>
       </AfacRealProvider>
     </InicioOficialProvider>
   );

@@ -41,6 +41,11 @@ import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMonto } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { CHIP_PAGO_AFAC, TITULO_CHIP_PAGO_AFAC, esPagoAfac } from "@/lib/admin/pago-afac";
+import {
+  CHIP_PAGO_OPERADOR,
+  TITULO_CHIP_PAGO_OPERADOR,
+  esPagoOperadorExterno,
+} from "@/lib/admin/pago-operador-externo";
 import { lineaCapturaCompacta } from "@/lib/admin/gastos-captura";
 import { MEDIO_PAGO_LABELS, textoPagoCorto } from "@/lib/admin/medios-pago";
 import {
@@ -358,6 +363,19 @@ export function ExpensesTable({
                   >
                     {CHIP_PAGO_AFAC}
                     <span className="sr-only"> · {TITULO_CHIP_PAGO_AFAC}</span>
+                  </Badge>
+                )}
+                {/* «Es el pago al operador externo» (27-oct-2026, API 0.0.110,
+                    invariante 110): el costo real del vuelo cubierto por externo. */}
+                {esPagoOperadorExterno(g) && (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/50 text-amber-700 dark:text-amber-400"
+                    title={TITULO_CHIP_PAGO_OPERADOR}
+                    data-pago-operador=""
+                  >
+                    {CHIP_PAGO_OPERADOR}
+                    <span className="sr-only"> · {TITULO_CHIP_PAGO_OPERADOR}</span>
                   </Badge>
                 )}
                 {g.duplicado_sospechado && (

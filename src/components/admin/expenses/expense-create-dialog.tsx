@@ -9,6 +9,14 @@ import {
   casillaPagoAfacVisible,
   pagoAfacParaAlta,
 } from "@/lib/admin/pago-afac";
+import { usePuedeMarcarPagoOperador } from "@/components/admin/pago-operador-provider";
+import { CasillaPagoOperador } from "@/components/admin/expenses/casilla-pago-operador";
+import {
+  casillaPagoOperadorVisible,
+  pagoOperadorParaAlta,
+  pagoOperadorPorDefecto,
+  vueloExternoDe,
+} from "@/lib/admin/pago-operador-externo";
 import { useForm } from "react-hook-form";
 import {
   ArrowsRightLeftIcon,
@@ -330,6 +338,11 @@ export function ExpenseCreateDialog({
   // (la confirmación de siempre y jamás «Quedará POR PAGAR»).
   const capacidadFecha = capacidadFechaCaptura(capacidadPorPagar, { conCargos });
   const [pagoAfac, setPagoAfac] = useState(false);
+  // «Es el pago al operador externo» (27-oct-2026, API 0.0.110, invariante
+  // 110): solo con un vuelo cubierto por externo, categoría del vuelo y rol
+  // de oficina; nace MARCADA en Operaciones (la oficina solo supervisa).
+  const puedeMarcarPagoOperador = usePuedeMarcarPagoOperador();
+  const [pagoOperador, setPagoOperador] = useState(false);
   // Comprobante adjunto (12-oct-2026: VARIOS archivos — «un proveedor de
   // gasolina nos emite como 5 comprobantes en PDF»). El PRIMERO es la hoja
   // principal (`foto_url`, la que lee la IA); las demás se guardan como hojas
@@ -423,6 +436,19 @@ export function ExpenseCreateDialog({
   // «Usar este avión», avión prefijado). Lee getValues(): fresco tras reset.
   const categoriaSel = watch("categoria");
   const pagoAfacVisible = casillaPagoAfacVisible({ categoria: categoriaSel, puedeMarcar: puedeMarcarPagoAfac });
+  // Vuelo elegido cubierto por externo ⇒ casilla «Es el pago al operador
+  // externo»; nace marcada (o se desmarca) al cambiar vuelo o categoría: el
+  // default es la regla y lo que el operador cambie a mano vale hasta el
+  // siguiente cambio de vuelo/categoría.
+  const vueloExt = vueloExternoDe(vuelos.find((v) => v.id === watch("vuelo_id")));
+  const pagoOperadorVisible = casillaPagoOperadorVisible({
+    vueloExterno: vueloExt.externo,
+    categoria: categoriaSel,
+    puedeMarcar: puedeMarcarPagoOperador,
+  });
+  useEffect(() => {
+    setPagoOperador(pagoOperadorPorDefecto({ vueloExterno: vueloExt.externo, categoria: categoriaSel }));
+  }, [vueloExt.externo, categoriaSel]);
   const avionSel = watch("aeronave_id");
   const tipoSel = watch("tipo_combustible");
   const tipoIa = aiRaw?.tipo_combustible ?? null;
@@ -905,6 +931,18 @@ export function ExpenseCreateDialog({
           })
             ? { es_pago_afac: true }
             : {}),
+          // «Es el pago al operador externo» (API 0.0.110): SOLO marcada y con
+          // la casilla visible (un API previo rechazaría la llave).
+          ...(pagoOperadorParaAlta({
+            visible: casillaPagoOperadorVisible({
+              vueloExterno: vueloExternoDe(vuelos.find((v) => v.id === values.vuelo_id)).externo,
+              categoria: values.categoria,
+              puedeMarcar: puedeMarcarPagoOperador,
+            }),
+            marcado: pagoOperador,
+          })
+            ? { es_pago_operador_externo: true }
+            : {}),
           // > 365 días atrás: SOLO se llega aquí tras la confirmación
           // explícita del diálogo — el API exige este candado para fechas de
           // otro año (auditoría 29-ago). No se manda en el caso normal.
@@ -975,6 +1013,7 @@ export function ExpenseCreateDialog({
         setAiRaw(null);
         setComoPiloto(false);
         setPagoAfac(false);
+        setPagoOperador(false);
         // reset(emptyValues) NO limpia estos: a mano, o el siguiente alta
         // hereda el veto a la IA y un reparto armado.
         avionLimpiado.current = false;
@@ -1082,6 +1121,7 @@ export function ExpenseCreateDialog({
           if (!o) {
             setComoPiloto(false);
             setPagoAfac(false);
+            setPagoOperador(false);
             avionLimpiado.current = false;
             setRepartirActivo(false);
             setRepartoSel({});
@@ -1508,6 +1548,17 @@ export function ExpenseCreateDialog({
             <>
               {pagoAfacVisible && (
                 <CasillaPagoAfac marcado={pagoAfac} onCambio={setPagoAfac} disabled={pending} />
+              )}
+              {/* «Es el pago al operador externo» (27-oct-2026, API 0.0.110):
+                  vuelo cubierto por externo + categoría del vuelo + oficina.
+                  Dentro del MISMO Fragment: no corre los ids de abajo. */}
+              {pagoOperadorVisible && (
+                <CasillaPagoOperador
+                  marcado={pagoOperador}
+                  onCambio={setPagoOperador}
+                  operador={vueloExt.operador}
+                  disabled={pending}
+                />
               )}
               {/* Las dos comisiones del vendedor (28-sep-2026 y 13-oct-2026):
                   con o sin vuelo prefijado — el cuadro de SU categoría dice

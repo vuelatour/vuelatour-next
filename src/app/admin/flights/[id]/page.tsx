@@ -46,6 +46,12 @@ import {
   getVueloAnterior,
 } from "@/lib/api/flights-server";
 import { listGastos, signFuelPhotos } from "@/lib/api/expenses-server";
+import {
+  ETIQUETA_PAGADO_AL_OPERADOR,
+  NOTA_PAGADO_AL_OPERADOR,
+  NOTA_SIN_PAGO_MARCADO,
+  pagosAlOperadorPorMoneda,
+} from "@/lib/admin/pago-operador-externo";
 import { listProviders } from "@/lib/api/providers-server";
 import { FlightGastosCard } from "@/components/admin/flights/flight-gastos-card";
 import { getClient } from "@/lib/api/clients-server";
@@ -924,7 +930,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                     <span className="font-mono">{avionExternoFicha}</span>
                   </Row>
                 )}
-                <Row label="Lo que cobra el operador externo">
+                <Row label="Costo cotizado del operador externo">
                   <span className="font-semibold">
                     {fmtUsd(Number(snapshot.costo_externo_usd) || 0)}
                   </span>
@@ -941,15 +947,51 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                       </span>
                     )}
                 </Row>
-                <Row label="Margen vs cobro">
+                <Row label="Margen cotizado vs cobro">
                   {fmtUsd(
                     Number(snapshot.monto_total_usd) -
                       (Number(snapshot.costo_externo_usd) || 0),
                   )}
                 </Row>
+                {/* «Es el pago al operador externo» (27-oct-2026, API 0.0.110,
+                    invariante 110): lo que la oficina marcó en Gastos es el
+                    costo REAL en los libros; aquí solo se muestra lo
+                    capturado, en su moneda (sin convertir ni recalcular
+                    márgenes: los libros son la fuente). */}
+                {(() => {
+                  const pagos = pagosAlOperadorPorMoneda(gastos);
+                  return pagos.length > 0 ? (
+                    <Row label={ETIQUETA_PAGADO_AL_OPERADOR}>
+                      <span className="font-semibold">
+                        {pagos
+                          .map(
+                            (p) =>
+                              `${
+                                p.moneda === "MXN"
+                                  ? fmtMxn(p.total)
+                                  : p.moneda === "USD"
+                                    ? fmtUsd(p.total)
+                                    : `${p.total} ${p.moneda}`
+                              }${p.n > 1 ? ` (${p.n} gastos)` : ""}`,
+                          )
+                          .join(" + ")}
+                      </span>
+                      <span className="ml-1.5 text-xs text-muted-foreground">
+                        {NOTA_PAGADO_AL_OPERADOR}
+                      </span>
+                    </Row>
+                  ) : (
+                    <p
+                      className="text-xs text-amber-700 dark:text-amber-400"
+                      data-sin-pago-operador=""
+                    >
+                      {NOTA_SIN_PAGO_MARCADO}
+                    </p>
+                  );
+                })()}
                 <p className="text-xs text-muted-foreground pt-1">
-                  Edita operador/avión/costo con el botón «Editar externo» de
-                  arriba.
+                  Edita operador/avión/costo cotizado con el botón «Editar
+                  externo» de arriba.
                 </p>
               </CardContent>
             </Card>

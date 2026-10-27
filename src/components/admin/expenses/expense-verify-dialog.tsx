@@ -12,6 +12,16 @@ import {
 import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { usePuedeMarcarPagoAfac } from "@/components/admin/afac-real-provider";
 import { CasillaPagoAfac } from "@/components/admin/expenses/casilla-pago-afac";
+import { usePuedeMarcarPagoOperador } from "@/components/admin/pago-operador-provider";
+import { CasillaPagoOperador } from "@/components/admin/expenses/casilla-pago-operador";
+import {
+  NOTA_PAGO_OPERADOR_SE_QUITA,
+  apiConPagoOperador,
+  casillaPagoOperadorVisible,
+  pagoOperadorParaPatch,
+  pagoOperadorSeQuita,
+  vueloExternoDe,
+} from "@/lib/admin/pago-operador-externo";
 import {
   CATEGORIA_PAGO_AFAC,
   NOTA_PAGO_AFAC_SE_QUITA,
@@ -380,6 +390,14 @@ export function ExpenseVerifyDialog({
   const gastoConciliado = gasto.conciliado === true;
   const capacidadFecha = capacidadFechaCaptura(capacidadPorPagar, { conciliado: gastoConciliado });
   const [pagoAfac, setPagoAfac] = useState(() => gasto.es_pago_afac === true);
+  // «Es el pago al operador externo» (27-oct-2026, API 0.0.110, invariante
+  // 110): vuelo cubierto por externo (el elegido en la lista o, si es el del
+  // gasto, el embebido del API), categoría del vuelo, rol de oficina y SOLO
+  // si el gasto trae la llave. Viaja solo si cambió (`pagoOperadorParaPatch`).
+  const puedeMarcarPagoOperador = usePuedeMarcarPagoOperador() && apiConPagoOperador(gasto);
+  const [pagoOperador, setPagoOperador] = useState(
+    () => gasto.es_pago_operador_externo === true,
+  );
   const [confirmarTua, setConfirmarTua] = useState<{
     values: GastoVerifyValues;
     texto: string;
@@ -398,6 +416,13 @@ export function ExpenseVerifyDialog({
   // automático, la oficina lo asigna a mano de esta lista (±15 días).
   const [vueloSel, setVueloSel] = useState<string>(gasto.vuelo_id ?? "");
   const [vuelos, setVuelos] = useState<VueloCercano[]>([]);
+  // Vuelo elegido: ¿cubierto por externo? De la lista de cercanos o, si es el
+  // vuelo del gasto (puede quedar fuera de la ventana de ±15 días), del
+  // embed `gasto.vuelo` del API (0.0.110).
+  const vueloExt = vueloExternoDe(
+    vuelos.find((v) => v.id === vueloSel) ??
+      (vueloSel && vueloSel === (gasto.vuelo_id ?? "") ? gasto.vuelo : null),
+  );
   // Reanálisis IA del comprobante guardado (gastos con lectura vieja pegada,
   // p. ej. de antes de la separación TUA/FBO en el prompt).
   const [reanalizando, setReanalizando] = useState(false);
@@ -579,6 +604,7 @@ export function ExpenseVerifyDialog({
       setSelloRetirado(false);
       setTuaEditada(false);
       setPagoAfac(gasto.es_pago_afac === true);
+      setPagoOperador(gasto.es_pago_operador_externo === true);
       // Hojas del comprobante: las guardadas de ESTE gasto, sin pendientes.
       setHojas(hojasDe(gasto));
       setHojasNuevas([]);
@@ -1404,6 +1430,20 @@ export function ExpenseVerifyDialog({
         actual: baseForm.es_pago_afac === true,
       });
       if (pagoAfacPatch !== undefined) payload.es_pago_afac = pagoAfacPatch;
+      // «Es el pago al operador externo» (API 0.0.110): viaja SOLO con la
+      // casilla visible y si cambió contra la BASE de la sesión. Con el
+      // vuelo o la categoría fuera de la regla no viaja: el API y su trigger
+      // quitan la marca en la misma escritura (la nota bajo la casilla avisa).
+      const pagoOperadorPatch = pagoOperadorParaPatch({
+        visible: casillaPagoOperadorVisible({
+          vueloExterno: vueloExt.externo,
+          categoria: values.categoria,
+          puedeMarcar: puedeMarcarPagoOperador,
+        }),
+        marcado: pagoOperador,
+        actual: baseForm.es_pago_operador_externo === true,
+      });
+      if (pagoOperadorPatch !== undefined) payload.es_pago_operador_externo = pagoOperadorPatch;
       // Litros solo aplican a GAS; vacío = no tocar (el zod los descarta).
       if (values.categoria !== "GAS" || values.litros === "") {
         delete (payload as { litros?: unknown }).litros;
@@ -2869,6 +2909,33 @@ export function ExpenseVerifyDialog({
               pagoAfacSeQuita({ actual: gasto.es_pago_afac === true, categoria: watch("categoria") }) && (
                 <p className="text-xs text-amber-700 dark:text-amber-400" data-pago-afac-se-quita="">
                   {NOTA_PAGO_AFAC_SE_QUITA}
+                </p>
+              )}
+            {/* «Es el pago al operador externo» (27-oct-2026, API 0.0.110,
+                invariante 110): en un vuelo cubierto por externo, categoría
+                del vuelo, para oficina y con el API que trae la llave. Si
+                estaba marcado y el vuelo/categoría ya no cumplen, se avisa
+                que al guardar se quita la marca (el cotizado vuelve a sumar). */}
+            {casillaPagoOperadorVisible({
+              vueloExterno: vueloExt.externo,
+              categoria: watch("categoria"),
+              puedeMarcar: puedeMarcarPagoOperador,
+            }) && (
+              <CasillaPagoOperador
+                marcado={pagoOperador}
+                onCambio={setPagoOperador}
+                operador={vueloExt.operador}
+                disabled={pending}
+              />
+            )}
+            {puedeMarcarPagoOperador &&
+              pagoOperadorSeQuita({
+                actual: gasto.es_pago_operador_externo === true,
+                vueloExterno: vueloExt.externo,
+                categoria: watch("categoria"),
+              }) && (
+                <p className="text-xs text-amber-700 dark:text-amber-400" data-pago-operador-se-quita="">
+                  {NOTA_PAGO_OPERADOR_SE_QUITA}
                 </p>
               )}
 

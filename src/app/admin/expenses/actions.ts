@@ -768,6 +768,10 @@ export interface VueloCercano {
   ruta: string | null;
   fecha: string | null;
   estado: string | null;
+  /** Vuelo cubierto por operador externo y su operador (27-oct-2026, API
+   *  0.0.110): deciden si el gasto ofrece «Es el pago al operador externo». */
+  es_externo?: boolean;
+  operador_externo?: string | null;
 }
 
 /**
@@ -821,6 +825,8 @@ export async function buscarVuelosCercanosAction(
         destino_iata: string;
         ruta_iatas?: string[];
         fecha_vuelo: string | null;
+        es_externo?: boolean | null;
+        operador_externo?: string | null;
       }>;
     }>("/v1/flights", {
       searchParams: {
@@ -842,6 +848,8 @@ export async function buscarVuelosCercanosAction(
             : `${v.origen_iata}→${v.destino_iata}`,
         fecha: v.fecha_vuelo,
         estado: v.estado,
+        es_externo: v.es_externo === true,
+        operador_externo: v.operador_externo ?? null,
       }))
       // sort es estable: conserva el orden del API dentro de cada grupo.
       .sort(

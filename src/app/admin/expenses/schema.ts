@@ -218,6 +218,10 @@ export const GastoVerifySchema = z.object({
    *  declararla aquí, el z.object la TIRA; con un API viejo, mandarla daría
    *  400 (`forbidNonWhitelisted`). `false` sobrevive a stripEmpty. */
   es_pago_afac: z.boolean().optional(),
+  /** «Es el pago al operador externo» (27-oct-2026, API 0.0.110, invariante
+   *  110): viaja SOLO si la casilla se ve y cambió (`pagoOperadorParaPatch`,
+   *  lib/admin/pago-operador-externo.ts). `false` sobrevive a stripEmpty. */
+  es_pago_operador_externo: z.boolean().optional(),
   /** Candado de fecha antigua (> 365 días atrás): el usuario CONFIRMÓ la
    *  fecha corregida en el diálogo. Solo se manda cuando es true. */
   permitir_fecha_antigua: z.boolean().optional(),
@@ -286,6 +290,10 @@ export const GastoCreateSchema = z.object({
    *  y SOLO con la casilla visible (Permiso + `config.afac_real` + rol de
    *  oficina; `pagoAfacParaAlta`). El default del API es false. */
   es_pago_afac: z.boolean().optional(),
+  /** «Es el pago al operador externo» (27-oct-2026, API 0.0.110): SOLO `true`
+   *  y SOLO con la casilla visible (vuelo externo + categoría del vuelo + rol
+   *  de oficina; `pagoOperadorParaAlta`). El default del API es false. */
+  es_pago_operador_externo: z.boolean().optional(),
   /** Candado de fecha antigua (> 365 días atrás): el usuario CONFIRMÓ la
    *  fecha en el diálogo — sin esto el API rechaza fechas de otro año
    *  (auditoría 29-ago: gastos con año 2025 fuera de todos los cortes).

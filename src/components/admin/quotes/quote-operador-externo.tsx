@@ -79,9 +79,9 @@ export function QuoteOperadorExterno({
     ? [
         `Cubierto por ${values.operador_externo.trim() || "(sin operador)"}`,
         costoExtNativo > 0
-          ? `costo ${costoExtEsMxn ? fmtMxn(costoExtNativo) : fmtUsd(costoExtNativo)}`
-          : "sin costo capturado",
-        margenExternoUsd != null ? `margen ${fmtUsd(margenExternoUsd)}` : null,
+          ? `costo cotizado ${costoExtEsMxn ? fmtMxn(costoExtNativo) : fmtUsd(costoExtNativo)}`
+          : "sin costo cotizado",
+        margenExternoUsd != null ? `margen cotizado ${fmtUsd(margenExternoUsd)}` : null,
       ]
         .filter(Boolean)
         .join(" · ")
@@ -93,15 +93,18 @@ export function QuoteOperadorExterno({
       ? "Margen negativo"
       : null;
 
-  // Margen = lo que paga el cliente − lo que cobra el operador externo (solo
-  // informativo; el API es la fuente).
+  // Margen COTIZADO = lo que paga el cliente − lo que cobra el operador
+  // externo según la cotización (solo informativo; el API es la fuente). El
+  // costo REAL es el gasto que la oficina marque «pago al operador externo»
+  // (27-oct-2026, API 0.0.110, invariante 110): los libros toman ese gasto y
+  // el cotizado ya no se suma.
   const margenNode =
     margenExternoUsd != null ? (
       <p
         className={`text-xs ${margenExternoUsd < 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}
       >
-        Margen VuelaTour: {fmtUsd(precioClienteUsd)} al cliente − {fmtUsd(costoExtUsd)} del
-        operador externo
+        Margen cotizado VuelaTour: {fmtUsd(precioClienteUsd)} al cliente − {fmtUsd(costoExtUsd)}{" "}
+        del operador externo
         {costoExtEsMxn && (
           <span className="font-mono">
             {" "}
@@ -147,7 +150,7 @@ export function QuoteOperadorExterno({
                 hint="Sale en el PDF del cliente"
               />
               <DatoExterno
-                label="Lo que cobra el operador externo (costo)"
+                label="Lo que cobra el operador externo (costo cotizado)"
                 value={
                   Number(initialQuote.costo_externo_usd) > 0 ? (
                     <>
@@ -257,8 +260,8 @@ export function QuoteOperadorExterno({
                   </Field>
                 </div>
                 <Field
-                  label="Lo que cobra el operador externo (costo)"
-                  hint="En su moneda · interno, no lo ve el cliente"
+                  label="Lo que cobra el operador externo (costo cotizado)"
+                  hint="En su moneda · interno, no lo ve el cliente · referencia del margen al cotizar; el costo real es el gasto que la oficina marque «Es el pago al operador externo»"
                 >
                   <div className="flex items-center gap-2">
                     <Input
