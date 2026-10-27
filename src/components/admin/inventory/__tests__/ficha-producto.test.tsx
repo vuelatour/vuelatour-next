@@ -485,10 +485,46 @@ describe("ficha del producto · API 0.0.36 (aceite 15W-50 tras la migración de 
     expect(t).toContain("$21.25 USD Precio vigente T.C. 17.0115");
     expect(t).toContain("$43,379.33 MXN $2,550 USD");
     expect(t).toContain("Total compras 150 cuarto (qt) $93,129.23 MXN");
-    expect(t).toContain("Precio vigente $21.25 USD · la siguiente salida se cobra a $26.5625 USD (+25 %)");
+    // La línea gris al pie («Precio vigente $21.25 USD · la siguiente salida
+    // se cobra a…») se fue: lo dice la tarjeta de arriba (27-oct-2026).
+    expect(t).not.toContain("la siguiente salida se cobra a");
     // Ya no hay «sin TC · no se cuenta en pesos» ni «$0.00 MXN».
     expect(t).not.toContain("sin T.C.");
     expect(t).not.toContain("$0.00 MXN");
+  });
+
+  it("tarjeta «Precios de este producto» ARRIBA del cardex (27-oct-2026): precio vigente, a cuánto se cobra la siguiente salida y existencia", async () => {
+    api.item = item15w50();
+    api.resumen = resumen15w50();
+    const html = await renderPagina(ID_15W50);
+    expect(html).toContain('data-tarjeta-precios=""');
+    // Antes del cardex, no después.
+    expect(html.indexOf('data-tarjeta-precios=""')).toBeLessThan(html.indexOf('data-cardex-lista=""'));
+    const t = texto(html);
+    expect(t).toContain("Precios de este producto");
+    expect(t).toContain("Precio vigente · último precio de compra $21.25 USD");
+    expect(t).toContain("Entrada del 29 ago 2026 · T.C. 17.0115");
+    expect(t).toContain("≈ $375.55 MXN al T.C. de hoy 17.6729");
+    expect(t).toContain("Se cobra al avión · en la siguiente salida $26.5625 USD");
+    expect(t).toContain("= precio vigente + 25 % (margen de la tienda, se cambia en Configuración)");
+    expect(t).toContain("Existencia hoy 84 cuarto (qt)");
+    expect(html).not.toContain('data-sin-precio-vigente=""');
+  });
+
+  it("sin ninguna compra con costo (`precio_vigente: null`): la tarjeta lo dice en ámbar y enlaza el cardex; sin la llave (API previo) no hay tarjeta", async () => {
+    api.item = item15w50();
+    api.resumen = { ...resumen15w50(), precio_vigente: null };
+    const html = await renderPagina(ID_15W50);
+    expect(html).toContain('data-sin-precio-vigente=""');
+    const t = texto(html);
+    expect(t).toContain("Sin precio vigente: este producto no tiene ninguna compra con costo");
+    expect(t).toContain("Abrir el cardex para corregir el costo");
+    expect(t).not.toContain("Se cobra al avión");
+    expect(t).toContain("Existencia hoy 84 cuarto (qt)");
+    const { precio_vigente: _sin, ...previo } = resumen15w50();
+    void _sin;
+    api.resumen = previo as typeof api.resumen;
+    expect(await renderPagina(ID_15W50)).not.toContain('data-tarjeta-precios=""');
   });
 
   it("VENTAS: historial de a cuánto se vendió (T.C. del día de la venta) y utilidad en pesos", async () => {

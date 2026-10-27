@@ -37,11 +37,11 @@ import {
   textoBandaSinTc,
   textoCargadoACosto,
   textoDineroACosto,
-  textoPrecioVigente,
   textoTc,
   textoUtilidadUsdSinTc,
   textoUtilidadVenta,
 } from "@/lib/admin/inventario-ficha";
+import { PrecioVigenteCard } from "./precio-vigente-card";
 import {
   TEXTO_A_COSTO,
   avisoVentasSinUtilidad,
@@ -159,7 +159,6 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
         : null;
 
   const dinero = resumen.dinero_generado ?? dineroGeneradoDeTotales(totales);
-  const precioVigente = textoPrecioVigente(resumen.precio_vigente, margen);
   const salidasACosto = ventas.filter((v) => v.a_costo).length;
   const cargadoACosto = textoCargadoACosto(totales.ventas_a_costo_mxn, {
     unidades: totales.salidas_a_costo_cant,
@@ -201,6 +200,23 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
           <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
           <span>{bandaSinTc}</span>
         </div>
+      )}
+
+      {/* «Precios de este producto» (27-oct-2026): el precio vigente, a
+          cuánto se cobra la siguiente salida y la existencia, ARRIBA del
+          cardex — la oficina preguntó «¿dónde puedo ver el precio
+          vigente?». Solo con un API que manda `precio_vigente` (0.0.36+;
+          null = ninguna compra con costo, la tarjeta lo dice). */}
+      {"precio_vigente" in resumen && (
+        <PrecioVigenteCard
+          pv={resumen.precio_vigente}
+          tcHoy={resumen.tc_hoy}
+          margenPct={margen}
+          existencia={totales.existencia_actual}
+          unidad={unidad}
+          bajoStock={bajoStock}
+          stockMinimo={stockMinimo}
+        />
       )}
 
       <div className="overflow-hidden rounded-xl border bg-card">
@@ -325,8 +341,6 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
           </TableFooter>
         </Table>
       </div>
-
-      {precioVigente && <p className="px-1 text-xs text-muted-foreground">{precioVigente}</p>}
 
       <DineroGeneradoRenglon dinero={dinero} unidad={unidad} />
 

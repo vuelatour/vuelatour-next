@@ -12782,3 +12782,36 @@ del margen al cotizar) y no se suma además.
   `components/admin/expenses/__tests__/pago-operador-ui.test.tsx` (render de
   la casilla; cableado del alta, verificar, schemas, Provider, selector,
   tabla, historial, ficha del vuelo y cotización).
+
+## Ficha del producto: tarjeta «Precios de este producto» (27-oct-2026)
+
+Pedido de la oficina con la captura del filtro CH48108: «Ya no entiendo la
+parte del inventario 🥹 ¿dónde puedo ver el precio vigente?». El precio
+vigente solo se veía como un chip chico junto al precio de la compra y como
+una línea gris al pie del cardex («Precio vigente $46.06 USD · la siguiente
+salida se cobra a $57.575 USD (+25 %)»).
+
+- **Tarjeta** `components/admin/inventory/precio-vigente-card.tsx`
+  (server-safe), montada por `ResumenProducto` ARRIBA del cardex, solo si el
+  API manda la llave `precio_vigente` (0.0.36+): tres datos en `<dl>`:
+  «Precio vigente · último precio de compra» (destacado en verde:
+  `$46.06 USD` + «Entrada del 01 sep 2026 · T.C. 17.0077» + «≈ $783.37 MXN al
+  T.C. de hoy 17.0077»), «Se cobra al avión · en la siguiente salida»
+  (`$57.575 USD` + «= precio vigente + 25 % (margen de la tienda, se cambia
+  en Configuración)» / «precio de venta fijo de este producto (se cambia en
+  «Editar»)» / «a costo, sin utilidad» en ámbar / «—» + «Todavía no se puede
+  calcular») y «Existencia hoy» (`1 pieza`, «bajo el mínimo (mín. N)» en
+  ámbar). Con `precio_vigente: null` (ninguna compra con costo) la tarjeta lo
+  dice en ámbar (`SIN_PRECIO_VIGENTE`) con el enlace `#cardex` de siempre y
+  conserva la existencia. La línea gris al pie del cardex se QUITÓ
+  (`textoPrecioVigente` sigue en `inventario-ficha.ts` por si otro lector la
+  usa); el chip «Precio vigente» de la fila de la compra se queda.
+- **Regla pura** `lib/admin/inventario-precios.ts` (`tarjetaPrecios`,
+  `subPrecioVigente`, `textoOrigenVenta` y los textos): solo REDACTA lo que
+  manda el API (`precio_vigente`, `tc_hoy`, `margen_venta_pct`,
+  `totales.existencia_actual`); ninguna cuenta de precio, T.C. ni valorizado.
+- **Pruebas**: `lib/admin/__tests__/inventario-precios.test.ts` (CH48108,
+  compra en pesos, sin T.C. de hoy, orígenes de la venta, sin precio vigente,
+  venta no calculable, bajo el mínimo) y `components/admin/inventory/
+  __tests__/ficha-producto.test.tsx` (la tarjeta antes del cardex con el
+  15W-50, `precio_vigente: null` en ámbar, sin la llave sin tarjeta).
