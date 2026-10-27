@@ -5,7 +5,13 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  DETALLE_LIBRO_MAS,
+  DETALLE_LIBRO_MENOS,
+  TEXTO_CUADRA,
+  TEXTO_SIN_FONDO_TOTAL,
   cajasParaReponer,
+  estadoCuadreMadre,
+  filasColaboradoresResumen,
   filtrarHistorialPorRango,
   hayRangoHistorial,
   hrefCajaChica,
@@ -15,12 +21,15 @@ import {
   pistaMontoReponerA,
   rangoHistorialCaja,
   repuestoADeEntrada,
+  resumenMadreDeFondo,
+  textoCajas,
   textoConfirmarReposicionHija,
+  textoConteoMonto,
   textoPeriodoHistorial,
   textoRepuestoA,
   valoresReponerA,
 } from "../caja-chica-madre";
-import type { CajaFondeada } from "@/types/caja-chica";
+import type { CajaFondeada, ResumenCajaMadre } from "@/types/caja-chica";
 
 const GREGORIO = "9a6b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d";
 const JIMMY = "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e";
@@ -210,5 +219,125 @@ describe("filtro Desde/Hasta del historial", () => {
       "Viendo del 15 oct 2026 · 1 de 4 movimientos",
     );
     expect(textoPeriodoHistorial({}, 4, 4)).toBeNull();
+  });
+});
+
+/**
+ * FONDO CONSOLIDADO de la caja madre (27-oct-2026, API 0.0.109). Las cifras
+ * son las REALES de la caja de Mary Cruz ese día (fondo $40,000, seis cajas
+ * por $22,500, libro en −$128.56): aquí solo se formatea y se redacta el
+ * cuadre; nada se suma.
+ */
+describe("fondo consolidado de la caja madre", () => {
+  const MARY: ResumenCajaMadre = {
+    fondo_total: 40000,
+    cajas: 6,
+    asignado_colaboradores: 22500,
+    fondo_propio: 17500,
+    efectivo_colaboradores: 18287.1,
+    pendiente_colaboradores: 4224.91,
+    gastos_pendientes_colaboradores: { n: 8, total: 4224.91 },
+    gastos_pendientes: { n: 11, total: 7127.5 },
+    entregas_pendientes: { n: 2, total: 6100 },
+    otros_pendientes: 0,
+    por_solicitar: 13227.5,
+    efectivo_libro: -128.56,
+    efectivo_esperado: 4272.5,
+    diferencia: -4401.06,
+  };
+
+  it("resumenMadreDeFondo: solo un objeto cuenta; null o ausente ⇒ null (sin card)", () => {
+    expect(resumenMadreDeFondo({ resumen_madre: MARY })).toBe(MARY);
+    expect(resumenMadreDeFondo({ resumen_madre: null })).toBeNull();
+    expect(resumenMadreDeFondo({})).toBeNull();
+  });
+
+  it("textoCajas y textoConteoMonto", () => {
+    expect(textoCajas(6)).toBe("6 cajas");
+    expect(textoCajas(1)).toBe("1 caja");
+    expect(textoConteoMonto({ n: 11, total: 7127.5 }, "MXN", "gasto", "gastos")).toBe("11 gastos · $7,127.50");
+    expect(textoConteoMonto({ n: 1, total: 5000 }, "MXN", "entrega", "entregas")).toBe("1 entrega · $5,000.00");
+    expect(textoConteoMonto({ n: 0, total: 0 }, "MXN", "gasto", "gastos")).toBe("sin gastos");
+    expect(textoConteoMonto(undefined, "MXN", "entrega", "entregas")).toBe("sin entregas");
+  });
+
+  it("estadoCuadreMadre: el libro con MENOS ⇒ rojo con el monto; con MÁS ⇒ ámbar; igual ⇒ cuadra; sin fondo ⇒ neutro", () => {
+    expect(estadoCuadreMadre(MARY, "MXN")).toEqual({
+      tono: "rojo",
+      titulo: "El libro trae $4,401.06 menos de lo esperado.",
+      detalle: DETALLE_LIBRO_MENOS,
+    });
+    expect(estadoCuadreMadre({ diferencia: 2000 }, "MXN")).toEqual({
+      tono: "ambar",
+      titulo: "El libro trae $2,000.00 más de lo esperado.",
+      detalle: DETALLE_LIBRO_MAS,
+    });
+    expect(estadoCuadreMadre({ diferencia: 0 }, "MXN")).toEqual({ tono: "ok", titulo: TEXTO_CUADRA, detalle: null });
+    // Medio centavo no es diferencia.
+    expect(estadoCuadreMadre({ diferencia: 0.004 }, "MXN").tono).toBe("ok");
+    expect(estadoCuadreMadre({ diferencia: null }, "MXN")).toEqual({
+      tono: "neutro",
+      titulo: TEXTO_SIN_FONDO_TOTAL,
+      detalle: null,
+    });
+  });
+
+  it("filasColaboradoresResumen: una fila por caja activa con las cifras del API; sin los aditivos, guiones", () => {
+    const gregorio = caja({
+      monto_fondo: 5000,
+      es_acumulada: false,
+      saldo_libro: 1800.09,
+      por_reponer: 3199.91,
+      gastos_pendientes: { n: 4, total: 3199.91 },
+      ultima_reposicion: { fecha: "2026-10-15", monto: 5000 },
+    });
+    const luis = caja({
+      fondo_id: JIMMY,
+      nombre: "Luis Caceres",
+      monto_fondo: 8000,
+      saldo_libro: 8000,
+      por_reponer: 0,
+      gastos_pendientes: { n: 0, total: 0 },
+      ultima_reposicion: { fecha: "2026-09-30", monto: 2836.12 },
+    });
+    const acumulada = caja({
+      fondo_id: "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f",
+      nombre: "Piloto Acumulada",
+      es_acumulada: true,
+      monto_fondo: null,
+      saldo_libro: -250,
+      por_reponer: 250,
+      gastos_pendientes: { n: 2, total: 250 },
+      ultima_reposicion: null,
+    });
+    const viejo = caja({ fondo_id: "4d5e6f7a-8b9c-4d0e-8f1a-2b3c4d5e6f7a", nombre: "API previo", por_reponer: 0 });
+    const inactiva = caja({ fondo_id: "5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b", nombre: "Cerrada", activo: false });
+    const filas = filasColaboradoresResumen({ cajas_fondeadas: [gregorio, luis, acumulada, viejo, inactiva] });
+    expect(filas.map((f) => f.nombre)).toEqual(["Gregorio Jurado", "Luis Caceres", "Piloto Acumulada", "API previo"]);
+    expect(filas[0]).toEqual({
+      fondoId: GREGORIO,
+      nombre: "Gregorio Jurado",
+      href: `/admin/caja-chica/${GREGORIO}`,
+      acumulada: false,
+      fondoAsignado: "$5,000.00",
+      efectivo: "$1,800.09",
+      efectivoTono: "ok",
+      gastosPendientes: "4 gastos · $3,199.91",
+      porReponer: "$3,199.91",
+      porReponerTono: "ambar",
+      ultimaReposicion: "15 oct 2026 · $5,000.00",
+    });
+    expect(filas[1]).toMatchObject({ porReponer: "$0.00", porReponerTono: "ok", gastosPendientes: "sin gastos" });
+    expect(filas[2]).toMatchObject({
+      acumulada: true,
+      fondoAsignado: "—",
+      efectivo: "-$250.00",
+      efectivoTono: "rojo",
+      ultimaReposicion: "Ninguna",
+    });
+    // API previo (sin los aditivos): nada se inventa.
+    expect(filas[3]).toMatchObject({ fondoAsignado: "—", efectivo: "—", efectivoTono: "neutro", gastosPendientes: "—" });
+    expect(filasColaboradoresResumen({ cajas_fondeadas: null })).toEqual([]);
+    expect(filasColaboradoresResumen({})).toEqual([]);
   });
 });

@@ -30,8 +30,10 @@ import {
 import type {
   CajaFondeada,
   CajaMovimiento,
+  ConteoMontoCaja,
   HistorialEntry,
   MonedaCaja,
+  ResumenCajaMadre,
 } from "@/types/caja-chica";
 
 // =============================================================================
@@ -368,3 +370,152 @@ export const ETIQUETA_PERIODO_HISTORIAL = "Periodo";
 export const TITULO_FECHA_HISTORIAL = "Fecha del movimiento (día de Cancún)";
 export const NOTA_SALDO_LIBRO_COMPLETO =
   "El saldo de cada fila es el del libro completo; las tarjetas de arriba son de todo el fondo.";
+
+// =============================================================================
+// (5) Fondo consolidado de la caja MADRE (27-oct-2026, API 0.0.109)
+// =============================================================================
+//
+// Pedido de Mary Cruz: «tengo un fondo fijo de $40,000 de los cuales $16,500
+// están distribuidos entre mis compañeros. Necesito que el sistema me muestre
+// el fondo total, los fondos asignados a cada colaborador, el saldo en
+// efectivo que conserva cada persona, los gastos comprobados y pendientes por
+// reponer, y el efectivo real disponible en mi caja, considerando también las
+// entregas de dinero y las reposiciones registradas». Las cifras las manda el
+// API en `resumen_madre` y en cada `cajas_fondeadas[]`; aquí solo se formatea
+// y se redacta el cuadre.
+
+export const TITULO_RESUMEN_MADRE = "Fondo consolidado · caja madre";
+export const DESCRIPCION_RESUMEN_MADRE =
+  "Tu fondo total incluye lo asignado a los colaboradores que fondeas. Todo sale de los libros: el tuyo y el de cada caja.";
+export const ETIQUETA_FONDO_TOTAL = "Fondo total";
+export const ETIQUETA_ASIGNADO = "Asignado a colaboradores";
+export const ETIQUETA_FONDO_PROPIO = "Debe estar en mi caja";
+export const NOTA_FONDO_PROPIO = "Fondo total − asignado a colaboradores.";
+export const ETIQUETA_POR_SOLICITAR = "Para solicitar a la empresa";
+export const NOTA_POR_SOLICITAR = "Lo que salió de la caja desde la última reposición.";
+export const TITULO_COLABORADORES = "Por colaborador";
+export const TITULO_MI_CAJA = "Mi caja hoy";
+export const ETIQUETA_GASTOS_PENDIENTES = "Gastos pendientes por reponer";
+export const ETIQUETA_ENTREGAS_PENDIENTES = "Entregas a colaboradores pendientes de reembolso";
+export const ETIQUETA_OTROS_PENDIENTES = "Otros movimientos desde la última reposición";
+export const ETIQUETA_EFECTIVO_ESPERADO = "Efectivo esperado en mi caja";
+export const ETIQUETA_EFECTIVO_LIBRO = "Efectivo según el libro";
+export const ETIQUETA_DIFERENCIA = "Diferencia";
+export const TEXTO_SIN_FONDO_TOTAL =
+  "Fija el monto del fondo (Editar, arriba) para comparar el libro con lo que debe estar en tu caja.";
+export const TEXTO_CUADRA = "Cuadra: el libro coincide con lo que debe estar en tu caja.";
+export const DETALLE_LIBRO_MENOS =
+  "Puede faltar registrar una reposición o una entrega recibida, o el fondo asignado de algún colaborador no es el real.";
+export const DETALLE_LIBRO_MAS =
+  "Puede faltar registrar un gasto o una entrega, o la entrega inicial del fondo de un colaborador sigue en el tramo pendiente (sale al registrar la siguiente reposición).";
+export const ENCABEZADOS_COLABORADORES = [
+  "Colaborador",
+  "Fondo asignado",
+  "Efectivo que conserva",
+  "Gastos pendientes",
+  "Por reponer",
+  "Última reposición",
+] as const;
+
+/** El resumen del API, o null si no viene (API previo, caja sin hijas o lectura caída). */
+export function resumenMadreDeFondo(fondo: {
+  resumen_madre?: ResumenCajaMadre | null;
+}): ResumenCajaMadre | null {
+  const r = fondo.resumen_madre;
+  return r && typeof r === "object" ? r : null;
+}
+
+/** «6 cajas» / «1 caja». */
+export function textoCajas(n: number): string {
+  return `${n} ${n === 1 ? "caja" : "cajas"}`;
+}
+
+/** «11 gastos · $7,127.50» / «1 entrega · $5,000.00» / «ninguno». */
+export function textoConteoMonto(
+  c: ConteoMontoCaja | null | undefined,
+  moneda: MonedaCaja | string,
+  singular: string,
+  plural: string,
+): string {
+  const n = Number(c?.n ?? 0);
+  const total = Number(c?.total ?? 0);
+  if (!(n > 0)) return `sin ${plural}`;
+  return `${n} ${n === 1 ? singular : plural} · ${montoCaja(total, moneda)}`;
+}
+
+export type TonoCuadre = "ok" | "ambar" | "rojo" | "neutro";
+
+/** Cómo quedó el cuadre del libro contra el fondo (una línea + su detalle). */
+export function estadoCuadreMadre(
+  r: Pick<ResumenCajaMadre, "diferencia">,
+  moneda: MonedaCaja | string,
+): { tono: TonoCuadre; titulo: string; detalle: string | null } {
+  const d = r.diferencia;
+  if (d == null || !Number.isFinite(Number(d))) {
+    return { tono: "neutro", titulo: TEXTO_SIN_FONDO_TOTAL, detalle: null };
+  }
+  const n = Math.round(Number(d) * 100) / 100;
+  if (n === 0) return { tono: "ok", titulo: TEXTO_CUADRA, detalle: null };
+  if (n < 0) {
+    return {
+      tono: "rojo",
+      titulo: `El libro trae ${montoCaja(-n, moneda)} menos de lo esperado.`,
+      detalle: DETALLE_LIBRO_MENOS,
+    };
+  }
+  return {
+    tono: "ambar",
+    titulo: `El libro trae ${montoCaja(n, moneda)} más de lo esperado.`,
+    detalle: DETALLE_LIBRO_MAS,
+  };
+}
+
+/** Tono del efectivo que conserva un colaborador (negativo = puso de su bolsa / sobregiro). */
+export type TonoEfectivo = "ok" | "rojo" | "neutro";
+
+export interface FilaColaboradorResumen {
+  fondoId: string;
+  nombre: string;
+  href: string;
+  acumulada: boolean;
+  fondoAsignado: string;
+  efectivo: string;
+  efectivoTono: TonoEfectivo;
+  gastosPendientes: string;
+  porReponer: string;
+  porReponerTono: "ok" | "ambar";
+  ultimaReposicion: string;
+}
+
+/**
+ * Una fila por caja que fondea (en el orden del API: por nombre). Con un API
+ * previo (sin los aditivos) las celdas de dinero dicen «—» y nada se inventa.
+ */
+export function filasColaboradoresResumen(fondo: {
+  cajas_fondeadas?: CajaFondeada[] | null;
+}): FilaColaboradorResumen[] {
+  const cajas = Array.isArray(fondo.cajas_fondeadas) ? fondo.cajas_fondeadas : [];
+  return cajas
+    .filter((c) => c && c.activo !== false)
+    .map((c) => {
+      const fondoAsignado = c.monto_fondo != null ? Number(c.monto_fondo) : null;
+      const saldo = typeof c.saldo_libro === "number" ? c.saldo_libro : null;
+      const pendiente = porReponerDe(c);
+      return {
+        fondoId: c.fondo_id,
+        nombre: nombreCajaFondeada(c),
+        href: hrefCajaChica(c.fondo_id),
+        acumulada: c.es_acumulada === true,
+        fondoAsignado:
+          fondoAsignado != null && Number.isFinite(fondoAsignado) ? montoCaja(fondoAsignado, c.moneda) : "—",
+        efectivo: saldo != null ? montoCaja(saldo, c.moneda) : "—",
+        efectivoTono: saldo == null ? "neutro" : saldo < 0 ? "rojo" : "ok",
+        gastosPendientes: c.gastos_pendientes ? textoConteoMonto(c.gastos_pendientes, c.moneda, "gasto", "gastos") : "—",
+        porReponer: montoCaja(pendiente, c.moneda),
+        porReponerTono: pendiente > 0 ? "ambar" : "ok",
+        ultimaReposicion: c.ultima_reposicion
+          ? `${fmtDateOnly(c.ultima_reposicion.fecha)} · ${montoCaja(Number(c.ultima_reposicion.monto), c.moneda)}`
+          : "Ninguna",
+      };
+    });
+}

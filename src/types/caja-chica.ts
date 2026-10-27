@@ -107,6 +107,47 @@ export interface CajaFondeada {
   activo: boolean;
   por_reponer: number;
   ultima_reposicion: { fecha: string; monto: number } | null;
+  /**
+   * Fondo consolidado de la caja madre (27-oct-2026, ADITIVOS del API
+   * 0.0.109; ausentes = API previo): fondo asignado, si es acumulada, el
+   * efectivo que conserva (saldo crudo de su libro) y sus gastos pendientes.
+   * Se pintan con `lib/admin/caja-chica-madre.ts`; el panel no suma nada.
+   */
+  monto_fondo?: number | null;
+  es_acumulada?: boolean;
+  saldo_libro?: number;
+  gastos_pendientes?: ConteoMontoCaja;
+}
+
+/** «N movimientos por $X» (X positivo), tal como lo manda el API. */
+export interface ConteoMontoCaja {
+  n: number;
+  total: number;
+}
+
+/**
+ * FONDO CONSOLIDADO de una caja MADRE (27-oct-2026, API 0.0.109, ADITIVO):
+ * lo que la oficina pidió ver de un vistazo — fondo total, lo asignado a los
+ * colaboradores, lo que debe estar en la caja madre, lo que salió desde la
+ * última reposición (por solicitar) y si el libro cuadra con el fondo. TODO
+ * lo calcula el API (`resumenCajaMadre`) sumando libros que ya existen; aquí
+ * solo se formatea.
+ */
+export interface ResumenCajaMadre {
+  fondo_total: number | null;
+  cajas: number;
+  asignado_colaboradores: number;
+  fondo_propio: number | null;
+  efectivo_colaboradores: number;
+  pendiente_colaboradores: number;
+  gastos_pendientes_colaboradores: ConteoMontoCaja;
+  gastos_pendientes: ConteoMontoCaja;
+  entregas_pendientes: ConteoMontoCaja;
+  otros_pendientes: number;
+  por_solicitar: number;
+  efectivo_libro: number;
+  efectivo_esperado: number | null;
+  diferencia: number | null;
 }
 
 export interface CajaFondoListResponse {
@@ -126,6 +167,12 @@ export interface CajaFondoDetail extends CajaFondo {
    * «no fondea» (ver `cajasParaReponer`).
    */
   cajas_fondeadas?: CajaFondeada[] | null;
+  /**
+   * Fondo consolidado de la caja MADRE (27-oct-2026, API 0.0.109, ADITIVO):
+   * solo cuando fondea a alguien; `null` = la lectura de las hijas cayó;
+   * ausente = API previo o caja que no fondea. Ver `resumenMadreDeFondo`.
+   */
+  resumen_madre?: ResumenCajaMadre | null;
   /**
    * Gastos EFECTIVO «por pagar» vigentes (19-oct-2026, API 0.0.95, ADITIVO):
    * NO son del libro (no tocan saldo ni lo por reponer) hasta marcarlos

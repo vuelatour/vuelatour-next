@@ -38,11 +38,13 @@ import {
   hayRangoHistorial,
   hrefCajaChica,
   rangoHistorialCaja,
+  resumenMadreDeFondo,
   saldoInicialAlInicio,
   tituloLimpiarPeriodo,
   repuestoADeEntrada,
   textoPeriodoHistorial,
 } from "@/lib/admin/caja-chica-madre";
+import { ResumenMadreCard } from "@/components/admin/caja-chica/resumen-madre-card";
 import { HistorialPeriodoFiltro } from "@/components/admin/caja-chica/historial-periodo-filtro";
 import { getInicioOficial } from "@/lib/api/inicio-oficial";
 import { textoSaldoInicial } from "@/lib/admin/inicio-oficial";
@@ -154,6 +156,9 @@ export default async function CajaFondoPage({
   const periodoVisto = textoPeriodoHistorial(rango, entradas.length, fondo.historial.length);
   // Caja MADRE: a quién puede reponer desde «Registrar movimiento».
   const cajasFondeadas = cajasParaReponer(fondo);
+  // …y su fondo consolidado (27-oct-2026): null = API previo, lectura caída
+  // o caja que no fondea a nadie ⇒ no se monta la card.
+  const resumenMadre = resumenMadreDeFondo(fondo);
   // Gastos por pagar (19-oct-2026, API 0.0.95): la lista ADITIVA del API
   // (no son del libro: no tocan saldos). Sin la llave ⇒ null ⇒ sin bloque.
   const porPagar = porPagarDeFondo(fondo);
@@ -334,6 +339,12 @@ export default async function CajaFondoPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* Fondo consolidado de la caja MADRE (27-oct-2026, API 0.0.109): fondo
+          total, lo asignado a cada colaborador, el efectivo que conserva cada
+          uno, sus gastos pendientes y si el libro de esta caja cuadra con el
+          fondo. Solo cuando el API manda `resumen_madre`. */}
+      {resumenMadre && <ResumenMadreCard fondo={fondo} resumen={resumenMadre} />}
 
       {porPagar && (
         <PorPagarCaja

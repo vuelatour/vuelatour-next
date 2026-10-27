@@ -12688,3 +12688,39 @@ y NO se manda al API.
   `components/admin/conciliacion/__tests__/gasto-enfocado-link.test.tsx` (la
   celda 1↔1 y las líneas del lote), `lib/admin/__tests__/conciliacion-lote.test.ts`
   y `conciliacion-excluidos.test.ts` (hrefs).
+
+## Caja chica madre: card «Fondo consolidado» (27-oct-2026, API 0.0.109)
+
+- Pedido de Mary Cruz (captura de su caja): «tengo un fondo fijo de $40,000
+  de los cuales $16,500 están distribuidos entre mis compañeros. Necesito que
+  el sistema me muestre el fondo total, los fondos asignados a cada
+  colaborador, el saldo en efectivo que conserva cada persona, los gastos
+  comprobados y pendientes por reponer, y el efectivo real disponible en mi
+  caja, considerando también las entregas de dinero y las reposiciones
+  registradas».
+- **Todo lo de dinero lo manda el API** (invariante 109): `resumen_madre`
+  del detalle del fondo (solo cuando fondea a alguien; `null` = lectura
+  caída; ausente = API previo o sin hijas) y los aditivos de cada
+  `cajas_fondeadas[]` (`monto_fondo`, `es_acumulada`, `saldo_libro`,
+  `gastos_pendientes {n, total}`). El panel NO suma: `resumenMadreDeFondo`,
+  `filasColaboradoresResumen`, `textoConteoMonto`, `textoCajas` y
+  `estadoCuadreMadre` (`lib/admin/caja-chica-madre.ts`, sección 5) solo
+  formatean y redactan.
+- **Card** `caja-chica/resumen-madre-card.tsx` (server-safe), montada en
+  `app/admin/caja-chica/[id]/page.tsx` bajo las tarjetas del fondo solo con
+  `resumen_madre`: cuatro cifras (Fondo total · Asignado a colaboradores
+  «N cajas» · Debe estar en mi caja = total − asignado · Para solicitar a la
+  empresa = lo que salió desde la última reposición), tabla «Por
+  colaborador» (enlace a su caja · Fondo asignado · Efectivo que conserva
+  —rojo si negativo— · Gastos pendientes · Por reponer —ámbar si > 0— ·
+  Última reposición; «gasta de su bolsa» en las acumuladas; con un API
+  previo, guiones) con totales del API al pie, y «Mi caja hoy» (gastos
+  pendientes, entregas a colaboradores pendientes de reembolso, otros
+  movimientos solo si ≠ 0, efectivo esperado, efectivo según el libro,
+  diferencia) con la franja del cuadre: `data-cuadre` ok («Cuadra…»), rojo
+  («El libro trae $X menos de lo esperado.» + qué revisar), ámbar («…más…»;
+  la entrega inicial de un colaborador en el tramo pendiente) o neutro
+  (sin fondo total: «Fija el monto del fondo…»).
+- Pruebas: `lib/admin/__tests__/caja-chica-madre.test.ts` (sección nueva con
+  las cifras reales de Mary) y
+  `caja-chica/__tests__/resumen-madre.test.tsx` (marcado + cableado).
