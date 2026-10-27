@@ -80,7 +80,15 @@ describe("filasCardexPorFecha", () => {
         venta({ movimiento_id: "v2", fecha: "2026-08-29", orden: 2, remanente: 0 }),
       ],
     );
-    expect(filas.map((f) => (f.clase === "compra" ? f.compra.movimiento_id : f.venta.movimiento_id))).toEqual([
+    expect(
+      filas.map((f) =>
+        f.clase === "compra"
+          ? f.compra.movimiento_id
+          : f.clase === "venta"
+            ? f.venta.movimiento_id
+            : f.traspaso.movimiento_id,
+      ),
+    ).toEqual([
       "c1",
       "v1",
       "v2",
@@ -97,7 +105,15 @@ describe("filasCardexPorFecha", () => {
         venta({ movimiento_id: "v1", fecha: "2026-09-01" }),
       ],
     );
-    expect(filas.map((f) => (f.clase === "compra" ? f.compra.movimiento_id : f.venta.movimiento_id))).toEqual([
+    expect(
+      filas.map((f) =>
+        f.clase === "compra"
+          ? f.compra.movimiento_id
+          : f.clase === "venta"
+            ? f.venta.movimiento_id
+            : f.traspaso.movimiento_id,
+      ),
+    ).toEqual([
       "v0",
       "c",
       "v1",

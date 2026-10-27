@@ -72,6 +72,7 @@ vi.mock("@/lib/api/me", () => ({ getMe: async () => ({ rol: api.rol }) }));
 const { default: InventoryItemPage } = await import("@/app/admin/inventory/[id]/page");
 const { ResumenProducto } = await import("../resumen-producto");
 const { AvisoSalidasCosto } = await import("../aviso-salidas-costo");
+const { StockUbicacionesCard } = await import("../stock-ubicaciones-card");
 
 const ID_15W50 = "d99df930-16e2-499a-877a-37e9518c1041";
 const ID_SAE50 = "53d05d76-0353-4890-82f7-cfdc280614ae";
@@ -525,6 +526,103 @@ describe("ficha del producto · API 0.0.36 (aceite 15W-50 tras la migración de 
     void _sin;
     api.resumen = previo as typeof api.resumen;
     expect(await renderPagina(ID_15W50)).not.toContain('data-tarjeta-precios=""');
+  });
+
+  it("«Stock y ubicaciones» (27-oct-2026, API 0.0.111): la tablita después de «Empaques y fotos» y antes del cardex; el traspaso en la lista por fecha", async () => {
+    const CORNER = "11111111-1111-4111-8111-111111111111";
+    const TOLEDO = "22222222-2222-4222-8222-222222222222";
+    api.item = item15w50({
+      ubicacion_id: CORNER,
+      ubicacion_principal_id: CORNER,
+      stock_por_ubicacion: [
+        { ubicacion_id: CORNER, nombre: "Bodega Corner", cantidad: 60, es_principal: true },
+        { ubicacion_id: TOLEDO, nombre: "Locker Toledo", cantidad: 24, es_principal: false },
+      ],
+    });
+    api.resumen = {
+      ...resumen15w50(),
+      traspasos: [
+        {
+          movimiento_id: "t-1",
+          orden: 99,
+          fecha: "2026-10-27",
+          cantidad: 24,
+          origen_id: null,
+          origen_nombre: null,
+          destino_id: TOLEDO,
+          destino_nombre: "Locker Toledo",
+          referencia: "guía 7",
+          stock_despues: 84,
+        },
+      ],
+    };
+    const html = await renderPagina(ID_15W50);
+    expect(html).toContain('data-stock-ubicaciones=""');
+    const iEmpaques = html.indexOf('id="empaques-fotos"');
+    const iStock = html.indexOf('data-stock-ubicaciones=""');
+    const iCardex = html.indexOf('id="cardex"');
+    expect(iEmpaques).toBeGreaterThan(-1);
+    expect(iStock).toBeGreaterThan(iEmpaques);
+    expect(iCardex).toBeGreaterThan(iStock);
+    const t = texto(html);
+    expect(t).toContain("Stock y ubicaciones");
+    expect(t).toContain("Bodega Corner principal 60 cuarto (qt) 71 %");
+    expect(t).toContain("Locker Toledo 24 cuarto (qt) 29 %");
+    expect(t).toContain("Total 84 cuarto (qt) 100 %");
+    expect(t).toContain("84 cuarto (qt) en 2 bodegas: Bodega Corner 60 · Locker Toledo 24");
+    expect(html).not.toContain('data-total-difiere=""');
+    // Sin catálogo de bodegas (el mock de listUbicaciones no lo trae) no hay
+    // botón «Traspasar» (la ayuda sí lo nombra).
+    expect(html).not.toContain("Traspasar</button>");
+    // El traspaso en la lista por fecha: sin entrada/salida ni montos.
+    expect(html).toContain('data-cardex-fila="traspaso"');
+    expect(t).toContain("Traspaso Ubicación principal → Locker Toledo 24 cuarto (qt) movidas · ref guía 7");
+  });
+
+  it("«Stock y ubicaciones» con catálogo: botón «Traspasar»; sin el dato (API previo) lo dice; total que no cuadra se avisa", () => {
+    const base = {
+      itemId: ID_15W50,
+      itemNombre: "Aceite",
+      unidad: "cuarto (qt)",
+      existenciaTotal: 84,
+      ubicacionPrincipalId: "11111111-1111-4111-8111-111111111111",
+      traspaso: { empaques: [], aircraft: [], providers: [] },
+    };
+    const ubicaciones = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        nombre: "Bodega Corner",
+        orden: 1,
+        activo: true,
+        productos: 1,
+        created_at: "2026-09-25T00:00:00Z",
+        updated_at: "2026-09-25T00:00:00Z",
+      },
+    ];
+    const conCatalogoHtml = renderToStaticMarkup(
+      <StockUbicacionesCard
+        {...base}
+        ubicaciones={ubicaciones}
+        stock={[
+          { ubicacion_id: ubicaciones[0].id, nombre: "Bodega Corner", cantidad: 84, es_principal: true },
+        ]}
+      />,
+    );
+    expect(conCatalogoHtml).toContain("Traspasar</button>");
+    expect(texto(conCatalogoHtml)).toContain("Todo (84 cuarto (qt)) en Bodega Corner");
+    const sinDatoHtml = renderToStaticMarkup(
+      <StockUbicacionesCard {...base} ubicaciones={null} stock={undefined} />,
+    );
+    expect(texto(sinDatoHtml)).toContain("aún no viene del servidor");
+    expect(sinDatoHtml).not.toContain("Traspasar</button>");
+    const noCuadra = renderToStaticMarkup(
+      <StockUbicacionesCard
+        {...base}
+        ubicaciones={null}
+        stock={[{ ubicacion_id: ubicaciones[0].id, nombre: "Bodega Corner", cantidad: 80, es_principal: true }]}
+      />,
+    );
+    expect(noCuadra).toContain('data-total-difiere=""');
   });
 
   it("VENTAS: historial de a cuánto se vendió (T.C. del día de la venta) y utilidad en pesos", async () => {

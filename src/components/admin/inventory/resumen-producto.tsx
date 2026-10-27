@@ -61,10 +61,15 @@ import {
   type FilaCardexLista,
   type GrupoMesCardex,
 } from "@/lib/admin/inventario-cardex-lista";
+import {
+  ETIQUETA_CARDEX_TRASPASO,
+  etiquetaTraspaso,
+} from "@/lib/admin/inventario-ubicaciones-stock";
 import type {
   InventarioItemResumen,
   MonedaInventario,
   ResumenCompra,
+  ResumenTraspaso,
   ResumenVenta,
 } from "@/types/inventory";
 
@@ -176,7 +181,9 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
     "unidades_vendidas" in totales ? numeroONulo(totales.unidades_vendidas) : totales.ventas_cant;
   const bajoMinimo = textoBajoMinimo(bajoStock, stockMinimo);
 
-  const filas = filasCardexPorFecha(compras, ventas);
+  // Traspasos entre bodegas (27-oct-2026, API 0.0.111): en su lugar de la
+  // lista, sin entrada/salida ni montos.
+  const filas = filasCardexPorFecha(compras, ventas, resumen.traspasos ?? []);
   const grupos = gruposCardexPorMes(filas, resumen.meses);
 
   return (
@@ -352,7 +359,12 @@ export function ResumenProducto({ resumen, bajoStock, stockMinimo }: ResumenProd
 }
 
 function claveFila(f: FilaCardexLista, i: number): string {
-  const id = f.clase === "compra" ? f.compra.movimiento_id : f.venta.movimiento_id;
+  const id =
+    f.clase === "compra"
+      ? f.compra.movimiento_id
+      : f.clase === "venta"
+        ? f.venta.movimiento_id
+        : f.traspaso.movimiento_id;
   return id ?? `${f.clase}-${f.fecha}-${i}`;
 }
 
@@ -407,8 +419,42 @@ function FilaCardex({
   );
   return fila.clase === "compra" ? (
     <FilaCompra c={fila.compra} unidad={unidad} reglaNueva={reglaNueva} existencia={existencia} />
-  ) : (
+  ) : fila.clase === "venta" ? (
     <FilaVenta v={fila.venta} unidad={unidad} existencia={existencia} />
+  ) : (
+    <FilaTraspaso t={fila.traspaso} unidad={unidad} existencia={existencia} />
+  );
+}
+
+/** Un traspaso entre bodegas (27-oct-2026): de dónde a dónde; sin montos. */
+function FilaTraspaso({
+  t,
+  unidad,
+  existencia,
+}: {
+  t: ResumenTraspaso;
+  unidad: string | null;
+  existencia: ReactNode;
+}) {
+  return (
+    <TableRow data-cardex-fila="traspaso">
+      <TableCell className="whitespace-nowrap align-top">{fmtDateOnly(t.fecha)}</TableCell>
+      <TableCell className="whitespace-normal align-top">
+        <Badge variant="outline" className="border-navy-400/50 text-muted-foreground">
+          {ETIQUETA_CARDEX_TRASPASO}
+        </Badge>{" "}
+        {etiquetaTraspaso({ origen: t.origen_nombre, destino: t.destino_nombre })}
+        <span className="block text-[11px] text-muted-foreground">
+          {cantidadConUnidad(t.cantidad, unidad)} movidas
+          {t.referencia && t.referencia !== "0" ? ` · ref ${t.referencia}` : ""}
+        </span>
+      </TableCell>
+      <TableCell />
+      <TableCell />
+      <TableCell className="text-right align-top text-muted-foreground">—</TableCell>
+      <TableCell className="text-right align-top text-muted-foreground">—</TableCell>
+      {existencia}
+    </TableRow>
   );
 }
 

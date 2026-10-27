@@ -98,9 +98,10 @@ export function montoTxt(monto: number | null | undefined, moneda?: string | nul
   })} ${m}`;
 }
 
-/** «la SALIDA» / «el AJUSTE»: el artículo correcto para la frase. */
+/** «la SALIDA» / «el AJUSTE» / «el TRASPASO»: el artículo correcto para la frase. */
 export function articuloTipo(tipo: string): string {
-  return tipo.toUpperCase() === "AJUSTE" ? "el" : "la";
+  const t = tipo.toUpperCase();
+  return t === "AJUSTE" || t === "TRASPASO" ? "el" : "la";
 }
 
 /** «a XA-VGV» · «a toda la flota» · «» (sin destino). */

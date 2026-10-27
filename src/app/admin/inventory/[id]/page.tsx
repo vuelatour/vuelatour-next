@@ -23,6 +23,7 @@ import { CardexConEdicion } from "@/components/admin/inventory/cardex-con-edicio
 import { MovimientosEliminadosCard } from "@/components/admin/inventory/movimientos-eliminados-card";
 import { SIN_MOVIMIENTOS_CARDEX } from "@/lib/admin/inventario-cardex-lista";
 import { EmpaquesCard } from "@/components/admin/inventory/empaques-card";
+import { StockUbicacionesCard } from "@/components/admin/inventory/stock-ubicaciones-card";
 import { ResumenProducto } from "@/components/admin/inventory/resumen-producto";
 import { FichaPlegable } from "@/components/admin/inventory/ficha-plegable";
 import { ItemEditButton } from "@/components/admin/inventory/item-edit-button";
@@ -142,6 +143,9 @@ export default async function InventoryItemPage({
   // Ubicación: nombre del catálogo, texto anterior (ámbar) o «Sin ubicación».
   const ubicacion = textoUbicacion(item);
   const ubicaciones = ubicacionesRes.disponible ? ubicacionesRes.data : null;
+  // Principal del producto (27-oct-2026): la que manda el API 0.0.111 o, con
+  // uno previo, la del ítem.
+  const ubicacionPrincipalId = item.ubicacion_principal_id ?? item.ubicacion_id ?? null;
   const { texto: descripcion, aeronaveUso } = partirDescripcion(item.descripcion);
   // El formulario de «Editar» no necesita el cardex: no se serializa al cliente.
   const { movimientos, ...itemSinCardex } = item;
@@ -227,6 +231,10 @@ export default async function InventoryItemPage({
             margenVentaPct={margenVentaPct}
             tieneCostoVigente={tieneCostoVigenteDe(item)}
             tcHoy={resumen?.tc_hoy?.tc ?? null}
+            // Bodegas (27-oct-2026): el selector de bodega y «Traspaso».
+            ubicaciones={ubicaciones}
+            ubicacionPrincipalId={ubicacionPrincipalId}
+            stockPorUbicacion={item.stock_por_ubicacion ?? null}
           />
           <CardexLibroButton itemId={item.id} itemNombre={item.nombre} />
           {/* «Editar» = PATCH items/:id (ADMIN/MECANICO): a los demás roles
@@ -303,6 +311,26 @@ export default async function InventoryItemPage({
           </Card>
         </div>
       </FichaPlegable>
+
+      {/* «Stock y ubicaciones» (27-oct-2026, API 0.0.111): la tablita de
+          dónde está cada pieza, después de empaques y fotos, con «Traspasar». */}
+      <StockUbicacionesCard
+        itemId={item.id}
+        itemNombre={item.nombre}
+        unidad={item.unidad}
+        stock={item.stock_por_ubicacion}
+        existenciaTotal={Number(item.stock) || 0}
+        ubicaciones={ubicaciones}
+        ubicacionPrincipalId={ubicacionPrincipalId}
+        traspaso={{
+          empaques,
+          aircraft,
+          providers,
+          margenVentaPct,
+          tieneCostoVigente: tieneCostoVigenteDe(item),
+          tcHoy: resumen?.tc_hoy?.tc ?? null,
+        }}
+      />
 
       <FichaPlegable
         id={ID_PLEGABLE_CARDEX}

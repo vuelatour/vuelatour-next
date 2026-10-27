@@ -7,6 +7,11 @@ import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDateOnly, fmtDateTimeShort } from "@/lib/datetime";
 import { fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { numeroONulo, textoMonto } from "@/lib/admin/inventario-utilidad";
+import {
+  ETIQUETA_CARDEX_TRASPASO,
+  esTraspaso,
+  etiquetaTraspasoMovimiento,
+} from "@/lib/admin/inventario-ubicaciones-stock";
 import type { InventarioMovimiento, TipoMovimiento } from "@/types/inventory";
 
 const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 });
@@ -16,6 +21,8 @@ const TIPO_STYLE: Record<TipoMovimiento, { label: string; cls: string }> = {
   SALIDA: { label: "Salida", cls: "border-brand-600/50 text-brand-600" },
   DEVOLUCION: { label: "Devolución", cls: "border-sky-500/50 text-sky-600" },
   AJUSTE: { label: "Ajuste", cls: "border-navy-400/50 text-muted-foreground" },
+  // Traspaso entre bodegas (27-oct-2026, API 0.0.111): no mueve la existencia.
+  TRASPASO: { label: ETIQUETA_CARDEX_TRASPASO, cls: "border-navy-400/50 text-muted-foreground" },
 };
 
 const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
@@ -29,7 +36,8 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     key: "tipo",
     header: "Tipo",
     cell: (m) => {
-      const style = TIPO_STYLE[m.tipo];
+      // Un tipo que este panel no conoce (API más nuevo) se pinta tal cual.
+      const style = TIPO_STYLE[m.tipo] ?? { label: m.tipo, cls: "border-navy-400/50 text-muted-foreground" };
       return (
         <Badge variant="outline" className={style.cls}>
           {style.label}
@@ -42,9 +50,10 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     header: "Cantidad",
     headClassName: "text-right",
     cellClassName: "text-right tabular-nums",
+    // Traspaso: ni suma ni resta (↔); solo cambia de bodega.
     cell: (m) => (
       <>
-        {m.tipo === "SALIDA" ? "−" : "+"}
+        {esTraspaso(m) ? "↔ " : m.tipo === "SALIDA" ? "−" : "+"}
         {num(m.cantidad)}
       </>
     ),
@@ -55,7 +64,10 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     headClassName: "text-right",
     cellClassName: "text-right tabular-nums text-muted-foreground",
     cell: (m) =>
-      // ENTRADA en $0 = la carga masiva quedó sin precio real: se marca en
+      // Un traspaso no tiene costo (solo cambia de bodega).
+      esTraspaso(m) ? (
+        <span>—</span>
+      ) : // ENTRADA en $0 = la carga masiva quedó sin precio real: se marca en
       // ámbar para que se complete (no fija precio: si no hay otra compra con
       // costo, la salida saldría sin cargo al avión).
       m.tipo === "ENTRADA" && !(Number(m.costo_unitario_usd) > 0) ? (
@@ -79,9 +91,14 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     key: "origen",
     header: "Avión / Proveedor",
     cellClassName: "text-muted-foreground",
-    // Salida prorrateada a toda la flota: no lleva avión, dice FLOTA.
+    // Salida prorrateada a toda la flota: no lleva avión, dice FLOTA. Un
+    // traspaso dice de qué bodega a cuál.
     cell: (m) =>
-      m.para_flota ? "FLOTA" : (m.aeronave?.matricula ?? m.proveedor?.nombre ?? "—"),
+      esTraspaso(m)
+        ? etiquetaTraspasoMovimiento(m)
+        : m.para_flota
+          ? "FLOTA"
+          : (m.aeronave?.matricula ?? m.proveedor?.nombre ?? "—"),
   },
   {
     key: "referencia",

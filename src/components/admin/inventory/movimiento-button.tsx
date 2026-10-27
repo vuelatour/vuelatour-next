@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowsUpDownIcon } from "@heroicons/react/24/outline";
+import { ArrowsRightLeftIcon, ArrowsUpDownIcon } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
 import { MovimientoDialog } from "./movimiento-dialog";
-import type { InventarioEmpaque } from "@/types/inventory";
+import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
+import type { InventarioEmpaque, InventarioUbicacion, StockUbicacion } from "@/types/inventory";
 
 interface MovimientoButtonProps {
   itemId: string;
@@ -26,9 +27,27 @@ interface MovimientoButtonProps {
   tieneCostoVigente?: boolean;
   /** T.C. oficial de hoy: la salida se cobra en pesos (un precio en USD se sugiere convertido). */
   tcHoy?: number | null;
+  /**
+   * Bodegas (27-oct-2026, API 0.0.111): catálogo, principal del producto y
+   * reparto actual (el selector de bodega y el tipo «Traspaso»).
+   */
+  ubicaciones?: InventarioUbicacion[] | null;
+  ubicacionPrincipalId?: string | null;
+  stockPorUbicacion?: StockUbicacion[] | null;
+  /** Tipo con el que abre el diálogo (p. ej. TRASPASO desde «Stock y ubicaciones»). */
+  initialTipo?: MovimientoFormValues["tipo"];
+  /** Texto del botón (default «Registrar movimiento»). */
+  etiqueta?: string;
+  variant?: "default" | "outline";
 }
 
-export function MovimientoButton({ initialEmpaqueId, autoOpen, ...props }: MovimientoButtonProps) {
+export function MovimientoButton({
+  initialEmpaqueId,
+  autoOpen,
+  etiqueta = "Registrar movimiento",
+  variant = "default",
+  ...props
+}: MovimientoButtonProps) {
   const [open, setOpen] = useState(!!autoOpen);
   const cerrarOAbrir = (o: boolean) => {
     setOpen(o);
@@ -42,11 +61,12 @@ export function MovimientoButton({ initialEmpaqueId, autoOpen, ...props }: Movim
       }
     }
   };
+  const Icono = props.initialTipo === "TRASPASO" ? ArrowsRightLeftIcon : ArrowsUpDownIcon;
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="gap-2">
-        <ArrowsUpDownIcon className="h-4 w-4" />
-        Registrar movimiento
+      <Button onClick={() => setOpen(true)} className="gap-2" variant={variant}>
+        <Icono className="h-4 w-4" />
+        {etiqueta}
       </Button>
       <MovimientoDialog
         open={open}

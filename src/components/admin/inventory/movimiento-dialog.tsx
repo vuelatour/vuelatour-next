@@ -64,10 +64,22 @@ import {
   textoConfirmarEntradaSinCosto,
   textoEntradaRegistradaSinCosto,
 } from "@/lib/admin/inventario-entrada-inicial";
+import {
+  ETIQUETA_BODEGA,
+  ETIQUETA_BODEGA_DESTINO,
+  ETIQUETA_BODEGA_ORIGEN,
+  HINT_BODEGA,
+  NOTA_TRASPASO,
+  OPCION_BODEGA_PRINCIPAL,
+  TIPO_TRASPASO,
+  errorTraspaso,
+  opcionesBodega,
+  textoTraspasoRegistrado,
+} from "@/lib/admin/inventario-ubicaciones-stock";
 import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
 import { Field } from "@/components/admin/form-field";
 import type { GastoCandidatoCompra } from "@/types/compras";
-import type { InventarioEmpaque } from "@/types/inventory";
+import type { InventarioEmpaque, InventarioUbicacion, StockUbicacion } from "@/types/inventory";
 
 const TIPOS = [
   { value: "ENTRADA", label: "Entrada (compra / alta de stock)" },
@@ -118,6 +130,14 @@ interface MovimientoDialogProps {
    * pinta como referencia). null = sin dato.
    */
   tcHoy?: number | null;
+  /**
+   * Bodegas (27-oct-2026, API 0.0.111, invariante 111): el catálogo (null =
+   * sin catálogo: no se ofrece bodega ni traspaso), la principal del
+   * producto y su reparto actual (cada bodega dice cuánto tiene).
+   */
+  ubicaciones?: InventarioUbicacion[] | null;
+  ubicacionPrincipalId?: string | null;
+  stockPorUbicacion?: StockUbicacion[] | null;
 }
 
 /** Entrada sin costo esperando confirmación: el cuerpo YA armado (USD 0). */
@@ -142,8 +162,30 @@ export function MovimientoDialog({
   margenVentaPct,
   tieneCostoVigente,
   tcHoy = null,
+  ubicaciones = null,
+  ubicacionPrincipalId = null,
+  stockPorUbicacion = null,
 }: MovimientoDialogProps) {
   const [pending, startTransition] = useTransition();
+  // Bodegas (27-oct-2026): con catálogo se ofrece elegir la bodega del
+  // movimiento y el tipo «Traspaso entre bodegas».
+  const conBodegas = !!ubicaciones && ubicaciones.length > 0;
+  const tipos = conBodegas ? [...TIPOS, TIPO_TRASPASO] : TIPOS;
+  const opcionesOrigen = opcionesBodega({
+    catalogo: ubicaciones,
+    stock: stockPorUbicacion,
+    principalId: ubicacionPrincipalId,
+    unidad,
+    conPrincipal: true,
+  });
+  const opcionesDestino = opcionesBodega({
+    catalogo: ubicaciones,
+    stock: stockPorUbicacion,
+    principalId: ubicacionPrincipalId,
+    unidad,
+    conPrincipal: false,
+  });
+  const nombrePrincipal = ubicaciones?.find((u) => u.id === ubicacionPrincipalId)?.nombre ?? null;
   // ENTRADA vinculada a un gasto YA registrado (21-oct-2026, invariante 101
   // del API): el API arma la compra de una línea con ese gasto como costo y
   // la recibe; aquí no se teclea costo.
@@ -197,6 +239,7 @@ export function MovimientoDialog({
 
   const tipo = watch("tipo");
   const esSalida = tipo === "SALIDA";
+  const esTraspaso = tipo === "TRASPASO";
   const aCosto = watch("a_costo") === true;
   const empaqueId = watch("empaque_id");
   const empaque = empaquesUsables.find((e) => e.id === empaqueId) ?? null;
@@ -241,6 +284,34 @@ export function MovimientoDialog({
       }),
     };
     const matricula = aircraft.find((a) => a.id === values.aeronave_id)?.matricula ?? null;
+
+    // TRASPASO (27-oct-2026): destino obligatorio y distinto al origen
+    // efectivo (el elegido o la principal). Sin costo, avión ni venta.
+    if (values.tipo === "TRASPASO") {
+      const errorDestino = errorTraspaso({
+        origenId: values.ubicacion_id,
+        destinoId: values.ubicacion_destino_id,
+        principalId: ubicacionPrincipalId,
+      });
+      if (errorDestino) {
+        toast.error(errorDestino);
+        return;
+      }
+      registrar(
+        {
+          ...cuerpo,
+          moneda: undefined,
+          costo_unitario_usd: "",
+          costo_unitario_mxn: "",
+          tc_usd_mxn: "",
+          aeronave_id: "",
+          proveedor_id: "",
+          para_flota: false,
+        },
+        { matricula: null, paraFlota: false },
+      );
+      return;
+    }
 
     // ENTRADA vinculada a un gasto ya registrado: la compra de una línea la
     // arma y recibe el API (costo = monto del gasto ÷ unidades).
@@ -327,7 +398,14 @@ export function MovimientoDialog({
             ? textoEntradaRegistradaSinCosto(ctx.cantidadSinCosto)
             : esSalida && result.data
               ? textoSalidaRegistrada(result.data, ctx.paraFlota ? null : ctx.matricula)
-              : "Movimiento registrado",
+              : esTraspaso && result.data
+                ? textoTraspasoRegistrado({
+                    cantidad: Number(result.data.cantidad),
+                    unidad,
+                    origen: result.data.ubicacion_nombre ?? nombrePrincipal,
+                    destino: result.data.ubicacion_destino_nombre ?? null,
+                  })
+                : "Movimiento registrado",
         );
         // API 0.0.36: la salida salió a $0 porque el producto no tiene
         // ninguna compra con costo — se dice, no se calla.
@@ -377,12 +455,52 @@ export function MovimientoDialog({
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="Tipo" required>
             <SearchableSelect
-              options={TIPOS}
+              options={tipos}
               value={tipo}
               onChange={(v) => setValue("tipo", v as MovimientoFormValues["tipo"])}
               placeholder="Tipo de movimiento"
             />
           </Field>
+
+          {/* Bodega del movimiento (27-oct-2026, API 0.0.111): vacío = la
+              principal del producto. En un TRASPASO, de dónde a dónde. */}
+          {conBodegas && !esTraspaso && (
+            <Field label={ETIQUETA_BODEGA} hint={HINT_BODEGA}>
+              <SearchableSelect
+                options={opcionesOrigen}
+                value={watch("ubicacion_id")}
+                onChange={(v) => setValue("ubicacion_id", v)}
+                placeholder={OPCION_BODEGA_PRINCIPAL}
+              />
+            </Field>
+          )}
+          {esTraspaso && (
+            <div className="space-y-3 rounded-lg border border-border p-3" data-traspaso-bodegas="">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={ETIQUETA_BODEGA_ORIGEN} hint={HINT_BODEGA}>
+                  <SearchableSelect
+                    options={opcionesOrigen}
+                    value={watch("ubicacion_id")}
+                    onChange={(v) => setValue("ubicacion_id", v)}
+                    placeholder={OPCION_BODEGA_PRINCIPAL}
+                  />
+                </Field>
+                <Field
+                  label={ETIQUETA_BODEGA_DESTINO}
+                  required
+                  error={errors.ubicacion_destino_id?.message}
+                >
+                  <SearchableSelect
+                    options={opcionesDestino}
+                    value={watch("ubicacion_destino_id")}
+                    onChange={(v) => setValue("ubicacion_destino_id", v)}
+                    placeholder="Bodega que recibe"
+                  />
+                </Field>
+              </div>
+              <p className="text-xs text-muted-foreground">{NOTA_TRASPASO}</p>
+            </div>
+          )}
 
           {/* Captura por caja: el operador teclea cuántas cajas y el sistema
               rebaja/suma las unidades (caja de 6 × 2 = 12). */}
@@ -439,7 +557,7 @@ export function MovimientoDialog({
                 <Input type="number" step="any" min="0" {...register("cantidad", { required: "Requerido" })} />
               </Field>
             )}
-            {esSalida ? (
+            {esTraspaso ? null : esSalida ? (
               <Field
                 label="Precio de venta unitario"
                 hint={
@@ -550,7 +668,7 @@ export function MovimientoDialog({
           {/* T.C. OPCIONAL (API 0.0.36, 25-sep-2026): vacío = el T.C. oficial
               del día de la compra, el mismo de las cotizaciones. En dólares
               no se captura: se convierte solo con ese T.C. */}
-          {!esSalida && (costoDesdeGasto ? gasto.moneda === "MXN" : watch("moneda") === "MXN") && (
+          {!esSalida && !esTraspaso && (costoDesdeGasto ? gasto.moneda === "MXN" : watch("moneda") === "MXN") && (
             <Field
               label="Tipo de cambio (MXN por USD)"
               hint={HINT_TC_OPCIONAL}
@@ -566,7 +684,7 @@ export function MovimientoDialog({
               />
             </Field>
           )}
-          {!esSalida && !costoDesdeGasto && watch("moneda") === "USD" && (
+          {!esSalida && !esTraspaso && !costoDesdeGasto && watch("moneda") === "USD" && (
             <p className="-mt-2 text-xs text-muted-foreground">{NOTA_TC_USD}</p>
           )}
 
@@ -779,6 +897,9 @@ function defaults(
     a_costo: false,
     aeronave_id: "",
     proveedor_id: "",
+    // Bodega (27-oct-2026): "" = la principal del producto.
+    ubicacion_id: "",
+    ubicacion_destino_id: "",
     fecha_movimiento: "",
     referencia: "",
     notas: "",

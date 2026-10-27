@@ -1,4 +1,8 @@
-export type TipoMovimiento = "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE";
+/**
+ * TRASPASO (27-oct-2026, API 0.0.111, invariante 111 del API): mueve piezas
+ * de una bodega a otra; no cambia la existencia total ni el dinero.
+ */
+export type TipoMovimiento = "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE" | "TRASPASO";
 
 /** Moneda de un monto del inventario (jamás se suman entre sí). */
 export type MonedaInventario = "MXN" | "USD";
@@ -305,6 +309,20 @@ export interface InventarioMovimiento {
   aeronave?: { matricula: string } | null;
   proveedor?: { nombre: string } | null;
   /**
+   * ADITIVOS (27-oct-2026, API 0.0.111, invariante 111): bodega del
+   * movimiento (null = la principal del producto) y, en un TRASPASO, la que
+   * recibe; con sus nombres (joins). La respuesta del alta trae además los
+   * nombres sueltos y el reparto resultante. Leerlos SIEMPRE vía
+   * `@/lib/admin/inventario-ubicaciones-stock`.
+   */
+  ubicacion_id?: string | null;
+  ubicacion_destino_id?: string | null;
+  ubicacion?: { nombre: string } | null;
+  ubicacion_destino?: { nombre: string } | null;
+  ubicacion_nombre?: string | null;
+  ubicacion_destino_nombre?: string | null;
+  stock_por_ubicacion?: StockUbicacion[] | null;
+  /**
    * ADITIVO (6-oct-2026, API 0.0.62): quién registró el movimiento
    * (usuario.nombre vía registrado_por). Ausente con un API previo: el cardex
    * pinta «—».
@@ -408,8 +426,41 @@ export interface InventarioListResponse {
  * TODO el historial —también julio y agosto— aunque el resto del sistema
  * arranque el 1-sep-2026: ya no viaja el `saldo_inicial` del API 0.0.85.
  */
+/**
+ * Existencia en UNA bodega (27-oct-2026, API 0.0.111): derivada del cardex
+ * por el API; `ubicacion_id` null = «Sin ubicación» (producto sin principal
+ * y movimientos sin bodega). Viene ordenada: principal primero, luego por
+ * cantidad, «Sin ubicación» al final.
+ */
+export interface StockUbicacion {
+  ubicacion_id: string | null;
+  nombre: string | null;
+  cantidad: number;
+  es_principal: boolean;
+}
+
+/** TRASPASO del resumen del producto (27-oct-2026): sin montos. */
+export interface ResumenTraspaso {
+  movimiento_id: string | null;
+  /** Posición en el cardex completo (mezcla con compras y ventas). */
+  orden?: number;
+  fecha: string;
+  cantidad: number;
+  /** null = la ubicación principal del producto. */
+  origen_id: string | null;
+  origen_nombre: string | null;
+  destino_id: string | null;
+  destino_nombre: string | null;
+  referencia: string | null;
+  /** Existencia TOTAL después (no cambia con el traspaso). */
+  stock_despues: number;
+}
+
 export interface InventarioItemDetail extends InventarioItemWithStock {
   movimientos: InventarioMovimiento[];
+  /** ADITIVOS (27-oct-2026, API 0.0.111): la principal y el reparto por bodega. */
+  ubicacion_principal_id?: string | null;
+  stock_por_ubicacion?: StockUbicacion[];
 }
 
 /** Fila del bloque COMPRAS del resumen del producto (montos en MXN). */
@@ -647,6 +698,8 @@ export interface InventarioItemResumen {
    * `MesCardexResumen`). Ausente = API previo.
    */
   meses?: MesCardexResumen[];
+  /** ADITIVO (27-oct-2026, API 0.0.111): traspasos entre bodegas del periodo. */
+  traspasos?: ResumenTraspaso[];
   compras: ResumenCompra[];
   ventas: ResumenVenta[];
   resumen_diario: ResumenDia[];

@@ -102,7 +102,7 @@ export const ItemFormSchema = z.object({
   empaques: z.array(EmpaqueFormSchema).max(10).optional(),
 });
 
-export const TipoMovimientoEnum = z.enum(["ENTRADA", "SALIDA", "DEVOLUCION", "AJUSTE"]);
+export const TipoMovimientoEnum = z.enum(["ENTRADA", "SALIDA", "DEVOLUCION", "AJUSTE", "TRASPASO"]);
 
 export const MovimientoFormSchema = z
   .object({
@@ -129,6 +129,10 @@ export const MovimientoFormSchema = z
     aeronave_id: z.string().uuid().optional().or(z.literal("")),
     para_flota: z.boolean().optional(),
     proveedor_id: z.string().uuid().optional().or(z.literal("")),
+    // Bodega del movimiento (27-oct-2026, API 0.0.111): "" = la principal
+    // del producto. `ubicacion_destino_id` solo en TRASPASO (la que recibe).
+    ubicacion_id: z.string().uuid().optional().or(z.literal("")),
+    ubicacion_destino_id: z.string().uuid().optional().or(z.literal("")),
     fecha_movimiento: z.string().optional().or(z.literal("")),
     fecha_orden: z.string().optional().or(z.literal("")),
     fecha_cargo_banco: z.string().optional().or(z.literal("")),
@@ -145,14 +149,34 @@ export const MovimientoFormSchema = z
       path: ["aeronave_id"],
     },
   )
+  // Un TRASPASO no lleva costo (el API lo guarda en 0) pero sí destino.
   .refine(
-    (d) => d.tipo === "SALIDA" || d.moneda !== "MXN" || d.costo_unitario_mxn != null,
+    (d) =>
+      d.tipo === "SALIDA" ||
+      d.tipo === "TRASPASO" ||
+      d.moneda !== "MXN" ||
+      d.costo_unitario_mxn != null,
     { message: "El costo unitario es requerido", path: ["costo_unitario_mxn"] },
   )
   .refine(
     (d) =>
-      d.tipo === "SALIDA" || d.moneda === "MXN" || d.costo_unitario_usd != null,
+      d.tipo === "SALIDA" ||
+      d.tipo === "TRASPASO" ||
+      d.moneda === "MXN" ||
+      d.costo_unitario_usd != null,
     { message: "El costo unitario es requerido", path: ["costo_unitario_usd"] },
+  )
+  .refine((d) => d.tipo !== "TRASPASO" || (!!d.ubicacion_destino_id && d.ubicacion_destino_id !== ""), {
+    message: "Elige la bodega que recibe las piezas",
+    path: ["ubicacion_destino_id"],
+  })
+  .refine(
+    (d) =>
+      d.tipo !== "TRASPASO" || !d.ubicacion_id || d.ubicacion_id !== d.ubicacion_destino_id,
+    {
+      message: "La bodega que recibe debe ser distinta a la de origen",
+      path: ["ubicacion_destino_id"],
+    },
   )
   // T.C. capturado: si viene, > 0 (vacío = el oficial del día, lo pone el API).
   .refine((d) => d.tc_usd_mxn == null || d.tc_usd_mxn > 0, {
@@ -250,7 +274,7 @@ export type ItemFormValues = {
 };
 
 export type MovimientoFormValues = {
-  tipo: "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE";
+  tipo: "ENTRADA" | "SALIDA" | "DEVOLUCION" | "AJUSTE" | "TRASPASO";
   cantidad: string;
   /** "" = por unidades; id del empaque = por cajas. */
   empaque_id: string;
@@ -267,6 +291,10 @@ export type MovimientoFormValues = {
   a_costo: boolean;
   aeronave_id: string;
   proveedor_id: string;
+  /** Bodega del movimiento ("" = la principal del producto); en TRASPASO, el origen. */
+  ubicacion_id: string;
+  /** Solo TRASPASO: la bodega que recibe. */
+  ubicacion_destino_id: string;
   fecha_movimiento: string;
   referencia: string;
   notas: string;

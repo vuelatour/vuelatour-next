@@ -21,12 +21,21 @@ import { MESES_LARGOS_ES } from "@/lib/datetime";
 import { fmtMxn } from "@/lib/format";
 import { cantidadConUnidad } from "@/lib/admin/inventario-eliminar";
 import { numeroONulo, textoMonto } from "@/lib/admin/inventario-utilidad";
-import type { MesCardexResumen, ResumenCompra, ResumenVenta } from "@/types/inventory";
+import type {
+  MesCardexResumen,
+  ResumenCompra,
+  ResumenTraspaso,
+  ResumenVenta,
+} from "@/types/inventory";
 
-/** Un renglón de la lista: una compra (o devolución/ajuste) o una salida. */
+/**
+ * Un renglón de la lista: una compra (o devolución/ajuste), una salida o,
+ * desde el 27-oct-2026 (API 0.0.111), un traspaso entre bodegas.
+ */
 export type FilaCardexLista =
   | { clase: "compra"; fecha: string; existencia: number | null; compra: ResumenCompra }
-  | { clase: "venta"; fecha: string; existencia: number | null; venta: ResumenVenta };
+  | { clase: "venta"; fecha: string; existencia: number | null; venta: ResumenVenta }
+  | { clase: "traspaso"; fecha: string; existencia: number | null; traspaso: ResumenTraspaso };
 
 const MES_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -50,8 +59,9 @@ const ordenDe = (o: unknown): number | null =>
 export function filasCardexPorFecha(
   compras: readonly ResumenCompra[],
   ventas: readonly ResumenVenta[],
+  traspasos: readonly ResumenTraspaso[] = [],
 ): FilaCardexLista[] {
-  const filas: { fila: FilaCardexLista; orden: number | null; clase: 0 | 1; i: number }[] = [
+  const filas: { fila: FilaCardexLista; orden: number | null; clase: 0 | 1 | 2; i: number }[] = [
     ...compras.map((c, i) => ({
       fila: {
         clase: "compra" as const,
@@ -72,6 +82,18 @@ export function filasCardexPorFecha(
       },
       orden: ordenDe(v.orden),
       clase: 1 as const,
+      i,
+    })),
+    // Traspasos entre bodegas (27-oct-2026): no cambian la existencia.
+    ...traspasos.map((t, i) => ({
+      fila: {
+        clase: "traspaso" as const,
+        fecha: t.fecha,
+        existencia: numeroONulo(t.stock_despues),
+        traspaso: t,
+      },
+      orden: ordenDe(t.orden),
+      clase: 2 as const,
       i,
     })),
   ];

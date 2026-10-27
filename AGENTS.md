@@ -12815,3 +12815,69 @@ salida se cobra a $57.575 USD (+25 %)»).
   venta no calculable, bajo el mínimo) y `components/admin/inventory/
   __tests__/ficha-producto.test.tsx` (la tarjeta antes del cardex con el
   15W-50, `precio_vigente: null` en ámbar, sin la llave sin tarjeta).
+
+## Inventario: stock por ubicación y traspasos entre bodegas (27-oct-2026, API 0.0.111, invariante 111 del API)
+
+Pedido de la oficina (captura de la ficha del filtro CH48108): «tenemos
+filtros en Córner y aparte filtros en Toledo … muchos de los productos se
+encuentran en diferentes lugares … una tablita … de estos 200 aceites que
+hay, 100 se encuentran en Toledo, cinco en Mérida y 95 en la bodega de Córner.
+Y entonces así ya sabemos en dónde hay todo». Contrato con el API 0.0.111
+(migración `20261027000002_inventario_movimiento_ubicacion`).
+
+- **La regla es del API, el panel solo PINTA.** Cada movimiento de cardex
+  lleva su bodega (`ubicacion_id`; vacío = la PRINCIPAL del producto al leer)
+  y el tipo nuevo `TRASPASO` mueve piezas de una bodega (`ubicacion_id`,
+  vacío = la principal) a otra (`ubicacion_destino_id`) sin cambiar la
+  existencia total ni el dinero. La existencia por bodega llega calculada en
+  `item.stock_por_ubicacion[] {ubicacion_id, nombre, cantidad, es_principal}`
+  (principal primero, «Sin ubicación» al final) y `item.ubicacion_principal_id`;
+  el resumen trae `traspasos[]`. El panel no suma bodegas ni recalcula nada
+  (solo el % de cada fila y el total de la tabla, que se compara con
+  `item.stock` y avisa si no cuadra).
+- **Regla pura** `lib/admin/inventario-ubicaciones-stock.ts`:
+  `filasStockUbicacion` (oculta bodegas en 0 salvo la principal; un negativo se
+  VE), `totalStockUbicaciones`, `textoResumenStockUbicaciones` («200 cuarto
+  (qt) en 3 bodegas: …» / «Todo (2 pieza) en …»), `opcionesBodega` (activas +
+  la principal aunque esté inactiva, cada una con su existencia; con
+  `conPrincipal` la opción vacía «Ubicación principal del producto (Bodega
+  Corner)»), `esTraspaso`, `etiquetaTraspaso` / `etiquetaTraspasoMovimiento`
+  («Bodega Corner → Locker Toledo»; origen null = «Ubicación principal»),
+  `textoTraspasoRegistrado` y `errorTraspaso` (destino obligatorio y distinto
+  al origen efectivo). Textos de la tarjeta, del selector y del traspaso.
+- **Ficha** (`app/admin/inventory/[id]/page.tsx`): tarjeta
+  `StockUbicacionesCard` («Stock y ubicaciones») DESPUÉS del plegable
+  «Empaques y fotos» y ANTES de «Cardex completo» (donde la oficina puso la
+  flecha): tabla Bodega · Existencia · % del total (chip «principal»), pie
+  Total, el resumen en una línea y, con catálogo de bodegas, el botón
+  «Traspasar» (= `MovimientoButton` con `initialTipo="TRASPASO"`, `etiqueta`,
+  `variant="outline"`). Sin el dato (API previo) lo dice; total ≠ `item.stock`
+  ⇒ aviso ámbar `data-total-difiere`.
+- **Movimiento** (`movimiento-dialog.tsx` + `schema.ts`): props
+  `ubicaciones` (catálogo), `ubicacionPrincipalId`, `stockPorUbicacion`. Con
+  catálogo: selector «Bodega» (vacío = la principal) en entradas, salidas,
+  devoluciones y ajustes, y el tipo «Traspaso entre bodegas» con «De (bodega
+  de origen)» / «A (bodega que recibe)» (sin costo, T.C., avión, proveedor ni
+  venta; `errorTraspaso` antes de mandar; el zod lo repite). El cuerpo manda
+  `ubicacion_id` / `ubicacion_destino_id` (vacíos no viajan, `stripEmpty`).
+  El 409 `STOCK_UBICACION_INSUFICIENTE` del API («En Locker Toledo hay 5 y
+  la salida pide 8. Dónde está: …») se pinta tal cual en el toast de error.
+  Toast del traspaso: «Traspaso registrado: 2 pieza de Bodega Corner a Locker
+  Toledo».
+- **Cardex**: lista por fecha (`inventario-cardex-lista.ts#filasCardexPorFecha`
+  con el 3.º argumento `traspasos`, clase `traspaso`) y `resumen-producto.tsx`
+  (`FilaTraspaso`: badge «Traspaso», «origen → destino», «N movidas · ref …»,
+  sin entrada/salida ni montos, existencia sin cambio); «Cardex completo»
+  (`cardex-table.tsx`): badge «Traspaso», cantidad «↔ N», costo «—», columna
+  Avión/Proveedor con «origen → destino»; un tipo desconocido ya no revienta
+  el badge. «Eliminar»: `articuloTipo` dice «el TRASPASO» (el API lo rechaza
+  con TIPO_NO_SOPORTADO: se corrige con el traspaso contrario).
+- **Skew**: el API 0.0.110 rechaza `ubicacion_id`/`ubicacion_destino_id` y el
+  tipo TRASPASO (400) ⇒ el panel se despliega DESPUÉS del API 0.0.111; sin
+  catálogo (`listUbicaciones` no disponible) no se ofrece bodega ni traspaso.
+  La app no cambia (sus movimientos van sin bodega ⇒ la principal).
+- **Pruebas**: `lib/admin/__tests__/inventario-ubicaciones-stock.test.ts`
+  (filas, %, resumen, opciones del selector, textos y validación del
+  traspaso) y `components/admin/inventory/__tests__/ficha-producto.test.tsx`
+  (la tarjeta en su lugar con el 15W-50, el traspaso en la lista por fecha,
+  «Traspasar» con catálogo, sin dato, total que no cuadra).
