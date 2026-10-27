@@ -32,12 +32,14 @@ import { TarjetaErrorCarga } from "@/components/admin/tarjeta-error-carga";
 import { esCategoriaCompra } from "@/types/compras";
 import { todayCancun } from "@/lib/datetime";
 import { FranjaPreCierre } from "@/components/admin/franja-pre-cierre";
+import { FranjaGastoEnfocado } from "@/components/admin/expenses/franja-gasto-enfocado";
 import {
   filasResaltadasPrimero,
   hrefQuitarResaltado,
   hrefVolverPreCierre,
   leerFocoPreCierre,
 } from "@/lib/admin/pre-cierre-resolver";
+import { hrefQuitarGastoEnfocado, leerGastoEnfocado } from "@/lib/admin/gasto-enfocado";
 import { Degradaciones, principal } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { avionCatalogoGasto } from "@/lib/admin/combustibles";
@@ -155,6 +157,9 @@ export default async function ExpensesPage({
     /** «Por pagar» (19-oct-2026, API 0.0.95): `1` ⇒ estado ≠ PAGADO. Solo
         con la capacidad de `/v1/me`; viaja al API y al Excel. */
     por_pagar?: string;
+    /** Gasto que se viene a VER desde Conciliación (27-oct-2026, `?gasto=`,
+        `lib/admin/gasto-enfocado.ts`): primero y en ámbar. SOLO del panel. */
+    gasto?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -303,9 +308,15 @@ export default async function ExpensesPage({
   // van PRIMERO (ANTES de la tabla: la compra de un pago resaltado sube con
   // él, porque la tabla agrupa por la primera aparición) y en ámbar.
   const foco = leerFocoPreCierre(sp);
-  const conFoco = foco
-    ? filasResaltadasPrimero(gastosLista, foco.ids, (g) => g.id)
-    : { filas: gastosLista, encontrados: 0 };
+  // «Ver el gasto con el que se concilió» (27-oct-2026): `?gasto=` trae ESE
+  // gasto PRIMERO y en ámbar con la MISMA mecánica; si vienen los dos manda
+  // el foco del pre-cierre (no se mezclan dos resaltados).
+  const gastoEnfocado = foco ? null : leerGastoEnfocado(sp);
+  const idsResaltados = foco ? foco.ids : gastoEnfocado ? [gastoEnfocado] : [];
+  const conFoco =
+    idsResaltados.length > 0
+      ? filasResaltadasPrimero(gastosLista, idsResaltados, (g) => g.id)
+      : { filas: gastosLista, encontrados: 0 };
   const gastos = conFoco.filas;
   // Corte defensivo del anti-cap (count cambió a media carga): avisar en vez
   // de dejar que un gasto "desaparezca" en silencio (auditoría 29-ago).
@@ -486,6 +497,14 @@ export default async function ExpensesPage({
             />
           )}
 
+          {gastoEnfocado && (
+            <FranjaGastoEnfocado
+              // Lista caída ⇒ no se sabe si está en esta vista.
+              encontrado={lista.ok ? conFoco.encontrados > 0 : null}
+              hrefQuitar={hrefQuitarGastoEnfocado(sp)}
+            />
+          )}
+
           {huboCorte && lista.ok && (
             <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
               <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
@@ -524,7 +543,7 @@ export default async function ExpensesPage({
                   fotoUrls={fotoUrls}
                   huboCorte={huboCorte}
                   rol={me?.rol ?? null}
-                  resaltados={foco?.ids}
+                  resaltados={idsResaltados.length > 0 ? idsResaltados : undefined}
                 />
               </CardContent>
             </Card>

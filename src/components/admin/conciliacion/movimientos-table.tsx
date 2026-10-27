@@ -39,6 +39,7 @@ import {
   TITULO_VER_GASTO_CONCILIADO,
   TOOLTIP_LOTE_SIN_DETALLE,
   gastoUnicoDe,
+  hrefGastoConciliado,
   numeroGastosDe,
   resumenLoteFila,
   textoBusquedaGastos,
@@ -679,17 +680,16 @@ export function MovimientosTable({
             );
           }
           return gasto ? (
-            // Verificable de un clic: al vuelo del gasto (donde se
-            // ve su desglose) o, sin vuelo, a la lista de gastos. Debajo, como
-            // HERMANOS del <Link> (13-oct-2026, punto 5), «Ver en balance…»:
-            // sin `balance` el fragmento no emite nada y la celda es la de siempre.
+            // Verificable de un clic: al vuelo del gasto (donde se ve su
+            // desglose) o, sin vuelo, a Gastos con ESE gasto enfocado (su día
+            // + `?gasto=`, 27-oct-2026: antes caía en la lista a secas y el
+            // cliente «no llegaba al gasto conciliado»). El href lo decide
+            // `hrefGastoConciliado`, el MISMO de las líneas del lote. Debajo,
+            // como HERMANOS del <Link> (13-oct-2026, punto 5), «Ver en
+            // balance…»: sin `balance` el fragmento no emite nada.
             <>
               <Link
-                href={
-                  gasto.vuelo_id
-                    ? `/admin/flights/${gasto.vuelo_id}`
-                    : "/admin/expenses"
-                }
+                href={hrefGastoConciliado(gasto)}
                 className="block text-sm text-emerald-600 hover:underline"
                 title="Ver el gasto con el que se concilió"
               >

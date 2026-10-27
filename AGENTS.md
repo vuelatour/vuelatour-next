@@ -12651,3 +12651,40 @@ y NO se manda al API.
 - Pruebas: `lib/admin/__tests__/proximo-servicio.test.ts` (texto, vencido,
   redondeo, detalle) y `aircraft/__tests__/aircraft-kpi-strip.test.tsx`
   (cableado del caso real).
+
+## Conciliación → Gastos: «Ver el gasto con el que se concilió» abre ESE gasto (27-oct-2026)
+
+- Pedido del cliente (captura de `/admin/conciliacion` con la liga verde
+  «Refacción · $794.61 USD» señalada): «Cuando le pico a la conciliación no me
+  manda al gasto conciliado, solo me manda al apartado de gastos». Sin vuelo,
+  la liga iba a `/admin/expenses` A SECAS; con vuelo va al vuelo (donde se ve
+  su desglose) y eso no cambia.
+- **FUENTE ÚNICA del href**: `hrefGastoConciliado(g)` de
+  `lib/admin/conciliacion-lote.ts` — la celda 1↔1 de `movimientos-table.tsx`
+  ya no arma el href a mano; las líneas del lote (`lineaGastoLote`) y
+  `ligaGastoExcluido` del diálogo «Vincular gasto» lo usan también. Con
+  `vuelo_id` ⇒ `/admin/flights/:id`; sin vuelo ⇒ `hrefGastoEnfocado(g)` de
+  `lib/admin/gasto-enfocado.ts` (PURO, prueba `__tests__/gasto-enfocado.test.ts`)
+  = `/admin/expenses?desde=<día>&hasta=<día>&gasto=<uuid>`: el día del gasto
+  (para que esté en la lista aunque haya más de 1,000) y `?gasto=`. Sin fecha
+  válida viaja solo `?gasto=`; sin uuid solo el día; nunca basura en la URL.
+- **Gastos con `?gasto=`** (`app/admin/expenses/page.tsx`):
+  `leerGastoEnfocado(sp)` (solo uuid) ⇒ esa fila va PRIMERO y en ámbar con la
+  MISMA mecánica del «Resolver →» del pre-cierre (`filasResaltadasPrimero` +
+  `resaltados` de `ExpensesTable`, `CLASE_FILA_RESALTADA`), y arriba la franja
+  `expenses/franja-gasto-enfocado.tsx` («Gasto que abriste desde Conciliación
+  · Va primero en la lista, resaltado en ámbar.» / «No está en esta vista:
+  cambia o quita los filtros…» / lista caída: no se afirma nada) con «Quitar
+  resaltado» (`hrefQuitarGastoEnfocado`: la URL sin `gasto`). Si vienen
+  `?gasto=` y el foco del pre-cierre, manda el pre-cierre (no se mezclan dos
+  resaltados). `gasto` es SOLO del panel: no entra a `FILTROS_URL`, no viaja
+  al API ni al Excel y las pestañas no lo arrastran; mismo nombre y
+  significado que `?gasto=` de Conciliación y del balance.
+- Inicio oficial: un gasto anterior al 1-sep-2026 abierto desde un cargo de
+  septiembre llega con su día < inicio ⇒ el rango se sube y la franja dice
+  «No está en esta vista» (quitar el rango lo muestra si el API lo lista).
+- Pruebas: `lib/admin/__tests__/gasto-enfocado.test.ts`,
+  `components/admin/expenses/__tests__/franja-gasto-enfocado.test.tsx`,
+  `components/admin/conciliacion/__tests__/gasto-enfocado-link.test.tsx` (la
+  celda 1↔1 y las líneas del lote), `lib/admin/__tests__/conciliacion-lote.test.ts`
+  y `conciliacion-excluidos.test.ts` (hrefs).

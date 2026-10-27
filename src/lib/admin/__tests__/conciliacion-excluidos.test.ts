@@ -211,27 +211,36 @@ describe("«Mostrar estos gastos»: con qué ventana y con qué búsqueda los tr
   });
 });
 
-describe("las ligas: al vuelo o a Gastos de ese día", () => {
-  it("sin `vuelo_id` (el contrato solo promete el folio): Gastos filtrado a ese día, y lo dice", () => {
+describe("las ligas: al vuelo o a Gastos de ese día (con el gasto enfocado, 27-oct-2026)", () => {
+  it("sin `vuelo_id` (el contrato solo promete el folio): Gastos filtrado a ese día y con ?gasto=, y lo dice", () => {
     expect(ligaGastoExcluido(taxi(G24, "2026-09-24", 338, null))).toEqual({
       key: G24,
       texto: "vuelo #338 (24 sep)",
-      href: "/admin/expenses?desde=2026-09-24&hasta=2026-09-24",
-      titulo: "Taxi / estacionamiento · $212.00 · Efectivo. Abre Gastos del 24 sep en otra pestaña.",
+      href: `/admin/expenses?desde=2026-09-24&hasta=2026-09-24&gasto=${G24}`,
+      titulo:
+        "Taxi / estacionamiento · $212.00 · Efectivo. Abre Gastos del 24 sep en otra pestaña, con el gasto resaltado.",
     });
   });
 
-  it("gasto sin vuelo: «gasto del 12 jun» ⇒ Gastos de ese día", () => {
+  it("gasto sin vuelo: «gasto del 12 jun» ⇒ Gastos de ese día con el gasto enfocado", () => {
     const l = ligaGastoExcluido(taxi(G24, "2026-06-12", null, null, { categoria: "OPERACIONES" }));
     expect(l.texto).toBe("gasto del 12 jun");
-    expect(l.href).toBe("/admin/expenses?desde=2026-06-12&hasta=2026-06-12");
-    expect(l.titulo).toBe("Operaciones · $212.00 · Efectivo. Abre Gastos del 12 jun en otra pestaña.");
+    expect(l.href).toBe(`/admin/expenses?desde=2026-06-12&hasta=2026-06-12&gasto=${G24}`);
+    expect(l.titulo).toBe(
+      "Operaciones · $212.00 · Efectivo. Abre Gastos del 12 jun en otra pestaña, con el gasto resaltado.",
+    );
   });
 
   it("un `vuelo_id` que no es uuid NUNCA arma /admin/flights/<basura>", () => {
     expect(ligaGastoExcluido(taxi(G24, "2026-09-24", 338, "338")).href).toBe(
-      "/admin/expenses?desde=2026-09-24&hasta=2026-09-24",
+      `/admin/expenses?desde=2026-09-24&hasta=2026-09-24&gasto=${G24}`,
     );
+  });
+
+  it("un id que no es uuid viaja solo con el día (nunca basura en ?gasto=) y no promete resaltado", () => {
+    const l = ligaGastoExcluido(taxi("f1", "2026-09-24", 338, null));
+    expect(l.href).toBe("/admin/expenses?desde=2026-09-24&hasta=2026-09-24");
+    expect(l.titulo.endsWith("Abre Gastos del 24 sep en otra pestaña.")).toBe(true);
   });
 
   it("con `vuelo_id` pero sin folio: abre su vuelo", () => {
@@ -241,9 +250,14 @@ describe("las ligas: al vuelo o a Gastos de ese día", () => {
     expect(l.titulo).toBe("Taxi / estacionamiento · $212.00 · Efectivo. Abre su vuelo en otra pestaña.");
   });
 
-  it("sin fecha válida ni vuelo: Gastos a secas", () => {
+  it("sin fecha válida ni vuelo: Gastos sin rango, solo con el gasto enfocado", () => {
     const l = ligaGastoExcluido({ id: G24, monto: 212, fecha_gasto: "2026-13-45" });
-    expect(l).toEqual({ key: G24, texto: "gasto", href: "/admin/expenses", titulo: "$212.00. Abre Gastos en otra pestaña." });
+    expect(l).toEqual({
+      key: G24,
+      texto: "gasto",
+      href: `/admin/expenses?gasto=${G24}`,
+      titulo: "$212.00. Abre Gastos en otra pestaña, con el gasto resaltado.",
+    });
   });
 
   it("un gasto en dólares lleva su moneda en el tooltip", () => {

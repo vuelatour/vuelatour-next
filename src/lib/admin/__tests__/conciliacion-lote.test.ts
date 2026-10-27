@@ -800,7 +800,18 @@ describe("columna «Conciliación» y búsqueda de la tabla", () => {
     );
     expect(l.principal).toBe("Operaciones · $1,118.12 de $2,801.40");
     expect(l.secundaria.startsWith("SAESA · ")).toBe(true);
-    expect(l.href).toBe("/admin/expenses");
+    // Sin vuelo: Gastos de ESE día (el id «g» no es uuid ⇒ sin `?gasto=`).
+    expect(l.href).toBe("/admin/expenses?desde=2026-09-14&hasta=2026-09-14");
+  });
+
+  it("sin vuelo y con uuid (27-oct-2026): la liga abre Gastos de ese día CON el gasto enfocado (?gasto=)", () => {
+    // Pedido del cliente: «no me manda al gasto conciliado, solo me manda al
+    // apartado de gastos». La línea del lote y la celda 1↔1 usan el MISMO href.
+    const id = "7f2c1b40-5a3e-4c8d-9e21-0a6b7c8d9e01";
+    const l = lineaGastoLote(parte(id, 315, "2801.40", { vuelo: null, vuelo_id: null, fecha_gasto: "2026-09-24" }));
+    expect(l.href).toBe(`/admin/expenses?desde=2026-09-24&hasta=2026-09-24&gasto=${id}`);
+    // Con vuelo no cambia nada: al vuelo, donde se ve el desglose.
+    expect(lineaGastoLote(parte(id, 315, "2801.40")).href).toBe("/admin/flights/v-315");
   });
 
   it("sin gastos[] (skew de deploy): null + texto sin ligas", () => {

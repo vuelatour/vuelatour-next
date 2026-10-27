@@ -51,6 +51,7 @@ import {
 import { enlacesBalanceDeGasto, type EnlacesBalanceDeGasto } from "@/lib/admin/conciliacion-balance";
 import { etiquetaFolioComprobante, tituloFolioComprobante } from "@/lib/admin/conciliacion-folio";
 import { NOTA_COMPRAS_USD } from "@/lib/admin/conciliacion-tc";
+import { hrefGastoEnfocado } from "@/lib/admin/gasto-enfocado";
 import { MSG_SERVIDOR_NO_RESPONDIO, esErrorTecnico } from "@/lib/admin/errores-tecnicos";
 import { MEDIO_PAGO_LABELS, medioPagoLabel } from "@/lib/admin/medios-pago";
 import {
@@ -905,7 +906,8 @@ function hayVinculables(gastos: readonly GastoExcluidoCandidato[]): boolean {
  * Liga de un gasto que no entró, para corregirlo en OTRA pestaña (el diálogo
  * se queda abierto y «Volver a buscar» repite la búsqueda): al vuelo
  * (`hrefGastoConciliado`, donde se edita el gasto) o, sin vuelo —o si el API
- * no mandó su `vuelo_id`—, a Gastos filtrado a ese día.
+ * no mandó su `vuelo_id`—, a Gastos filtrado a ese día y con ESE gasto
+ * enfocado (`?gasto=`, 27-oct-2026: primero y en ámbar).
  */
 export function ligaGastoExcluido(g: GastoExcluidoCandidato): LigaGastoExcluido {
   const dia = diaDe(g.fecha_gasto);
@@ -914,11 +916,7 @@ export function ligaGastoExcluido(g: GastoExcluidoCandidato): LigaGastoExcluido 
   const vueloId = esUuid(g.vuelo_id) ? (g.vuelo_id as string) : null;
   const texto =
     folio != null ? `vuelo #${folio}${fecha ? ` (${fecha})` : ""}` : fecha ? `gasto del ${fecha}` : "gasto";
-  const href = vueloId
-    ? hrefGastoConciliado({ vuelo_id: vueloId })
-    : dia
-      ? `/admin/expenses?desde=${dia}&hasta=${dia}`
-      : "/admin/expenses";
+  const href = hrefGastoConciliado({ id: g.id, vuelo_id: vueloId, fecha_gasto: dia });
   const que = [
     g.categoria ? categoriaGastoLabel(g.categoria) : null,
     fmt(g.monto, g.moneda),
@@ -928,7 +926,7 @@ export function ligaGastoExcluido(g: GastoExcluidoCandidato): LigaGastoExcluido 
     .join(" · ");
   const donde = vueloId
     ? `Abre ${folio != null ? `el vuelo #${folio}` : "su vuelo"} en otra pestaña.`
-    : `Abre Gastos${fecha ? ` del ${fecha}` : ""} en otra pestaña.`;
+    : `Abre Gastos${fecha ? ` del ${fecha}` : ""} en otra pestaña${esUuid(g.id) ? ", con el gasto resaltado" : ""}.`;
   return { key: g.id, texto, href, titulo: `${que}. ${donde}` };
 }
 
@@ -1551,9 +1549,14 @@ export interface ResumenLoteFila {
   diferencia: string | null;
 }
 
-/** Al vuelo del gasto (donde se ve su desglose) o, sin vuelo, a Gastos. */
-export function hrefGastoConciliado(g: Pick<MovimientoGasto, "vuelo_id">): string {
-  return g.vuelo_id ? `/admin/flights/${g.vuelo_id}` : "/admin/expenses";
+/**
+ * Al vuelo del gasto (donde se ve su desglose) o, sin vuelo, a Gastos CON ESE
+ * GASTO enfocado (27-oct-2026, pedido del cliente: «no me manda al gasto
+ * conciliado, solo me manda al apartado de gastos»): su día + `?gasto=` ⇒ va
+ * primero y en ámbar (`lib/admin/gasto-enfocado.ts`).
+ */
+export function hrefGastoConciliado(g: Pick<MovimientoGasto, "id" | "vuelo_id" | "fecha_gasto">): string {
+  return g.vuelo_id ? `/admin/flights/${g.vuelo_id}` : hrefGastoEnfocado(g);
 }
 
 /** Primera línea de las notas del gasto (la manda el API o se deriva). */
