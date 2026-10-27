@@ -47,7 +47,11 @@ describe("pantallas destino", () => {
     expect(src).toContain("<FranjaPreCierre");
     expect(src).toContain(`hrefQuitarResaltado("${ruta}", sp)`);
     expect(src).toContain("hrefVolverPreCierre(");
-    expect(src).toMatch(/resaltados=\{(foco|focoPc)\?\.ids\}|resaltados=\{idsPc\}/);
+    // Gastos (27-oct-2026) comparte el resaltado con `?gasto=` (el gasto que
+    // se abre desde Conciliación): los ids del foco llegan vía `idsResaltados`.
+    expect(src).toMatch(
+      /resaltados=\{(foco|focoPc)\?\.ids\}|resaltados=\{idsPc\}|resaltados=\{idsResaltados\.length > 0 \? idsResaltados : undefined\}/,
+    );
   });
 
   it("las listas que REORDENAN usan filasResaltadasPrimero; Combustibles y Socios NO reordenan", () => {
@@ -74,7 +78,16 @@ describe("pantallas destino", () => {
   it("Gastos: el foco NO entra a FILTROS_URL (las pestañas lo quitan) ni a la clave de la tabla", () => {
     const src = leer("app/admin/expenses/page.tsx");
     const filtros = src.slice(src.indexOf("const FILTROS_URL"), src.indexOf("] as const;"));
-    for (const k of ['"pc"', '"ids"', '"pcn"', '"pct"', '"pcd"', '"pcp"']) expect(filtros).not.toContain(k);
+    for (const k of ['"pc"', '"ids"', '"pcn"', '"pct"', '"pcd"', '"pcp"', '"gasto"']) expect(filtros).not.toContain(k);
+  });
+
+  it("Gastos: el foco del pre-cierre MANDA sobre `?gasto=` y los dos resaltan con la misma mecánica", () => {
+    const src = leer("app/admin/expenses/page.tsx");
+    expect(src).toContain("const gastoEnfocado = foco ? null : leerGastoEnfocado(sp);");
+    expect(src).toContain("const idsResaltados = foco ? foco.ids : gastoEnfocado ? [gastoEnfocado] : [];");
+    expect(src).toContain("filasResaltadasPrimero(gastosLista, idsResaltados, (g) => g.id)");
+    expect(src).toContain("<FranjaGastoEnfocado");
+    expect(src).toContain("hrefQuitar={hrefQuitarGastoEnfocado(sp)}");
   });
 
   it("Conciliación: primero los del pre-cierre y DESPUÉS el `?mov=` (queda primero)", () => {
