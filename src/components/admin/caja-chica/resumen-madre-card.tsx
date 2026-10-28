@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CajaFondoDetail, ResumenCajaMadre } from "@/types/caja-chica";
 import {
@@ -14,19 +15,27 @@ import {
   ETIQUETA_GASTOS_PENDIENTES,
   ETIQUETA_OTROS_PENDIENTES,
   ETIQUETA_POR_SOLICITAR,
+  ETIQUETA_SALIDAS_PENDIENTES,
   NOTA_FONDO_PROPIO,
-  NOTA_POR_SOLICITAR,
   TITULO_COLABORADORES,
   TITULO_MI_CAJA,
   TITULO_RESUMEN_MADRE,
   estadoCuadreMadre,
   filasColaboradoresResumen,
   montoCaja,
+  porSolicitarDe,
+  salidasPendientesDe,
   textoCajas,
   textoConteoMonto,
   tituloEnlaceCaja,
   type TonoCuadre,
 } from "@/lib/admin/caja-chica-madre";
+
+const CLASE_TONO_SOLICITAR = {
+  ambar: "text-amber-600 dark:text-amber-400",
+  ok: "text-emerald-600",
+  neutro: "text-muted-foreground",
+} as const;
 
 const CLASE_TONO_CUADRE: Record<TonoCuadre, string> = {
   ok: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -39,18 +48,24 @@ const CLASE_TONO_CUADRE: Record<TonoCuadre, string> = {
  * FONDO CONSOLIDADO de una caja MADRE (27-oct-2026). Se monta bajo las
  * tarjetas del fondo solo cuando el API manda `resumen_madre` (la caja fondea
  * a alguien). Server-safe (sin hooks): todas las cifras vienen del API y aquí
- * solo se formatean (`lib/admin/caja-chica-madre.ts`).
+ * solo se formatean (`lib/admin/caja-chica-madre.ts`). `editar` (28-oct-2026):
+ * el botón «Editar» del monto del fondo, que en la caja madre vive aquí (las
+ * tarjetas «Fondo total» y «Por reponer» de arriba se quitaron a pedido).
  */
 export function ResumenMadreCard({
   fondo,
   resumen,
+  editar,
 }: {
   fondo: Pick<CajaFondoDetail, "moneda" | "cajas_fondeadas">;
   resumen: ResumenCajaMadre;
+  editar?: ReactNode;
 }) {
   const m = (n: number | null | undefined) => (n == null ? "—" : montoCaja(Number(n), fondo.moneda));
   const filas = filasColaboradoresResumen(fondo);
   const cuadre = estadoCuadreMadre(resumen, fondo.moneda);
+  const solicitar = porSolicitarDe(resumen, fondo.moneda);
+  const salidas = salidasPendientesDe(resumen);
   return (
     <Card data-resumen-madre="">
       <CardHeader>
@@ -59,7 +74,7 @@ export function ResumenMadreCard({
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Cifra etiqueta={ETIQUETA_FONDO_TOTAL} valor={m(resumen.fondo_total)} />
+          <Cifra etiqueta={ETIQUETA_FONDO_TOTAL} valor={m(resumen.fondo_total)} extra={editar} />
           <Cifra
             etiqueta={ETIQUETA_ASIGNADO}
             valor={m(resumen.asignado_colaboradores)}
@@ -68,9 +83,10 @@ export function ResumenMadreCard({
           <Cifra etiqueta={ETIQUETA_FONDO_PROPIO} valor={m(resumen.fondo_propio)} nota={NOTA_FONDO_PROPIO} />
           <Cifra
             etiqueta={ETIQUETA_POR_SOLICITAR}
-            valor={m(resumen.por_solicitar)}
-            nota={NOTA_POR_SOLICITAR}
-            clase={resumen.por_solicitar > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600"}
+            valor={solicitar.valor}
+            nota={solicitar.nota}
+            clase={CLASE_TONO_SOLICITAR[solicitar.tono]}
+            dataSolicitar={solicitar.tono}
           />
         </div>
 
@@ -152,6 +168,7 @@ export function ResumenMadreCard({
             {resumen.otros_pendientes !== 0 && (
               <Linea etiqueta={ETIQUETA_OTROS_PENDIENTES} valor={m(resumen.otros_pendientes)} />
             )}
+            {salidas != null && <Linea etiqueta={ETIQUETA_SALIDAS_PENDIENTES} valor={m(salidas)} />}
             <Linea etiqueta={ETIQUETA_EFECTIVO_ESPERADO} valor={m(resumen.efectivo_esperado)} />
             <Linea
               etiqueta={ETIQUETA_EFECTIVO_LIBRO}
@@ -189,17 +206,23 @@ function Cifra({
   valor,
   nota,
   clase,
+  extra,
+  dataSolicitar,
 }: {
   etiqueta: string;
   valor: string;
   nota?: string;
   clase?: string;
+  /** Un control bajo la cifra (el «Editar» del fondo total). */
+  extra?: ReactNode;
+  dataSolicitar?: string;
 }) {
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div className="rounded-lg border border-border p-3" data-solicitar={dataSolicitar}>
       <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{etiqueta}</p>
       <p className={`mt-1 text-2xl font-semibold tabular-nums ${clase ?? ""}`}>{valor}</p>
       {nota && <p className="mt-1 text-xs text-muted-foreground">{nota}</p>}
+      {extra && <div className="mt-1">{extra}</div>}
     </div>
   );
 }

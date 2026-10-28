@@ -157,8 +157,13 @@ export default async function CajaFondoPage({
   // Caja MADRE: a quién puede reponer desde «Registrar movimiento».
   const cajasFondeadas = cajasParaReponer(fondo);
   // …y su fondo consolidado (27-oct-2026): null = API previo, lectura caída
-  // o caja que no fondea a nadie ⇒ no se monta la card.
+  // o caja que no fondea a nadie ⇒ no se monta la card. En la caja MADRE
+  // (28-oct-2026, pedido con la captura de Mary: «esto lo pueden quitar») las
+  // tarjetas «Fondo total» y «Por reponer» de arriba NO se pintan: el fondo y
+  // «Para solicitar a la empresa» (= debe estar en mi caja − saldo) viven en
+  // la card del fondo consolidado, donde también queda «Editar».
   const resumenMadre = resumenMadreDeFondo(fondo);
+  const esMadre = resumenMadre != null;
   // Gastos por pagar (19-oct-2026, API 0.0.95): la lista ADITIVA del API
   // (no son del libro: no tocan saldos). Sin la llave ⇒ null ⇒ sin bloque.
   const porPagar = porPagarDeFondo(fondo);
@@ -234,8 +239,9 @@ export default async function CajaFondoPage({
       </div>
 
       {/* Métricas del fondo (pedido oficina 14-ago): saldo + fondo total +
-          por reponer + última reposición, de un vistazo. */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          por reponer + última reposición, de un vistazo. La caja MADRE solo
+          saldo + última reposición (28-oct-2026). */}
+      <div className={`grid gap-4 sm:grid-cols-2 ${esMadre ? "" : "lg:grid-cols-4"}`}>
         <Card>
           <CardContent className="py-6">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -262,7 +268,7 @@ export default async function CajaFondoPage({
           </CardContent>
         </Card>
 
-        {!fondo.es_acumulada && (
+        {!fondo.es_acumulada && !esMadre && (
           <Card>
             <CardContent className="py-6">
               <p className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -288,7 +294,7 @@ export default async function CajaFondoPage({
           </Card>
         )}
 
-        {!fondo.es_acumulada && fondo.monto_fondo != null && (
+        {!fondo.es_acumulada && !esMadre && fondo.monto_fondo != null && (
           <Card>
             <CardContent className="py-6">
               <p className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -344,7 +350,19 @@ export default async function CajaFondoPage({
           total, lo asignado a cada colaborador, el efectivo que conserva cada
           uno, sus gastos pendientes y si el libro de esta caja cuadra con el
           fondo. Solo cuando el API manda `resumen_madre`. */}
-      {resumenMadre && <ResumenMadreCard fondo={fondo} resumen={resumenMadre} />}
+      {resumenMadre && (
+        <ResumenMadreCard
+          fondo={fondo}
+          resumen={resumenMadre}
+          editar={
+            <FondoMontoButton
+              fondoId={fondo.id}
+              montoActual={fondo.monto_fondo != null ? Number(fondo.monto_fondo) : null}
+              persona={fondo.usuario?.nombre ?? "esta persona"}
+            />
+          }
+        />
+      )}
 
       {porPagar && (
         <PorPagarCaja

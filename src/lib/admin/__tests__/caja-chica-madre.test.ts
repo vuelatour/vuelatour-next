@@ -8,7 +8,13 @@ import {
   DETALLE_LIBRO_MAS,
   DETALLE_LIBRO_MENOS,
   TEXTO_CUADRA,
+  NOTA_POR_SOLICITAR,
+  NOTA_POR_SOLICITAR_API_PREVIO,
+  NOTA_POR_SOLICITAR_CUBIERTO,
+  NOTA_POR_SOLICITAR_SIN_FONDO,
   TEXTO_SIN_FONDO_TOTAL,
+  porSolicitarDe,
+  salidasPendientesDe,
   cajasParaReponer,
   estadoCuadreMadre,
   filasColaboradoresResumen,
@@ -240,11 +246,44 @@ describe("fondo consolidado de la caja madre", () => {
     gastos_pendientes: { n: 11, total: 7127.5 },
     entregas_pendientes: { n: 2, total: 6100 },
     otros_pendientes: 0,
-    por_solicitar: 13227.5,
+    salidas_pendientes: 13227.5,
+    por_solicitar: 17628.56,
     efectivo_libro: -128.56,
     efectivo_esperado: 4272.5,
     diferencia: -4401.06,
   };
+
+  it("porSolicitarDe (regla de Mary, 28-oct-2026): la cifra del API tal cual; ámbar si falta, verde si el saldo cubre, «—» sin fondo; API previo ⇒ la nota del tramo", () => {
+    expect(porSolicitarDe(MARY, "MXN")).toEqual({
+      valor: "$17,628.56",
+      nota: NOTA_POR_SOLICITAR,
+      tono: "ambar",
+    });
+    // Prod 28-oct: propio 25,500 − saldo 18,280.
+    expect(porSolicitarDe({ por_solicitar: 7220, salidas_pendientes: -5181.06 }, "MXN")).toEqual({
+      valor: "$7,220.00",
+      nota: NOTA_POR_SOLICITAR,
+      tono: "ambar",
+    });
+    expect(porSolicitarDe({ por_solicitar: 0, salidas_pendientes: 100 }, "MXN")).toEqual({
+      valor: "$0.00",
+      nota: NOTA_POR_SOLICITAR_CUBIERTO,
+      tono: "ok",
+    });
+    expect(porSolicitarDe({ por_solicitar: -300, salidas_pendientes: 100 }, "MXN").tono).toBe("ok");
+    expect(porSolicitarDe({ por_solicitar: null, salidas_pendientes: 100 }, "MXN")).toEqual({
+      valor: "—",
+      nota: NOTA_POR_SOLICITAR_SIN_FONDO,
+      tono: "neutro",
+    });
+    expect(porSolicitarDe({ por_solicitar: 13227.5 }, "MXN")).toEqual({
+      valor: "$13,227.50",
+      nota: NOTA_POR_SOLICITAR_API_PREVIO,
+      tono: "ambar",
+    });
+    expect(salidasPendientesDe(MARY)).toBe(13227.5);
+    expect(salidasPendientesDe({})).toBeNull();
+  });
 
   it("resumenMadreDeFondo: solo un objeto cuenta; null o ausente ⇒ null (sin card)", () => {
     expect(resumenMadreDeFondo({ resumen_madre: MARY })).toBe(MARY);

@@ -144,7 +144,16 @@ export interface ResumenCajaMadre {
   gastos_pendientes: ConteoMontoCaja;
   entregas_pendientes: ConteoMontoCaja;
   otros_pendientes: number;
-  por_solicitar: number;
+  /**
+   * Para solicitar a la empresa. Desde el API 0.0.113 (28-oct-2026, regla de
+   * Mary) = lo que debe estar en mi caja − saldo del libro (null sin fondo
+   * total); hasta el 0.0.112 era lo que salió de la caja desde la última
+   * reposición (y viajaba siempre como número). `salidas_pendientes` dice
+   * cuál de las dos es: ver `porSolicitarDe`.
+   */
+  por_solicitar: number | null;
+  /** ADITIVO (28-oct-2026, API 0.0.113): lo que salió de la caja desde la última reposición. */
+  salidas_pendientes?: number;
   efectivo_libro: number;
   efectivo_esperado: number | null;
   diferencia: number | null;

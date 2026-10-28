@@ -12724,6 +12724,24 @@ y NO se manda al API.
 - Pruebas: `lib/admin/__tests__/caja-chica-madre.test.ts` (sección nueva con
   las cifras reales de Mary) y
   `caja-chica/__tests__/resumen-madre.test.tsx` (marcado + cableado).
+- **28-oct-2026 (API 0.0.113), regla de Mary**: «en el apartado de solicitar
+  a la empresa debe ir $7,220.00, que es la resta de los 25,500 que tiene de
+  fondo Mari menos el saldo actual» + «esto lo pueden quitar» (captura con
+  las tarjetas «Fondo total» y «Por reponer» tachadas). El API manda
+  `por_solicitar` = debe estar en mi caja − saldo del libro (null sin fondo
+  total) y lo que salió del tramo aparte en `salidas_pendientes` (ADITIVA).
+  `porSolicitarDe` (lib, sección 5) solo formatea: ámbar si falta dinero
+  (`NOTA_POR_SOLICITAR`), verde si el saldo ya cubre el fondo propio
+  (`NOTA_POR_SOLICITAR_CUBIERTO`), «—» sin fondo (`NOTA_POR_SOLICITAR_SIN_FONDO`)
+  y, sin `salidas_pendientes` (API previo), la nota del tramo
+  (`NOTA_POR_SOLICITAR_API_PREVIO`); `data-solicitar` lleva el tono. «Mi caja
+  hoy» gana la línea «Salió de la caja desde la última reposición»
+  (`salidasPendientesDe`). En la caja MADRE (`esMadre` = hay
+  `resumen_madre`) la página NO pinta las tarjetas «Fondo total» ni «Por
+  reponer» de arriba (solo Saldo actual y Última reposición, en dos
+  columnas) y el `FondoMontoButton` («Editar») se monta vía la prop `editar`
+  de la card, bajo la cifra «Fondo total». Las cajas hijas y las acumuladas
+  no cambian.
 
 ## «Es el pago al operador externo» en Gastos (27-oct-2026, API 0.0.110, invariante 110 del API)
 

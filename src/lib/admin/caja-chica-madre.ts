@@ -392,17 +392,25 @@ export const ETIQUETA_ASIGNADO = "Asignado a colaboradores";
 export const ETIQUETA_FONDO_PROPIO = "Debe estar en mi caja";
 export const NOTA_FONDO_PROPIO = "Fondo total − asignado a colaboradores.";
 export const ETIQUETA_POR_SOLICITAR = "Para solicitar a la empresa";
-export const NOTA_POR_SOLICITAR = "Lo que salió de la caja desde la última reposición.";
+/** Regla de Mary (28-oct-2026, API 0.0.113): «la resta de lo que tiene de fondo menos el saldo actual». */
+export const NOTA_POR_SOLICITAR = "Lo que debe estar en tu caja − tu saldo actual.";
+export const NOTA_POR_SOLICITAR_CUBIERTO =
+  "Nada que solicitar: tu saldo cubre lo que debe estar en tu caja.";
+export const NOTA_POR_SOLICITAR_SIN_FONDO =
+  "Fija el monto del fondo (Editar, en Fondo total) para calcularlo.";
+/** API previo (≤ 0.0.112): la cifra era lo que salió del tramo. */
+export const NOTA_POR_SOLICITAR_API_PREVIO = "Lo que salió de la caja desde la última reposición.";
 export const TITULO_COLABORADORES = "Por colaborador";
 export const TITULO_MI_CAJA = "Mi caja hoy";
 export const ETIQUETA_GASTOS_PENDIENTES = "Gastos pendientes por reponer";
 export const ETIQUETA_ENTREGAS_PENDIENTES = "Entregas a colaboradores pendientes de reembolso";
 export const ETIQUETA_OTROS_PENDIENTES = "Otros movimientos desde la última reposición";
+export const ETIQUETA_SALIDAS_PENDIENTES = "Salió de la caja desde la última reposición";
 export const ETIQUETA_EFECTIVO_ESPERADO = "Efectivo esperado en mi caja";
 export const ETIQUETA_EFECTIVO_LIBRO = "Efectivo según el libro";
 export const ETIQUETA_DIFERENCIA = "Diferencia";
 export const TEXTO_SIN_FONDO_TOTAL =
-  "Fija el monto del fondo (Editar, arriba) para comparar el libro con lo que debe estar en tu caja.";
+  "Fija el monto del fondo (Editar, en Fondo total) para comparar el libro con lo que debe estar en tu caja.";
 export const TEXTO_CUADRA = "Cuadra: el libro coincide con lo que debe estar en tu caja.";
 export const DETALLE_LIBRO_MENOS =
   "Puede faltar registrar una reposición o una entrega recibida, o el fondo asignado de algún colaborador no es el real.";
@@ -444,6 +452,40 @@ export function textoConteoMonto(
 }
 
 export type TonoCuadre = "ok" | "ambar" | "rojo" | "neutro";
+
+/**
+ * La cifra «Para solicitar a la empresa» (28-oct-2026, regla de Mary): lo que
+ * manda el API en `por_solicitar`, tal cual. Con el API 0.0.113
+ * (`salidas_pendientes` presente) es «debe estar en mi caja − saldo»: ámbar
+ * si falta dinero, verde si el saldo ya cubre el fondo propio, «—» sin fondo
+ * total. Con un API previo (sin `salidas_pendientes`) la cifra es lo que
+ * salió del tramo y la nota lo dice como antes. Aquí no se resta nada.
+ */
+export function porSolicitarDe(
+  r: Pick<ResumenCajaMadre, "por_solicitar" | "salidas_pendientes">,
+  moneda: MonedaCaja | string,
+): { valor: string; nota: string; tono: "ambar" | "ok" | "neutro" } {
+  const n = r.por_solicitar;
+  if (n == null || !Number.isFinite(Number(n))) {
+    return { valor: "—", nota: NOTA_POR_SOLICITAR_SIN_FONDO, tono: "neutro" };
+  }
+  const x = Number(n);
+  const nuevo = typeof r.salidas_pendientes === "number";
+  const tono: "ambar" | "ok" = x > 0 ? "ambar" : "ok";
+  if (!nuevo) return { valor: montoCaja(x, moneda), nota: NOTA_POR_SOLICITAR_API_PREVIO, tono };
+  return {
+    valor: montoCaja(x, moneda),
+    nota: x > 0 ? NOTA_POR_SOLICITAR : NOTA_POR_SOLICITAR_CUBIERTO,
+    tono,
+  };
+}
+
+/** «Salió de la caja desde la última reposición» (API 0.0.113); null con un API previo. */
+export function salidasPendientesDe(r: Pick<ResumenCajaMadre, "salidas_pendientes">): number | null {
+  return typeof r.salidas_pendientes === "number" && Number.isFinite(r.salidas_pendientes)
+    ? r.salidas_pendientes
+    : null;
+}
 
 /** Cómo quedó el cuadre del libro contra el fondo (una línea + su detalle). */
 export function estadoCuadreMadre(
