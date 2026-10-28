@@ -26,7 +26,9 @@ process.env.NEXT_PUBLIC_API_URL ??= "https://api.ejemplo.test";
 
 const { PantallaError } = await import("../pantalla-error");
 const { UnknownErrorScreen } = await import("../unknown-error-screen");
-const { MENSAJE_ERROR, TITULO_ERROR } = await import("@/lib/admin/pantalla-error");
+const { MENSAJE_ERROR, MENSAJE_ERROR_VERSION, TITULO_ERROR } = await import(
+  "@/lib/admin/pantalla-error"
+);
 
 /** El texto que Next pone en producción y que el cliente vio en pantalla. */
 const INGLES = "An error occurred in the Server Components render. The specific message is omitted";
@@ -60,6 +62,30 @@ describe("PantallaError (error boundary del panel)", () => {
 
   it("ofrece Reintentar y Volver al inicio", () => {
     expect(t).toContain("Reintentar");
+    expect(t).toContain("Volver al inicio");
+    // Un error normal NO es de versión: ni «Recargar» ni la marca.
+    expect(t).not.toContain("Recargar");
+    expect(html).not.toContain("data-error-version");
+  });
+});
+
+describe("PantallaError con un error de VERSIÓN (pestaña abierta desde antes del deploy, 28-oct-2026)", () => {
+  const chunk = Object.assign(new Error("Loading chunk app/admin/expenses/page failed."), {
+    name: "ChunkLoadError",
+  });
+  const html = renderToStaticMarkup(<PantallaError error={chunk} reintentar={() => {}} />);
+  const t = texto(html);
+
+  it("dice que el panel se actualizó y ofrece Recargar, no Reintentar", () => {
+    expect(t).toContain(MENSAJE_ERROR_VERSION);
+    expect(t).toContain("Recargar");
+    expect(t).not.toContain("Reintentar");
+    expect(html).toContain('data-error-version=""');
+  });
+
+  it("sigue dando los datos de soporte (sin código: el fallo es del navegador)", () => {
+    expect(t).toContain("sin código");
+    expect(t).toContain("Hora (Cancún)");
     expect(t).toContain("Volver al inicio");
   });
 });

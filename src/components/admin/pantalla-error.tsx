@@ -6,10 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatosSoporte } from "@/components/admin/datos-soporte";
 import {
   BOTON_INICIO,
+  BOTON_RECARGAR,
   BOTON_REINTENTAR,
   MENSAJE_ERROR,
+  MENSAJE_ERROR_VERSION,
   TITULO_ERROR,
+  almacenDeSesion,
   codigoDeError,
+  debeRecargarPorVersion,
+  esErrorDeVersion,
 } from "@/lib/admin/pantalla-error";
 
 interface PantallaErrorProps {
@@ -35,16 +40,32 @@ interface PantallaErrorProps {
  * los logs. El error completo sigue yendo a la consola del navegador.
  */
 export function PantallaError({ error, reintentar, inicio = "/admin" }: PantallaErrorProps) {
+  // Error de VERSIÓN (28-oct-2026): la pestaña quedó abierta desde antes de
+  // un deploy y pidió archivos de la versión vieja. `unstable_retry` no lo
+  // arregla (repite con el mismo código viejo): hay que recargar.
+  const deVersion = esErrorDeVersion(error);
+
   useEffect(() => {
     // Log completo para devs/soporte; en prod podría ir también a Sentry.
     console.error("[admin] error de pantalla", error);
   }, [error]);
 
+  // Recarga SOLA una vez (marca en sessionStorage, ventana de un minuto): si
+  // tras recargar vuelve a caer aquí, se queda la pantalla con «Recargar» y
+  // el código para sistemas, nunca un bucle.
+  useEffect(() => {
+    if (deVersion && debeRecargarPorVersion(almacenDeSesion())) window.location.reload();
+  }, [deVersion]);
+
   const codigo = codigoDeError(error);
+  const mensaje = deVersion ? MENSAJE_ERROR_VERSION : MENSAJE_ERROR;
+  // Con la versión vieja en memoria, «Reintentar» del boundary repetiría el
+  // fallo: el botón recarga la página (navegación dura).
+  const alReintentar = deVersion ? () => window.location.reload() : reintentar;
 
   return (
     <div className="flex items-center justify-center min-h-[60vh] p-4">
-      <Card className="max-w-lg w-full">
+      <Card className="max-w-lg w-full" data-error-version={deVersion ? "" : undefined}>
         <CardHeader className="text-center space-y-3">
           <div className="flex justify-center">
             <div className="h-14 w-14 rounded-full bg-amber-500/15 flex items-center justify-center">
@@ -52,7 +73,7 @@ export function PantallaError({ error, reintentar, inicio = "/admin" }: Pantalla
             </div>
           </div>
           <CardTitle>{TITULO_ERROR}</CardTitle>
-          <p className="text-sm text-muted-foreground">{MENSAJE_ERROR}</p>
+          <p className="text-sm text-muted-foreground">{mensaje}</p>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Mismos datos, misma fuente, que la pantalla del layout. */}
@@ -60,11 +81,11 @@ export function PantallaError({ error, reintentar, inicio = "/admin" }: Pantalla
           <div className="flex flex-wrap justify-center gap-2">
             <button
               type="button"
-              onClick={reintentar}
+              onClick={alReintentar}
               className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
             >
               <ArrowPathIcon className="h-4 w-4" />
-              {BOTON_REINTENTAR}
+              {deVersion ? BOTON_RECARGAR : BOTON_REINTENTAR}
             </button>
             {/* Navegación DURA (no <Link>): si el árbol de React quedó en mal
                 estado, un push del router puede volver a caer aquí mismo. */}

@@ -67,6 +67,20 @@ pantalla entera. NO era timeout de Vercel (página completa p50 1.14 s).
   Todos los fallos de esta sección son de Server Components: con `reset` el
   botón repintaba el mismo error. Los tres boundaries pasan
   `unstable_retry ?? reset` a `PantallaError` (prop `reintentar`).
+- **Error de VERSIÓN ⇒ recarga sola** (28-oct-2026, `esErrorDeVersion` +
+  `debeRecargarPorVersion` en `lib/admin/pantalla-error.ts`): «No pudimos
+  cargar esta pantalla · sin código» en /admin/expenses a las 12:24 con el
+  panel desplegado a las 11:41 (hora Cancún). Una pestaña abierta desde antes
+  del deploy pide al navegar chunks/módulos de la versión vieja que Vercel ya
+  no sirve (ChunkLoadError, «Loading chunk … failed», «Failed to fetch
+  dynamically imported module», «Cannot read properties of undefined (reading
+  'call')», «Failed to find Server Action…»); Next no sella `digest` y
+  `unstable_retry` repite con el MISMO código viejo. Los tres boundaries
+  recargan la página UNA vez (marca `vt:recarga-version` en sessionStorage,
+  ventana de 60 s) y, si vuelve a caer, pintan «El panel se actualizó…» con
+  botón «Recargar» (= `window.location.reload()`) y el código. Sin
+  sessionStorage no se recarga sola (sin marca no hay freno). Un error normal
+  se ve exactamente como antes.
 - **Los datos para soporte son UNO solo**: `components/admin/datos-soporte.tsx`
   (`DatosSoporte`) pinta Código/Detalle · Hora (Cancún) · Pantalla y lo usan
   el boundary **y** `UnknownErrorScreen`. Con el API caído del todo **ninguna

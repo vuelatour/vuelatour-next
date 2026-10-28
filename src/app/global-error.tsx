@@ -3,13 +3,18 @@
 import { useEffect, useState } from "react";
 import {
   BOTON_INICIO,
+  BOTON_RECARGAR,
   BOTON_REINTENTAR,
   ETIQUETA_CODIGO,
   ETIQUETA_HORA,
   ETIQUETA_RUTA,
   MENSAJE_ERROR,
+  MENSAJE_ERROR_VERSION,
   TITULO_ERROR,
+  almacenDeSesion,
   codigoDeError,
+  debeRecargarPorVersion,
+  esErrorDeVersion,
   horaCancun,
   rutaActual,
 } from "@/lib/admin/pantalla-error";
@@ -31,7 +36,10 @@ export default function GlobalError({
   /** Vuelve a PEDIR y re-renderizar; `reset` solo limpia el estado. */
   unstable_retry?: () => void;
 }) {
-  const reintentar = unstable_retry ?? reset;
+  // Error de VERSIÓN (28-oct-2026): mismo trato que en `PantallaError` —
+  // recargar (una vez sola; después, el botón «Recargar»).
+  const deVersion = esErrorDeVersion(error);
+  const reintentar = deVersion ? () => window.location.reload() : (unstable_retry ?? reset);
   const [info] = useState(() => ({
     hora: horaCancun(),
     ruta: rutaActual(typeof window === "undefined" ? null : window.location),
@@ -40,6 +48,10 @@ export default function GlobalError({
   useEffect(() => {
     console.error("[global] error de pantalla", error);
   }, [error]);
+
+  useEffect(() => {
+    if (deVersion && debeRecargarPorVersion(almacenDeSesion())) window.location.reload();
+  }, [deVersion]);
 
   const dato = (etiqueta: string, valor: string) => (
     <div style={{ display: "flex", gap: 8 }}>
@@ -80,7 +92,9 @@ export default function GlobalError({
           }}
         >
           <h1 style={{ fontSize: 20, margin: "0 0 8px" }}>{TITULO_ERROR}</h1>
-          <p style={{ fontSize: 14, color: "#bcccdc", margin: "0 0 16px" }}>{MENSAJE_ERROR}</p>
+          <p style={{ fontSize: 14, color: "#bcccdc", margin: "0 0 16px" }}>
+            {deVersion ? MENSAJE_ERROR_VERSION : MENSAJE_ERROR}
+          </p>
           <div
             style={{
               textAlign: "left",
@@ -114,7 +128,7 @@ export default function GlobalError({
                 cursor: "pointer",
               }}
             >
-              {BOTON_REINTENTAR}
+              {deVersion ? BOTON_RECARGAR : BOTON_REINTENTAR}
             </button>
             {/* Navegación DURA a propósito: el layout raíz falló, así que un
                 <Link> (navegación cliente) volvería al mismo árbol roto. */}
