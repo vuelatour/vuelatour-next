@@ -12,13 +12,16 @@ import {
 } from "../facturacion-estatus";
 
 describe("semáforo de facturación (oficina)", () => {
-  it("incluye «No requiere factura» (14-sep-2026) al final del semáforo", () => {
+  it("incluye «No requiere factura» (14-sep-2026) y, al final, «No obtenida» (2-nov-2026)", () => {
     expect(FACTURACION_ESTADOS.map((e) => e.value)).toEqual([
       "PENDIENTE",
       "SOLICITADA",
       "FACTURADA",
       "NO_FACTURABLE",
+      "NO_OBTENIDA",
     ]);
+    expect(etiquetaFacturacion("NO_OBTENIDA")).toBe("No obtenida");
+    expect(estadoFacturacion("NO_OBTENIDA").requiereNota).toBe(true);
     expect(etiquetaFacturacion("NO_FACTURABLE")).toBe("No requiere factura");
     expect(estadoFacturacion("NO_FACTURABLE").dot).toContain("slate");
   });
@@ -33,13 +36,14 @@ describe("semáforo de facturación (oficina)", () => {
     expect(ops).toHaveLength(4);
     expect(ops[3]).toEqual({ value: "NO_FACTURABLE", label: "⚪ No requiere factura" });
   });
-  it("el filtro agrega «Sin facturar» al final y NO_FACTURABLE es su propia opción", () => {
+  it("el filtro agrega «Sin facturar» al final; NO_FACTURABLE y NO_OBTENIDA son sus propias opciones", () => {
     const ops = opcionesFacturacionFiltro();
     expect(ops.map((o) => o.value)).toEqual([
       "PENDIENTE",
       "SOLICITADA",
       "FACTURADA",
       "NO_FACTURABLE",
+      "NO_OBTENIDA",
       FILTRO_NO_FACTURADA,
     ]);
   });
@@ -51,9 +55,13 @@ describe("semáforo de facturación (oficina)", () => {
  * title siguen con la etiqueta completa.
  */
 describe("etiqueta corta de la tabla", () => {
-  it("solo NO_FACTURABLE trae labelCorta «No requiere»", () => {
+  it("NO_FACTURABLE trae labelCorta «No requiere»; NO_OBTENIDA, «No obtenida»", () => {
     expect(estadoFacturacion("NO_FACTURABLE").labelCorta).toBe("No requiere");
-    expect(FACTURACION_ESTADOS.filter((e) => e.labelCorta).map((e) => e.value)).toEqual(["NO_FACTURABLE"]);
+    expect(estadoFacturacion("NO_OBTENIDA").labelCorta).toBe("No obtenida");
+    expect(FACTURACION_ESTADOS.filter((e) => e.labelCorta).map((e) => e.value)).toEqual([
+      "NO_FACTURABLE",
+      "NO_OBTENIDA",
+    ]);
   });
 
   it("etiquetaFacturacionTabla: corta si la hay; los otros 3, su label; desconocido o ausente ⇒ «Pendiente»", () => {
@@ -66,12 +74,13 @@ describe("etiqueta corta de la tabla", () => {
     expect(etiquetaFacturacionTabla(null)).toBe("Pendiente");
   });
 
-  it("FACTURACION_FILTRO_VALUES: los 4 estados + NO_FACTURADA (5 valores, los que acepta el API)", () => {
+  it("FACTURACION_FILTRO_VALUES: los 5 estados + NO_FACTURADA (6 valores, los que acepta el API)", () => {
     expect(FACTURACION_FILTRO_VALUES).toEqual([
       "PENDIENTE",
       "SOLICITADA",
       "FACTURADA",
       "NO_FACTURABLE",
+      "NO_OBTENIDA",
       FILTRO_NO_FACTURADA,
     ]);
   });
