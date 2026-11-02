@@ -109,6 +109,9 @@ export const FacturacionEnum = z.enum([
   "SOLICITADA",
   "FACTURADA",
   "NO_FACTURABLE",
+  // 2-nov-2026: «No obtenida / no emitida» (con motivo; se marca desde el
+  // badge, no desde los selectores de alta/verificación).
+  "NO_OBTENIDA",
 ]);
 
 export const GastoVerifySchema = z.object({

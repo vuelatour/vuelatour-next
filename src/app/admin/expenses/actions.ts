@@ -528,11 +528,16 @@ function revalidarVerificacion() {
 export async function marcarFacturacionAction(
   id: string,
   estatus: EstatusFacturacion,
+  /** Motivo de «No obtenida» (2-nov-2026): el API lo exige con NO_OBTENIDA. */
+  nota?: string,
 ): Promise<ActionResult<Gasto>> {
   try {
     const updated = await apiServer<Gasto>(`/v1/expenses/${id}`, {
       method: "PATCH",
-      body: { estatus_facturacion: estatus },
+      body: {
+        estatus_facturacion: estatus,
+        ...(nota !== undefined ? { facturacion_nota: nota } : {}),
+      },
     });
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/flights", "layout");

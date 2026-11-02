@@ -29,7 +29,8 @@ export type EstatusFacturacion =
   | "PENDIENTE"
   | "SOLICITADA"
   | "FACTURADA"
-  | "NO_FACTURABLE";
+  | "NO_FACTURABLE"
+  | "NO_OBTENIDA";
 
 export interface EstadoFacturacion {
   value: EstatusFacturacion;
@@ -48,6 +49,12 @@ export interface EstadoFacturacion {
   dot: string;
   /** Clases del pill del badge. */
   pill: string;
+  /**
+   * Exige un MOTIVO (`gasto.facturacion_nota`) al marcarlo (2-nov-2026,
+   * NO_OBTENIDA): el badge abre un diálogo y los selectores de alta /
+   * verificación no lo ofrecen (ahí no hay campo para el motivo).
+   */
+  requiereNota?: boolean;
 }
 
 /** Conservador a propósito: sin dato NUNCA se afirma «facturado». */
@@ -89,7 +96,60 @@ export const FACTURACION_ESTADOS: EstadoFacturacion[] = [
     dot: "bg-slate-400",
     pill: "border-slate-400/40 bg-slate-400/10 text-slate-600 dark:text-slate-300",
   },
+  {
+    // Morado: no es «no requiere» (⚪) ni «falta» (🔴): se PIDIÓ y el
+    // proveedor no la emitió (o no se pudo obtener). Siempre con motivo.
+    // Pedido de la oficina (2-nov-2026, API 0.0.116, invariante 115).
+    value: "NO_OBTENIDA",
+    label: "No obtenida",
+    labelCorta: "No obtenida",
+    labelForm: "No obtenida / no emitida (con motivo)",
+    emoji: "🟣",
+    dot: "bg-violet-500",
+    pill: "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-400",
+    requiereNota: true,
+  },
 ];
+
+/** Título del diálogo que pide el motivo al marcar «No obtenida». */
+export const TITULO_NO_OBTENIDA = "Factura no obtenida / no emitida";
+
+/** Explicación del diálogo (qué pasa con el gasto). */
+export const AYUDA_NO_OBTENIDA =
+  "Se pidió la factura y el proveedor no la emitió (o no se pudo obtener). El gasto sale de " +
+  "«Sin facturar» y del pendiente del pre-cierre, y en el Excel de efectivos queda en su propio " +
+  "cubo. Si después llega la factura, al amarrarla pasa a Facturada.";
+
+export const ETIQUETA_MOTIVO_NO_OBTENIDA = "Motivo (obligatorio)";
+export const PLACEHOLDER_MOTIVO_NO_OBTENIDA =
+  "Ej. El FBO no emite factura; se pidió dos veces por correo sin respuesta.";
+export const BOTON_NO_OBTENIDA = "Marcar no obtenida";
+export const MOTIVO_NO_OBTENIDA_MAX = 500;
+
+/** ¿El motivo tecleado sirve? (1..500 tras recortar). */
+export function motivoNoObtenidaValido(motivo: string | null | undefined): boolean {
+  const n = (motivo ?? "").trim().length;
+  return n >= 1 && n <= MOTIVO_NO_OBTENIDA_MAX;
+}
+
+/**
+ * Title del pill: con «No obtenida» antepone el motivo (si hay) para que se
+ * lea al pasar el mouse sin abrir nada. `compacta` antepone además la etiqueta
+ * completa (regla del 14-oct-2026).
+ */
+export function tituloBadgeFacturacion(
+  gasto: { estatus_facturacion?: string | null; facturacion_nota?: string | null },
+  compacta: boolean,
+): string {
+  const e = estadoFacturacion(gasto.estatus_facturacion);
+  const motivo =
+    e.requiereNota && gasto.facturacion_nota?.trim()
+      ? `Motivo: ${gasto.facturacion_nota.trim()}`
+      : null;
+  return [compacta ? e.label : null, motivo, TITULO_FACTURACION_BADGE]
+    .filter((x): x is string => !!x)
+    .join(" · ");
+}
 
 /** Ficha del estado; valor desconocido o ausente ⇒ Pendiente (conservador). */
 export function estadoFacturacion(
@@ -121,12 +181,16 @@ export function etiquetaFacturacion(
   return FACTURACION_ESTADOS.find((e) => e.value === value)?.label ?? null;
 }
 
-/** Opciones de los SELECTORES de los diálogos («🟡 Factura solicitada»). */
+/**
+ * Opciones de los SELECTORES de los diálogos («🟡 Factura solicitada»). Los
+ * estados que exigen motivo (NO_OBTENIDA) NO se ofrecen aquí: esos diálogos no
+ * tienen campo para él (el API respondería 400); se marcan desde el badge.
+ */
 export function opcionesFacturacionForm(): Array<{
   value: EstatusFacturacion;
   label: string;
 }> {
-  return FACTURACION_ESTADOS.map((e) => ({
+  return FACTURACION_ESTADOS.filter((e) => !e.requiereNota).map((e) => ({
     value: e.value,
     label: `${e.emoji} ${e.labelForm}`,
   }));

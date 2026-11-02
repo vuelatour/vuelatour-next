@@ -13026,3 +13026,32 @@ donde pueda poner número de factura y fecha de pago».
   exist». `extrasDelLote` solo los manda cuando se capturan (vacíos no
   viajan), así que la casilla y un lote sin factura siguen funcionando;
   aun así el panel se despliega DESPUÉS del API 0.0.115.
+
+## Gastos → Facturación: «No obtenida / no emitida» con motivo (2-nov-2026, API 0.0.116, invariante 115 del API)
+
+Pedido de la oficina: «agregar la opción "no obtenida o no emitida" y que se
+pueda agregar una nota o el motivo por el cual no se pudo obtener esa
+factura». Quinto estado del semáforo: 🟣 `NO_OBTENIDA` («No obtenida»), con
+`gasto.facturacion_nota` (migración `20261102000001`, que se aplica por SQL
+Editor: `docs/sql-aplicar-2-nov-2026-no-obtenida/`).
+
+- **Fuente única** `lib/admin/facturacion-estatus.ts`: la entrada
+  NO_OBTENIDA lleva `requiereNota: true`; `opcionesFacturacionForm()` NO la
+  ofrece (los diálogos de alta/verificación no tienen campo para el motivo y
+  el API respondería 400); el filtro de Gastos sí la lista (derivado).
+  Textos `TITULO_NO_OBTENIDA`, `AYUDA_NO_OBTENIDA`,
+  `ETIQUETA_MOTIVO_NO_OBTENIDA`, `PLACEHOLDER_MOTIVO_NO_OBTENIDA`,
+  `BOTON_NO_OBTENIDA`; `motivoNoObtenidaValido` (1..500);
+  `tituloBadgeFacturacion(gasto, compacta)` antepone «Motivo: …» al title.
+- **Badge** (`facturacion-badge.tsx`): elegir «No obtenida» en el menú abre
+  un diálogo con el motivo (prellenado si ya lo tenía: volver a elegirla
+  edita el motivo) → `marcarFacturacionAction(id, "NO_OBTENIDA", motivo)`
+  (body `facturacion_nota`). Los demás estados siguen sin confirmación.
+- **Qué hace el API**: NO_OBTENIDA sale de «Sin facturar» y del pendiente
+  del pre-cierre (como NO_FACTURABLE) pero es su propio cubo en el Excel de
+  efectivos; cambiar a otro estado limpia la nota; amarrar una factura la
+  pasa a Facturada (trigger). Sin la migración: 400 «Esta opción necesita la
+  migración 20261102000001; mientras, usa Pendiente.» (se muestra tal cual).
+- **Pruebas**: `components/admin/expenses/__tests__/facturacion-no-obtenida.test.tsx`
+  (pill, title con el motivo, selectores sin la opción, filtro con ella,
+  cableado del diálogo y de la action).

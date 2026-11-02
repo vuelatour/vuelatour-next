@@ -50,7 +50,10 @@ describe("FacturacionBadge", () => {
   it("cableado: los renglones del menú con manita y la server action sin lanzar", () => {
     const src = readFileSync(path.resolve(__dirname, "../facturacion-badge.tsx"), "utf8");
     expect(src).toContain('onClick={() => marcar(e.value)} className="cursor-pointer"');
-    expect(src).toContain("llamarSinLanzar(() => marcarFacturacionAction(gasto.id, estatus))");
+    // Desde el 2-nov-2026 la llamada decide si viaja el motivo («No obtenida»);
+    // el camino sin nota sigue siendo la action de siempre, sin lanzar.
+    expect(src).toContain("llamarSinLanzar(() =>");
+    expect(src).toContain("marcarFacturacionAction(gasto.id, estatus)");
     // flight-gastos-table sigue sin la prop (etiqueta completa).
     const vuelo = readFileSync(path.resolve(__dirname, "../../flights/flight-gastos-table.tsx"), "utf8");
     expect(vuelo).toMatch(/<FacturacionBadge gasto=\{[^}]+\} \/>/);

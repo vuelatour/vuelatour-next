@@ -70,6 +70,10 @@ export interface Gasto {
    *  comprobante del piloto. Etiquetas y colores en
    *  @/lib/admin/facturacion-estatus. */
   estatus_facturacion?: string;
+  /** Motivo de «No obtenida» (API 0.0.116 con la migración 20261102000001;
+   *  ausente = API/base previos). Solo tiene sentido con NO_OBTENIDA; el
+   *  badge lo muestra en el title y lo prellena al editar. */
+  facturacion_nota?: string | null;
   foto_url: string | null;
   /** Lectura IA del comprobante (jsonb: matricula, conceptos, folio…). */
   valor_ia_extraido: Record<string, unknown> | null;
