@@ -562,3 +562,28 @@ export interface CobradoDeMasVuelo {
   /** Cobros en pesos que no entraron a la cuenta (sin T.C.). */
   sin_tc: { n: number; mxn: number } | null;
 }
+
+/**
+ * Lo que agrega `POST /v1/flights/legs/:legId/quitar-escala` (API 0.0.114,
+ * invariante 113): el tramo fusionado viaja como `FlightEscala` y `fusion`
+ * cuenta qué se quitó y qué se descartó.
+ */
+export interface EscalaFusion {
+  escala_quitada_id: string;
+  /** La escala que se quitó (destino del tramo A = origen del B). */
+  escala_iata: string;
+  tramo_a: string;
+  tramo_b: string;
+  /** Llegada de A descartada (a la escala que no se hizo). */
+  descartada: {
+    hora_llegada: string | null;
+    taco_llegada: number | null;
+    taco_llegada_origen: string | null;
+    con_foto: boolean;
+  };
+  /** La salida de A se retiró porque la llegada de B no la superaba. */
+  salida_retirada: boolean;
+  aviso: string | null;
+}
+
+export type EscalaQuitadaResult = FlightEscala & { fusion: EscalaFusion };

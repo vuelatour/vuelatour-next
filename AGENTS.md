@@ -12956,3 +12956,40 @@ el API: `resolverCostoEntrada` ya sella el T.C. oficial del día del movimiento
 - **Pruebas**: `lib/admin/__tests__/inventario-entrada-inicial.test.ts`
   (vacío/0 sin T.C. en el payload, negativo/basura, hoy sin oficial, «en
   $0» con el oficial conocido, ayudas, placeholder y «≈ USD»).
+
+## Vuelos: «Quitar escala» que NO se hizo, en la asignación por tramo (2-nov-2026, API 0.0.114, invariante 113 del API)
+
+Pedido del piloto (Pablo, vuelo #496 del 29-oct): «la ruta original era
+Cancún, Holbox, Tulum, Cancún; ya no bajamos en Holbox y nos fuimos directo
+a Tulum … no me deja borrar esos tramos que se supone que ya se hicieron».
+El vuelo estaba COMPLETADO con llegadas capturadas en CUN→HOL y HOL→TQO:
+«Cancelar tramo» (sí voló) y «Eliminar tramo» (con tacómetro) no servían.
+
+- **La regla es del API** (`POST /v1/flights/legs/:legId/quitar-escala`,
+  motivo obligatorio): el tramo A y el ACTIVO siguiente B (que sale de donde
+  llega A) quedan como UN tramo A.origen → B.destino con la salida de A y la
+  llegada de B; la llegada de A se descarta (bitácora + notas internas); el
+  fusionado queda en amarillo; el vuelo no cambia de estado; la cotización
+  no cambia. El panel solo decide si OFRECE la acción.
+- **Regla pura** `lib/admin/escala-quitar.ts` (espejo de
+  `escala-quitada.util#porQueNoSeQuitaEscala`): `tramoSiguienteActivo`,
+  `escalaQuitable(escalas, a, {vueloAeronaveId, estado, esExterno})` ⇒
+  `{ok, b}` | `{ok: false, porQue}` (`porQue: null` = no se ofrece: tramo
+  cancelado, último tramo, vuelo CANCELADO o externo; con texto = se ofrece
+  DESHABILITADA: ruta no continua, tramo operativo, aviones distintos),
+  `textoQuitarEscala(a, b)` (párrafos del diálogo: fusión, salida
+  conservada, llegada tomada, llegada descartada, «salida que no cabe» y el
+  amarillo), `lecturaTramo`, `salidaSeRetira`, `tituloQuitarEscala`,
+  `etiquetaQuitarEscala`, `textoEscalaQuitada(res)` (toast con el `aviso`
+  del API).
+- **Card** `flight-tramos-card.tsx`: en el menú «⋯» de cada tramo, debajo
+  de «Editar tramo», «Quitar escala en HOL (no se aterrizó)» (icono
+  tijeras) abre un diálogo con los párrafos y el motivo (≥ 3) →
+  `quitarEscalaAction` (`app/admin/flights/actions.ts`) → toast
+  `textoEscalaQuitada` + `router.refresh()`. Tipos `EscalaFusion` /
+  `EscalaQuitadaResult` en `types/flights.ts`. Después, oficina confirma el
+  tacómetro del tramo fusionado en «Tacómetros por tramo» (queda amarillo).
+- **Skew**: con el API 0.0.113 el endpoint no existe (404 en el toast): el
+  panel se despliega DESPUÉS del API 0.0.114.
+- **Pruebas**: `lib/admin/__tests__/escala-quitar.test.ts` (regla, textos,
+  cableado de la card y de la action).

@@ -5,6 +5,7 @@ import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { esUuid } from "@/lib/admin/url-params";
 import type {
+  EscalaQuitadaResult,
   FacturaClienteBloque,
   FlightCobro,
   FlightEscala,
@@ -751,6 +752,28 @@ export async function restoreEscalaAction(
   try {
     const data = await apiServer<FlightEscala>(
       `/v1/flights/legs/${escalaId}/restore`,
+      { method: "POST", body: { motivo } },
+    );
+    revalidateFlight(flightId);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Quita una escala intermedia que NO se hizo (2-nov-2026, API 0.0.114,
+ * invariante 113): el tramo y el siguiente quedan como uno solo (motivo
+ * obligatorio). El API devuelve el tramo fusionado + `fusion`.
+ */
+export async function quitarEscalaAction(
+  flightId: string,
+  escalaId: string,
+  motivo: string,
+): Promise<ActionResult<EscalaQuitadaResult>> {
+  try {
+    const data = await apiServer<EscalaQuitadaResult>(
+      `/v1/flights/legs/${escalaId}/quitar-escala`,
       { method: "POST", body: { motivo } },
     );
     revalidateFlight(flightId);

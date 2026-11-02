@@ -10,6 +10,7 @@ import {
   PaperAirplaneIcon,
   PencilIcon,
   PlusIcon,
+  ScissorsIcon,
   TrashIcon,
   UserPlusIcon,
   FlagIcon,
@@ -42,9 +43,17 @@ import { cn } from "@/lib/utils";
 import {
   cancelEscalaAction,
   deleteEscalaAction,
+  quitarEscalaAction,
   restoreEscalaAction,
   updateEscalaPermisoAction,
 } from "@/app/admin/flights/actions";
+import {
+  escalaQuitable,
+  etiquetaQuitarEscala,
+  textoEscalaQuitada,
+  textoQuitarEscala,
+  tituloQuitarEscala,
+} from "@/lib/admin/escala-quitar";
 import { EscalaAssignSheet } from "./escala-assign-sheet";
 import { EscalaFormSheet } from "./escala-form-sheet";
 import { OperationalLegSheet } from "./operational-leg-sheet";
@@ -147,6 +156,11 @@ export function FlightTramosCard({
   const [cancelMotivo, setCancelMotivo] = useState("");
   const [toRestore, setToRestore] = useState<FlightEscala | null>(null);
   const [restoreMotivo, setRestoreMotivo] = useState("");
+  // Quitar una escala que NO se hizo (2-nov-2026, API 0.0.114): el tramo A y
+  // el siguiente B quedan como uno; se confirma con motivo.
+  const [toQuitar, setToQuitar] = useState<{ a: FlightEscala; b: FlightEscala } | null>(null);
+  const [quitarMotivo, setQuitarMotivo] = useState("");
+  const [quitando, startQuitar] = useTransition();
   const [opSheetOpen, setOpSheetOpen] = useState(false);
   const [deleting, startDelete] = useTransition();
   const [canceling, startCancel] = useTransition();
@@ -273,6 +287,12 @@ export function FlightTramosCard({
               escala.taco_llegada_origen !== "DEDUCIDO") ||
             !!escala.foto_taco_salida_url ||
             !!escala.foto_taco_llegada_url;
+          // ¿Se puede quitar la escala en su destino? (el API vuelve a validar).
+          const quitable = escalaQuitable(ordered, escala, {
+            vueloAeronaveId,
+            estado,
+            esExterno,
+          });
           return (
             <div
               key={escala.id}
@@ -455,6 +475,30 @@ export function FlightTramosCard({
                           <PencilIcon className="h-4 w-4" />
                           Editar tramo (ruta, fecha, notas)
                         </DropdownMenuItem>
+                        {/* Escala que NO se hizo (caso #496): el tramo y el
+                            siguiente quedan como uno, con la salida de este y
+                            la llegada del siguiente. Solo cuando hay un tramo
+                            siguiente; deshabilitado con su motivo si la ruta
+                            no es continua, hay un operativo o cambia el avión. */}
+                        {(quitable.ok || quitable.porQue) && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              if (!quitable.ok) return;
+                              setQuitarMotivo("");
+                              setToQuitar({ a: escala, b: quitable.b });
+                            }}
+                            disabled={!quitable.ok}
+                            title={
+                              quitable.ok
+                                ? "El avión no aterrizó en esta escala: este tramo y el siguiente quedan como uno solo."
+                                : (quitable.porQue ?? undefined)
+                            }
+                            className="gap-2"
+                          >
+                            <ScissorsIcon className="h-4 w-4" />
+                            {etiquetaQuitarEscala(escala)}
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={() => {
                             setCancelMotivo("");
@@ -799,6 +843,72 @@ export function FlightTramosCard({
               }}
             >
               {canceling ? "Cancelando…" : "Cancelar tramo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={toQuitar !== null} onOpenChange={(o) => !o && setToQuitar(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {toQuitar ? tituloQuitarEscala(toQuitar.a) : "¿Quitar la escala?"}
+            </DialogTitle>
+            <DialogDescription>
+              Para cuando el avión NO aterrizó en una escala del itinerario y
+              siguió directo al siguiente destino.
+            </DialogDescription>
+          </DialogHeader>
+          {toQuitar && (
+            <div className="space-y-2 text-sm text-muted-foreground" data-quitar-escala>
+              {textoQuitarEscala(toQuitar.a, toQuitar.b).map((parrafo, i) => (
+                <p key={i}>{parrafo}</p>
+              ))}
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <label htmlFor="quitar-escala-motivo" className="text-sm font-medium">
+              Motivo (obligatorio)
+            </label>
+            <Textarea
+              id="quitar-escala-motivo"
+              value={quitarMotivo}
+              onChange={(e) => setQuitarMotivo(e.target.value)}
+              placeholder="Ej. No bajamos en Holbox: fuimos directo a Tulum por el clima."
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setToQuitar(null)}
+              disabled={quitando}
+            >
+              Volver
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={quitando || quitarMotivo.trim().length < 3}
+              title={
+                quitarMotivo.trim().length < 3
+                  ? "Escribe por qué no se hizo la escala"
+                  : undefined
+              }
+              onClick={() => {
+                if (!toQuitar) return;
+                startQuitar(async () => {
+                  const res = await quitarEscalaAction(flightId, toQuitar.a.id, quitarMotivo.trim());
+                  if (res.ok && res.data) {
+                    toast.success(textoEscalaQuitada(res.data), { duration: 10000 });
+                    setToQuitar(null);
+                    router.refresh();
+                  } else {
+                    toast.error(res.error ?? "No se pudo quitar la escala");
+                  }
+                });
+              }}
+            >
+              {quitando ? "Quitando…" : "Quitar escala"}
             </Button>
           </DialogFooter>
         </DialogContent>
