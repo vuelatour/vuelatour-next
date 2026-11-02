@@ -19,6 +19,8 @@ import {
   AYUDA_COSTO_PENDIENTE,
   AVISO_COSTO_PENDIENTE,
   HINT_COSTO_ENTRADA_PENDIENTE,
+  HINT_TC_SIN_OFICIAL_HOY,
+  hintTcInicial,
 } from "@/lib/admin/inventario-entrada-inicial";
 
 vi.mock("next/navigation", () => ({
@@ -92,6 +94,28 @@ describe("formulario del producto · entrada inicial sin costo", () => {
     expect(html).not.toContain("¿Registrar la entrada sin costo?");
   });
 
+  it("ALTA: el T.C. en pesos es OPCIONAL y la ayuda dice con qué oficial se convierte (2-nov-2026)", () => {
+    const con = renderToStaticMarkup(
+      <ItemFormDialog open onOpenChange={() => {}} categorias={["Aceites"]} tcHoy={18.4321} />,
+    );
+    expect(con).toContain(hintTcInicial(18.4321));
+    expect(con).toContain("18.4321");
+    expect(con).toContain('placeholder="Oficial del día"');
+    expect(con).not.toContain("El de la compra.");
+    // Sin consultarlo (API previo o lista caída): opcional, texto genérico.
+    const sin = renderToStaticMarkup(
+      <ItemFormDialog open onOpenChange={() => {}} categorias={["Aceites"]} />,
+    );
+    expect(sin).toContain(hintTcInicial(undefined));
+    expect(sin).toContain('placeholder="Oficial del día"');
+    // Hoy sin T.C. oficial: se pide el de la compra.
+    const hoyNo = renderToStaticMarkup(
+      <ItemFormDialog open onOpenChange={() => {}} categorias={["Aceites"]} tcHoy={null} />,
+    );
+    expect(hoyNo).toContain(HINT_TC_SIN_OFICIAL_HOY);
+    expect(hoyNo).toContain('placeholder="Ej. 18.50"');
+  });
+
   it("EDICIÓN: no hay bloque de entrada inicial (el stock se mueve con el cardex)", () => {
     const html = renderToStaticMarkup(
       <ItemFormDialog open onOpenChange={() => {}} initialItem={ITEM} categorias={["Aceites"]} />,
@@ -106,7 +130,9 @@ describe("cableado en el código", () => {
     expect(FUENTE).not.toContain(
       "Captura el costo unitario de compra de la entrada inicial (mayor a 0) o borra la cantidad.",
     );
-    expect(FUENTE).toContain("decidirEntradaInicial(entradaDe(values))");
+    // Con el T.C. oficial de hoy como contexto (2-nov-2026: T.C. opcional en pesos).
+    expect(FUENTE).toContain("decidirEntradaInicial(entradaDe(values), { tcOficialHoy: tcHoy })");
+    expect(FUENTE).not.toContain("El de la compra. El costo se convierte a USD para el balance.");
   });
 
   it("sin costo se PREGUNTA antes de crear: la rama COSTO_PENDIENTE abre la confirmación y sale", () => {
