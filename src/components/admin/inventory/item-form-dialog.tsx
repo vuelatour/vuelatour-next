@@ -57,6 +57,9 @@ import {
   TITULO_CONFIRMAR_SIN_COSTO,
   costoQuedaPendiente,
   decidirEntradaInicial,
+  equivalenteUsdEntradaInicial,
+  hintTcInicial,
+  placeholderTcInicial,
   textoConfirmarSinCosto,
   textoProductoCreadoSinCosto,
   type DecisionEntradaInicial,
@@ -96,6 +99,14 @@ interface ItemFormDialogProps {
   /** Margen de la tienda: solo para el texto del precio de venta. */
   margenVentaPct?: number | null;
   /**
+   * T.C. oficial de HOY que trae la lista (`tc_hoy`; 2-nov-2026), solo para
+   * la «Entrada inicial» en pesos: número = se dice en la ayuda y arma el
+   * «≈ USD»; `null` = el API NO tiene T.C. hoy ⇒ el T.C. se exige ANTES de
+   * crear (el API rebotaría la entrada después de crear el ítem);
+   * `undefined` = no se consultó: opcional, el API decide.
+   */
+  tcHoy?: number | null;
+  /**
    * Tras guardar con éxito (la ficha del producto hace `router.refresh()`
    * para repintar su cabecera). Opcional: la lista ya se revalida sola.
    */
@@ -111,6 +122,7 @@ export function ItemFormDialog({
   ubicaciones,
   puedeAdministrarUbicaciones = false,
   margenVentaPct,
+  tcHoy,
   onGuardado,
 }: ItemFormDialogProps) {
   const [pending, startTransition] = useTransition();
@@ -233,10 +245,12 @@ export function ItemFormDialog({
     // ítem quedaba creado en stock 0 con solo un aviso). Fuente única
     // `decidirEntradaInicial`: con costo > 0 lo de siempre; con cantidad y el
     // costo vacío/0 la pieza entra con el costo PENDIENTE — previa
-    // confirmación, abajo (28-sep-2026).
+    // confirmación, abajo (28-sep-2026). En pesos el T.C. es opcional (2-nov-
+    // 2026): vacío = el oficial del día, salvo que la lista ya sepa que hoy
+    // no lo hay (`tcHoy === null`), y entonces se exige antes de crear.
     const entrada: DecisionEntradaInicial = isEdit
       ? { tipo: "NINGUNA" }
-      : decidirEntradaInicial(entradaDe(values));
+      : decidirEntradaInicial(entradaDe(values), { tcOficialHoy: tcHoy });
     if (entrada.tipo === "ERROR") {
       toast.error(entrada.mensaje);
       return;
@@ -421,6 +435,11 @@ export function ItemFormDialog({
   const costoPendiente =
     !isEdit &&
     costoQuedaPendiente({ cantidad: cantidadW, costo: costoW, moneda: monedaW, tc: tcW });
+  // «≈ $X USD c/u» con el T.C. tecleado o, vacío, con el oficial de hoy.
+  const equivalenteUsd =
+    !isEdit && monedaW === "MXN" && !costoPendiente
+      ? equivalenteUsdEntradaInicial({ costo: costoW, tc: tcW, tcOficialHoy: tcHoy })
+      : null;
   const costoInicialReg = register("costo_inicial_usd");
 
   // Ubicación con catálogo: activas en su orden + la ACTUAL aunque esté
@@ -926,28 +945,25 @@ export function ItemFormDialog({
                   {AVISO_COSTO_PENDIENTE}
                 </p>
               )}
+              {/* T.C. OPCIONAL en pesos (2-nov-2026; el API no lo exige desde
+                  0.0.36): vacío = el oficial del día, dicho con su valor cuando
+                  la lista lo trae; si hoy no hay oficial, se exige. */}
               {watch("moneda_inicial") === "MXN" && (
                 <Field
                   label="Tipo de cambio (MXN por USD)"
-                  hint={
-                    costoPendiente
-                      ? HINT_TC_COSTO_PENDIENTE
-                      : "El de la compra. El costo se convierte a USD para el balance."
-                  }
+                  hint={costoPendiente ? HINT_TC_COSTO_PENDIENTE : hintTcInicial(tcHoy)}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Input
                       type="number"
                       step="0.0001"
                       min="0"
-                      placeholder="Ej. 18.50"
+                      placeholder={placeholderTcInicial(tcHoy)}
                       className="w-32"
                       {...register("tc_inicial")}
                     />
-                    {Number(watch("costo_inicial_usd")) > 0 && Number(watch("tc_inicial")) > 0 && (
-                      <span className="text-xs text-muted-foreground font-mono">
-                        ≈ ${(Number(watch("costo_inicial_usd")) / Number(watch("tc_inicial"))).toFixed(2)} USD c/u
-                      </span>
+                    {equivalenteUsd && (
+                      <span className="text-xs text-muted-foreground font-mono">{equivalenteUsd}</span>
                     )}
                   </div>
                 </Field>

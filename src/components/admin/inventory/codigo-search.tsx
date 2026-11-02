@@ -25,6 +25,7 @@ export function CodigoSearch({
   ubicaciones,
   puedeAdministrarUbicaciones = false,
   margenVentaPct,
+  tcHoy,
 }: {
   categorias: string[];
   /** Catálogo de ubicaciones para el alta con código; null/ausente = texto. */
@@ -32,6 +33,8 @@ export function CodigoSearch({
   /** ADMIN/MECANICO: agregar/administrar ubicaciones desde el formulario. */
   puedeAdministrarUbicaciones?: boolean;
   margenVentaPct?: number | null;
+  /** T.C. oficial de hoy para la «Entrada inicial» en pesos (null = hoy no hay; ausente = no se consultó). */
+  tcHoy?: number | null;
 }) {
   const router = useRouter();
   const [valor, setValor] = useState("");
@@ -168,6 +171,7 @@ export function CodigoSearch({
         ubicaciones={ubicaciones}
         puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
         margenVentaPct={margenVentaPct}
+        tcHoy={tcHoy}
         initialCodigo={altaCodigo ?? undefined}
       />
     </>

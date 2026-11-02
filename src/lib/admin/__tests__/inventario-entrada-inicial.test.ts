@@ -9,8 +9,11 @@
  *  - con costo pendiente el T.C. NO se exige y el movimiento viaja como
  *    `moneda: "USD", costo_unitario_usd: 0` (sin pesos ni T.C.), como la
  *    carga masiva;
- *  - con costo > 0 NADA cambia (payload de siempre, MXN exige T.C., costo sin
- *    cantidad avisa).
+ *  - con costo > 0 el payload es el de siempre y costo sin cantidad avisa; en
+ *    pesos el T.C. es OPCIONAL (2-nov-2026, el API no lo exige desde 0.0.36):
+ *    vacío o 0 = no viaja y el API sella el oficial del día; negativo o
+ *    ilegible = error; si HOY no hay T.C. oficial (`tcOficialHoy: null`) se
+ *    exige capturarlo antes de crear.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -20,21 +23,27 @@ import {
   BOTON_REGISTRAR_SIN_COSTO,
   DONDE_COMPLETAR_COSTO,
   HINT_COSTO_ENTRADA_PENDIENTE,
+  HINT_TC_SIN_OFICIAL_HOY,
   MSG_CANTIDAD_INVALIDA,
   MSG_COSTO_EN_CERO,
   MSG_COSTO_INVALIDO,
   MSG_COSTO_SIN_CANTIDAD,
-  MSG_TC_INICIAL,
+  MSG_TC_INVALIDO,
+  MSG_TC_SIN_OFICIAL_HOY,
   NOTA_ENTRADA_INICIAL,
   TITULO_CONFIRMAR_SIN_COSTO,
   clasificarCostoEntrada,
   costoQuedaPendiente,
   costoSeGuardariaEnCero,
   decidirEntradaInicial,
+  equivalenteUsdEntradaInicial,
+  hintTcInicial,
+  placeholderTcInicial,
   textoConfirmarEntradaSinCosto,
   textoConfirmarSinCosto,
   textoEntradaRegistradaSinCosto,
   textoProductoCreadoSinCosto,
+  textoTc,
   textoUnidades,
   tieneCostoVigenteDe,
 } from "../inventario-entrada-inicial";
@@ -118,13 +127,70 @@ describe("decidirEntradaInicial · con costo > 0 todo sigue como hoy", () => {
     });
   });
 
-  it("MXN SIN T.C. ⇒ el mismo error de siempre (no se crea nada)", () => {
-    for (const tc of ["", "0", undefined, null]) {
+  it("MXN SIN T.C. (vacío o 0) ⇒ CON_COSTO sin tc_usd_mxn: el API sella el oficial del día (2-nov-2026)", () => {
+    for (const tc of ["", "0", "0.0", undefined, null]) {
       expect(
         decidirEntradaInicial({ cantidad: "6", costo: "350", moneda: "MXN", tc }),
-      ).toEqual({ tipo: "ERROR", mensaje: MSG_TC_INICIAL });
+      ).toEqual({
+        tipo: "CON_COSTO",
+        cantidad: 6,
+        movimiento: { tipo: "ENTRADA", cantidad: "6", moneda: "MXN", costo_unitario_mxn: "350" },
+      });
     }
-    expect(MSG_TC_INICIAL).toBe("Captura el tipo de cambio (MXN por USD) de la compra inicial.");
+    // Con el oficial de hoy conocido, igual: el T.C. NO viaja (lo sella el API
+    // con la misma función; mandar el de la lista duplicaría la fuente).
+    expect(
+      decidirEntradaInicial(
+        { cantidad: "6", costo: "350", moneda: "MXN", tc: "" },
+        { tcOficialHoy: 18.25 },
+      ),
+    ).toEqual({
+      tipo: "CON_COSTO",
+      cantidad: 6,
+      movimiento: { tipo: "ENTRADA", cantidad: "6", moneda: "MXN", costo_unitario_mxn: "350" },
+    });
+  });
+
+  it("MXN con T.C. negativo o ilegible ⇒ error (nunca viaja basura ni cae al oficial en silencio)", () => {
+    for (const tc of ["-1", "abc"]) {
+      expect(
+        decidirEntradaInicial({ cantidad: "6", costo: "350", moneda: "MXN", tc }),
+      ).toEqual({ tipo: "ERROR", mensaje: MSG_TC_INVALIDO });
+    }
+    expect(MSG_TC_INVALIDO).toBe(
+      "El tipo de cambio debe ser mayor a 0 (MXN por USD, ej. 18.50); déjalo vacío para usar el oficial del día.",
+    );
+    // En dólares el T.C. no importa (el campo ni se muestra).
+    expect(decidirEntradaInicial({ cantidad: "6", costo: "350", moneda: "USD", tc: "-1" }).tipo).toBe(
+      "CON_COSTO",
+    );
+  });
+
+  it("HOY sin T.C. oficial (tcOficialHoy: null) ⇒ en pesos se exige el T.C. antes de crear", () => {
+    const sinOficial = { tcOficialHoy: null };
+    expect(
+      decidirEntradaInicial({ cantidad: "6", costo: "350", moneda: "MXN", tc: "" }, sinOficial),
+    ).toEqual({ tipo: "ERROR", mensaje: MSG_TC_SIN_OFICIAL_HOY });
+    expect(MSG_TC_SIN_OFICIAL_HOY).toBe(
+      "Hoy no hay T.C. oficial: captura el tipo de cambio (MXN por USD) de la compra inicial.",
+    );
+    // Con T.C. tecleado pasa; en dólares no aplica; con costo pendiente tampoco.
+    expect(
+      decidirEntradaInicial({ cantidad: "6", costo: "350", moneda: "MXN", tc: "17.5" }, sinOficial).tipo,
+    ).toBe("CON_COSTO");
+    expect(
+      decidirEntradaInicial({ cantidad: "6", costo: "20", moneda: "USD", tc: "" }, sinOficial).tipo,
+    ).toBe("CON_COSTO");
+    expect(
+      decidirEntradaInicial({ cantidad: "6", costo: "", moneda: "MXN", tc: "" }, sinOficial).tipo,
+    ).toBe("COSTO_PENDIENTE");
+    // `undefined` (no se consultó) = opcional: el API decide.
+    expect(
+      decidirEntradaInicial(
+        { cantidad: "6", costo: "350", moneda: "MXN", tc: "" },
+        { tcOficialHoy: undefined },
+      ).tipo,
+    ).toBe("CON_COSTO");
   });
 
   it("costo > 0 SIN cantidad ⇒ avisa como hoy", () => {
@@ -257,11 +323,17 @@ describe("un costo > 0 que se guardaría en $0 NO entra «con costo» (revisión
     expect(decidirEntradaInicial({ cantidad: "2", costo: "0.5", moneda: "MXN", tc: "17.5" }).tipo).toBe(
       "CON_COSTO",
     );
-    // Sin T.C. manda el aviso de siempre (el T.C. se exige antes que nada).
-    expect(decidirEntradaInicial({ cantidad: "2", costo: "0.5", moneda: "MXN", tc: "" })).toEqual({
-      tipo: "ERROR",
-      mensaje: MSG_TC_INICIAL,
-    });
+    // Sin T.C. tecleado ni oficial conocido solo se frena lo que ya es 0 en
+    // pesos; con el oficial de hoy conocido se mira la conversión real.
+    expect(decidirEntradaInicial({ cantidad: "2", costo: "0.5", moneda: "MXN", tc: "" }).tipo).toBe(
+      "CON_COSTO",
+    );
+    expect(decidirEntradaInicial({ cantidad: "2", costo: "0.0005", moneda: "MXN", tc: "" }).tipo).toBe(
+      "CON_COSTO",
+    );
+    expect(
+      decidirEntradaInicial({ cantidad: "2", costo: "0.0005", moneda: "MXN", tc: "" }, { tcOficialHoy: 18 }),
+    ).toEqual({ tipo: "ERROR", mensaje: MSG_COSTO_EN_CERO });
   });
 
   it("costoSeGuardariaEnCero: 0 o negativo no es «en cero» (eso es pendiente/error aparte)", () => {
@@ -338,5 +410,51 @@ describe("clasificarCostoEntrada · la MISMA regla para «Registrar movimiento»
     expect(textoEntradaRegistradaSinCosto(3)).toBe(
       "Entrada registrada con 3 unidades. Costo pendiente: complétalo con «Editar costo» en el cardex.",
     );
+  });
+});
+
+describe("T.C. de la entrada inicial · ayuda, placeholder y «≈ USD» (2-nov-2026)", () => {
+  it("hintTcInicial: con el oficial de hoy lo dice con su valor; sin consultarlo, genérico; hoy sin oficial, exige", () => {
+    expect(hintTcInicial(18.4321)).toBe(
+      "Opcional: vacío = el T.C. oficial de hoy, 18.4321 (el mismo de las cotizaciones). Captúralo solo si la compra fue a otro tipo de cambio.",
+    );
+    expect(hintTcInicial(undefined)).toBe(
+      "Opcional: vacío = el T.C. oficial de hoy (el mismo de las cotizaciones). Captúralo solo si la compra fue a otro tipo de cambio.",
+    );
+    expect(hintTcInicial(null)).toBe(HINT_TC_SIN_OFICIAL_HOY);
+    expect(HINT_TC_SIN_OFICIAL_HOY).toBe(
+      "Hoy no hay T.C. oficial: captura el tipo de cambio de la compra.",
+    );
+    // Un oficial inválido (0) cuenta como no conocido, nunca como «no hay».
+    expect(hintTcInicial(0)).toBe(hintTcInicial(undefined));
+  });
+
+  it("textoTc: 2 a 4 decimales, es-MX", () => {
+    expect(textoTc(18.5)).toBe("18.50");
+    expect(textoTc(18.4321)).toBe("18.4321");
+    expect(textoTc(18.43219)).toBe("18.4322");
+  });
+
+  it("placeholderTcInicial: «Oficial del día» salvo cuando hoy no lo hay", () => {
+    expect(placeholderTcInicial(18.5)).toBe("Oficial del día");
+    expect(placeholderTcInicial(undefined)).toBe("Oficial del día");
+    expect(placeholderTcInicial(null)).toBe("Ej. 18.50");
+  });
+
+  it("equivalenteUsdEntradaInicial: el tecleado gana; vacío ⇒ el oficial de hoy, dicho; sin ninguno ⇒ nada", () => {
+    expect(equivalenteUsdEntradaInicial({ costo: "2200", tc: "17.5", tcOficialHoy: 18 })).toBe(
+      "≈ $125.71 USD c/u",
+    );
+    expect(equivalenteUsdEntradaInicial({ costo: "2200", tc: "", tcOficialHoy: 18 })).toBe(
+      "≈ $122.22 USD c/u al T.C. oficial de hoy",
+    );
+    expect(equivalenteUsdEntradaInicial({ costo: "2200", tc: "0", tcOficialHoy: 18 })).toBe(
+      "≈ $122.22 USD c/u al T.C. oficial de hoy",
+    );
+    expect(equivalenteUsdEntradaInicial({ costo: "2200", tc: "" })).toBeNull();
+    expect(equivalenteUsdEntradaInicial({ costo: "2200", tc: "", tcOficialHoy: null })).toBeNull();
+    expect(equivalenteUsdEntradaInicial({ costo: "", tc: "17.5", tcOficialHoy: 18 })).toBeNull();
+    expect(equivalenteUsdEntradaInicial({ costo: "0", tc: "17.5" })).toBeNull();
+    expect(equivalenteUsdEntradaInicial({ costo: "abc", tc: "17.5" })).toBeNull();
   });
 });

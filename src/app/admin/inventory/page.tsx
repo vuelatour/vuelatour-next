@@ -147,6 +147,10 @@ export default async function InventoryPage({
   // Margen vigente: el de la tienda, si no el de la lista (textos; el número
   // real lo decide el API al registrar cada salida).
   const margenVentaPct = tienda?.margen_venta_pct ?? margenLista ?? null;
+  // T.C. oficial de HOY para la «Entrada inicial» en pesos del alta (2-nov-2026):
+  // número = se dice en la ayuda; `null` = el API NO lo tiene hoy (el alta exige
+  // capturarlo); `undefined` = la lista no contestó o es un API previo (opcional).
+  const tcHoyAlta = tc_hoy === undefined ? undefined : (tc_hoy?.tc ?? null);
   // Respaldo de la tarjeta si `tienda/resumen` no contestó: las sumas de la
   // lista (cada moneda por su lado) y las unidades vendidas (Σ ventas_cant).
   const conVentasCant = items.some((i) => "ventas_cant" in i);
@@ -230,6 +234,7 @@ export default async function InventoryPage({
             ubicaciones={ubicaciones}
             puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
             margenVentaPct={margenVentaPct}
+            tcHoy={tcHoyAlta}
           />
         </div>
       </div>
@@ -265,6 +270,7 @@ export default async function InventoryPage({
         ubicaciones={ubicaciones}
         puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
         margenVentaPct={margenVentaPct}
+        tcHoy={tcHoyAlta}
       />
 
       {bajos > 0 && (

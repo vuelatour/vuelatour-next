@@ -4213,7 +4213,9 @@ igual su costo de 30 DLS». Contrato con el API **0.0.36** (migración de DATOS
   donde el dato lo exige.
 - **Pendientes conocidos**: el formulario del producto (`item-form-dialog`)
   sigue exigiendo el T.C. de la «Entrada inicial» en pesos (el API ya no lo
-  exige; no estaba en el alcance). Sin QA visual en navegador todavía.
+  exige; no estaba en el alcance) — **RESUELTO el 2-nov-2026** (sección «Alta
+  de producto: el T.C. de la entrada inicial en pesos es opcional»). Sin QA
+  visual en navegador todavía.
 
 
 ## Corregir un cobro: «Editar» en las cards de cobros (26-sep-2026)
@@ -5290,8 +5292,10 @@ exige > 0 (no fija el último precio de compra) y el filtro `sin_costo=true`
   API sella el T.C. oficial del día en la fila (inofensivo con costo 0). La nota
   NO dice «pendiente» a propósito: sobreviviría a «Editar costo» y mentiría.
 - **Con costo > 0 NADA cambia**: MXN exige T.C. («Captura el tipo de cambio
-  (MXN por USD) de la compra inicial.»), costo sin cantidad avisa como hoy y el
-  payload es byte a byte el de antes. Nuevo: cantidad o costo NEGATIVOS o
+  (MXN por USD) de la compra inicial.») — **superado el 2-nov-2026: el T.C. ya
+  es opcional** (sección «Alta de producto: el T.C. de la entrada inicial en
+  pesos es opcional») —, costo sin cantidad avisa como hoy y el payload es
+  byte a byte el de antes. Nuevo: cantidad o costo NEGATIVOS o
   ilegibles son error (antes una cantidad inválida se ignoraba en silencio y un
   costo negativo habría caído a «pendiente»).
 - **Aviso en línea** (ámbar, bajo los campos) mientras hay cantidad y el costo
@@ -12913,3 +12917,42 @@ Y entonces así ya sabemos en dónde hay todo». Contrato con el API 0.0.111
   traspaso) y `components/admin/inventory/__tests__/ficha-producto.test.tsx`
   (la tarjeta en su lugar con el 15W-50, el traspaso en la lista por fecha,
   «Traspasar» con catálogo, sin dato, total que no cuadra).
+
+## Alta de producto: el T.C. de la entrada inicial en pesos es opcional (2-nov-2026)
+
+Reporte de la oficina (captura de «Nuevo ítem» con 1 unidad a $2,200 MXN y el
+toast «Captura el tipo de cambio (MXN por USD) de la compra inicial.»): «la
+compra se hizo en pesos mexicanos pero de fuerza me pide poner un tipo de
+cambio». Era el pendiente anotado el 25-sep (API 0.0.36): «Registrar
+movimiento» y «Editar costo» ya dejaban el T.C. vacío (= oficial del día),
+pero el bloque «Entrada inicial» del alta seguía exigiéndolo. Sin cambios en
+el API: `resolverCostoEntrada` ya sella el T.C. oficial del día del movimiento
+(la misma función del cotizador) cuando no viene.
+
+- **Regla pura** (`lib/admin/inventario-entrada-inicial.ts`):
+  `decidirEntradaInicial(captura, { tcOficialHoy })`. En pesos con costo > 0:
+  T.C. tecleado > 0 viaja y gana; vacío o 0 NO viaja (`tc_usd_mxn` ausente ⇒
+  el API sella el oficial del día de la entrada, fechada hoy Cancún); negativo
+  o ilegible ⇒ `MSG_TC_INVALIDO`. `tcOficialHoy`: número = el `tc_hoy` de la
+  lista (se dice en la ayuda y arma el «≈ USD»; también afina el chequeo «se
+  guardaría en $0» con la conversión real); `null` = el API NO tiene T.C. hoy
+  ⇒ `MSG_TC_SIN_OFICIAL_HOY` antes de crear (si no, el API respondería 400
+  DESPUÉS de crear el ítem y la pieza quedaría en 0); `undefined` = no se
+  consultó (opcional, el API decide). Con costo pendiente o en dólares el T.C.
+  sigue sin importar. Ayudas: `hintTcInicial(tcHoy)` («Opcional: vacío = el
+  T.C. oficial de hoy, 18.4321 (el mismo de las cotizaciones). Captúralo solo
+  si la compra fue a otro tipo de cambio.» / `HINT_TC_SIN_OFICIAL_HOY`),
+  `placeholderTcInicial` («Oficial del día» / «Ej. 18.50»),
+  `equivalenteUsdEntradaInicial` («≈ $125.71 USD c/u» con el tecleado; «… al
+  T.C. oficial de hoy» con el oficial), `textoTc`.
+- **Formulario** (`item-form-dialog.tsx`): prop `tcHoy?: number | null`, que
+  llega desde `app/admin/inventory/page.tsx` (`tc_hoy` de la lista:
+  `undefined` si la lista no contestó o el API es previo) por
+  `ItemCreateButton` y `CodigoSearch` (alta desde el lector). El campo del
+  T.C. sigue visible solo en pesos.
+- **Skew**: ninguno (el API acepta MXN sin T.C. desde 0.0.36). El T.C. de la
+  lista NUNCA se manda en el cuerpo: lo sella el API con la misma función
+  (una sola fuente).
+- **Pruebas**: `lib/admin/__tests__/inventario-entrada-inicial.test.ts`
+  (vacío/0 sin T.C. en el payload, negativo/basura, hoy sin oficial, «en
+  $0» con el oficial conocido, ayudas, placeholder y «≈ USD»).

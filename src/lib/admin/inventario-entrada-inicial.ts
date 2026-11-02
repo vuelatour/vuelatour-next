@@ -17,8 +17,13 @@
  *   el último precio de compra (`fijaPrecio` exige > 0) y lo lista el filtro
  *   `sin_costo=true` (banner «entradas sin costo» de Inventario). «Editar
  *   costo» fija después la moneda real.
- * - Con costo > 0 NADA cambia: MXN exige T.C., costo sin cantidad avisa, y el
- *   payload es el de siempre.
+ * - Con costo > 0: costo sin cantidad avisa y el payload es el de siempre. En
+ *   pesos el T.C. es OPCIONAL (2-nov-2026; el API no lo exige desde 0.0.36):
+ *   capturado > 0 viaja y gana; vacío o 0 no viaja y el API sella el T.C.
+ *   oficial del día de la entrada (hoy, Cancún: la misma fuente que las
+ *   cotizaciones); negativo o ilegible es error. Si la lista ya sabe que HOY
+ *   no hay T.C. oficial (`tcOficialHoy: null`) se exige capturarlo: el API
+ *   rebotaría la entrada DESPUÉS de crear el ítem y la pieza quedaría en 0.
  *
  * PURO (prueba `__tests__/inventario-entrada-inicial.test.ts`): el
  * componente no redacta estas frases ni arma el movimiento a mano.
@@ -57,7 +62,12 @@ export type DecisionEntradaInicial =
 
 export const MSG_COSTO_SIN_CANTIDAD =
   "Captura cuántas piezas entran (cantidad inicial) o borra el costo.";
-export const MSG_TC_INICIAL = "Captura el tipo de cambio (MXN por USD) de la compra inicial.";
+/** T.C. tecleado negativo o ilegible (vacío o 0 NO es error: va el oficial del día). */
+export const MSG_TC_INVALIDO =
+  "El tipo de cambio debe ser mayor a 0 (MXN por USD, ej. 18.50); déjalo vacío para usar el oficial del día.";
+/** La lista ya sabe que HOY no hay T.C. oficial: sin uno capturado el API rebotaría la entrada. */
+export const MSG_TC_SIN_OFICIAL_HOY =
+  "Hoy no hay T.C. oficial: captura el tipo de cambio (MXN por USD) de la compra inicial.";
 export const MSG_CANTIDAD_INVALIDA =
   "La cantidad inicial debe ser un número mayor a 0 (mínimo 0.01), o déjala vacía.";
 export const MSG_COSTO_INVALIDO =
@@ -118,14 +128,38 @@ export function clasificarCostoEntrada(c: {
 }
 
 /**
+ * Contexto de la decisión. `tcOficialHoy` = el T.C. oficial de HOY que ya
+ * trae la lista de inventario (`tc_hoy`: la misma función con la que el API
+ * sella una entrada fechada hoy): número = se conoce (ayuda y «≈ USD»);
+ * `null` = el API NO tiene T.C. hoy (se exige capturarlo); `undefined` = no
+ * se consultó (opcional: el API decide).
+ */
+export interface ContextoEntradaInicial {
+  tcOficialHoy?: number | null;
+}
+
+/** T.C. oficial de hoy utilizable (> 0) o null. */
+function tcOficialUtil(ctx: ContextoEntradaInicial): number | null {
+  const tc = ctx.tcOficialHoy;
+  return typeof tc === "number" && tc > 0 ? tc : null;
+}
+
+/**
  * Qué hacer con la entrada inicial al crear el producto. FUENTE ÚNICA de la
  * validación y del movimiento: el componente solo agrega fecha y notas.
  */
-export function decidirEntradaInicial(c: EntradaInicialCaptura): DecisionEntradaInicial {
+export function decidirEntradaInicial(
+  c: EntradaInicialCaptura,
+  ctx: ContextoEntradaInicial = {},
+): DecisionEntradaInicial {
   const cantTxt = (c.cantidad ?? "").trim();
   const costoTxt = (c.costo ?? "").trim();
   const tcTxt = (c.tc ?? "").trim();
   const cantN = numeroDe(cantTxt);
+  // T.C. tecleado: > 0 viaja y gana; "" o 0 = ninguno (el API sella el
+  // oficial del día); negativo o basura se rechaza abajo, solo cuando importa.
+  const tcN = numeroDe(tcTxt);
+  const tcCapturado = tcN > 0 ? tcN : null;
 
   if (Number.isNaN(cantN) || cantN < 0) return { tipo: "ERROR", mensaje: MSG_CANTIDAD_INVALIDA };
   // `cantidad` es numeric(12,2) con CHECK > 0: «0.004» se redondea a 0.00 y
@@ -134,8 +168,14 @@ export function decidirEntradaInicial(c: EntradaInicialCaptura): DecisionEntrada
     return { tipo: "ERROR", mensaje: MSG_CANTIDAD_INVALIDA };
   }
   // Negativo/ilegible ⇒ error; un costo > 0 que se guardaría en $0.0000 USD
-  // tampoco es «con costo» (entraría sin costo y SIN la confirmación).
-  const costo = clasificarCostoEntrada({ costo: costoTxt, moneda: c.moneda, tc: tcTxt });
+  // tampoco es «con costo» (entraría sin costo y SIN la confirmación). El
+  // chequeo usa el T.C. que de verdad se aplicará: el tecleado, si no el
+  // oficial de hoy cuando se conoce.
+  const costo = clasificarCostoEntrada({
+    costo: costoTxt,
+    moneda: c.moneda,
+    tc: tcCapturado ?? tcOficialUtil(ctx),
+  });
   if (costo.tipo === "ERROR") return costo;
 
   if (cantN > 0 && costo.tipo === "PENDIENTE") {
@@ -147,8 +187,13 @@ export function decidirEntradaInicial(c: EntradaInicialCaptura): DecisionEntrada
     };
   }
   if (cantN > 0) {
-    if (c.moneda === "MXN" && !(Number(tcTxt) > 0)) {
-      return { tipo: "ERROR", mensaje: MSG_TC_INICIAL };
+    if (c.moneda === "MXN") {
+      if (Number.isNaN(tcN) || tcN < 0) return { tipo: "ERROR", mensaje: MSG_TC_INVALIDO };
+      // Sin T.C. tecleado y la lista ya dijo que HOY no hay oficial: el API
+      // respondería 400 DESPUÉS de crear el ítem (la pieza quedaría en 0).
+      if (tcCapturado == null && ctx.tcOficialHoy === null) {
+        return { tipo: "ERROR", mensaje: MSG_TC_SIN_OFICIAL_HOY };
+      }
     }
     return {
       tipo: "CON_COSTO",
@@ -157,8 +202,10 @@ export function decidirEntradaInicial(c: EntradaInicialCaptura): DecisionEntrada
         tipo: "ENTRADA",
         cantidad: cantTxt,
         moneda: c.moneda,
+        // En pesos el T.C. solo viaja si se tecleó (> 0): vacío = el API
+        // sella el oficial del día de la entrada (API 0.0.36).
         ...(c.moneda === "MXN"
-          ? { costo_unitario_mxn: costoTxt, tc_usd_mxn: tcTxt }
+          ? { costo_unitario_mxn: costoTxt, ...(tcCapturado != null ? { tc_usd_mxn: tcTxt } : {}) }
           : { costo_unitario_usd: costoTxt }),
       },
     };
@@ -286,6 +333,52 @@ export const AYUDA_COSTO_PENDIENTE =
 /** Ayuda del T.C. cuando el costo queda pendiente (no se exige). */
 export const HINT_TC_COSTO_PENDIENTE =
   "No hace falta mientras el costo quede pendiente: se captura junto con el costo.";
+
+/** Ayuda del T.C. cuando la lista ya sabe que HOY no hay T.C. oficial. */
+export const HINT_TC_SIN_OFICIAL_HOY =
+  "Hoy no hay T.C. oficial: captura el tipo de cambio de la compra.";
+
+/** T.C. como lo ve el operador: «18.4321» / «18.50» (es-MX, 2 a 4 decimales, como la columna). */
+export function textoTc(tc: number): string {
+  return tc.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+/**
+ * Ayuda del T.C. con costo > 0 en pesos (2-nov-2026: el T.C. es opcional;
+ * ver `ContextoEntradaInicial`). Con el oficial de hoy conocido lo DICE con
+ * su valor: el operador sabe con qué número se convertirá si lo deja vacío.
+ */
+export function hintTcInicial(tcOficialHoy?: number | null): string {
+  if (tcOficialHoy === null) return HINT_TC_SIN_OFICIAL_HOY;
+  const oficial = tcOficialUtil({ tcOficialHoy });
+  const conQue =
+    oficial != null ? `el T.C. oficial de hoy, ${textoTc(oficial)}` : "el T.C. oficial de hoy";
+  return `Opcional: vacío = ${conQue} (el mismo de las cotizaciones). Captúralo solo si la compra fue a otro tipo de cambio.`;
+}
+
+/** Placeholder del campo del T.C.: «Oficial del día» salvo cuando hoy no lo hay. */
+export function placeholderTcInicial(tcOficialHoy?: number | null): string {
+  return tcOficialHoy === null ? "Ej. 18.50" : "Oficial del día";
+}
+
+/**
+ * «≈ $X USD c/u» junto al T.C.: con el tecleado (> 0), o con el oficial de
+ * hoy cuando el campo va vacío, para que se vea la conversión que se aplicará.
+ * Sin costo (> 0) o sin ningún T.C. no hay nada que mostrar (null).
+ */
+export function equivalenteUsdEntradaInicial(p: {
+  costo?: string | null;
+  tc?: string | null;
+  tcOficialHoy?: number | null;
+}): string | null {
+  const costo = numeroDe((p.costo ?? "").trim());
+  if (!(costo > 0)) return null;
+  const tcCapturado = numeroDe((p.tc ?? "").trim());
+  if (tcCapturado > 0) return `≈ $${(costo / tcCapturado).toFixed(2)} USD c/u`;
+  const oficial = tcOficialUtil({ tcOficialHoy: p.tcOficialHoy });
+  if (oficial == null) return null;
+  return `≈ $${(costo / oficial).toFixed(2)} USD c/u al T.C. oficial de hoy`;
+}
 
 /** Notas del movimiento (las de siempre: no dicen «pendiente» porque se completa después). */
 export const NOTA_ENTRADA_INICIAL = "Stock inicial (alta del ítem)";

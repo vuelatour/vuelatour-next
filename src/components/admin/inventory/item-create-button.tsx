@@ -11,6 +11,7 @@ export function ItemCreateButton({
   ubicaciones,
   puedeAdministrarUbicaciones = false,
   margenVentaPct,
+  tcHoy,
 }: {
   categorias?: string[];
   /** Catálogo de ubicaciones; null/ausente = input de texto de siempre. */
@@ -19,6 +20,8 @@ export function ItemCreateButton({
   puedeAdministrarUbicaciones?: boolean;
   /** Margen de la tienda (solo textos del formulario). */
   margenVentaPct?: number | null;
+  /** T.C. oficial de hoy para la «Entrada inicial» en pesos (null = hoy no hay; ausente = no se consultó). */
+  tcHoy?: number | null;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -34,6 +37,7 @@ export function ItemCreateButton({
         ubicaciones={ubicaciones}
         puedeAdministrarUbicaciones={puedeAdministrarUbicaciones}
         margenVentaPct={margenVentaPct}
+        tcHoy={tcHoy}
       />
     </>
   );
