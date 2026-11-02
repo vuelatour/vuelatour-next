@@ -12993,3 +12993,36 @@ El vuelo estaba COMPLETADO con llegadas capturadas en CUN→HOL y HOL→TQO:
   panel se despliega DESPUÉS del API 0.0.114.
 - **Pruebas**: `lib/admin/__tests__/escala-quitar.test.ts` (regla, textos,
   cableado de la card y de la action).
+
+## Gastos → «Pistas por pagar»: marcar/desmarcar todas y «Factura y pago» del lote (2-nov-2026, API 0.0.115, invariante 114 del API)
+
+Pedido de la oficina (captura del diálogo con todo preseleccionado): «una
+casilla para deseleccionar todas las pistas marcadas y aparte un cuadro
+donde pueda poner número de factura y fecha de pago».
+
+- **Casilla del encabezado** (`pistas-dialog.tsx`, columna de las casillas):
+  `estadoSeleccion(ids, seleccion)` ⇒ NINGUNA / ALGUNAS / TODAS;
+  indeterminada con ALGUNAS; un clic con alguna o todas marcadas DESMARCA
+  todas (lo que pidieron: el diálogo preselecciona casi todo), sin ninguna
+  marca todas (`siguienteAlternar`); `alternarTodas` conserva los montos.
+  Títulos en `TITULO_CASILLA_TODAS`.
+- **«Factura y pago» del lote**: dos campos arriba de la tabla —«Número de
+  factura (VIP SAESA)» (≤ 40) y «Fecha de pago» (date, SIN `min` del inicio
+  oficial: se paga cuando sea; el test de inicio oficial cuenta 2 `min` en
+  este archivo)— que viajan como `factura_folio` / `fecha_pago` en el cuerpo
+  de `POST /v1/expenses/pistas/generar` (`generarPistasAction(items,
+  extra)`, `extrasDelLote`: vacíos no viajan; la fecha solo si es
+  YYYY-MM-DD). El API pone «Factura NNNN» en la PRIMERA línea de las notas
+  de cada gasto (una factura ampara varios aterrizajes; `folio_ticket` es
+  único y rebotaría; Conciliación lee esa línea) y la fecha de pago como
+  fecha del gasto (futura ⇒ por pagar). El CFDI se amarra después en
+  Facturas recibidas. Los campos se conservan entre lotes.
+- **Toast** `textoPistasGeneradas` («3 gastos de pista creados · factura
+  7360 · pagados el 18 oct 2026»). Regla pura en
+  `lib/admin/pistas-seleccion.ts`; prueba
+  `lib/admin/__tests__/pistas-seleccion.test.ts` (regla, textos y cableado).
+- **Skew**: el API valida con `forbidNonWhitelisted`: con el 0.0.114,
+  mandar `factura_folio` / `fecha_pago` ⇒ 400 «property … should not
+  exist». `extrasDelLote` solo los manda cuando se capturan (vacíos no
+  viajan), así que la casilla y un lote sin factura siguen funcionando;
+  aun así el panel se despliega DESPUÉS del API 0.0.115.

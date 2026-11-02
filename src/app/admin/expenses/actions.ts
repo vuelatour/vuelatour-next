@@ -294,15 +294,21 @@ export interface GenerarPistaItem {
   notas?: string;
 }
 
-/** Crea los gastos de pista confirmados (origen SISTEMA, uno por aterrizaje). */
+/**
+ * Crea los gastos de pista confirmados (origen SISTEMA, uno por aterrizaje).
+ * `extra` (2-nov-2026, API 0.0.115, invariante 114): `factura_folio` ⇒
+ * «Factura NNNN» en la primera línea de las notas de cada gasto;
+ * `fecha_pago` (YYYY-MM-DD) ⇒ fecha del gasto en lugar de la del aterrizaje.
+ */
 export async function generarPistasAction(
   items: GenerarPistaItem[],
+  extra: { factura_folio?: string; fecha_pago?: string } = {},
 ): Promise<ActionResult<{ creados: number; resultados: Array<{ escala_id: string; ok: boolean; error?: string }> }>> {
   try {
     const data = await apiServer<{
       creados: number;
       resultados: Array<{ escala_id: string; ok: boolean; error?: string }>;
-    }>("/v1/expenses/pistas/generar", { method: "POST", body: { items } });
+    }>("/v1/expenses/pistas/generar", { method: "POST", body: { items, ...extra } });
     revalidatePath("/admin/expenses");
     revalidatePath("/admin/caja-chica", "layout");
     revalidatePath("/admin/gastos-personales");

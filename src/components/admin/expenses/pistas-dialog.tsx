@@ -35,6 +35,15 @@ import {
 import type { PistaPendiente, TarifaAerodromo } from "@/types/expenses";
 import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
 import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
+import {
+  AYUDA_FACTURA_PAGO,
+  TITULO_CASILLA_TODAS,
+  alternarTodas,
+  estadoSeleccion,
+  extrasDelLote,
+  siguienteAlternar,
+  textoPistasGeneradas,
+} from "@/lib/admin/pistas-seleccion";
 
 /** Mes corriente en hora Cancún (UTC−5 fija): [primer día, hoy]. */
 function periodoDefault(): { desde: string; hasta: string } {
@@ -42,6 +51,7 @@ function periodoDefault(): { desde: string; hasta: string } {
   return { desde: `${hoy.slice(0, 7)}-01`, hasta: hoy };
 }
 
+/** Espejo de `SeleccionPista` (lib/admin/pistas-seleccion). */
 interface Seleccion {
   incluir: boolean;
   monto: string;
@@ -63,6 +73,11 @@ export function PistasDialog() {
   const [cargando, setCargando] = useState(false);
   const [verTarifario, setVerTarifario] = useState(false);
   const [pending, startTransition] = useTransition();
+  // «Factura y pago» del lote (2-nov-2026): número de factura de VIP SAESA
+  // (primera línea de las notas de cada gasto) y fecha de pago (fecha del
+  // gasto). Se conservan entre lotes: la misma factura suele amparar varios.
+  const [facturaFolio, setFacturaFolio] = useState("");
+  const [fechaPago, setFechaPago] = useState("");
 
   const buscar = useCallback(
     (desde: string, hasta: string) => {
@@ -102,6 +117,9 @@ export function PistasDialog() {
       ),
     [pendientes, seleccion],
   );
+  // Casilla del encabezado: marcar / desmarcar todas las filas visibles.
+  const ids = useMemo(() => pendientes.map((p) => p.escala_id), [pendientes]);
+  const estado = estadoSeleccion(ids, seleccion);
 
   const generar = () => {
     startTransition(async () => {
@@ -112,6 +130,7 @@ export function PistasDialog() {
           moneda: p.moneda,
           notas: `Cuota de aterrizaje ${p.destino_iata} · vuelo #${p.folio ?? "?"} · ${p.matricula ?? ""}`,
         })),
+        extrasDelLote({ facturaFolio, fechaPago }),
       );
       if (!res.ok || !res.data) {
         toast.error(res.error ?? "No se pudieron generar los gastos");
@@ -123,7 +142,7 @@ export function PistasDialog() {
           `${res.data.creados} gastos creados; ${fallidos.length} fallaron (${fallidos[0].error ?? ""})`,
         );
       } else {
-        toast.success(`${res.data.creados} gastos de pista creados`);
+        toast.success(textoPistasGeneradas(res.data.creados, { facturaFolio, fechaPago }));
       }
       buscar(periodo.desde, periodo.hasta);
     });
@@ -185,6 +204,34 @@ export function PistasDialog() {
             </Button>
           </div>
 
+          {/* Factura y pago del LOTE (2-nov-2026, API 0.0.115): la oficina
+              captura el número de la factura de VIP SAESA y la fecha en que
+              la pagó; aplica a todos los gastos que se generen. */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2" data-factura-pago>
+            <div className="flex items-end gap-2 flex-wrap">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Número de factura (VIP SAESA)</p>
+                <Input
+                  value={facturaFolio}
+                  onChange={(e) => setFacturaFolio(e.target.value)}
+                  placeholder="Ej. 7360"
+                  maxLength={40}
+                  className="w-44"
+                />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Fecha de pago</p>
+                <Input
+                  type="date"
+                  value={fechaPago}
+                  onChange={(e) => setFechaPago(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">{AYUDA_FACTURA_PAGO}</p>
+          </div>
+
           {verTarifario && <TarifarioEditor />}
 
           {cargando ? (
@@ -200,7 +247,23 @@ export function PistasDialog() {
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-muted-foreground border-b border-border">
                   <tr>
-                    <th className="px-3 py-2 w-8"></th>
+                    <th className="px-3 py-2 w-8">
+                      {/* Marcar / desmarcar todas (pedido de la oficina): con
+                          alguna marcada, desmarca; indeterminada con algunas. */}
+                      <input
+                        type="checkbox"
+                        aria-label={TITULO_CASILLA_TODAS[estado]}
+                        title={TITULO_CASILLA_TODAS[estado]}
+                        checked={estado === "TODAS"}
+                        ref={(el) => {
+                          if (el) el.indeterminate = estado === "ALGUNAS";
+                        }}
+                        onChange={() =>
+                          setSeleccion((s) => alternarTodas(ids, s, siguienteAlternar(estado)))
+                        }
+                        className="h-4 w-4 accent-brand-600"
+                      />
+                    </th>
                     <th className="px-3 py-2">Fecha</th>
                     <th className="px-3 py-2">Vuelo</th>
                     <th className="px-3 py-2">Tramo</th>
