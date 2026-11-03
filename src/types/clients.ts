@@ -49,14 +49,32 @@ export interface Client {
   alias_compartido_con?: string[] | null;
 }
 
+/** Lo que el CFDI exige del receptor, con la etiqueta que lee la oficina. */
+export const CAMPOS_FISCALES_CLIENTE = [
+  ["rfc", "RFC"],
+  ["regimen_fiscal_receptor", "Régimen fiscal"],
+  ["uso_cfdi", "Uso CFDI"],
+  ["codigo_postal", "Código postal"],
+] as const;
+
+export type DatosFiscalesCliente = Pick<
+  Client,
+  "rfc" | "regimen_fiscal_receptor" | "uso_cfdi" | "codigo_postal"
+>;
+
 /**
- * ¿El cliente tiene todo lo necesario para timbrar su CFDI?
- * Extranjero (RFC genérico): el API aplica régimen 616, uso S01 y CP de la
- * emisora en automático, así que solo necesita el RFC genérico.
+ * Etiquetas de lo que FALTA para timbrar el CFDI del cliente ([] = completo),
+ * en el orden de `CAMPOS_FISCALES_CLIENTE`. Extranjero (RFC genérico): nada,
+ * el API aplica régimen 616, uso S01 y CP de la emisora en automático.
  */
-export function datosFiscalesCompletos(c: Client): boolean {
-  if (c.rfc === RFC_EXTRANJERO) return true;
-  return !!(c.rfc && c.regimen_fiscal_receptor && c.uso_cfdi && c.codigo_postal);
+export function datosFiscalesFaltantes(c: DatosFiscalesCliente): string[] {
+  if (c.rfc === RFC_EXTRANJERO) return [];
+  return CAMPOS_FISCALES_CLIENTE.filter(([campo]) => !c[campo]).map(([, etiqueta]) => etiqueta);
+}
+
+/** ¿El cliente tiene todo lo necesario para timbrar su CFDI? */
+export function datosFiscalesCompletos(c: DatosFiscalesCliente): boolean {
+  return datosFiscalesFaltantes(c).length === 0;
 }
 
 /**

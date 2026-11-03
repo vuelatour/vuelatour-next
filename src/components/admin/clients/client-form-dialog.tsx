@@ -30,6 +30,11 @@ import {
   setClientTarifasAction,
   type AeronaveTarifaOption,
 } from "@/app/admin/clients/actions";
+import {
+  abrirSesionDialogo,
+  llaveSesionDialogo,
+  type SesionDialogo,
+} from "@/lib/admin/sesion-dialogo";
 import { ClientFormSchema, type ClientFormValues } from "@/app/admin/clients/schema";
 import { RFC_EXTRANJERO, type Client } from "@/types/clients";
 import { Field } from "@/components/admin/form-field";
@@ -162,8 +167,23 @@ export function ClientFormDialog({
     null,
   );
 
+  // SESIÓN = una apertura del diálogo para UN cliente (3-nov-2026). Un
+  // refresh de la ruta (RefreshOnFocus al volver del selector de archivos o
+  // de WhatsApp, una revalidación) vuelve a pintar la tabla con objetos
+  // NUEVOS: `initialClient` cambia de identidad sin cambiar de cliente y el
+  // reset() atado a la identidad borraba lo tecleado y lo que la IA leyó de
+  // la constancia (Mary, 2-nov-2026). El formulario se reinicia SOLO al
+  // abrir o al cambiar de cliente; las cargas de una apertura anterior se
+  // descartan por sesión (`cancelada`), no por el cleanup del efecto (ese
+  // correría también con la identidad nueva y dejaría las tarifas «cargando»).
+  const sesionRef = useRef<SesionDialogo | null>(null);
+
   useEffect(() => {
-    if (!open) return;
+    const paso = abrirSesionDialogo(sesionRef.current, llaveSesionDialogo(open, initialClient?.id));
+    if (!paso.cambia) return;
+    sesionRef.current = paso.sesion;
+    const sesion = paso.sesion;
+    if (!sesion) return;
     reset(defaults(initialClient));
     setTarifas({});
     setTarifasMeta({});
@@ -176,13 +196,12 @@ export function ClientFormDialog({
     setAliasTocado(false);
     setAvisoEnUso(null);
     createdIdRef.current = null;
-    let cancelled = false;
     listAircraftTarifaOptionsAction().then((r) => {
-      if (!cancelled && r.ok && r.data) setAircraft(r.data);
+      if (!sesion.cancelada && r.ok && r.data) setAircraft(r.data);
     });
     if (initialClient) {
       getClientTarifasAction(initialClient.id).then((r) => {
-        if (cancelled) return;
+        if (sesion.cancelada) return;
         if (!r.ok || !r.data) {
           setTarifasError(true);
           return;
@@ -200,10 +219,19 @@ export function ClientFormDialog({
         setTarifasReady(true);
       });
     }
-    return () => {
-      cancelled = true;
-    };
   }, [open, initialClient, reset]);
+
+  // Al desmontar, ninguna respuesta pendiente toca el estado; la sesión se
+  // suelta para que un remontaje (Strict Mode en dev) vuelva a cargar.
+  useEffect(
+    () => () => {
+      if (sesionRef.current) {
+        sesionRef.current.cancelada = true;
+        sesionRef.current = null;
+      }
+    },
+    [],
+  );
 
   const esBroker = watch("es_broker");
 

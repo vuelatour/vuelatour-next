@@ -13055,3 +13055,43 @@ Editor: `docs/sql-aplicar-2-nov-2026-no-obtenida/`).
 - **Pruebas**: `components/admin/expenses/__tests__/facturacion-no-obtenida.test.tsx`
   (pill, title con el motivo, selectores sin la opción, filtro con ella,
   cableado del diálogo y de la action).
+
+## Clientes: lo capturado NO se borra con un refresh de la ruta; «Falta: Uso CFDI» en la tabla (3-nov-2026)
+
+Reporte de Mary (2-nov-2026): «subo los datos fiscales de los clientes y no se
+quedan guardados, ni con la IA ni a mano». En prod sí había guardados a
+medias (ACP con RFC, razón, régimen y CP sin uso CFDI; Beh Kay con régimen y
+uso sin RFC ni CP): el API y la BD estaban bien, la causa era del panel.
+
+- **Causa**: `RefreshOnFocus` hace `router.refresh()` al volver el foco a la
+  ventana (cerrar el selector de archivos de «Subir constancia», regresar de
+  WhatsApp con el RFC). La tabla se vuelve a pintar con objetos NUEVOS, la
+  fila que recibe `ClientFormDialog` cambia de identidad y el
+  `useEffect([open, initialClient, reset])` hacía `reset()`: se borraba lo
+  tecleado y lo que la IA había leído. El badge «Faltan datos fiscales»
+  (también cuando solo faltaba el uso CFDI) remataba la sospecha.
+- **Sesión por id** (`lib/admin/sesion-dialogo.ts`): `llaveSesionDialogo(open, id)`
+  («NUEVO» en el alta, `null` cerrado) y `abrirSesionDialogo(actual, llave)`:
+  misma llave ⇒ no pasa nada (aunque la fila sea otro objeto); llave
+  distinta ⇒ cancela las cargas pendientes de la apertura anterior
+  (`sesion.cancelada`, ya no el cleanup del efecto, que correría también con
+  la identidad nueva y dejaría las tarifas «cargando») y reinicia. El
+  diálogo de cliente la usa; el de verificación de gastos ya tenía su propio
+  `sesionRef`. **Pendiente**: los demás diálogos con `[open, <fila>, reset]`
+  (aviones, motores/hélices, cuentas, tarjetas, proveedores, usuarios, rutas,
+  vencimientos, entidades emisoras, tipos de documento, empaques, hojas de
+  vuelo/cobro) siguen reiniciándose por identidad; el guard de abajo los
+  cubre del disparador principal.
+- **`RefreshOnFocus` no refresca con captura abierta**:
+  `hayCapturaAbierta(document)` (`[role="dialog"], [role="alertdialog"]` =
+  Dialog, Sheet y AlertDialog de Base UI) ⇒ se salta el refresh sin consumir
+  el mínimo de 10 s; el siguiente foco sin diálogo sí refresca.
+- **Badge de la tabla** (`lib/admin/datos-fiscales-cliente.ts`,
+  `etiquetaDatosFiscales`): completo ⇒ «Datos fiscales completos»; nada
+  capturado ⇒ «Faltan datos fiscales»; a medias ⇒ «Falta: Uso CFDI» /
+  «Faltan: RFC, Código postal» (title «Lo que falta para timbrar…»). Regla en
+  `types/clients.ts` (`datosFiscalesFaltantes`, de la que deriva
+  `datosFiscalesCompletos`).
+- **Pruebas**: `lib/admin/__tests__/sesion-dialogo.test.ts`,
+  `refresh-on-focus.test.ts` (guard + cableado) y
+  `datos-fiscales-cliente.test.ts`.

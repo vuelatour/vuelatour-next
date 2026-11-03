@@ -3,7 +3,8 @@
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { ClientActions } from "@/components/admin/clients/client-actions";
-import { datosFiscalesCompletos, RFC_EXTRANJERO, type Client } from "@/types/clients";
+import { RFC_EXTRANJERO, type Client } from "@/types/clients";
+import { etiquetaDatosFiscales, TITULO_FISCALES_FALTAN } from "@/lib/admin/datos-fiscales-cliente";
 import {
   LABEL_ALIAS,
   PLACEHOLDER_BUSCAR_CLIENTES,
@@ -18,6 +19,27 @@ const CANAL_LABELS: Record<string, string> = {
   LLAMADA: "Llamada",
   REFERIDO: "Referido",
 };
+
+/**
+ * Completo en verde; en ámbar lo que falta (3-nov-2026: «Falta: Uso CFDI»
+ * en vez de un «Faltan datos fiscales» que la oficina leía como «no se
+ * guardó»). Texto en `lib/admin/datos-fiscales-cliente.ts`.
+ */
+function BadgeDatosFiscales({ cliente }: { cliente: Client }) {
+  const { completos, texto } = etiquetaDatosFiscales(cliente);
+  return completos ? (
+    <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20 text-[11px]">
+      {texto}
+    </Badge>
+  ) : (
+    <Badge
+      title={TITULO_FISCALES_FALTAN}
+      className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20 text-[11px]"
+    >
+      {texto}
+    </Badge>
+  );
+}
 
 const columns: Array<DataTableColumn<Client>> = [
   {
@@ -86,15 +108,7 @@ const columns: Array<DataTableColumn<Client>> = [
             </span>
           )}
         </div>
-        {datosFiscalesCompletos(c) ? (
-          <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20 text-[11px]">
-            Datos fiscales completos
-          </Badge>
-        ) : (
-          <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20 text-[11px]">
-            Faltan datos fiscales
-          </Badge>
-        )}
+        <BadgeDatosFiscales cliente={c} />
       </div>
     ),
   },

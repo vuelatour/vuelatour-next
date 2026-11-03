@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { debeRefrescarAlEnfocar } from "@/lib/admin/refresh-on-focus";
+import { debeRefrescarAlEnfocar, hayCapturaAbierta } from "@/lib/admin/refresh-on-focus";
 
 /**
  * Pone al día la página al VOLVER a la pestaña (14-sep-2026).
@@ -13,17 +13,28 @@ import { debeRefrescarAlEnfocar } from "@/lib/admin/refresh-on-focus";
  * regresar a la pestaña del detalle del vuelo, seguía viendo la lista
  * vieja hasta recargar. Ahora, al recuperar el foco (o volver a ser
  * visible), se pide `router.refresh()`: re-renderiza los Server Components
- * de la ruta actual sin perder el estado de los formularios abiertos.
- * Mínimo 10 s entre refrescos (foco que parpadea). Se monta UNA vez en el
- * layout de /admin.
+ * de la ruta actual. Mínimo 10 s entre refrescos (foco que parpadea). Con
+ * un diálogo, panel lateral o alerta abiertos NO se refresca (3-nov-2026):
+ * la tabla se volvería a pintar con objetos nuevos y los diálogos que
+ * reinician su formulario por identidad de la fila perderían lo capturado
+ * (así se «perdían» los datos fiscales del cliente al volver del selector
+ * de archivos de la constancia); ver `hayCapturaAbierta`. Se monta UNA vez
+ * en el layout de /admin.
  */
 export function RefreshOnFocus() {
   const router = useRouter();
-  const ultimo = useRef<number | null>(Date.now());
+  const ultimo = useRef<number | null>(null);
 
   useEffect(() => {
+    // Recién montado cuenta como refrescado (la ruta acaba de pedirse): el
+    // primer foco dentro del mínimo no la vuelve a pedir. Aquí y no en el
+    // render (`Date.now()` es impuro para el React Compiler).
+    ultimo.current = Date.now();
     const refrescar = () => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      // Capturando (diálogo/panel/alerta abiertos): el refresh espera al
+      // siguiente foco sin diálogo, sin consumir el mínimo entre refrescos.
+      if (hayCapturaAbierta(document)) return;
       const ahora = Date.now();
       if (!debeRefrescarAlEnfocar(ultimo.current, ahora)) return;
       ultimo.current = ahora;

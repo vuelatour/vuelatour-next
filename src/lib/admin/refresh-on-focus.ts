@@ -19,3 +19,22 @@ export function debeRefrescarAlEnfocar(
   if (ultimoRefrescoMs == null) return true;
   return ahoraMs - ultimoRefrescoMs >= minMs;
 }
+
+/**
+ * Con un diálogo, panel lateral o alerta abiertos NO se refresca
+ * (3-nov-2026): la oficina está capturando (acaba de volver del selector de
+ * archivos de «Subir constancia», o de WhatsApp con el RFC) y un refresh
+ * vuelve a pintar la tabla con objetos nuevos; los diálogos que reinician su
+ * formulario por identidad de la fila perderían lo capturado (así se
+ * «perdían» los datos fiscales del cliente). Además, lo fresco no se ve
+ * detrás del diálogo. El siguiente foco sin diálogo sí refresca: el mínimo
+ * entre refrescos no se consume. Dialog, Sheet y AlertDialog de Base UI
+ * pintan estos roles; los menús (`menu`) y combos (`listbox`) no cuentan.
+ */
+export const SELECTOR_CAPTURA_ABIERTA = '[role="dialog"], [role="alertdialog"]';
+
+export function hayCapturaAbierta(
+  doc: { querySelector(selectores: string): unknown } | null | undefined,
+): boolean {
+  return Boolean(doc?.querySelector(SELECTOR_CAPTURA_ABIERTA));
+}
