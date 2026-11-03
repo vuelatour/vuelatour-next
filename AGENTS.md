@@ -11330,8 +11330,15 @@ historial completo.
   honorarios ⇒ «Desde el 1-sep-2026» con `honorarios.desde`.
 - **Ficha del avión (b)**: `metrics.anio_desde` ⇒ KPI «Horas mes / desde el
   1-sep-2026» (`rotuloHorasMesAnio`); sin la llave «Horas mes / año».
-- **Bitácora PDF (d)**: `min` del inicio en las dos fechas, el `desde` que
-  viaja pasa por `pisoDesde` y un `hasta` anterior al inicio no se pide.
+- **Bitácora PDF (d)**: **DEROGADO el 3-nov-2026** (pedido de la oficina:
+  «no arroja los datos desde agosto sino que inicia el 1 de sep»; el libro
+  físico de mantenimiento lleva TODOS los vuelos y el inicio oficial es
+  financiero, como la excepción del inventario). El diálogo «Imprimir
+  bitácoras» ya no lee `useInicioOficial`, no pone `min` en las fechas ni
+  sube el `desde`: va tal cual al API 0.0.117 (`bitacora.pdf` sin piso;
+  vacío ⇒ todo el histórico). Solo valida `desde ≤ hasta`. Contra un API
+  ≤ 0.0.116 el PDF sigue saliendo desde el inicio (deploy API → panel).
+  Prueba «d» de `inicio-oficial-auditoria.test.tsx`.
 - **Vuelo anterior del avión (e)**: la liga se conserva; chip SOLO con
   `anterior.antes_del_inicio === true` (`ChipInicioOficial antes`: la
   bandera del API decide, no la fecha).

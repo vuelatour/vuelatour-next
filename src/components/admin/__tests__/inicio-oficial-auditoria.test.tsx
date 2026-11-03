@@ -114,13 +114,17 @@ describe("c. Saldo inicial de tacómetros (el cardex ya no lo lleva)", () => {
   });
 });
 
-describe("d. Bitácora PDF: fechas con piso", () => {
-  it("`min` del inicio en las dos fechas y el «desde» que viaja nunca es anterior", () => {
+describe("d. Bitácora PDF: SIN piso (excepción 3-nov-2026: el libro lleva todos los vuelos)", () => {
+  it("el diálogo no lee el inicio oficial, no acota las fechas y manda el «desde» tal cual", () => {
     const src = leer("../aircraft/bitacora-pdf-button.tsx");
-    expect(src.match(/min=\{minFecha\}/g)).toHaveLength(2);
-    expect(src).toContain("const desdeEfectivo = pisoDesde(desde, inicio);");
-    expect(src).toContain('params.set("desde", desdeEfectivo)');
-    expect(src).toContain("if (inicio && hasta && hasta < inicio)");
+    expect(src).not.toContain("useInicioOficial");
+    expect(src).not.toContain("@/lib/admin/inicio-oficial");
+    expect(src).not.toContain("pisoDesde");
+    expect(src).not.toContain("min={");
+    expect(src).toContain('if (desde) params.set("desde", desde);');
+    expect(src).toContain('if (hasta) params.set("hasta", hasta);');
+    expect(src).toContain("if (desde && hasta && desde > hasta)");
+    expect(src).toContain("las fechas vacías para todo el histórico.");
   });
 });
 

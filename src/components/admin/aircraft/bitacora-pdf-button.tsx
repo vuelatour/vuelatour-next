@@ -14,13 +14,6 @@ import {
 } from "@/components/ui/dialog";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { env } from "@/lib/env";
-import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
-import {
-  minFechaFiltro,
-  pisoDesde,
-  textoArrancaEnMes,
-  textoDesdeInicio,
-} from "@/lib/admin/inicio-oficial";
 
 const inputCls =
   "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -59,6 +52,10 @@ const TIRAS: ReadonlyArray<{ key: Tira; label: string; hint: string }> = [
  * final y ruta — para recortar y pegar en cada libro físico. Los tiempos de
  * cada componente los deriva el API desde su base capturada; el de hélice
  * puede teclearse a mano solo cuando la ficha no tiene horas.
+ *
+ * SIN inicio oficial (excepción del 3-nov-2026, API 0.0.117): el libro
+ * físico lleva TODOS los vuelos y la oficina imprime desde agosto, así que
+ * las fechas van al API tal cual (vacías ⇒ todo el histórico).
  */
 export function BitacoraPdfButton({
   aircraftId,
@@ -68,13 +65,8 @@ export function BitacoraPdfButton({
   matricula: string;
 }) {
   const [open, setOpen] = useState(false);
-  // Inicio oficial (auditoría 16-oct-2026): las fechas no bajan del inicio
-  // (`min`); el API 0.0.85 hace lo mismo y sin inicio todo queda como hoy.
-  const inicio = useInicioOficial();
-  const minFecha = minFechaFiltro(inicio);
-  const [desde, setDesde] = useState(() =>
-    pisoDesde(`${hoyCancun().slice(0, 7)}-01`, inicio),
-  );
+  // Default: el mes en curso; cualquier fecha anterior es válida.
+  const [desde, setDesde] = useState(() => `${hoyCancun().slice(0, 7)}-01`);
   const [hasta, setHasta] = useState(hoyCancun);
   // Todas marcadas por default: el mecánico imprime las tres de un jalón.
   const [marcadas, setMarcadas] = useState<Record<Tira, boolean>>({
@@ -94,13 +86,11 @@ export function BitacoraPdfButton({
       toast.error("Marca al menos una bitácora");
       return;
     }
-    // Un periodo que termina antes del inicio no tiene renglones.
-    if (inicio && hasta && hasta < inicio) {
-      toast.error(`${textoArrancaEnMes(inicio)}: elige fechas desde ese mes.`);
+    // Un rango al revés no tiene renglones: se avisa en vez de bajar un PDF vacío.
+    if (desde && hasta && desde > hasta) {
+      toast.error("La fecha «Desde» no puede ser posterior a «Hasta».");
       return;
     }
-    // Un «desde» tecleado antes del inicio sube al inicio (como el API).
-    const desdeEfectivo = pisoDesde(desde, inicio);
     if (conHelice && heliceBase.trim() !== "" && !Number.isFinite(Number(heliceBase))) {
       toast.error("El tiempo de hélice inicial no es un número válido");
       return;
@@ -112,7 +102,7 @@ export function BitacoraPdfButton({
         data: { session },
       } = await supabase.auth.getSession();
       const params = new URLSearchParams();
-      if (desdeEfectivo) params.set("desde", desdeEfectivo);
+      if (desde) params.set("desde", desde);
       if (hasta) params.set("hasta", hasta);
       params.set("tiras", seleccionadas.join(","));
       if (conHelice && heliceBase.trim() !== "") {
@@ -133,7 +123,7 @@ export function BitacoraPdfButton({
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
       a.href = url;
-      a.download = `bitacoras-${matricula}${desdeEfectivo ? `-${desdeEfectivo}` : ""}${hasta ? `-a-${hasta}` : ""}.pdf`;
+      a.download = `bitacoras-${matricula}${desde ? `-${desde}` : ""}${hasta ? `-a-${hasta}` : ""}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -168,8 +158,7 @@ export function BitacoraPdfButton({
               vuelo, lista para recortar y pegar en cada libro. Los tiempos de
               cada componente salen de su base capturada: planeador → Tiempo
               total del planeador; motor/hélice → ficha del componente. Deja
-              las fechas vacías para todo el histórico
-              {inicio ? ` (${textoDesdeInicio(inicio)})` : ""}.
+              las fechas vacías para todo el histórico.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -181,7 +170,6 @@ export function BitacoraPdfButton({
                 <input
                   id="bitacora-desde"
                   type="date"
-                  min={minFecha}
                   className={inputCls}
                   value={desde}
                   onChange={(e) => setDesde(e.target.value)}
@@ -194,7 +182,6 @@ export function BitacoraPdfButton({
                 <input
                   id="bitacora-hasta"
                   type="date"
-                  min={minFecha}
                   className={inputCls}
                   value={hasta}
                   onChange={(e) => setHasta(e.target.value)}
