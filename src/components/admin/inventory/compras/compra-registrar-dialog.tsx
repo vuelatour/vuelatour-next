@@ -4,6 +4,16 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,22 +28,36 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Field } from "@/components/admin/form-field";
 import { ProveedorSelector } from "@/components/admin/expenses/proveedor-selector";
-import { createCompraAction } from "@/app/admin/inventory/compras/actions";
+import { createCompraAction, registrarGastoCompraAction } from "@/app/admin/inventory/compras/actions";
+import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import { todayCancun } from "@/lib/datetime";
 import {
   DESCRIPCION_REGISTRAR_COMPRA,
+  ETIQUETA_Y_EL_PAGO,
   HINT_LINEAS_COMPRA,
   HINT_TC_COMPRA_OPCIONAL,
-  HINT_VINCULAR_GASTO_ENTRADA,
+  MSG_LINEAS_SIN_COSTO_PARA_GASTO,
+  OPCIONES_PAGO_COMPRA,
+  PAGO_COMPRA_DEFAULT,
   TITULO_REGISTRAR_COMPRA,
+  avisoCompraSinGasto,
   cuerpoRegistrarCompra,
+  cuerpoRegistrarGastoCompra,
+  formGastoCompraVacio,
   formRegistrarCompraVacio,
   lineaCompraVacia,
+  lineasConCosto,
+  tcInicialCompra,
+  textoConfirmarCompraConGasto,
+  toastCompraConGasto,
   toastCompraRegistrada,
+  type FormGastoCompra,
   type FormRegistrarCompra,
   type LineaCompraForm,
+  type OpcionPagoCompra,
 } from "@/lib/admin/compras-estado";
 import type { CompraMoneda, GastoCandidatoCompra } from "@/types/compras";
+import { CompraGastoCampos } from "./compra-gasto-campos";
 import { GastoCandidatoSelector } from "./gasto-candidato-selector";
 
 const MONEDAS: Array<{ value: CompraMoneda; label: string }> = [
@@ -51,38 +75,60 @@ export interface ItemCompraOption {
 
 /**
  * «Registrar compra» (21-oct-2026): el pedido o la factura del proveedor con
- * sus líneas ⇒ compra ABIERTA («Pedida, sin recibir»). Si la factura ya está
- * en Gastos se puede vincular aquí mismo (y, sin líneas capturadas, el API
- * las arma con lo que leyó la IA de ese gasto). Los cargos de envío e
- * impuestos de la misma factura se capturan en el detalle.
+ * sus líneas ⇒ compra ABIERTA («Pedida, sin recibir»). Desde el 4-nov-2026
+ * (API 0.0.120) la misma captura resuelve el pago: «Ya la pagué» crea la
+ * compra y, enseguida, su gasto en Gastos (dos llamadas: si la segunda
+ * falla, la compra queda sin gasto y se dice completo); «Todavía no la
+ * pago» la deja «Sin gasto registrado»; «La factura ya está en Gastos» la
+ * vincula (y, sin líneas capturadas, el API las arma con lo que leyó la IA
+ * de ese gasto). El envío y la aduana que se pagan aparte se agregan en el
+ * detalle con «Agregar gasto».
  */
 export function CompraRegistrarDialog({
   providers,
   items,
+  tcOficialHoy = null,
 }: {
   providers: { id: string; nombre: string }[];
   items: ItemCompraOption[];
+  /** T.C. oficial de hoy (sugerencia del gasto; null = sin dato). */
+  tcOficialHoy?: number | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<FormRegistrarCompra>(() => formRegistrarCompraVacio(todayCancun()));
-  const [vincular, setVincular] = useState(false);
+  const [pago, setPago] = useState<OpcionPagoCompra>(PAGO_COMPRA_DEFAULT);
+  const [gastoForm, setGastoForm] = useState<FormGastoCompra>(() =>
+    formGastoCompraVacio({ tc: tcInicialCompra(null, tcOficialHoy), fecha: todayCancun() }),
+  );
+  const [archivo, setArchivo] = useState<File | null>(null);
   const [gasto, setGasto] = useState<GastoCandidatoCompra | null>(null);
   const [contador, setContador] = useState(1);
+  const [confirmar, setConfirmar] = useState(false);
 
   const set = (patch: Partial<FormRegistrarCompra>) => setForm((f) => ({ ...f, ...patch }));
+  const setGastoCampo = (patch: Partial<FormGastoCompra>) => setGastoForm((f) => ({ ...f, ...patch }));
   const setLinea = (key: string, patch: Partial<LineaCompraForm>) =>
     setForm((f) => ({ ...f, lineas: f.lineas.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
 
   const abrir = (o: boolean) => {
     if (o) {
-      setForm(formRegistrarCompraVacio(todayCancun()));
-      setVincular(false);
+      const hoy = todayCancun();
+      setForm(formRegistrarCompraVacio(hoy));
+      setPago(PAGO_COMPRA_DEFAULT);
+      setGastoForm(formGastoCompraVacio({ tc: tcInicialCompra(null, tcOficialHoy), fecha: hoy }));
+      setArchivo(null);
       setGasto(null);
       setContador(1);
+      setConfirmar(false);
     }
     setOpen(o);
+  };
+
+  const elegirPago = (o: OpcionPagoCompra) => {
+    setPago(o);
+    if (o !== "vincular") elegirGasto(null);
   };
 
   const elegirGasto = (g: GastoCandidatoCompra | null) => {
@@ -103,25 +149,80 @@ export function CompraRegistrarDialog({
   const quitarLinea = (key: string) =>
     setForm((f) => ({ ...f, lineas: f.lineas.length > 1 ? f.lineas.filter((l) => l.key !== key) : f.lineas }));
 
+  const conGasto = pago === "ahora";
+  // Con «Ya la pagué» el T.C. del gasto es también el de la compra (un solo campo).
+  const formCompra: FormRegistrarCompra = conGasto ? { ...form, tc_usd_mxn: gastoForm.tc } : form;
+  const veredictoCompra = cuerpoRegistrarCompra(formCompra);
+  const veredictoGasto = conGasto ? cuerpoRegistrarGastoCompra(gastoForm, null) : null;
+
+  /** Todo lo que se puede validar ANTES de crear nada; null = adelante. */
+  const errorPrevio = (): string | null => {
+    if (!veredictoCompra.ok) return veredictoCompra.error;
+    if (veredictoCompra.cuerpo.lineas.length === 0 && !veredictoCompra.cuerpo.gasto_mercancia_id) {
+      return "Captura al menos una línea (o vincula el gasto de la factura para armarlas desde él).";
+    }
+    if (pago === "vincular" && !gasto) return "Elige el gasto que pagó esta compra.";
+    if (conGasto) {
+      if (!lineasConCosto(form)) return MSG_LINEAS_SIN_COSTO_PARA_GASTO;
+      if (veredictoGasto && !veredictoGasto.ok) return veredictoGasto.error;
+    }
+    return null;
+  };
+
+  const pedir = () => {
+    const e = errorPrevio();
+    if (e) {
+      toast.error(e);
+      return;
+    }
+    // Dinero (se crea un gasto) ⇒ confirmación; sin gasto, directo.
+    if (conGasto) setConfirmar(true);
+    else registrar();
+  };
+
   const registrar = () => {
-    const v = cuerpoRegistrarCompra(form);
-    if (!v.ok) {
-      toast.error(v.error);
-      return;
-    }
-    if (v.cuerpo.lineas.length === 0 && !v.cuerpo.gasto_mercancia_id) {
-      toast.error("Captura al menos una línea (o vincula el gasto de la factura para armarlas desde él).");
-      return;
-    }
+    if (!veredictoCompra.ok) return;
+    const cuerpoCompra = veredictoCompra.cuerpo;
+    const cuerpoGasto = veredictoGasto && veredictoGasto.ok ? veredictoGasto.cuerpo : null;
     startTransition(async () => {
-      const r = await createCompraAction(v.cuerpo);
-      if (r.ok && r.data) {
-        toast.success(toastCompraRegistrada(r.data));
-        setOpen(false);
-        router.push(`/admin/inventory/compras/${r.data.id}`);
-      } else {
-        toast.error(r.error ?? "No se pudo registrar la compra");
+      // El comprobante ANTES de crear nada: si falla la subida, no nace la compra a medias.
+      let fotoPath: string | null = null;
+      if (conGasto && archivo) {
+        try {
+          fotoPath = await uploadGastoComprobante(archivo);
+        } catch (err) {
+          setConfirmar(false);
+          toast.error(err instanceof Error ? err.message : "No se pudo subir el comprobante");
+          return;
+        }
       }
+      const r = await createCompraAction(cuerpoCompra);
+      if (!r.ok || !r.data) {
+        setConfirmar(false);
+        toast.error(r.error ?? "No se pudo registrar la compra");
+        return;
+      }
+      const compra = r.data;
+      if (conGasto && cuerpoGasto) {
+        const g = await registrarGastoCompraAction(compra.id, {
+          ...cuerpoGasto,
+          // El proveedor y el folio del gasto son los de la compra (no se capturan dos veces).
+          ...(cuerpoCompra.proveedor_id ? { proveedor_id: cuerpoCompra.proveedor_id } : {}),
+          ...(cuerpoCompra.referencia ? { folio_ticket: cuerpoCompra.referencia } : {}),
+          ...(fotoPath ? { foto_url: fotoPath } : {}),
+        });
+        setConfirmar(false);
+        if (g.ok && g.data) {
+          toast.success(toastCompraConGasto(g.data), { duration: 8000 });
+        } else {
+          // La compra SÍ nació: se dice completo y se abre para que la terminen ahí.
+          toast.warning(avisoCompraSinGasto(compra.folio, g.error), { duration: 15000 });
+        }
+      } else {
+        toast.success(toastCompraRegistrada(compra));
+      }
+      setOpen(false);
+      router.push(`/admin/inventory/compras/${compra.id}`);
     });
   };
 
@@ -158,17 +259,20 @@ export function CompraRegistrarDialog({
                 <Field label="Moneda" required>
                   <SearchableSelect options={MONEDAS} value={form.moneda} onChange={(v) => set({ moneda: v as CompraMoneda })} />
                 </Field>
-                <Field label="T.C. (MXN por USD)" hint={HINT_TC_COMPRA_OPCIONAL}>
-                  <Input
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    inputMode="decimal"
-                    placeholder="Opcional"
-                    value={form.tc_usd_mxn}
-                    onChange={(e) => set({ tc_usd_mxn: e.target.value })}
-                  />
-                </Field>
+                {/* Con «Ya la pagué» el T.C. se captura UNA vez, en el gasto. */}
+                {!conGasto && (
+                  <Field label="T.C. (MXN por USD)" hint={HINT_TC_COMPRA_OPCIONAL}>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      inputMode="decimal"
+                      placeholder="Opcional"
+                      value={form.tc_usd_mxn}
+                      onChange={(e) => set({ tc_usd_mxn: e.target.value })}
+                    />
+                  </Field>
+                )}
               </div>
             </div>
 
@@ -237,30 +341,48 @@ export function CompraRegistrarDialog({
               ))}
             </div>
 
-            <div className="space-y-2 rounded-lg border border-border p-3" data-vincular-gasto-compra>
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={vincular}
-                  onChange={(e) => {
-                    setVincular(e.target.checked);
-                    if (!e.target.checked) elegirGasto(null);
-                  }}
-                  className="h-4 w-4 cursor-pointer accent-brand-600"
-                />
-                <span>
-                  La factura ya está en Gastos: vincularla{" "}
-                  <span className="text-xs text-muted-foreground">({HINT_VINCULAR_GASTO_ENTRADA})</span>
-                </span>
-              </label>
-              {vincular && <GastoCandidatoSelector value={gasto?.id ?? ""} onChange={elegirGasto} soloMercancia />}
-              {gasto && (
+            {/* ¿Y el pago? Tres caminos, uno solo elegido. */}
+            <fieldset className="space-y-2 rounded-lg border border-border p-3" data-pago-compra={pago}>
+              <legend className="px-1 text-sm font-medium">{ETIQUETA_Y_EL_PAGO}</legend>
+              {OPCIONES_PAGO_COMPRA.map((o) => (
+                <label key={o.value} className="flex cursor-pointer items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="pago-compra"
+                    value={o.value}
+                    checked={pago === o.value}
+                    onChange={() => elegirPago(o.value)}
+                    className="mt-0.5 h-4 w-4 cursor-pointer accent-brand-600"
+                  />
+                  <span>
+                    <span className="font-medium">{o.label}</span>
+                    <span className="block text-xs text-muted-foreground">{o.description}</span>
+                  </span>
+                </label>
+              ))}
+              {conGasto && (
+                <div className="pt-2" data-gasto-inline>
+                  <CompraGastoCampos
+                    form={gastoForm}
+                    onChange={setGastoCampo}
+                    providers={providers}
+                    tcOficialHoy={tcOficialHoy}
+                    archivo={archivo}
+                    onArchivo={setArchivo}
+                    mostrarProveedor={false}
+                    mostrarFolio={false}
+                    mostrarNotas={false}
+                  />
+                </div>
+              )}
+              {pago === "vincular" && <GastoCandidatoSelector value={gasto?.id ?? ""} onChange={elegirGasto} soloMercancia />}
+              {pago === "vincular" && gasto && (
                 <p className="text-xs text-muted-foreground">
                   Queda como la factura de mercancía de la compra. Si no capturas líneas, el API las arma con lo que
                   leyó la IA de ese gasto.
                 </p>
               )}
-            </div>
+            </fieldset>
 
             <Field label="Notas">
               <Textarea rows={2} value={form.notas} onChange={(e) => set({ notas: e.target.value })} />
@@ -271,10 +393,42 @@ export function CompraRegistrarDialog({
             <Button variant="outline" onClick={() => abrir(false)} disabled={pending}>
               Cancelar
             </Button>
-            <Button onClick={registrar} disabled={pending}>
-              {pending ? "Registrando…" : TITULO_REGISTRAR_COMPRA}
+            <Button onClick={pedir} disabled={pending} data-accion="registrar-compra">
+              {pending ? "Registrando…" : conGasto ? "Registrar compra y su gasto" : TITULO_REGISTRAR_COMPRA}
             </Button>
           </DialogFooter>
+
+          {/* Dinero (nace un gasto): confirmación anidada. */}
+          <AlertDialog open={confirmar} onOpenChange={(o) => !o && setConfirmar(false)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Registrar la compra y su gasto?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {veredictoCompra.ok && veredictoGasto && veredictoGasto.ok
+                    ? textoConfirmarCompraConGasto({
+                        lineas: veredictoCompra.cuerpo.lineas.length,
+                        moneda: form.moneda,
+                        tc: veredictoGasto.cuerpo.tc_usd_mxn,
+                        fecha: veredictoGasto.cuerpo.fecha_gasto,
+                        medio: veredictoGasto.cuerpo.medio_pago,
+                      })
+                    : ""}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={pending}>Revisar</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={pending}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    registrar();
+                  }}
+                >
+                  {pending ? "Registrando…" : "Sí, registrar"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </DialogContent>
       </Dialog>
     </>

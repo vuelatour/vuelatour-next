@@ -35,6 +35,26 @@ import {
   toastEntradaDesdeGasto,
   toastGastoRegistrado,
   validarTcCompra,
+  // Los gastos de la compra, uno por uno (4-nov-2026, API 0.0.120).
+  ETIQUETA_ROL_OTRO_GASTO,
+  MSG_FECHA_PAGO_REQUERIDA,
+  MSG_MEDIO_REQUERIDO,
+  MSG_MONTO_REQUERIDO,
+  OPCIONES_PAGO_COMPRA,
+  PAGO_COMPRA_DEFAULT,
+  ROL_OTRO_GASTO_OPTIONS,
+  avisoCompraSinGasto,
+  cuerpoAgregarGastoCompra,
+  cuerpoRegistrarGastoCompra,
+  formGastoCompraVacio,
+  formOtroGastoCompraVacio,
+  lineasConCosto,
+  montoDeTexto,
+  tcInicialCompra,
+  textoConfirmarAgregarGasto,
+  textoConfirmarCompraConGasto,
+  toastCompraConGasto,
+  toastGastoAgregado,
 } from "../compras-estado";
 
 /**
@@ -328,5 +348,124 @@ describe("«Registrar compra»: el cuerpo que viaja", () => {
     expect(cuerpoRegistrarCompra({ ...f, fecha: "" })).toMatchObject({ ok: false });
     expect(cuerpoRegistrarCompra({ ...f, tc_usd_mxn: "-1" })).toMatchObject({ ok: false });
     expect(cuerpoRegistrarCompra({ ...f, gasto_mercancia_id: "g-1" })).toMatchObject({ ok: true, cuerpo: { gasto_mercancia_id: "g-1" } });
+  });
+});
+
+// ===== Los gastos de la compra, uno por uno (4-nov-2026, API 0.0.120, invariante 116 del API) =====
+
+describe("los campos del gasto de una compra (compartidos)", () => {
+  it("el T.C. inicial: el de la compra manda; si no, el oficial de hoy; si no, vacío", () => {
+    expect(tcInicialCompra(17.5, 18.2)).toBe("17.5");
+    expect(tcInicialCompra("17.5", 18.2)).toBe("17.5");
+    expect(tcInicialCompra(null, 18.2)).toBe("18.2");
+    expect(tcInicialCompra(0, 18.2)).toBe("18.2");
+    expect(tcInicialCompra(null, null)).toBe("");
+    expect(tcInicialCompra(null, 0)).toBe("");
+  });
+
+  it("montoDeTexto: a centavos; coma decimal o de miles; nada, cero o negativo ⇒ null", () => {
+    expect(montoDeTexto("1850.5")).toBe(1850.5);
+    expect(montoDeTexto("1,850.50")).toBe(1850.5);
+    expect(montoDeTexto("1850,50")).toBe(1850.5);
+    expect(montoDeTexto(" 10.004 ")).toBe(10);
+    for (const v of ["", "   ", "x", "0", "-3", null, undefined]) expect(montoDeTexto(v)).toBeNull();
+  });
+
+  it("cuerpoRegistrarGastoCompra: T.C. en banda, fecha, medio; cuenta solo con medio que la lleva; tarjeta solo con TARJETA_CORP; folio recortado; foto si hay", () => {
+    const base = formGastoCompraVacio({ tc: "18.25", fecha: "2026-11-04", proveedor: "p-1", folio: " AS-1 " });
+    expect(cuerpoRegistrarGastoCompra({ ...base, tc: "" })).toEqual({ ok: false, error: MSG_TC_REQUERIDO });
+    expect(cuerpoRegistrarGastoCompra({ ...base, tc: "182" })).toEqual({ ok: false, error: mensajeTcFueraDeRango(182) });
+    expect(cuerpoRegistrarGastoCompra({ ...base, fecha: "04/11/2026" })).toEqual({ ok: false, error: MSG_FECHA_PAGO_REQUERIDA });
+    expect(cuerpoRegistrarGastoCompra(base)).toEqual({ ok: false, error: `${MSG_MEDIO_REQUERIDO}.` });
+    expect(
+      cuerpoRegistrarGastoCompra({ ...base, medio: "TARJETA_CORP", tarjeta: "6256", cuenta: "cta-1", notas: " ok " }, "oficina/1-a.pdf"),
+    ).toEqual({
+      ok: true,
+      cuerpo: {
+        tc_usd_mxn: 18.25,
+        fecha_gasto: "2026-11-04",
+        medio_pago: "TARJETA_CORP",
+        tarjeta_terminacion: "6256",
+        proveedor_id: "p-1",
+        folio_ticket: "AS-1",
+        notas: "ok",
+        foto_url: "oficina/1-a.pdf",
+      },
+    });
+    const transf = cuerpoRegistrarGastoCompra({ ...base, medio: "TRANSFERENCIA", tarjeta: "6256", cuenta: "cta-1" });
+    expect(transf.ok && transf.cuerpo).toMatchObject({ medio_pago: "TRANSFERENCIA", cuenta_bancaria_id: "cta-1" });
+    expect(transf.ok && transf.cuerpo).not.toHaveProperty("tarjeta_terminacion");
+    expect(transf.ok && transf.cuerpo).not.toHaveProperty("foto_url");
+    const efectivo = cuerpoRegistrarGastoCompra({ ...base, medio: "EFECTIVO", cuenta: "cta-1", proveedor: "", folio: "" });
+    expect(efectivo.ok && efectivo.cuerpo).not.toHaveProperty("cuenta_bancaria_id");
+    expect(efectivo.ok && efectivo.cuerpo).not.toHaveProperty("proveedor_id");
+    expect(efectivo.ok && efectivo.cuerpo).not.toHaveProperty("folio_ticket");
+  });
+
+  it("cuerpoAgregarGastoCompra: arranca como ENVÍO en PESOS; el monto va primero; rol, monto y moneda de SU factura más lo común", () => {
+    const vacio = formOtroGastoCompraVacio({ tc: "18.8052", fecha: "2026-11-04" });
+    expect(vacio).toMatchObject({ rol: "ENVIO", moneda: "MXN", monto: "", medio: "", proveedor: "" });
+    expect(cuerpoAgregarGastoCompra(vacio)).toEqual({ ok: false, error: MSG_MONTO_REQUERIDO });
+    expect(cuerpoAgregarGastoCompra({ ...vacio, monto: "1850.50" })).toEqual({ ok: false, error: `${MSG_MEDIO_REQUERIDO}.` });
+    expect(
+      cuerpoAgregarGastoCompra({ ...vacio, rol: "IMPUESTOS", moneda: "USD", monto: "1,850.50", medio: "TARJETA_CORP", proveedor: "p-ups" }, "oficina/guia.pdf"),
+    ).toEqual({
+      ok: true,
+      cuerpo: {
+        rol: "IMPUESTOS",
+        monto: 1850.5,
+        moneda: "USD",
+        tc_usd_mxn: 18.8052,
+        fecha_gasto: "2026-11-04",
+        medio_pago: "TARJETA_CORP",
+        proveedor_id: "p-ups",
+        foto_url: "oficina/guia.pdf",
+      },
+    });
+    expect(ROL_OTRO_GASTO_OPTIONS.map((o) => o.value)).toEqual(["ENVIO", "IMPUESTOS", "OTRO"]);
+    expect(ETIQUETA_ROL_OTRO_GASTO.ENVIO).toBe("Envío");
+  });
+
+  it("los textos de «Agregar gasto»: confirmación con el equivalente y el rol, toast con el rol", () => {
+    expect(
+      textoConfirmarAgregarGasto({ folio: 12, rol: "ENVIO", monto: 1850.5, moneda: "MXN", tc: 18.8052, fecha: "2026-11-04", medio: "TARJETA_CORP" }),
+    ).toBe(
+      `Se crea en Gastos un gasto por ${fmtMontoMoneda(1850.5, "MXN")} (${textoEquivalente(1850.5, "MXN", 18.8052)} al T.C. 18.8052) con fecha 04 nov 2026, pagado por Tarjeta corporativa, y queda ligado a la compra #12 como envío.`,
+    );
+    expect(
+      toastGastoAgregado(
+        { folio: 12, gasto_registrado: { id: "g", monto: 1850.5, moneda: "MXN", tc_gasto: null, fecha_gasto: null, medio_pago: null, estado_pago: null }, tc_compra_fijado: true },
+        "IMPUESTOS",
+      ),
+    ).toBe(`Gasto agregado a la compra #12 por ${fmtMontoMoneda(1850.5, "MXN")} (impuestos / aduana): ya está en Gastos · el tipo de cambio quedó también en la compra.`);
+  });
+});
+
+describe("«Registrar compra»: ¿Y el pago?", () => {
+  it("tres caminos con «Ya la pagué» por default; las líneas deben traer costo para el gasto", () => {
+    expect(PAGO_COMPRA_DEFAULT).toBe("ahora");
+    expect(OPCIONES_PAGO_COMPRA.map((o) => o.value)).toEqual(["ahora", "despues", "vincular"]);
+    const f = formRegistrarCompraVacio("2026-11-04");
+    expect(lineasConCosto(f)).toBe(false);
+    f.lineas[0].nombre = "Alfombra";
+    f.lineas[0].costo_unitario = "0";
+    expect(lineasConCosto(f)).toBe(false);
+    f.lineas[0].costo_unitario = "300";
+    expect(lineasConCosto(f)).toBe(true);
+  });
+
+  it("los textos: confirmación, toast de compra + gasto y el aviso cuando la compra nació sin su gasto", () => {
+    expect(textoConfirmarCompraConGasto({ lineas: 1, moneda: "USD", tc: 18.8052, fecha: "2026-11-02", medio: "TARJETA_CORP" })).toBe(
+      "Se registra la compra con 1 línea y, enseguida, su gasto de Refacción en USD por el total de la factura (lo calcula el API) al T.C. 18.8052, con fecha 02 nov 2026 y pagado por Tarjeta corporativa.",
+    );
+    expect(
+      toastCompraConGasto({ folio: 14, gasto_registrado: { id: "g", monto: 300, moneda: "USD", tc_gasto: null, fecha_gasto: null, medio_pago: null, estado_pago: null } }),
+    ).toBe(`Compra #14 registrada y su gasto por ${fmtMontoMoneda(300, "USD")} ya está en Gastos.`);
+    expect(avisoCompraSinGasto(14, "Folio duplicado.")).toBe(
+      "La compra #14 quedó registrada, pero su gasto NO: Folio duplicado. Regístralo desde la compra con «Registrar gasto».",
+    );
+    expect(avisoCompraSinGasto(14, undefined)).toBe(
+      "La compra #14 quedó registrada, pero su gasto NO: Regístralo desde la compra con «Registrar gasto».",
+    );
   });
 });

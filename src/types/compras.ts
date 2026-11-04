@@ -154,6 +154,34 @@ export interface RegistrarGastoCompraInput {
   proveedor_id?: string;
   folio_ticket?: string;
   notas?: string;
+  /** Comprobante ya subido a `gasto-fotos` (API 0.0.120): el gasto nace «Con comprobante». */
+  foto_url?: string;
+  client_request_id?: string;
+}
+
+/** Qué paga un gasto AGREGADO a la compra: todo menos la mercancía. */
+export type CompraRolOtro = Exclude<CompraRol, "MERCANCIA">;
+
+/**
+ * `POST /v1/compras/:id/gastos` («Agregar gasto», API 0.0.120, invariante
+ * 116): otro pago de la compra (envío, aduana, otro cargo) que nace como
+ * gasto real en Gastos con SU monto y SU moneda, ligado a la compra.
+ */
+export interface AgregarGastoCompraInput {
+  rol: CompraRolOtro;
+  monto: number;
+  moneda: "MXN" | "USD";
+  tc_usd_mxn: number;
+  fecha_gasto: string;
+  medio_pago: string;
+  tarjeta_terminacion?: string;
+  cuenta_bancaria_id?: string;
+  /** Default del API por rol (ENVIO ⇒ Paquetería; impuestos/otro ⇒ Otros gastos VuelaTour). */
+  categoria?: string;
+  proveedor_id?: string;
+  folio_ticket?: string;
+  notas?: string;
+  foto_url?: string;
   client_request_id?: string;
 }
 

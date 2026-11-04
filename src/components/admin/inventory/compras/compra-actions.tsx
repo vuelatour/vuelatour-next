@@ -6,7 +6,7 @@ import {
   ArrowPathIcon,
   ArchiveBoxArrowDownIcon,
   BanknotesIcon,
-  LinkIcon,
+  PlusIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
@@ -34,24 +34,27 @@ import {
   recibirCompraAction,
 } from "@/app/admin/inventory/compras/actions";
 import {
+  BOTON_AGREGAR_GASTO,
   BOTON_REGISTRAR_GASTO,
-  BOTON_VINCULAR_GASTO,
   ETIQUETA_ACCION,
+  TITULO_BOTON_AGREGAR_GASTO,
   accionSiguiente,
   pasosCompra,
 } from "@/lib/admin/compras-estado";
 import type { CompraDetalle } from "@/types/compras";
-import { CompraPagoAddDialog } from "./compra-pago-add-dialog";
+import { CompraAgregarGastoDialog } from "./compra-agregar-gasto-dialog";
 import { CompraRegistrarGastoDialog } from "./compra-registrar-gasto-dialog";
 
 type Confirmacion = "recibir" | "recalcular" | "eliminar" | null;
 
 /**
  * Acciones de la compra (21-oct-2026): la del paso que SIGUE va en primario
- * («Ya llegó: recibir en bodega» → «Registrar gasto»); «Vincular gasto ya
- * registrado» siempre a la mano. Recibir genera las ENTRADAS al inventario
- * con el costo final; sobre una compra recibida, «Recalcular» vuelve a correr
- * el mismo cálculo (cargos ligados después). Todo con confirmación.
+ * («Ya llegó: recibir en bodega» → «Registrar gasto»). Desde el 4-nov-2026
+ * «Agregar gasto» (el envío, la aduana… como gasto real en Gastos) también
+ * está aquí; «Vincular gasto ya registrado» vive en la tarjeta «Gastos de
+ * esta compra». Recibir genera las ENTRADAS al inventario con el costo
+ * final; sobre una compra recibida, «Recalcular» vuelve a correr el mismo
+ * cálculo (cargos ligados después). Todo con confirmación.
  */
 export function CompraActions({
   compra,
@@ -67,7 +70,7 @@ export function CompraActions({
   const [confirm, setConfirm] = useState<Confirmacion>(null);
   const [avisos, setAvisos] = useState<string[] | null>(null);
   const [openGasto, setOpenGasto] = useState(false);
-  const [openVincular, setOpenVincular] = useState(false);
+  const [openAgregar, setOpenAgregar] = useState(false);
 
   const abierta = compra.estado === "ABIERTA";
   const sinLineas = compra.lineas.length === 0;
@@ -157,9 +160,16 @@ export function CompraActions({
           <BanknotesIcon className="h-4 w-4" />
           {BOTON_REGISTRAR_GASTO}
         </Button>
-        <Button variant="outline" className="gap-2" onClick={() => setOpenVincular(true)} disabled={pending} data-accion="vincular">
-          <LinkIcon className="h-4 w-4" />
-          {BOTON_VINCULAR_GASTO}
+        <Button
+          variant="outline"
+          className="gap-2"
+          onClick={() => setOpenAgregar(true)}
+          disabled={pending}
+          title={TITULO_BOTON_AGREGAR_GASTO}
+          data-accion="agregar-gasto"
+        >
+          <PlusIcon className="h-4 w-4" />
+          {BOTON_AGREGAR_GASTO}
         </Button>
       </div>
 
@@ -170,11 +180,12 @@ export function CompraActions({
         providers={providers}
         tcOficialHoy={tcOficialHoy}
       />
-      <CompraPagoAddDialog
-        open={openVincular}
-        onOpenChange={setOpenVincular}
-        compraId={compra.id}
-        folio={compra.folio}
+      <CompraAgregarGastoDialog
+        open={openAgregar}
+        onOpenChange={setOpenAgregar}
+        compra={compra}
+        providers={providers}
+        tcOficialHoy={tcOficialHoy}
       />
 
       <AlertDialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>

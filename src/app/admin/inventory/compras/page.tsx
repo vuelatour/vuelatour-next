@@ -12,6 +12,7 @@ import { ImportCompraButton } from "@/components/admin/inventory/import-compra-b
 import { listComprasTodas } from "@/lib/api/compras-server";
 import { listInventario } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
+import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import {
   AYUDA_FLUJO_COMPRAS,
   AYUDA_PESTANA_COMPRAS,
@@ -49,8 +50,9 @@ export default async function ComprasPage({
   // Las COMPRAS son el dato principal (todas: las pestañas se reparten con
   // los estados que manda el API); proveedores y artículos solo llenan los
   // selectores de «Registrar compra» y degradan con aviso.
+  // El T.C. oficial de hoy es solo la SUGERENCIA de «Ya la pagué» (best-effort).
   const degradado = new Degradaciones();
-  const [comprasRes, providersRes, itemsRes] = await Promise.all([
+  const [comprasRes, providersRes, itemsRes, tcOficialHoy] = await Promise.all([
     listComprasTodas(),
     degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
       data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
@@ -58,6 +60,7 @@ export default async function ComprasPage({
     degradado.opcional("los artículos de bodega", listInventario({ limit: 500, activo: true }), {
       data: [] as Awaited<ReturnType<typeof listInventario>>["data"],
     }),
+    getTipoCambioOficial().catch(() => null),
   ]);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const items = itemsRes.data.map((i) => ({ id: i.id, nombre: i.nombre, numero_parte: i.numero_parte ?? null }));
@@ -84,7 +87,7 @@ export default async function ComprasPage({
         </div>
         <div className="flex gap-2 flex-wrap">
           <ImportCompraButton providers={providers} />
-          <CompraRegistrarDialog providers={providers} items={items} />
+          <CompraRegistrarDialog providers={providers} items={items} tcOficialHoy={tcOficialHoy} />
         </div>
       </div>
 

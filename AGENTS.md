@@ -13106,3 +13106,54 @@ uso sin RFC ni CP): el API y la BD estaban bien, la causa era del panel.
 - **Pruebas**: `lib/admin/__tests__/sesion-dialogo.test.ts`,
   `refresh-on-focus.test.ts` (guard + cableado) y
   `datos-fiscales-cliente.test.ts`.
+
+## Compras: los gastos de la compra, uno por uno (4-nov-2026, API 0.0.120, invariante 116 del API)
+
+Pedido de la oficina (Pablo Canales, video): el envío de UPS de la compra
+#14 «no me deja cambiarlo a pesos, no me deja subir el comprobante y no
+aparece en Gastos» —lo capturaron en «Cargos en la factura de mercancía»,
+que son renglones de la MISMA factura—, y «que la compra se quede y se
+vayan sumando más gastos, pero que se registren uno por uno en Gastos y el
+total sea solo informativo».
+- **Campos compartidos** (`compra-gasto-campos.tsx`, `CompraGastoCampos`):
+  T.C. obligatorio y sugerido (`tcInicialCompra`: el de la compra, si no el
+  oficial de hoy), fecha y medio del pago, tarjeta o cuenta según el medio,
+  proveedor, folio, **comprobante** (`ComprobanteArchivo`: foto o PDF; se
+  sube al guardar con `uploadGastoComprobante` y viaja como `foto_url` ⇒ el
+  API lo deja «Con comprobante») y notas. Los usan los tres formularios.
+  Fuente única PURA en `lib/admin/compras-estado.ts`: `FormGastoCompra` /
+  `FormOtroGastoCompra`, `cuerpoRegistrarGastoCompra`,
+  `cuerpoAgregarGastoCompra` (monto primero, luego T.C./fecha/medio; cuenta
+  solo con medio que la lleva), `montoDeTexto`, textos y toasts.
+- **«Agregar gasto»** (`compra-agregar-gasto-dialog.tsx`, en la cabecera y en
+  la tarjeta): ¿qué pagaste? (Envío / Impuestos-aduana / Otro cargo; arranca
+  ENVÍO en PESOS), monto y moneda de SU factura, los campos compartidos
+  (proveedor de ESTE pago, sin default), confirmación de dinero y
+  `agregarGastoCompraAction` ⇒ `POST /v1/compras/:id/gastos`. «Vincular gasto
+  ya registrado» sale de la cabecera y queda en la tarjeta.
+- **«Registrar gasto»** (la mercancía) usa los mismos campos (ahora con
+  comprobante); el monto sigue siendo el del API.
+- **«Registrar compra»** (`compra-registrar-dialog.tsx`): bloque «¿Y el
+  pago?» con tres radios (`OPCIONES_PAGO_COMPRA`, default «Ya la pagué:
+  registrar su gasto ahora»): con «ahora» se esconde el T.C. de la compra (es
+  el del gasto), se exige costo en las líneas (`lineasConCosto`), se sube el
+  comprobante ANTES de crear nada y van DOS llamadas (`createCompraAction` y
+  `registrarGastoCompraAction` con el proveedor y la referencia de la compra
+  como proveedor y folio del gasto); si la segunda falla, la compra SÍ nació
+  y se avisa completo (`avisoCompraSinGasto`, toast de 15 s) al abrir el
+  detalle. «Todavía no la pago» = lo de antes; «La factura ya está en
+  Gastos» = el selector de candidatos.
+- **Detalle**: tarjeta «Gastos de esta compra» (`compra-pagos-card.tsx`) a lo
+  ancho y ANTES de los cargos impresos: «Agregar gasto» primario + «Vincular»,
+  columna «Comprobante», enlace por fila a Gastos (`hrefGastoEnfocado`), pie
+  «Suma de los gastos ligados (por moneda)» + «Total de la compra
+  (informativo)». «Envío e impuestos impresos en ESTA factura»
+  (`compra-cargos-factura-card.tsx`) con el aviso ámbar de que lo pagado
+  aparte va por «Agregar gasto». Resumen con `ETIQUETAS_RESUMEN_COMPRA`. La
+  lista pasa `tcOficialHoy` al diálogo de alta (best-effort).
+- **Orden de deploy**: API antes que el panel (con un API previo «Agregar
+  gasto» responde que la ruta no existe y el comprobante de «Registrar gasto»
+  se ignora).
+- Pruebas: `lib/admin/__tests__/compras-estado.test.ts` (cuerpos, montos,
+  textos, ¿Y el pago?) y `compras/__tests__/compras-ui.test.tsx` (diálogo,
+  tarjeta, cargos, alta, cableado).

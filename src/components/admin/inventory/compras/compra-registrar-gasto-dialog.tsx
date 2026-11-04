@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -22,44 +22,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Field } from "@/components/admin/form-field";
-import { CuentaGastoSelector } from "@/components/admin/expenses/cuenta-gasto-selector";
-import { ProveedorSelector } from "@/components/admin/expenses/proveedor-selector";
-import { listCardsOptionsAction, type CardOption } from "@/app/admin/users/actions";
 import { registrarGastoCompraAction } from "@/app/admin/inventory/compras/actions";
-import { ETIQUETA_CAMPO_CUENTA, HINT_CUENTA, cuentaParaAlta, medioLlevaCuenta } from "@/lib/admin/cuentas-gasto";
-import { MEDIOS_CAPTURA, ayudaMedioPago } from "@/lib/admin/medios-pago";
+import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import { todayCancun } from "@/lib/datetime";
 import {
   BOTON_REGISTRAR_GASTO,
   CODIGO_GASTO_YA_REGISTRADO,
-  ETIQUETA_FECHA_PAGO_COMPRA,
-  ETIQUETA_FOLIO_COMPRA,
-  ETIQUETA_TC_COMPRA,
-  HINT_FECHA_PAGO_COMPRA,
-  HINT_FOLIO_COMPRA,
+  cuerpoRegistrarGastoCompra,
   descripcionRegistrarGasto,
-  hintTcSugerido,
+  formGastoCompraVacio,
+  tcInicialCompra,
   textoConfirmarRegistrarGasto,
   textoEquivalente,
   tituloRegistrarGasto,
   toastGastoRegistrado,
   validarTcCompra,
+  type FormGastoCompra,
 } from "@/lib/admin/compras-estado";
 import { fmtMontoMoneda, toNum, type CompraDetalle } from "@/types/compras";
-
-const MSG_MEDIO_REQUERIDO = "Elige el medio de pago";
+import { CompraGastoCampos } from "./compra-gasto-campos";
 
 /**
  * «Registrar gasto» de la compra (21-oct-2026, API 0.0.102, invariante 101
- * del API). El MONTO no se captura: es el total de la factura que calculó el
- * API (líneas + cargos impresos). El T.C. es OBLIGATORIO (en pesos y en
- * dólares; banda 15–25, mismos textos que el API) y se sugiere el de la
- * compra o el oficial de hoy. Dinero ⇒ confirmación antes de crear. El
- * formulario se monta SOLO abierto: cada apertura arranca limpio sin efectos.
+ * del API): la factura de las REFACCIONES. El MONTO no se captura: es el
+ * total de la factura que calculó el API (líneas + cargos impresos). El T.C.
+ * es OBLIGATORIO (en pesos y en dólares; banda 15–25, mismos textos que el
+ * API) y se sugiere el de la compra o el oficial de hoy. Desde el 4-nov-2026
+ * (API 0.0.120) también se adjunta el comprobante, con los MISMOS campos que
+ * «Agregar gasto» (`CompraGastoCampos`). Dinero ⇒ confirmación antes de
+ * crear. El formulario se monta SOLO abierto: cada apertura arranca limpio.
  */
 export function CompraRegistrarGastoDialog({
   open,
@@ -95,12 +86,6 @@ export function CompraRegistrarGastoDialog({
   );
 }
 
-function tcInicialDe(compra: CompraDetalle, tcOficialHoy: number | null): string {
-  const deCompra = compra.tc_usd_mxn != null ? toNum(compra.tc_usd_mxn) : 0;
-  if (deCompra > 0) return String(deCompra);
-  return tcOficialHoy != null && tcOficialHoy > 0 ? String(tcOficialHoy) : "";
-}
-
 function RegistrarGastoFormulario({
   compra,
   providers,
@@ -114,61 +99,49 @@ function RegistrarGastoFormulario({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [tc, setTc] = useState(() => tcInicialDe(compra, tcOficialHoy));
-  const [fecha, setFecha] = useState(todayCancun);
-  const [medio, setMedio] = useState("");
-  const [tarjeta, setTarjeta] = useState("");
-  const [cuenta, setCuenta] = useState("");
-  const [proveedor, setProveedor] = useState(compra.proveedor?.id ?? "");
-  const [folio, setFolio] = useState(compra.referencia ?? "");
-  const [notas, setNotas] = useState("");
-  const [cardOptions, setCardOptions] = useState<CardOption[]>([]);
+  const [form, setForm] = useState<FormGastoCompra>(() =>
+    formGastoCompraVacio({
+      tc: tcInicialCompra(compra.tc_usd_mxn, tcOficialHoy),
+      fecha: todayCancun(),
+      proveedor: compra.proveedor?.id ?? "",
+      folio: compra.referencia ?? "",
+    }),
+  );
+  const [archivo, setArchivo] = useState<File | null>(null);
   const [confirmar, setConfirmar] = useState(false);
-
-  // Tarjetas del catálogo para «¿con qué tarjeta?» (solo TARJETA_CORP).
-  useEffect(() => {
-    let cancel = false;
-    void listCardsOptionsAction().then((res) => {
-      if (!cancel && res.ok && res.data) setCardOptions(res.data);
-    });
-    return () => {
-      cancel = true;
-    };
-  }, []);
+  const set = (patch: Partial<FormGastoCompra>) => setForm((f) => ({ ...f, ...patch }));
 
   const monto = compra.resumen.total_factura == null ? null : toNum(compra.resumen.total_factura);
-  const tcValido = validarTcCompra(tc);
+  const tcValido = validarTcCompra(form.tc);
   const equivalente = monto != null ? textoEquivalente(monto, compra.moneda, tcValido.ok ? tcValido.tc : null) : null;
+  const veredicto = cuerpoRegistrarGastoCompra(form, null);
 
   const pedirConfirmacion = () => {
-    if (!tcValido.ok) {
-      toast.error(tcValido.error);
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-      toast.error("Captura la fecha del pago.");
-      return;
-    }
-    if (!medio) {
-      toast.error(`${MSG_MEDIO_REQUERIDO}.`);
+    if (!veredicto.ok) {
+      toast.error(veredicto.error);
       return;
     }
     setConfirmar(true);
   };
 
   const registrar = () => {
-    if (!tcValido.ok) return;
-    const cuentaFinal = cuentaParaAlta(medio, cuenta);
+    if (!veredicto.ok) return;
+    const cuerpo = veredicto.cuerpo;
     startTransition(async () => {
+      // Primero el comprobante: si la subida falla, no se crea el gasto a medias.
+      let fotoPath: string | null = null;
+      if (archivo) {
+        try {
+          fotoPath = await uploadGastoComprobante(archivo);
+        } catch (err) {
+          setConfirmar(false);
+          toast.error(err instanceof Error ? err.message : "No se pudo subir el comprobante");
+          return;
+        }
+      }
       const r = await registrarGastoCompraAction(compra.id, {
-        tc_usd_mxn: tcValido.tc,
-        fecha_gasto: fecha,
-        medio_pago: medio,
-        ...(medio === "TARJETA_CORP" && tarjeta ? { tarjeta_terminacion: tarjeta } : {}),
-        ...(cuentaFinal ? { cuenta_bancaria_id: cuentaFinal } : {}),
-        ...(proveedor ? { proveedor_id: proveedor } : {}),
-        ...(folio.trim() ? { folio_ticket: folio.trim() } : {}),
-        ...(notas.trim() ? { notas: notas.trim() } : {}),
+        ...cuerpo,
+        ...(fotoPath ? { foto_url: fotoPath } : {}),
       });
       setConfirmar(false);
       if (r.ok && r.data) {
@@ -195,72 +168,15 @@ function RegistrarGastoFormulario({
             {equivalente && <span className="ml-2 text-sm font-normal text-muted-foreground">{equivalente}</span>}
           </p>
         </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
-          <Field
-            label={ETIQUETA_TC_COMPRA}
-            required
-            hint={hintTcSugerido(tcOficialHoy)}
-            error={tc.trim() !== "" && !tcValido.ok ? tcValido.error : undefined}
-          >
-            <Input
-              type="number"
-              step="0.0001"
-              min="0"
-              inputMode="decimal"
-              value={tc}
-              onChange={(e) => setTc(e.target.value)}
-              placeholder="Ej. 18.25"
-              data-tc-compra
-            />
-          </Field>
-          <Field label={ETIQUETA_FECHA_PAGO_COMPRA} required hint={HINT_FECHA_PAGO_COMPRA}>
-            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-          </Field>
-          <Field label="Medio de pago" required hint={ayudaMedioPago(medio) ?? undefined}>
-            <SearchableSelect
-              options={MEDIOS_CAPTURA}
-              value={medio}
-              onChange={(v) => {
-                setMedio(v);
-                if (v !== "TARJETA_CORP") setTarjeta("");
-                if (!medioLlevaCuenta(v)) setCuenta("");
-              }}
-              placeholder={MSG_MEDIO_REQUERIDO}
-            />
-          </Field>
-          {medio === "TARJETA_CORP" ? (
-            <Field label="¿Con qué tarjeta?" hint="vacío = la asignada a quien registra">
-              <SearchableSelect
-                options={[
-                  { value: "", label: "Automática (asignada al capturador)" },
-                  ...cardOptions.map((c) => ({
-                    value: c.terminacion,
-                    label: `**** ${c.terminacion} · ${c.nombre_titular}`,
-                  })),
-                ]}
-                value={tarjeta}
-                onChange={setTarjeta}
-                placeholder="Automática"
-              />
-            </Field>
-          ) : medioLlevaCuenta(medio) ? (
-            <Field label={ETIQUETA_CAMPO_CUENTA} hint={HINT_CUENTA}>
-              <CuentaGastoSelector key={medio} medio={medio} value={cuenta} onChange={setCuenta} />
-            </Field>
-          ) : (
-            <div />
-          )}
-          <Field label="Proveedor" hint="El de la compra, salvo que la factura sea de otro.">
-            <ProveedorSelector providers={providers} value={proveedor} onChange={setProveedor} />
-          </Field>
-          <Field label={ETIQUETA_FOLIO_COMPRA} hint={HINT_FOLIO_COMPRA}>
-            <Input value={folio} onChange={(e) => setFolio(e.target.value)} maxLength={60} />
-          </Field>
-        </div>
-        <Field label="Notas">
-          <Textarea rows={2} value={notas} onChange={(e) => setNotas(e.target.value)} />
-        </Field>
+        <CompraGastoCampos
+          form={form}
+          onChange={set}
+          providers={providers}
+          tcOficialHoy={tcOficialHoy}
+          hintProveedor="El de la compra, salvo que la factura sea de otro."
+          archivo={archivo}
+          onArchivo={setArchivo}
+        />
       </div>
 
       <DialogFooter>
@@ -280,14 +196,14 @@ function RegistrarGastoFormulario({
               ¿Registrar el gasto por {monto != null ? fmtMontoMoneda(monto, compra.moneda) : "—"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {tcValido.ok && monto != null
+              {veredicto.ok && monto != null
                 ? textoConfirmarRegistrarGasto({
                     folio: compra.folio,
                     monto,
                     moneda: compra.moneda,
-                    tc: tcValido.tc,
-                    fecha,
-                    medio,
+                    tc: veredicto.cuerpo.tc_usd_mxn,
+                    fecha: veredicto.cuerpo.fecha_gasto,
+                    medio: veredicto.cuerpo.medio_pago,
                   })
                 : ""}
             </AlertDialogDescription>

@@ -14,17 +14,30 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { fmtMontoMoneda, type CompraDetalle, type CompraListItem } from "@/types/compras";
 import {
+  AVISO_CARGOS_APARTE,
   AYUDA_FLUJO_COMPRAS,
+  BOTON_AGREGAR_GASTO,
   BOTON_REGISTRAR_GASTO,
   BOTON_VINCULAR_GASTO,
+  DESCRIPCION_AGREGAR_GASTO,
+  DESCRIPCION_GASTOS_COMPRA,
   ETIQUETA_ACCION,
+  ETIQUETA_COMPROBANTE,
+  ETIQUETA_QUE_PAGASTE,
   ETIQUETA_SIN_GASTO,
   ETIQUETA_SIN_LINEAS,
   ETIQUETA_TC_COMPRA,
+  ETIQUETA_TOTAL_COMPRA,
+  ETIQUETA_Y_EL_PAGO,
+  OPCIONES_PAGO_COMPRA,
   TEXTO_COMPRA_COMPLETA,
+  TITULO_CARGOS_FACTURA,
+  TITULO_GASTOS_COMPRA,
+  VACIO_GASTOS_COMPRA,
   descripcionRegistrarGasto,
   hintTcSugerido,
   textoEquivalente,
+  tituloAgregarGasto,
   tituloRegistrarGasto,
 } from "@/lib/admin/compras-estado";
 
@@ -38,6 +51,8 @@ vi.mock("sonner", () => ({
 }));
 vi.mock("@/app/admin/inventory/compras/actions", () => ({
   addPagoCompraAction: vi.fn(),
+  agregarGastoCompraAction: vi.fn(),
+  updateCompraAction: vi.fn(),
   createCompraAction: vi.fn(),
   deleteCompraAction: vi.fn(),
   entradaDesdeGastoAction: vi.fn(),
@@ -46,6 +61,19 @@ vi.mock("@/app/admin/inventory/compras/actions", () => ({
   registrarGastoCompraAction: vi.fn(),
   removePagoCompraAction: vi.fn(),
   updatePagoRolAction: vi.fn(),
+}));
+// La tarjeta «Gastos de esta compra» (4-nov-2026) arrastra piezas de Gastos
+// que cargan el cliente de Supabase (env) o acciones de servidor: se
+// stubbean las hojas, no la tarjeta.
+vi.mock("@/lib/storage/gasto-fotos", () => ({ uploadGastoComprobante: async () => "oficina/x.pdf" }));
+vi.mock("@/components/admin/comprobante-preview", () => ({ ComprobantePreview: () => null }));
+vi.mock("@/components/admin/flights/historial-gasto-editar", () => ({ HistorialGastoEditar: () => null }));
+vi.mock("@/components/admin/expenses/expense-actions", () => ({ ExpenseActions: () => null }));
+vi.mock("@/components/admin/expenses/facturacion-badge", () => ({ FacturacionBadge: () => <span /> }));
+vi.mock("@/components/admin/expenses/gasto-factura-button", () => ({ GastoFacturaButton: () => <span /> }));
+vi.mock("@/components/admin/expenses/gasto-banco-sheet", () => ({
+  useDetalleBancoGasto: () => ({ abrir: () => {} }),
+  GastoBancoSheet: () => null,
 }));
 vi.mock("@/app/admin/users/actions", () => ({
   listCardsOptionsAction: async () => ({ ok: true, data: [] }),
@@ -91,6 +119,9 @@ vi.mock("@/components/ui/searchable-select", () => ({
 const { ComprasTable } = await import("../compras-table");
 const { CompraPasos } = await import("../compra-pasos");
 const { CompraActions } = await import("../compra-actions");
+const { CompraAgregarGastoDialog } = await import("../compra-agregar-gasto-dialog");
+const { CompraPagosCard } = await import("../compra-pagos-card");
+const { CompraCargosFacturaCard } = await import("../compra-cargos-factura-card");
 const { CompraRegistrarGastoDialog } = await import("../compra-registrar-gasto-dialog");
 
 const raiz = path.resolve(__dirname, "../../../../../");
@@ -198,7 +229,10 @@ describe("el detalle: pasos y acciones", () => {
     expect(acciones).toContain('data-siguiente="recibir"');
     expect(acciones).toContain(esc(ETIQUETA_ACCION.recibir));
     expect(acciones).toContain(BOTON_REGISTRAR_GASTO);
-    expect(acciones).toContain(BOTON_VINCULAR_GASTO);
+    // 4-nov-2026: «Agregar gasto» en la cabecera; «Vincular» vive en la tarjeta de gastos.
+    expect(acciones).toContain(BOTON_AGREGAR_GASTO);
+    expect(acciones).toMatch(/<button[^>]*data-accion="agregar-gasto"[^>]*>/);
+    expect(acciones).not.toContain(BOTON_VINCULAR_GASTO);
     // «Registrar gasto» habilitado (todavía no tiene gasto).
     expect(acciones).toMatch(/<button[^>]*data-accion="gasto"[^>]*>/);
     expect(acciones).not.toMatch(/<button[^>]*disabled=""[^>]*data-accion="gasto"/);
@@ -270,17 +304,36 @@ describe("cableado de la página y las actions", () => {
     expect(pagina).toContain("{AYUDA_FLUJO_COMPRAS}");
     expect(pagina).toContain("ORDEN_PESTANAS_COMPRAS.map");
     expect(pagina).not.toContain("Una compra une la factura de las refacciones");
-    expect(pagina).toContain("<CompraRegistrarDialog providers={providers} items={items} />");
+    expect(pagina).toContain("<CompraRegistrarDialog providers={providers} items={items} tcOficialHoy={tcOficialHoy} />");
+    expect(pagina).toContain("getTipoCambioOficial().catch(() => null)");
     expect(AYUDA_FLUJO_COMPRAS).toBe(
       "Registra la compra cuando la pides, recíbela en bodega cuando llega y registra (o vincula) su gasto cuando la pagas: cada compra dice qué le falta.",
     );
   });
 
-  it("el detalle pinta los pasos y pasa el T.C. oficial y los proveedores a las acciones", () => {
+  it("el detalle pinta los pasos y pasa el T.C. oficial y los proveedores a las acciones y a la tarjeta de gastos", () => {
     const pagina = leer("app/admin/inventory/compras/[id]/page.tsx");
     expect(pagina).toContain("<CompraPasos compra={compra} />");
     expect(pagina).toContain("<CompraActions compra={compra} providers={providers} tcOficialHoy={tcOficialHoy} />");
     expect(pagina).toContain("getTipoCambioOficial()");
+    // 4-nov-2026: los gastos de la compra a lo ancho y ANTES de los cargos impresos en la factura.
+    const gastos = pagina.indexOf("<CompraPagosCard");
+    const cargos = pagina.indexOf("<CompraCargosFacturaCard");
+    expect(gastos).toBeGreaterThan(0);
+    expect(cargos).toBeGreaterThan(gastos);
+    expect(pagina.slice(gastos, cargos)).toContain("tcOficialHoy={tcOficialHoy}");
+    expect(pagina.slice(gastos, cargos)).toContain("providers={providers}");
+  });
+
+  it("la action «Agregar gasto» pega a POST /v1/compras/:id/gastos y refresca Gastos y caja chica", () => {
+    const actions = leer("app/admin/inventory/compras/actions.ts");
+    const i = actions.indexOf("export async function agregarGastoCompraAction");
+    expect(i).toBeGreaterThan(0);
+    const cuerpo = actions.slice(i, actions.indexOf("export async function", i + 10));
+    expect(cuerpo).toContain("`/v1/compras/${id}/gastos`");
+    expect(cuerpo).toContain('method: "POST"');
+    expect(cuerpo).toContain("revalidateCompra(id);");
+    expect(cuerpo).toContain('revalidatePath("/admin/caja-chica", "layout");');
   });
 
   it("las actions: registrar-gasto, candidatos y entrada-desde-gasto contra sus rutas, con revalidación donde toca", () => {
@@ -297,5 +350,97 @@ describe("cableado de la página y las actions", () => {
     // Las lecturas de selectores no revalidan (las llama un diálogo abierto).
     const j = actions.indexOf("export async function listGastosCandidatosCompraAction");
     expect(actions.slice(j)).not.toContain("revalidatePath");
+  });
+});
+
+// ===== Los gastos de la compra, uno por uno (4-nov-2026, API 0.0.120) =====
+
+describe("«Agregar gasto»: el diálogo y la tarjeta «Gastos de esta compra»", () => {
+  it("el diálogo: qué pagaste (envío en pesos por default), monto y moneda capturables, T.C. obligatorio sugerido y comprobante", () => {
+    const c = detalle();
+    const html = renderToStaticMarkup(
+      <CompraAgregarGastoDialog open onOpenChange={() => {}} compra={c} providers={[]} tcOficialHoy={18.2345} />,
+    );
+    expect(html).toContain(esc(tituloAgregarGasto(12)));
+    expect(html).toContain(esc(DESCRIPCION_AGREGAR_GASTO));
+    expect(html).toContain(esc(ETIQUETA_QUE_PAGASTE));
+    expect(html).toContain("Envío (UPS, DHL, FedEx…)");
+    expect(html).toMatch(/<input[^>]*data-monto-otro-gasto[^>]*>/);
+    expect(html).toContain("MXN (pesos)");
+    expect(html).toContain(esc(ETIQUETA_TC_COMPRA));
+    expect(inputTc(html)).toContain('value="18.2345"');
+    expect(html).toContain(esc(ETIQUETA_COMPROBANTE));
+    expect(html).toContain("data-comprobante-archivo");
+    expect(html).toContain('data-select="Elige el medio de pago"');
+    expect(html).toContain(BOTON_AGREGAR_GASTO);
+    // Sin el monto del API: aquí el monto es de SU factura.
+    expect(html).not.toContain("data-monto-gasto-compra");
+  });
+
+  it("la tarjeta: título y ayuda nuevos, «Agregar gasto» (primario) + «Vincular», el texto vacío y el total informativo con enlace a Gastos por fila", () => {
+    const vacia = renderToStaticMarkup(<CompraPagosCard compra={detalle()} fotoUrls={{}} providers={[]} />);
+    expect(vacia).toContain(TITULO_GASTOS_COMPRA);
+    expect(vacia).toContain(esc(DESCRIPCION_GASTOS_COMPRA));
+    expect(vacia).toContain(esc(VACIO_GASTOS_COMPRA));
+    expect(vacia).toMatch(/<button[^>]*data-accion="agregar-gasto"[^>]*>/);
+    expect(vacia).toMatch(/<button[^>]*data-accion="vincular"[^>]*>/);
+    expect(vacia).toContain(BOTON_VINCULAR_GASTO);
+    const conPagos = renderToStaticMarkup(
+      <CompraPagosCard
+        compra={detalle({
+          pagos: [
+            {
+              id: "7c1f0a3e-5d2b-4e6f-9a8b-1c2d3e4f5a6b",
+              fecha_gasto: "2026-11-04T18:00:00+00:00",
+              categoria: "PAQUETERIA",
+              monto: 1850.5,
+              moneda: "MXN",
+              tc_gasto: 18.8052,
+              medio_pago: "TARJETA_CORP",
+              proveedor: { nombre: "UPS" },
+              foto_url: null,
+              notas: "Envío de la compra #12",
+              compra_rol: "ENVIO",
+              conciliado: false,
+            },
+          ],
+        })}
+        fotoUrls={{}}
+        providers={[]}
+      />,
+    );
+    expect(conPagos).toContain(ETIQUETA_TOTAL_COMPRA);
+    expect(conPagos).toContain('data-abrir-gasto="7c1f0a3e-5d2b-4e6f-9a8b-1c2d3e4f5a6b"');
+    expect(conPagos).toContain("/admin/expenses?");
+    expect(conPagos).toContain("UPS");
+    expect(conPagos).toContain(">Comprobante<");
+  });
+
+  it("«Cargos impresos en ESTA factura»: título nuevo y el aviso de que lo pagado aparte va por «Agregar gasto»", () => {
+    const html = renderToStaticMarkup(<CompraCargosFacturaCard compra={detalle()} />);
+    expect(html).toContain(TITULO_CARGOS_FACTURA);
+    expect(html).toContain(esc(AVISO_CARGOS_APARTE));
+    expect(html).toContain("data-aviso-cargos-aparte");
+    expect(html).not.toContain("Cargos en la factura de mercancía");
+  });
+
+  it("«Registrar compra»: ¿Y el pago? con tres caminos, «Ya la pagué» por default con los campos del gasto y sin el T.C. duplicado", () => {
+    const fuente = leer("components/admin/inventory/compras/compra-registrar-dialog.tsx");
+    expect(fuente).toContain("registrarGastoCompraAction(compra.id");
+    expect(fuente).toContain("uploadGastoComprobante(archivo)");
+    expect(fuente).toContain("avisoCompraSinGasto(compra.folio, g.error)");
+    expect(fuente).toContain("lineasConCosto(form)");
+    // La compra nace ANTES del gasto y el comprobante se sube ANTES de crear nada.
+    const subida = fuente.indexOf("uploadGastoComprobante(archivo)");
+    const alta = fuente.indexOf("createCompraAction(cuerpoCompra)");
+    const gasto = fuente.indexOf("registrarGastoCompraAction(compra.id");
+    expect(subida).toBeLessThan(alta);
+    expect(alta).toBeLessThan(gasto);
+    expect(OPCIONES_PAGO_COMPRA.map((o) => o.value)).toEqual(["ahora", "despues", "vincular"]);
+    expect(fuente).toContain("{ETIQUETA_Y_EL_PAGO}");
+    expect(ETIQUETA_Y_EL_PAGO).toBe("¿Y el pago?");
+    // Con «Ya la pagué» el T.C. de la compra es el del gasto (un solo campo).
+    expect(fuente).toContain("{ ...form, tc_usd_mxn: gastoForm.tc }");
+    expect(fuente).toContain("{!conGasto && (");
   });
 });

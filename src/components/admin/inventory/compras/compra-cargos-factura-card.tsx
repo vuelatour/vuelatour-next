@@ -14,6 +14,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { updateCompraAction } from "@/app/admin/inventory/compras/actions";
+import {
+  AVISO_CARGOS_APARTE,
+  TITULO_CARGOS_FACTURA,
+  VACIO_CARGOS_FACTURA,
+  descripcionCargosFactura,
+} from "@/lib/admin/compras-estado";
 import { fmtMontoMoneda, toNum, type CompraDetalle } from "@/types/compras";
 
 interface CargoEdit {
@@ -28,6 +34,11 @@ interface CargoEdit {
  * pagos-cargo. Van en la moneda de la compra. Solo se editan mientras la
  * compra está ABIERTA (el API responde 409 en RECIBIDA): después se ven en
  * solo lectura y los cargos nuevos entran como pagos + "Recalcular costos".
+ *
+ * 4-nov-2026: la oficina capturó aquí el envío de UPS pagado APARTE (en
+ * pesos, con su propia factura) y no apareció en Gastos. El título y el
+ * aviso dicen ahora que esto es solo lo IMPRESO en la misma factura; lo
+ * pagado aparte va por «Agregar gasto» (tarjeta «Gastos de esta compra»).
  */
 export function CompraCargosFacturaCard({ compra }: { compra: CompraDetalle }) {
   const router = useRouter();
@@ -84,11 +95,8 @@ export function CompraCargosFacturaCard({ compra }: { compra: CompraDetalle }) {
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <CardTitle className="text-base">Cargos en la factura de mercancía</CardTitle>
-            <CardDescription>
-              Shipping, tax, handling… que vienen en la misma factura ({compra.moneda}). Se reparten al
-              costo de cada línea.
-            </CardDescription>
+            <CardTitle className="text-base">{TITULO_CARGOS_FACTURA}</CardTitle>
+            <CardDescription>{descripcionCargosFactura(compra.moneda)}</CardDescription>
           </div>
           {editable && (
             <div className="flex gap-2">
@@ -115,6 +123,9 @@ export function CompraCargosFacturaCard({ compra }: { compra: CompraDetalle }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400" data-aviso-cargos-aparte>
+          {AVISO_CARGOS_APARTE}
+        </p>
         {!editable && (
           <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
             Compra recibida: los cargos de factura ya no se editan; liga los pagos que lleguen y
@@ -122,9 +133,7 @@ export function CompraCargosFacturaCard({ compra }: { compra: CompraDetalle }) {
           </p>
         )}
         {cargos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Sin cargos dentro de la factura. Los pagos aparte (UPS, aduana) se ligan abajo como pagos.
-          </p>
+          <p className="text-sm text-muted-foreground">{VACIO_CARGOS_FACTURA}</p>
         ) : (
           cargos.map((c) => (
             <div key={c.key} className="flex items-center gap-2">

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LinkIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { ArrowTopRightOnSquareIcon, LinkIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -32,7 +33,6 @@ import {
 } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ComprobantePreview } from "@/components/admin/comprobante-preview";
-import { MEDIO_PAGO_LABELS } from "@/components/admin/expenses/expenses-table";
 import { BancoBadge } from "@/components/admin/expenses/banco-badge";
 import { GastoBancoSheet, useDetalleBancoGasto } from "@/components/admin/expenses/gasto-banco-sheet";
 import { puedeVerDetalleBancoGasto } from "@/lib/admin/gasto-banco";
@@ -43,6 +43,8 @@ import {
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtTc } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { MEDIO_PAGO_LABELS } from "@/lib/admin/medios-pago";
+import { hrefGastoEnfocado } from "@/lib/admin/gasto-enfocado";
 import {
   COMPRA_ROL_OPTIONS,
   fmtMontoMoneda,
@@ -50,19 +52,35 @@ import {
   type CompraPago,
   type CompraRol,
 } from "@/types/compras";
-import { BOTON_VINCULAR_GASTO } from "@/lib/admin/compras-estado";
+import {
+  BOTON_AGREGAR_GASTO,
+  BOTON_VINCULAR_GASTO,
+  DESCRIPCION_GASTOS_COMPRA,
+  ETIQUETA_SUMA_GASTOS,
+  ETIQUETA_TOTAL_COMPRA,
+  TITULO_ABRIR_GASTO,
+  TITULO_BOTON_AGREGAR_GASTO,
+  TITULO_GASTOS_COMPRA,
+  VACIO_GASTOS_COMPRA,
+} from "@/lib/admin/compras-estado";
+import { CompraAgregarGastoDialog } from "./compra-agregar-gasto-dialog";
 import { CompraPagoAddDialog } from "./compra-pago-add-dialog";
 
 /**
- * El GASTO de la compra (la factura de mercancía) y sus otros pagos (envío,
- * impuestos): cada uno es un gasto en Gastos con su factura y su cruce
- * bancario. Aquí se vincula/desvincula y se corrige el rol; el gasto se
- * edita en /admin/expenses. «Registrar gasto» vive en las acciones de arriba.
+ * LOS GASTOS DE LA COMPRA (4-nov-2026, API 0.0.120): la factura de las
+ * refacciones y los demás pagos (el envío de UPS en pesos, la aduana…), cada
+ * uno un gasto real en Gastos con su comprobante y su cruce bancario. Aquí
+ * se agregan («Agregar gasto» crea el gasto; «Vincular gasto ya registrado»
+ * liga uno existente), se desligan y se corrige el rol; el gasto se edita en
+ * /admin/expenses (enlace por fila). El total de la compra es informativo.
+ * «Registrar gasto» (la mercancía) vive en las acciones de arriba.
  */
 export function CompraPagosCard({
   compra,
   fotoUrls,
   rolUsuario = null,
+  providers = [],
+  tcOficialHoy = null,
 }: {
   compra: CompraDetalle;
   /** URLs firmadas de las facturas (bucket privado) por path. */
@@ -70,6 +88,9 @@ export function CompraPagosCard({
   /** Rol de quien mira (de `/me`; null si falló). No se llama `rol`: ese
       nombre ya es el `CompraRol` del pago dentro de este componente. */
   rolUsuario?: string | null;
+  /** Para «Agregar gasto» (proveedor del pago y T.C. sugerido). */
+  providers?: { id: string; nombre: string }[];
+  tcOficialHoy?: number | null;
 }) {
   const router = useRouter();
   // «Conciliación al revés» (13-oct-2026): el MISMO badge «Banco» de Gastos;
@@ -79,6 +100,7 @@ export function CompraPagosCard({
   const abrirBanco = puedeVerDetalleBancoGasto(rolUsuario) ? detalleBanco.abrir : null;
   const [pending, startTransition] = useTransition();
   const [openAdd, setOpenAdd] = useState(false);
+  const [openAgregar, setOpenAgregar] = useState(false);
   const [quitar, setQuitar] = useState<CompraPago | null>(null);
 
   const cambiarRol = (p: CompraPago, rol: CompraRol) => {
@@ -119,26 +141,33 @@ export function CompraPagosCard({
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <CardTitle className="text-base">
-              Gasto y pagos de la compra{" "}
+              {TITULO_GASTOS_COMPRA}{" "}
               <span className="text-sm font-normal text-muted-foreground">({compra.pagos.length})</span>
             </CardTitle>
-            <CardDescription>
-              La factura de mercancía es el gasto de la compra; envío e impuestos son otros pagos que se
-              reparten al costo de las refacciones. Cada uno sigue siendo un gasto en Gastos.
-            </CardDescription>
+            <CardDescription>{DESCRIPCION_GASTOS_COMPRA}</CardDescription>
           </div>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setOpenAdd(true)}>
-            <LinkIcon className="h-4 w-4" />
-            {BOTON_VINCULAR_GASTO}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setOpenAgregar(true)}
+              title={TITULO_BOTON_AGREGAR_GASTO}
+              data-accion="agregar-gasto"
+            >
+              <PlusIcon className="h-4 w-4" />
+              {BOTON_AGREGAR_GASTO}
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setOpenAdd(true)} data-accion="vincular">
+              <LinkIcon className="h-4 w-4" />
+              {BOTON_VINCULAR_GASTO}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">
         {compra.pagos.length === 0 ? (
           <p className="px-6 pb-6 text-sm text-muted-foreground" data-sin-pagos>
-            Sin gasto ni pagos ligados: pulsa «Registrar gasto» arriba (crea el gasto en Gastos por el
-            total de la factura) o vincula uno que ya esté en Gastos. Las facturas de envío e impuestos se
-            vinculan cuando lleguen.
+            {VACIO_GASTOS_COMPRA}
           </p>
         ) : (
           <Table>
@@ -150,9 +179,9 @@ export function CompraPagosCard({
                 <TableHead className="text-right">Monto</TableHead>
                 <TableHead>Medio</TableHead>
                 <TableHead>Proveedor</TableHead>
-                <TableHead>Factura</TableHead>
+                <TableHead>Comprobante</TableHead>
                 <TableHead>Banco</TableHead>
-                <TableHead className="w-10" />
+                <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -203,7 +232,17 @@ export function CompraPagosCard({
                         y la hoja dice la verdad. */}
                     <BancoBadge gasto={p} alAbrir={abrirBanco ? () => abrirBanco(p) : undefined} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {/* El gasto se edita (comprobante, factura, banco) en Gastos: ahí va resaltado. */}
+                    <Link
+                      href={hrefGastoEnfocado({ id: p.id, fecha_gasto: p.fecha_gasto })}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-brand-600 hover:bg-muted dark:text-brand-400"
+                      title={TITULO_ABRIR_GASTO}
+                      aria-label={TITULO_ABRIR_GASTO}
+                      data-abrir-gasto={p.id}
+                    >
+                      <ArrowTopRightOnSquareIcon className="h-4 w-4" aria-hidden="true" />
+                    </Link>
                     <button
                       type="button"
                       onClick={() => setQuitar(p)}
@@ -226,7 +265,7 @@ export function CompraPagosCard({
           // impuestos al TC de la compra). Aquí solo se pinta.
           <div className="space-y-1 border-t border-border px-4 py-2 text-xs text-muted-foreground">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <span>Suma de los pagos (todas las facturas, por moneda)</span>
+              <span>{ETIQUETA_SUMA_GASTOS}</span>
               <span className="flex flex-wrap gap-x-3">
                 {Object.entries(totales).map(([moneda, total]) => (
                   <span key={moneda} className="font-medium text-foreground tabular-nums">
@@ -237,9 +276,9 @@ export function CompraPagosCard({
             </div>
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <span>
-                Total de la compra{" "}
+                {ETIQUETA_TOTAL_COMPRA}{" "}
                 <span className="text-[11px]">
-                  (mercancía {fmtMontoMoneda(compra.resumen.total_mercancia, compra.resumen.moneda)}
+                  (refacciones {fmtMontoMoneda(compra.resumen.total_mercancia, compra.resumen.moneda)}
                   {" + "}envío e impuestos{" "}
                   {fmtMontoMoneda(
                     Number(compra.resumen.cargos_factura) + Number(compra.resumen.cargos_pagos),
@@ -272,6 +311,13 @@ export function CompraPagosCard({
         onOpenChange={setOpenAdd}
         compraId={compra.id}
         folio={compra.folio}
+      />
+      <CompraAgregarGastoDialog
+        open={openAgregar}
+        onOpenChange={setOpenAgregar}
+        compra={compra}
+        providers={providers}
+        tcOficialHoy={tcOficialHoy}
       />
 
       <GastoBancoSheet detalle={detalleBanco} />

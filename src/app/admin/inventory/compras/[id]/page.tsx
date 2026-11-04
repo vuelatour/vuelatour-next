@@ -127,10 +127,19 @@ export default async function CompraDetallePage({
 
       <CompraLineasCard compra={compra} items={items} />
 
+      {/* Los gastos de la compra, uno por uno (4-nov-2026): a lo ancho, antes
+          de los cargos impresos en la factura (que confundían a la oficina). */}
+      <CompraPagosCard
+        compra={compra}
+        fotoUrls={fotoUrls}
+        rolUsuario={rolUsuario}
+        providers={providers}
+        tcOficialHoy={tcOficialHoy}
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <CompraCargosFacturaCard compra={compra} />
         <div className="lg:col-span-2">
-          <CompraPagosCard compra={compra} fotoUrls={fotoUrls} rolUsuario={rolUsuario} />
+          <CompraCargosFacturaCard compra={compra} />
         </div>
       </div>
     </div>

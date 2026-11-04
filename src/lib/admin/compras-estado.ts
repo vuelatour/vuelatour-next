@@ -18,17 +18,22 @@
 import { fmtDateOnly, isoToCancunInput } from "@/lib/datetime";
 import { fmtMxn, fmtUsd } from "@/lib/format";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
+import { cuentaParaAlta } from "@/lib/admin/cuentas-gasto";
 import { medioPagoLabel } from "@/lib/admin/medios-pago";
 import { PESTANAS_COMPRAS, type FiltroCompras } from "@/lib/admin/titulos-pestana";
 import {
   fmtMontoMoneda,
   toNum,
+  type AgregarGastoCompraInput,
   type CompraConGastoRegistrado,
   type CompraDetalle,
   type CompraGastoEstado,
   type CompraListItem,
+  type CompraRolOtro,
   type EntradaDesdeGastoResultado,
   type GastoCandidatoCompra,
+  type Numeric,
+  type RegistrarGastoCompraInput,
 } from "@/types/compras";
 
 export { PESTANAS_COMPRAS, type FiltroCompras };
@@ -555,4 +560,258 @@ export function toastCompraRegistrada(c: Pick<CompraDetalle, "folio" | "lineas">
   return c.lineas.length === 0
     ? `Compra #${c.folio} registrada (pedida, sin recibir) · agrega sus líneas en el detalle.`
     : `Compra #${c.folio} registrada: pedida, sin recibir.`;
+}
+
+// ===== Los gastos de una compra, uno por uno (4-nov-2026, API 0.0.120, invariante 116 del API) =====
+//
+// Pedido de la oficina (Pablo Canales, video del 4-nov-2026): el envío de UPS
+// «no me deja cambiarlo a pesos, no me deja subir el comprobante y no aparece
+// en Gastos». Regla: la compra se queda como contenedor; cada pago (la
+// factura de las refacciones, el envío, la aduana…) se registra UNO POR UNO
+// como gasto real en Gastos, en su moneda y con su comprobante, y el total
+// de la compra es informativo.
+
+/** Qué paga un gasto agregado a la compra (todo menos la mercancía). */
+export const ROL_OTRO_GASTO_OPTIONS: ReadonlyArray<{ value: CompraRolOtro; label: string; description: string }> = [
+  { value: "ENVIO", label: "Envío (UPS, DHL, FedEx…)", description: "Nace en Gastos como Paquetería." },
+  { value: "IMPUESTOS", label: "Impuestos / aduana", description: "Nace en Gastos como «Otros gastos VuelaTour»." },
+  { value: "OTRO", label: "Otro cargo", description: "Nace en Gastos como «Otros gastos VuelaTour»." },
+];
+
+export const ETIQUETA_ROL_OTRO_GASTO: Readonly<Record<CompraRolOtro, string>> = {
+  ENVIO: "Envío",
+  IMPUESTOS: "Impuestos / aduana",
+  OTRO: "Otro cargo",
+};
+
+/** Los campos que comparten «Registrar gasto», «Agregar gasto» y «Ya la pagué» de Registrar compra. */
+export interface FormGastoCompra {
+  tc: string;
+  fecha: string;
+  medio: string;
+  tarjeta: string;
+  cuenta: string;
+  proveedor: string;
+  folio: string;
+  notas: string;
+}
+
+/** «Agregar gasto»: además qué pagó, cuánto y en qué moneda (la de SU factura). */
+export interface FormOtroGastoCompra extends FormGastoCompra {
+  rol: CompraRolOtro;
+  monto: string;
+  moneda: "MXN" | "USD";
+}
+
+/** El T.C. con el que abre el formulario: el de la compra; si no, el oficial de hoy; si no, vacío. */
+export function tcInicialCompra(tcCompra: Numeric | null | undefined, tcOficialHoy: number | null | undefined): string {
+  const deCompra = tcCompra == null ? 0 : toNum(tcCompra);
+  if (deCompra > 0) return String(deCompra);
+  return tcOficialHoy != null && tcOficialHoy > 0 ? String(tcOficialHoy) : "";
+}
+
+export function formGastoCompraVacio(p: { tc: string; fecha: string; proveedor?: string; folio?: string }): FormGastoCompra {
+  return {
+    tc: p.tc,
+    fecha: p.fecha,
+    medio: "",
+    tarjeta: "",
+    cuenta: "",
+    proveedor: p.proveedor ?? "",
+    folio: p.folio ?? "",
+    notas: "",
+  };
+}
+
+/** Arranca como ENVÍO en PESOS: el caso de siempre (UPS cobra en pesos aunque la compra sea en dólares). */
+export function formOtroGastoCompraVacio(p: { tc: string; fecha: string }): FormOtroGastoCompra {
+  return { ...formGastoCompraVacio(p), rol: "ENVIO", monto: "", moneda: "MXN" };
+}
+
+export const MSG_FECHA_PAGO_REQUERIDA = "Captura la fecha del pago.";
+export const MSG_MEDIO_REQUERIDO = "Elige el medio de pago";
+export const MSG_MONTO_REQUERIDO = "Captura el monto que pagaste (mayor a cero).";
+
+export type VeredictoCuerpo<T> = { ok: true; cuerpo: T } | { ok: false; error: string };
+
+/** «1,850.50» / «1850,50» ⇒ 1850.5 a centavos; nada válido ⇒ null. */
+export function montoDeTexto(txt: string | null | undefined): number | null {
+  const limpio = String(txt ?? "")
+    .trim()
+    .replace(/\s/g, "");
+  if (!limpio) return null;
+  // Con coma Y punto, la coma es de miles; solo coma, es decimal.
+  const normal = limpio.includes(".") ? limpio.replace(/,/g, "") : limpio.replace(",", ".");
+  const n = Number(normal);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/** Lo común de los tres formularios: T.C. en banda, fecha, medio, tarjeta/cuenta según el medio, proveedor, folio, notas. */
+function cuerpoComunGastoCompra(
+  f: FormGastoCompra,
+  fotoPath: string | null | undefined,
+): VeredictoCuerpo<Omit<RegistrarGastoCompraInput, "tc_usd_mxn"> & { tc_usd_mxn: number }> {
+  const tc = validarTcCompra(f.tc);
+  if (!tc.ok) return { ok: false, error: tc.error };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(f.fecha)) return { ok: false, error: MSG_FECHA_PAGO_REQUERIDA };
+  if (!f.medio) return { ok: false, error: `${MSG_MEDIO_REQUERIDO}.` };
+  const cuenta = cuentaParaAlta(f.medio, f.cuenta);
+  return {
+    ok: true,
+    cuerpo: {
+      tc_usd_mxn: tc.tc,
+      fecha_gasto: f.fecha,
+      medio_pago: f.medio,
+      ...(f.medio === "TARJETA_CORP" && f.tarjeta ? { tarjeta_terminacion: f.tarjeta } : {}),
+      ...(cuenta ? { cuenta_bancaria_id: cuenta } : {}),
+      ...(f.proveedor ? { proveedor_id: f.proveedor } : {}),
+      ...(f.folio.trim() ? { folio_ticket: f.folio.trim().slice(0, 60) } : {}),
+      ...(f.notas.trim() ? { notas: f.notas.trim() } : {}),
+      ...(fotoPath ? { foto_url: fotoPath } : {}),
+    },
+  };
+}
+
+/** Lo que viaja a `registrar-gasto` (el monto lo calcula el API). */
+export function cuerpoRegistrarGastoCompra(
+  f: FormGastoCompra,
+  fotoPath?: string | null,
+): VeredictoCuerpo<RegistrarGastoCompraInput> {
+  return cuerpoComunGastoCompra(f, fotoPath);
+}
+
+/** Lo que viaja a `POST /v1/compras/:id/gastos`: el monto y la moneda de SU factura más lo común. */
+export function cuerpoAgregarGastoCompra(
+  f: FormOtroGastoCompra,
+  fotoPath?: string | null,
+): VeredictoCuerpo<AgregarGastoCompraInput> {
+  const monto = montoDeTexto(f.monto);
+  if (monto == null) return { ok: false, error: MSG_MONTO_REQUERIDO };
+  const comun = cuerpoComunGastoCompra(f, fotoPath);
+  if (!comun.ok) return comun;
+  return {
+    ok: true,
+    cuerpo: { rol: f.rol, monto, moneda: f.moneda === "USD" ? "USD" : "MXN", ...comun.cuerpo },
+  };
+}
+
+// ===== «Agregar gasto» (el diálogo) =====
+
+export const BOTON_AGREGAR_GASTO = "Agregar gasto";
+export const TITULO_BOTON_AGREGAR_GASTO = "El envío, la aduana u otro cargo de esta compra: nace como gasto en Gastos";
+
+export function tituloAgregarGasto(folio: number): string {
+  return `Agregar un gasto a la compra #${folio}`;
+}
+
+export const DESCRIPCION_AGREGAR_GASTO =
+  "Otro pago de esta compra (el envío, la aduana, otro cargo): se crea en Gastos como un gasto normal —con su moneda, su comprobante y su cruce con el banco— y queda ligado a la compra. La factura de las refacciones se registra con «Registrar gasto».";
+export const ETIQUETA_QUE_PAGASTE = "¿Qué pagaste?";
+export const ETIQUETA_MONTO_GASTO = "Monto pagado";
+export const ETIQUETA_MONEDA_GASTO = "Moneda";
+export const HINT_MONEDA_GASTO = "La de la factura de este pago: UPS cobra en pesos aunque la compra sea en dólares.";
+export const ETIQUETA_COMPROBANTE = "Comprobante (foto o PDF)";
+export const HINT_COMPROBANTE = "Opcional: queda en el gasto. También se puede subir después desde Gastos.";
+export const HINT_PROVEEDOR_OTRO_GASTO = "El de ESTE pago (UPS, el agente aduanal…), no el de las refacciones.";
+export const HINT_TC_OTRO_GASTO = "Con él el cargo entra al costo de las refacciones aunque la compra esté en otra moneda.";
+
+export function textoConfirmarAgregarGasto(p: {
+  folio: number;
+  rol: CompraRolOtro;
+  monto: number;
+  moneda: string;
+  tc: number;
+  fecha: string;
+  medio: string;
+}): string {
+  const equivalente = textoEquivalente(p.monto, p.moneda, p.tc);
+  return `Se crea en Gastos un gasto por ${fmtMontoMoneda(p.monto, p.moneda)}${
+    equivalente ? ` (${equivalente} al T.C. ${p.tc})` : ""
+  } con fecha ${fmtDateOnly(p.fecha)}, pagado por ${medioPagoLabel(p.medio)}, y queda ligado a la compra #${p.folio} como ${ETIQUETA_ROL_OTRO_GASTO[p.rol].toLowerCase()}.`;
+}
+
+export function toastGastoAgregado(
+  r: Pick<CompraConGastoRegistrado, "folio" | "gasto_registrado" | "tc_compra_fijado">,
+  rol: CompraRolOtro,
+): string {
+  const g = r.gasto_registrado;
+  return `Gasto agregado a la compra #${r.folio} por ${fmtMontoMoneda(g.monto, g.moneda)} (${ETIQUETA_ROL_OTRO_GASTO[rol].toLowerCase()}): ya está en Gastos${
+    r.tc_compra_fijado ? " · el tipo de cambio quedó también en la compra" : ""
+  }.`;
+}
+
+// ===== La tarjeta «Gastos de esta compra» =====
+
+export const TITULO_GASTOS_COMPRA = "Gastos de esta compra";
+export const DESCRIPCION_GASTOS_COMPRA =
+  "Cada pago es un gasto en Gastos con su comprobante y su cruce con el banco: la factura de las refacciones, el envío, la aduana… El total de la compra es informativo.";
+export const VACIO_GASTOS_COMPRA =
+  "Todavía no hay gastos ligados. «Registrar gasto» crea en Gastos el de la factura de las refacciones; «Agregar gasto», el envío, la aduana u otro cargo; «Vincular gasto ya registrado», uno que ya esté en Gastos.";
+export const ETIQUETA_SUMA_GASTOS = "Suma de los gastos ligados (por moneda)";
+export const ETIQUETA_TOTAL_COMPRA = "Total de la compra (informativo)";
+export const TITULO_ABRIR_GASTO = "Abrir este gasto en Gastos";
+
+// ===== «Cargos impresos en ESTA factura» (lo que confundió a la oficina) =====
+
+export const TITULO_CARGOS_FACTURA = "Envío e impuestos impresos en ESTA factura";
+export function descripcionCargosFactura(moneda: string): string {
+  return `Solo los renglones que vienen en la misma factura de las refacciones (Shipping, Tax…), en ${moneda}: suman al gasto de la mercancía y se reparten al costo de cada línea.`;
+}
+export const AVISO_CARGOS_APARTE =
+  "Si el envío o la aduana se pagaron APARTE (otra factura, otro cargo del banco), no van aquí: regístralos con «Agregar gasto».";
+export const VACIO_CARGOS_FACTURA = "Sin cargos impresos en la factura.";
+
+/** Etiquetas del resumen (lo calcula el API; aquí solo se nombra). */
+export const ETIQUETAS_RESUMEN_COMPRA = {
+  mercancia: "Refacciones (líneas)",
+  cargosFactura: "Envío e impuestos en la misma factura",
+  cargosPagos: "Otros gastos ligados (envío, aduana…)",
+  total: "Total de la compra (costo en bodega)",
+} as const;
+
+// ===== «Registrar compra»: ¿Y el pago? =====
+
+export type OpcionPagoCompra = "ahora" | "despues" | "vincular";
+export const PAGO_COMPRA_DEFAULT: OpcionPagoCompra = "ahora";
+export const ETIQUETA_Y_EL_PAGO = "¿Y el pago?";
+export const OPCIONES_PAGO_COMPRA: ReadonlyArray<{ value: OpcionPagoCompra; label: string; description: string }> = [
+  {
+    value: "ahora",
+    label: "Ya la pagué: registrar su gasto ahora",
+    description:
+      "Se crea la compra y, enseguida, su gasto en Gastos por el total de las líneas, con la fecha, el medio y el comprobante de abajo.",
+  },
+  {
+    value: "despues",
+    label: "Todavía no la pago",
+    description: "Queda «Pedida, sin recibir» y «Sin gasto registrado»: lo registras desde la compra cuando la pagues.",
+  },
+  {
+    value: "vincular",
+    label: "La factura ya está en Gastos: vincularla",
+    description: HINT_VINCULAR_GASTO_ENTRADA,
+  },
+];
+export const MSG_LINEAS_SIN_COSTO_PARA_GASTO =
+  "Para registrar el gasto ahora captura el costo de las líneas (o elige «Todavía no la pago»).";
+
+/** ¿Alguna línea trae costo > 0? Sin eso el API rechaza el gasto (COMPRA_SIN_MONTO). */
+export function lineasConCosto(f: Pick<FormRegistrarCompra, "lineas">): boolean {
+  return f.lineas.some((l) => (l.nombre.trim() || l.item_id) && Number(l.costo_unitario) > 0);
+}
+
+export function textoConfirmarCompraConGasto(p: { lineas: number; moneda: string; tc: number; fecha: string; medio: string }): string {
+  return `Se registra la compra con ${p.lineas} ${p.lineas === 1 ? "línea" : "líneas"} y, enseguida, su gasto de Refacción en ${p.moneda} por el total de la factura (lo calcula el API) al T.C. ${p.tc}, con fecha ${fmtDateOnly(p.fecha)} y pagado por ${medioPagoLabel(p.medio)}.`;
+}
+
+export function toastCompraConGasto(c: Pick<CompraConGastoRegistrado, "folio" | "gasto_registrado">): string {
+  const g = c.gasto_registrado;
+  return `Compra #${c.folio} registrada y su gasto por ${fmtMontoMoneda(g.monto, g.moneda)} ya está en Gastos.`;
+}
+
+/** La compra nació pero su gasto no: se dice completo (no un toast que desaparece). */
+export function avisoCompraSinGasto(folio: number, error: string | null | undefined): string {
+  const motivo = (error ?? "").trim();
+  return `La compra #${folio} quedó registrada, pero su gasto NO: ${motivo ? `${motivo} ` : ""}Regístralo desde la compra con «Registrar gasto».`;
 }

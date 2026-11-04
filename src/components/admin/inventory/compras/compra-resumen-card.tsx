@@ -1,5 +1,6 @@
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ETIQUETAS_RESUMEN_COMPRA } from "@/lib/admin/compras-estado";
 import { fmtMontoMoneda, toNum, type CompraResumen } from "@/types/compras";
 
 /**
@@ -11,10 +12,10 @@ export function CompraResumenCard({ resumen }: { resumen: CompraResumen }) {
   const m = resumen.moneda;
   const factor = toNum(resumen.factor);
   const filas: Array<{ label: string; value: string; strong?: boolean; muted?: boolean }> = [
-    { label: "Mercancía (líneas)", value: fmtMontoMoneda(resumen.total_mercancia, m) },
-    { label: "Cargos en la factura", value: fmtMontoMoneda(resumen.cargos_factura, m) },
-    { label: "Cargos por pagos (envío, impuestos…)", value: fmtMontoMoneda(resumen.cargos_pagos, m) },
-    { label: "Total puesto en bodega", value: fmtMontoMoneda(resumen.total, m), strong: true },
+    { label: ETIQUETAS_RESUMEN_COMPRA.mercancia, value: fmtMontoMoneda(resumen.total_mercancia, m) },
+    { label: ETIQUETAS_RESUMEN_COMPRA.cargosFactura, value: fmtMontoMoneda(resumen.cargos_factura, m) },
+    { label: ETIQUETAS_RESUMEN_COMPRA.cargosPagos, value: fmtMontoMoneda(resumen.cargos_pagos, m) },
+    { label: ETIQUETAS_RESUMEN_COMPRA.total, value: fmtMontoMoneda(resumen.total, m), strong: true },
   ];
 
   return (

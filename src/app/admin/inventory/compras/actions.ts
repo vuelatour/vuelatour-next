@@ -5,6 +5,7 @@ import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { listCompras } from "@/lib/api/compras-server";
 import type {
+  AgregarGastoCompraInput,
   CompraConGastoRegistrado,
   CompraCreateInput,
   CompraDetalle,
@@ -129,6 +130,29 @@ export async function registrarGastoCompraAction(
 ): Promise<ActionResult<CompraConGastoRegistrado>> {
   try {
     const data = await apiServer<CompraConGastoRegistrado>(`/v1/compras/${id}/registrar-gasto`, {
+      method: "POST",
+      body: input,
+    });
+    revalidateCompra(id);
+    revalidatePath("/admin/caja-chica", "layout");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * «Agregar gasto» (4-nov-2026, API 0.0.120, invariante 116 del API): otro
+ * pago de la compra (envío, aduana, otro cargo) que el API crea en Gastos
+ * con su monto y su moneda, ligado a la compra con ese rol. El T.C. es
+ * obligatorio (15–25); rol MERCANCIA ⇒ 400 (esa es «Registrar gasto»).
+ */
+export async function agregarGastoCompraAction(
+  id: string,
+  input: AgregarGastoCompraInput,
+): Promise<ActionResult<CompraConGastoRegistrado>> {
+  try {
+    const data = await apiServer<CompraConGastoRegistrado>(`/v1/compras/${id}/gastos`, {
       method: "POST",
       body: input,
     });
