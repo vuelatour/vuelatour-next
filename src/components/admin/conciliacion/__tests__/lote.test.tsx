@@ -204,7 +204,7 @@ describe("el diálogo nuevo (render estático, sin red)", () => {
     expect(html).toContain("Cargo de $8,404.20");
     expect(html).toContain("Gastos candidatos · ±30 días");
     expect(html).toContain("Ampliar a 120 días");
-    expect(html).toContain('placeholder="Busca por monto (2801.40), proveedor o nota"');
+    expect(html).toContain('placeholder="Busca por monto (2801.40), proveedor, nota o folio de factura (AI-7351)"');
     expect(html).toContain("Buscando gastos candidatos…");
     expect(html).toContain("Sugerir con IA");
     expect(html).toContain("±30 días del cargo");

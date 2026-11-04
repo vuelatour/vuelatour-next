@@ -212,7 +212,7 @@ describe("el diálogo al abrir (antes de la respuesta del API)", () => {
     expect(html).toContain("Buscando los gastos que pagaron los cargos…");
     expect(html).not.toContain("Ningún gasto");
     expect(html).toContain("Gastos sin conciliar · ±30 días de los cargos");
-    expect(html).toContain('placeholder="Busca por monto, proveedor o nota"');
+    expect(html).toContain('placeholder="Busca por monto, proveedor, nota o folio de factura"');
     expect(html).toContain('maxLength="80"');
     expect(html).toContain("Ampliar a ±120 días");
   });

@@ -518,7 +518,7 @@ describe("textos del diálogo", () => {
     expect(descripcionVincularGasto({ monto: "-8404.20", fecha: "2026-09-24", descripcion: "SPEI SAESA" })).toBe(
       `Cargo de $8,404.20 del ${fmtDateOnly("2026-09-24")} · SPEI SAESA. Marca el gasto que pagó; si pagó varias facturas, márcalas todas.`,
     );
-    expect(PLACEHOLDER_BUSCAR_GASTO).toBe("Busca por monto (2801.40), proveedor o nota");
+    expect(PLACEHOLDER_BUSCAR_GASTO).toBe("Busca por monto (2801.40), proveedor, nota o folio de factura (AI-7351)");
     expect(etiquetaListaCandidatos(VENTANA_CARGO_DIAS)).toBe("Gastos candidatos · ±30 días");
     expect(textoAmpliarVentana(VENTANA_AMPLIADA_DIAS)).toBe("Ampliar a 120 días");
     expect(NOTA_VENTANA_CARGO(30)).toContain("±30 días del cargo");

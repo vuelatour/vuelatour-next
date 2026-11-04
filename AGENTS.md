@@ -5719,7 +5719,11 @@ siempre. Contrato con el API 0.0.52 (migración
   con CASILLAS (`max-h-72`): los candidatos del servidor («Gastos candidatos
   · ±30 días», botón «Ampliar a 120 días»), buscador con debounce de 300 ms y
   turno (`pedidoRef`: una respuesta vieja no pisa a la nueva), placeholder
-  «Busca por monto (2801.40), proveedor o nota». Cada fila =
+  «Busca por monto (2801.40), proveedor, nota o folio de factura (AI-7351)»
+  (4-nov-2026: el API 0.0.119 busca también por el folio de la factura
+  recibida —serie-folio, principal y puente— y un entero de ≥ 3 dígitos trae
+  además los folios que terminan así; con un API previo la búsqueda por folio
+  simplemente no encuentra nada). Cada fila =
   `etiquetaCandidatoGasto` + `descripcionCandidatoGasto` (fecha · monto ·
   vuelo #folio · nota); los marcados suben al principio aunque no coincidan
   con la búsqueda; una fila vetada lleva `input disabled`, `cursor-not-allowed
@@ -8552,7 +8556,7 @@ y hace visible lo sospechoso. SIN migración.
   `tc_cruce.texto` o, con un API previo, el «T.C. 17.06» crudo).
 - **«Vincular gasto»** (`vincular-gasto-dialog.tsx`): con la capacidad y en
   una cuenta en pesos (`cruzaUsd`), placeholder «Busca por monto en pesos o
-  en dólares (2801.40), proveedor o nota» y la nota de las compras en
+  en dólares (2801.40), proveedor, nota o folio de factura» y la nota de las compras en
   dólares. Un candidato cruzado lleva una 3.ª línea SIN recortar con
   «T.C. 17.06 · oficial 17.01 (+0.3 %)» y su tooltip exacto (ámbar si queda
   LEJOS o fuera de banda); la 2.ª va sin el T.C. Marcar EXACTAMENTE UN

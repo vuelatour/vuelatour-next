@@ -31,7 +31,7 @@
 import type { TcCruceUsd } from "@/types/conciliacion";
 
 /** Placeholder del buscador cuando la cuenta en pesos también ofrece compras en dólares. */
-export const PLACEHOLDER_BUSCAR_GASTO_CON_USD = "Busca por monto en pesos o en dólares (2801.40), proveedor o nota";
+export const PLACEHOLDER_BUSCAR_GASTO_CON_USD = "Busca por monto en pesos o en dólares (2801.40), proveedor, nota o folio de factura";
 
 /**
  * Placeholder cuando la lectura del T.C. oficial falló: las compras en
@@ -39,7 +39,7 @@ export const PLACEHOLDER_BUSCAR_GASTO_CON_USD = "Busca por monto en pesos o en d
  * pesos necesita el oficial).
  */
 export const PLACEHOLDER_BUSCAR_GASTO_SIN_TC =
-  "Busca por monto (las compras en dólares, por su monto en dólares), proveedor o nota";
+  "Busca por monto (las compras en dólares, por su monto en dólares), proveedor, nota o folio de factura";
 
 /** Aviso ámbar del diálogo cuando la lectura del T.C. oficial del día falló. */
 export const AVISO_TC_SIN_LECTURA =

@@ -219,10 +219,12 @@ export function marcaCandidatoPropio(c: Pick<CargoConCandidatoPropio, "motivo" |
 
 // ───────────────────────────── La lista de gastos ─────────────────────────────
 
-/** «Busca por monto (400.00), proveedor o nota» (sin la suma del API: sin el ejemplo). */
+/** «Busca por monto (400.00), proveedor, nota o folio de factura» (sin la suma del API: sin el ejemplo). */
 export function placeholderBuscarSuma(suma: number | null | undefined): string {
   const s = Math.abs(numeroDe(suma));
-  return s > 0 ? `Busca por monto (${s.toFixed(2)}), proveedor o nota` : "Busca por monto, proveedor o nota";
+  return s > 0
+    ? `Busca por monto (${s.toFixed(2)}), proveedor, nota o folio de factura`
+    : "Busca por monto, proveedor, nota o folio de factura";
 }
 
 /** «Gastos sin conciliar · ±30 días de los cargos». */

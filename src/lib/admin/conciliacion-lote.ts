@@ -576,7 +576,8 @@ export function descripcionVincularGasto(m: {
   return `Cargo de ${fmt(Math.abs(numeroDe(m.monto)))} del ${fmtDateOnly(m.fecha)}${desc ? ` · ${desc}` : ""}. Marca el gasto que pagó; si pagó varias facturas, márcalas todas.`;
 }
 
-export const PLACEHOLDER_BUSCAR_GASTO = "Busca por monto (2801.40), proveedor o nota";
+/** 4-nov-2026 (API 0.0.119): también por el folio de la factura («AI-7351»). */
+export const PLACEHOLDER_BUSCAR_GASTO = "Busca por monto (2801.40), proveedor, nota o folio de factura (AI-7351)";
 
 /** «Gastos candidatos · ±30 días». */
 export function etiquetaListaCandidatos(dias: number): string {

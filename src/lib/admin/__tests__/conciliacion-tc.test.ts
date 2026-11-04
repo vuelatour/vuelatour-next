@@ -158,7 +158,7 @@ describe("lectura FALLIDA del T.C. oficial (≠ «sin dato»)", () => {
     );
     // El buscador ya no promete la búsqueda en pesos.
     expect(PLACEHOLDER_BUSCAR_GASTO_SIN_TC).toBe(
-      "Busca por monto (las compras en dólares, por su monto en dólares), proveedor o nota",
+      "Busca por monto (las compras en dólares, por su monto en dólares), proveedor, nota o folio de factura",
     );
     expect(PLACEHOLDER_BUSCAR_GASTO_SIN_TC).not.toContain("en pesos");
   });
@@ -173,7 +173,7 @@ describe("sufijo de moneda y textos", () => {
   });
 
   it("placeholder y nota exactos; sin `cruzaUsd` la nota es byte a byte la de antes", () => {
-    expect(PLACEHOLDER_BUSCAR_GASTO_CON_USD).toBe("Busca por monto en pesos o en dólares (2801.40), proveedor o nota");
+    expect(PLACEHOLDER_BUSCAR_GASTO_CON_USD).toBe("Busca por monto en pesos o en dólares (2801.40), proveedor, nota o folio de factura");
     expect(NOTA_COMPRAS_USD).toBe(
       " En esta cuenta en pesos también salen las compras en dólares con tarjeta: primero las que cuadran con el tipo de cambio oficial del día del cargo; búscalas por su monto en dólares o en pesos.",
     );

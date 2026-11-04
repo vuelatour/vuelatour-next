@@ -273,8 +273,8 @@ describe("encabezado y cargos (la suma es la del API)", () => {
 
 describe("la lista de gastos", () => {
   it("buscador, ventana, «Ampliar a ±120 días» y la nota al pie", () => {
-    expect(placeholderBuscarSuma(400)).toBe("Busca por monto (400.00), proveedor o nota");
-    expect(placeholderBuscarSuma(null)).toBe("Busca por monto, proveedor o nota");
+    expect(placeholderBuscarSuma(400)).toBe("Busca por monto (400.00), proveedor, nota o folio de factura");
+    expect(placeholderBuscarSuma(null)).toBe("Busca por monto, proveedor, nota o folio de factura");
     expect(textoVentanaSuma(30)).toBe("Gastos sin conciliar · ±30 días de los cargos");
     expect(textoVentanaSuma(120)).toBe("Gastos sin conciliar · ±120 días de los cargos");
     expect(BOTON_AMPLIAR_120).toBe("Ampliar a ±120 días");
