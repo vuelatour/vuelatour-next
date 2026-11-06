@@ -52,6 +52,14 @@ import {
   tituloChipFacturaCobro,
   tituloCobrosDeVuelo,
   tituloFacturaConCobros,
+  TEXTO_COBRO_SIN_FACTURA_NO_EXIGE,
+  TITULO_COBRO_SIN_FACTURA_NO_EXIGE,
+  TITULO_COBROS_SIN_FACTURA,
+  TITULO_COBROS_SIN_FACTURA_NO_EXIGEN,
+  facturaConSaldoPorAmparar,
+  textoCobroSinFactura,
+  tituloCobroSinFactura,
+  tituloCobrosSinFactura,
   tonoSinFactura,
   tonoSinFacturaRegistro,
 } from "../cobro-factura";
@@ -216,11 +224,54 @@ describe("tono de «sin factura asignada» (revisión #11)", () => {
     expect(tonoSinFactura(bloque({ facturas: [A0430_GLOBAL], cobros_sin_factura: 2, cobros_sin_factura_exigen: 0, asignacion_disponible: true }))).toBe("gris");
   });
 
-  it("2+ vigentes ⇒ ámbar; una vigente que ya ampara algo ⇒ ámbar; cobros que exigen ⇒ ámbar", () => {
+  it("2+ vigentes ⇒ ámbar; una vigente que ya ampara algo Y le queda importe ⇒ ámbar; cobros que exigen ⇒ ámbar", () => {
     expect(tonoSinFactura(bloque({ facturas: [A0430_GLOBAL, { ...A0430_GLOBAL, id: "x" }], cobros_sin_factura_exigen: 0 }))).toBe("ambar");
-    expect(tonoSinFactura(bloque({ facturas: [A0420_COMPLETA], cobros_sin_factura_exigen: 0 }))).toBe("ambar");
+    // A-0420 con 68,208 de total que solo marcó 1,700: lo demás es suyo.
+    expect(tonoSinFactura(bloque({ facturas: [{ ...A0420_COMPLETA, cobros_monto: [{ moneda: "MXN", monto: 1700 }] }], cobros_sin_factura_exigen: 0 }))).toBe("ambar");
+    // API previo (sin `cobros_monto`) o cobros en otra moneda: conservador.
+    expect(tonoSinFactura(bloque({ facturas: [{ ...A0420_COMPLETA, cobros_monto: undefined }], cobros_sin_factura_exigen: 0 }))).toBe("ambar");
+    expect(tonoSinFactura(bloque({ facturas: [{ ...A0420_COMPLETA, cobros_monto: [{ moneda: "USD", monto: 4000 }] }], cobros_sin_factura_exigen: 0 }))).toBe("ambar");
     expect(tonoSinFactura(bloque({ facturas: [A0430_GLOBAL], cobros_sin_factura_exigen: 1 }))).toBe("ambar");
     expect(tonoSinFactura(null)).toBe("gris");
+  });
+
+  it("#305 (5-nov-2026): la única vigente ya cuadra con lo que amparó y el cobro que falta no exige ⇒ gris", () => {
+    // A-0423 ($860.47 MXN) = la transferencia a Scotiabank Pesos; los $600
+    // USD en efectivo («Dólares directo») no llevan factura: la oficina leía
+    // el ámbar como «falta factura».
+    const A0423: FacturaEmitidaMini = {
+      ...A0420,
+      id: "f-0423",
+      folio: "0423",
+      etiqueta: "A-0423",
+      total: 860.47,
+      es_parcial: false,
+      cobros_n: 1,
+      cobros_monto: [{ moneda: "MXN", monto: 860.47 }],
+    };
+    expect(tonoSinFactura(bloque({ facturas: [A0423], cobros_sin_factura: 1, cobros_sin_factura_exigen: 0, asignacion_disponible: true }))).toBe("gris");
+    // Con tolerancia de $1.00: 861.40 sigue cuadrando; 861.50 ya no.
+    expect(tonoSinFactura(bloque({ facturas: [{ ...A0423, total: 861.4 }], cobros_sin_factura_exigen: 0 }))).toBe("gris");
+    expect(tonoSinFactura(bloque({ facturas: [{ ...A0423, total: 861.5 }], cobros_sin_factura_exigen: 0 }))).toBe("ambar");
+    // Si el cobro que falta SÍ exige factura (transferencia), ámbar aunque cuadre.
+    expect(tonoSinFactura(bloque({ facturas: [A0423], cobros_sin_factura: 1, cobros_sin_factura_exigen: 1 }))).toBe("ambar");
+    // Lo mismo que decide el tono, suelto.
+    expect(facturaConSaldoPorAmparar(A0423)).toBe(false);
+    expect(facturaConSaldoPorAmparar({ ...A0423, cobros_monto: [] })).toBe(true);
+    expect(facturaConSaldoPorAmparar({ ...A0423, cobros_monto: undefined })).toBe(true);
+  });
+
+  it("textos del gris: «Sin factura (no la exige)» y «N cobros sin factura (no la exigen)», con sus títulos", () => {
+    expect(textoCobroSinFactura("ambar")).toBe("Sin factura asignada");
+    expect(textoCobroSinFactura("gris")).toBe(TEXTO_COBRO_SIN_FACTURA_NO_EXIGE);
+    expect(TEXTO_COBRO_SIN_FACTURA_NO_EXIGE).toBe("Sin factura (no la exige)");
+    expect(tituloCobroSinFactura("gris")).toBe(TITULO_COBRO_SIN_FACTURA_NO_EXIGE);
+    expect(TITULO_COBRO_SIN_FACTURA_NO_EXIGE).toContain("no la exige");
+    expect(textoCobrosSinFactura(1)).toBe("1 cobro sin factura asignada");
+    expect(textoCobrosSinFactura(1, "gris")).toBe("1 cobro sin factura (no la exige)");
+    expect(textoCobrosSinFactura(3, "gris")).toBe("3 cobros sin factura (no la exigen)");
+    expect(tituloCobrosSinFactura("ambar")).toBe(TITULO_COBROS_SIN_FACTURA);
+    expect(tituloCobrosSinFactura("gris")).toBe(TITULO_COBROS_SIN_FACTURA_NO_EXIGEN);
   });
 });
 
@@ -420,8 +471,16 @@ describe("revisión: registro en gris con una factura global, opción de la fact
     // FA-A-0433 (12 vuelos, 0 ligas): ninguno de sus folios amanece en ámbar.
     expect(tonoSinFacturaRegistro({ cobros_n: 0, otras_vigentes: [] })).toBe("gris");
     expect(tonoSinFacturaRegistro({ otras_vigentes: [] })).toBe("gris");
-    // A-0420 en #332: ya clasificó un cobro y quedan 3 sin factura ⇒ ámbar.
+    // A-0420 en #332: ya clasificó un cobro y quedan 3 sin factura ⇒ ámbar
+    // (sin la factura a la mano, conservador).
     expect(tonoSinFacturaRegistro({ cobros_n: 1, otras_vigentes: [] })).toBe("ambar");
+    // Con la factura: ámbar solo si le queda importe por amparar (#305:
+    // A-0423 ya cuadra con su transferencia ⇒ gris).
+    const cobro0423 = { id: "c", vuelo_id: "v", vuelo_folio: 305, monto: 860.47, moneda: "MXN" as const, fecha_cobro: "2026-09-28T17:00:00.000Z", metodo_cobro: "TRANSFERENCIA", cuenta_destino: "Scotiabank Pesos" };
+    expect(tonoSinFacturaRegistro({ cobros_n: 1, otras_vigentes: [] }, { total: 860.47, moneda: "MXN", cobros: [cobro0423] })).toBe("gris");
+    expect(tonoSinFacturaRegistro({ cobros_n: 1, otras_vigentes: [] }, { total: 68208, moneda: "MXN", cobros: [cobro0423] })).toBe("ambar");
+    expect(tonoSinFacturaRegistro({ cobros_n: 1, otras_vigentes: [] }, { total: 860.47, moneda: "MXN", cobros: undefined })).toBe("ambar");
+    expect(tonoSinFacturaRegistro({ cobros_n: 1, otras_vigentes: ["A-0455"] }, { total: 860.47, moneda: "MXN", cobros: [cobro0423] })).toBe("ambar");
     // Otra vigente en el vuelo ⇒ importa cuál ampara qué ⇒ ámbar.
     expect(tonoSinFacturaRegistro({ cobros_n: 0, otras_vigentes: ["A-0455"] })).toBe("ambar");
     expect(TITULO_SIN_FACTURA_REGISTRO).toBe("Cobros de este vuelo que ninguna factura ampara");

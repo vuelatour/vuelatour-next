@@ -43,11 +43,11 @@ import {
 } from "@/lib/admin/factura-obligatoria";
 import { MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
 import {
-  TITULO_COBROS_SIN_FACTURA,
   TITULO_REGISTRAR_FACTURA,
   asignacionDisponible,
   textoCobrosSinFactura,
   textoFacturaConCobros,
+  tituloCobrosSinFactura,
   tituloFacturaConCobros,
   tonoSinFactura,
 } from "@/lib/admin/cobro-factura";
@@ -251,9 +251,9 @@ export function FacturaServicioBurbuja({
             <span
               data-cobros-sin-factura={tono}
               className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${claseTono}`}
-              title={TITULO_COBROS_SIN_FACTURA}
+              title={tituloCobrosSinFactura(tono)}
             >
-              {textoCobrosSinFactura(cobrosSinFactura)}
+              {textoCobrosSinFactura(cobrosSinFactura, tono)}
             </span>
           )}
           {solicitud && (

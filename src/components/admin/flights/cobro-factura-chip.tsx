@@ -10,12 +10,12 @@ import {
 } from "@/lib/admin/facturas-emitidas";
 import {
   BOTON_ASIGNAR_FACTURA,
-  TEXTO_COBRO_SIN_FACTURA,
-  TITULO_COBRO_SIN_FACTURA,
   asignacionDisponible,
   cobroAsignable,
   textoChipFacturaCobro,
+  textoCobroSinFactura,
   tituloChipFacturaCobro,
+  tituloCobroSinFactura,
   tonoSinFactura,
 } from "@/lib/admin/cobro-factura";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
@@ -39,9 +39,10 @@ const CLASE_TONO = {
  *  - Con factura ⇒ chip verde «Factura A-0420»; clic = el PDF si la mini del
  *    bloque dice `tiene_pdf` y el rol puede abrirlo.
  *  - Sin factura, el vuelo tiene ≥ 1 vigente y el API puede asignar ⇒ chip
- *    «Sin factura asignada» (ámbar o gris: `tonoSinFactura`) + «Asignar
- *    factura» para ADMIN/FACTURACION (abre «Corregir cobro» con el foco en
- *    el selector); los demás roles solo ven el chip.
+ *    «Sin factura asignada» (ámbar) o «Sin factura (no la exige)» (gris:
+ *    `tonoSinFactura`, #305) + «Asignar factura» para ADMIN/FACTURACION
+ *    (abre «Corregir cobro» con el foco en el selector); los demás roles
+ *    solo ven el chip.
  *  - Sin factura y sin vigentes ⇒ nada (la burbuja ya dice «Sin factura»).
  *  - Reembolsos y partes de sobre ⇒ nada. Sin la llave `factura_emitida` en
  *    el cobro (API previo) ⇒ nada: la card queda byte-igual a hoy.
@@ -105,9 +106,9 @@ export function CobroFacturaChip({
       <span
         data-cobro-sin-factura={tono}
         className={`inline-flex items-center rounded-full border px-2 py-0.5 font-medium ${CLASE_TONO[tono]}`}
-        title={TITULO_COBRO_SIN_FACTURA}
+        title={tituloCobroSinFactura(tono)}
       >
-        {TEXTO_COBRO_SIN_FACTURA}
+        {textoCobroSinFactura(tono)}
       </span>
       {onAsignar && puedeRegistrarFactura(rol) && (
         <Button

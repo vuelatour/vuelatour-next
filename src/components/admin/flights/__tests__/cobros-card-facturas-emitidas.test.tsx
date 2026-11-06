@@ -773,6 +773,32 @@ describe("FACTURAS POR COBRO: chip por cobro, «Asignar factura» y la burbuja",
     expect(html).toContain('data-cobro-sin-factura="gris"');
     expect(html).toContain('data-cobros-sin-factura="gris"');
     expect(html).toContain("· sin cobro asignado");
+    // En gris el texto lo dice: ningún cobro sin factura la exige.
+    expect(html).toContain("Sin factura (no la exige)");
+    expect(html).toContain("1 cobro sin factura (no la exige)");
+    expect(html).not.toContain("Sin factura asignada");
+    expect(html).toContain("no la exigen. Si sí se facturaron");
+  });
+
+  it("#305 (5-nov-2026): A-0423 ya cuadra con la transferencia que amparó y los $600 USD en efectivo no exigen ⇒ gris, «no la exige»", () => {
+    const a0423: FacturaServicioBloque = {
+      ...ASIGNABLE,
+      facturas: [{ ...ASIGNABLE.facturas[0], etiqueta: "A-0423", total: 860.47, moneda: "MXN", cobros_n: 1, cobros_monto: [{ moneda: "MXN", monto: 860.47 }] }],
+      cobros_sin_factura: 1,
+      cobros_sin_factura_exigen: 0,
+    };
+    const efectivo: FlightCobro = { ...SIN_FACTURA, monto: "600", moneda: "USD", metodo_cobro: "DOLARES", cuenta_destino: null };
+    for (const html of [vuelo({ facturaServicio: a0423, rol: "ADMIN", cobros: [efectivo] }), cotizacion({ facturaServicio: a0423, rol: "ADMIN", cobros: [efectivo] })]) {
+      expect(html).toContain('data-cobro-sin-factura="gris"');
+      expect(html).toContain("Sin factura (no la exige)");
+      expect(html).toContain("1 cobro sin factura (no la exige)");
+      expect(html).not.toContain("Sin factura asignada");
+      // «Asignar factura» sigue: si sí se facturó, se liga.
+      expect(html).toMatch(/<button[^>]*data-accion="asignar-factura"[^>]*>Asignar factura<\/button>/);
+    }
+    // Si a la factura le quedara importe por amparar, ámbar como siempre.
+    const conSaldo: FacturaServicioBloque = { ...a0423, facturas: [{ ...a0423.facturas[0], total: 11060.46 }] };
+    expect(vuelo({ facturaServicio: conSaldo, rol: "ADMIN", cobros: [efectivo] })).toContain('data-cobro-sin-factura="ambar"');
   });
 
   it("sin asignación disponible (API 0.0.82 sin migración) o sin vigentes: ni chip ni botón", () => {

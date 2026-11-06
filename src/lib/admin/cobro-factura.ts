@@ -26,6 +26,7 @@ import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import type {
   AlertaFacturaDetalle,
   CobroCandidatoFactura,
+  FacturaEmitida,
   FacturaEmitidaMini,
   FacturaServicioBloque,
   MonedaFactura,
@@ -175,19 +176,40 @@ export function textoCobroRegistradoConFactura(etiqueta: string | null | undefin
 export type TonoSinFactura = "ambar" | "gris";
 
 /**
+ * ¿A la factura le queda importe por amparar? Su total rebasa (con la
+ * tolerancia de $1.00) la Σ de los cobros que ya marcó en su moneda. Sin
+ * `cobros_monto` (API previo) o con cobros en otra moneda no se puede
+ * comparar ⇒ `true` (conservador: el ámbar de siempre).
+ */
+export function facturaConSaldoPorAmparar(
+  f: Pick<FacturaEmitidaMini, "total" | "moneda" | "cobros_monto">,
+): boolean {
+  if (!f.cobros_monto) return true;
+  if (f.cobros_monto.some((m) => m.moneda !== f.moneda)) return true;
+  const amparado = f.cobros_monto.reduce((acc, m) => acc + numero(m.monto), 0);
+  return numero(f.total) - amparado > TOLERANCIA_COBROS_FACTURA;
+}
+
+/**
  * Tono de «Sin factura asignada» / «N cobros sin factura asignada»: ÁMBAR
- * solo cuando importa cuál factura ampara qué (2+ vigentes, una vigente que
- * ya clasificó algún cobro, o cobros que EXIGEN factura sin ninguna); GRIS
- * con una sola vigente «global» que no ampara nada y cobros que no exigen
- * (A-0430 a 6 vuelos, FA-A-0433/0449): no es un problema, es trabajo
- * pendiente opcional — no amanecen ~30 cards en ámbar sin que nada esté mal.
+ * solo cuando importa cuál factura ampara qué (2+ vigentes, cobros que
+ * EXIGEN factura sin ninguna, o una vigente que ya clasificó algún cobro y
+ * a la que LE QUEDA importe por amparar); GRIS con una sola vigente «global»
+ * que no ampara nada y cobros que no exigen (A-0430 a 6 vuelos,
+ * FA-A-0433/0449) o con una vigente que ya cuadra con lo que amparó y
+ * cobros que no exigen (#305, 5-nov-2026: A-0423 = la transferencia de
+ * $860.47; los $600 USD en efectivo no llevan factura y la oficina leía el
+ * ámbar como «falta factura»): no es un problema, es trabajo pendiente
+ * opcional — no amanecen ~30 cards en ámbar sin que nada esté mal.
  */
 export function tonoSinFactura(bloque: BloqueLike | null | undefined): TonoSinFactura {
   if (!bloque) return "gris";
   const vigentes = bloque.facturas ?? [];
   if (vigentes.length >= 2) return "ambar";
-  if (vigentes.some((f) => (f.cobros_n ?? 0) > 0)) return "ambar";
   if ((bloque.cobros_sin_factura_exigen ?? 0) > 0) return "ambar";
+  if (vigentes.some((f) => (f.cobros_n ?? 0) > 0 && facturaConSaldoPorAmparar(f))) {
+    return "ambar";
+  }
   return "gris";
 }
 
@@ -204,9 +226,22 @@ export function tituloChipFacturaCobro(etiqueta: string): string {
 
 /** Chip por cobro sin factura (solo cuando el vuelo tiene vigentes). */
 export const TEXTO_COBRO_SIN_FACTURA = "Sin factura asignada";
+/** El mismo chip en GRIS: ningún cobro sin factura la exige (#305: $600 USD en efectivo). */
+export const TEXTO_COBRO_SIN_FACTURA_NO_EXIGE = "Sin factura (no la exige)";
+
+export function textoCobroSinFactura(tono: TonoSinFactura): string {
+  return tono === "gris" ? TEXTO_COBRO_SIN_FACTURA_NO_EXIGE : TEXTO_COBRO_SIN_FACTURA;
+}
 
 export const TITULO_COBRO_SIN_FACTURA =
   "Ninguna de las facturas del vuelo ampara este cobro. Asígnale una con «Asignar factura» o regístrala con «Registrar factura» marcando este cobro.";
+
+export const TITULO_COBRO_SIN_FACTURA_NO_EXIGE =
+  "Ninguna factura del vuelo ampara este cobro y, por su método o cuenta (efectivo, dólares directo, Paywise), no la exige. Si sí se facturó, asígnala con «Asignar factura».";
+
+export function tituloCobroSinFactura(tono: TonoSinFactura): string {
+  return tono === "gris" ? TITULO_COBRO_SIN_FACTURA_NO_EXIGE : TITULO_COBRO_SIN_FACTURA;
+}
 
 export const BOTON_ASIGNAR_FACTURA = "Asignar factura";
 
@@ -230,13 +265,27 @@ export function tituloFacturaConCobros(
   return `Ampara ${n} ${n === 1 ? "cobro" : "cobros"} de este vuelo${montos ? `: ${montos}` : ""}`;
 }
 
-/** «3 cobros sin factura asignada» / «1 cobro sin factura asignada». */
-export function textoCobrosSinFactura(n: number): string {
+/**
+ * «3 cobros sin factura asignada» / «1 cobro sin factura asignada»; en GRIS
+ * (ninguno la exige) «1 cobro sin factura (no la exige)» / «3 cobros sin
+ * factura (no la exigen)».
+ */
+export function textoCobrosSinFactura(n: number, tono: TonoSinFactura = "ambar"): string {
+  if (tono === "gris") {
+    return n === 1 ? "1 cobro sin factura (no la exige)" : `${n} cobros sin factura (no la exigen)`;
+  }
   return n === 1 ? "1 cobro sin factura asignada" : `${n} cobros sin factura asignada`;
 }
 
 export const TITULO_COBROS_SIN_FACTURA =
   "Hay cobros de este vuelo que ninguna factura ampara. Regístrala con «Registrar factura» (marcando esos cobros) o asígnales una con «Asignar factura» en cada cobro.";
+
+export const TITULO_COBROS_SIN_FACTURA_NO_EXIGEN =
+  "Hay cobros de este vuelo que ninguna factura ampara y que, por su método o cuenta (efectivo, dólares directo, Paywise), no la exigen. Si sí se facturaron, regístrala con «Registrar factura» marcando esos cobros o asígnales una con «Asignar factura».";
+
+export function tituloCobrosSinFactura(tono: TonoSinFactura): string {
+  return tono === "gris" ? TITULO_COBROS_SIN_FACTURA_NO_EXIGEN : TITULO_COBROS_SIN_FACTURA;
+}
 
 /** Title de «Registrar factura» en la burbuja. */
 export const TITULO_REGISTRAR_FACTURA =
@@ -446,15 +495,28 @@ export function textoSinFacturaRegistro(n: number | null | undefined): string | 
 /**
  * Tono de «· N sin factura» bajo el folio del registro: la MISMA regla de
  * `tonoSinFactura` con lo que la fila sabe del vuelo. ÁMBAR cuando importa
- * cuál factura ampara qué (esta factura ya clasificó cobros de ese vuelo o el
- * vuelo tiene OTRA vigente); GRIS con una sola factura «global» que no
- * clasificó nada (FA-A-0433 ×12, A-0430 ×6): sin esto el registro amanecía
+ * cuál factura ampara qué (el vuelo tiene OTRA vigente, o esta factura ya
+ * clasificó cobros de ese vuelo y le queda importe por amparar —su total
+ * contra la Σ de TODOS sus cobros, de cualquier vuelo; sin `cobros` del
+ * API, conservador: ámbar—); GRIS con una sola factura «global» que no
+ * clasificó nada (FA-A-0433 ×12, A-0430 ×6) o que ya cuadra con lo que
+ * amparó (#305: A-0423 = su transferencia): sin esto el registro amanecía
  * con ~30 folios en ámbar sin que nada estuviera mal (revisión #11).
  */
 export function tonoSinFacturaRegistro(
   v: Pick<VueloDeFactura, "cobros_n" | "otras_vigentes">,
+  f?: Pick<FacturaEmitida, "total" | "moneda" | "cobros"> | null,
 ): TonoSinFactura {
-  return (v.cobros_n ?? 0) > 0 || (v.otras_vigentes ?? []).length > 0 ? "ambar" : "gris";
+  if ((v.otras_vigentes ?? []).length > 0) return "ambar";
+  if ((v.cobros_n ?? 0) <= 0) return "gris";
+  if (!f) return "ambar";
+  return facturaConSaldoPorAmparar({
+    total: f.total,
+    moneda: f.moneda,
+    cobros_monto: f.cobros?.map((c) => ({ moneda: c.moneda, monto: c.monto })),
+  })
+    ? "ambar"
+    : "gris";
 }
 
 export const TITULO_SIN_FACTURA_REGISTRO = "Cobros de este vuelo que ninguna factura ampara";

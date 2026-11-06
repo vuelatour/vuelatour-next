@@ -196,6 +196,13 @@ describe("tabla del registro", () => {
     const clasifico = render([factura({ vuelos: [{ ...vuelo, otras_vigentes: [], cobros_n: 1, cobros_sin_factura: 3 }] })]);
     expect(clasifico).toContain('data-sin-factura="ambar"');
     expect(clasifico).toContain("· 1 cobro");
+    // #305 (5-nov-2026): la factura ya cuadra con el cobro que amparó ⇒ gris
+    // (lo que falta no es suyo); con importe por amparar, ámbar.
+    const cobro = { id: "c-1", vuelo_id: VUELO, vuelo_folio: 341, monto: 8050.4, moneda: "USD" as const, fecha_cobro: "2026-09-25T17:00:00.000Z", metodo_cobro: "TRANSFERENCIA", cuenta_destino: "HSBC Dólares" };
+    const cuadra = render([factura({ cobros: [cobro], vuelos: [{ ...vuelo, otras_vigentes: [], cobros_n: 1, cobros_sin_factura: 1 }] })]);
+    expect(cuadra).toContain('data-sin-factura="gris"');
+    const conSaldo = render([factura({ cobros: [{ ...cobro, monto: 1000 }], vuelos: [{ ...vuelo, otras_vigentes: [], cobros_n: 1, cobros_sin_factura: 1 }] })]);
+    expect(conSaldo).toContain('data-sin-factura="ambar"');
     const otra = render([factura({ vuelos: [{ ...vuelo, otras_vigentes: ["A-120"], cobros_n: 0, cobros_sin_factura: 1 }] })]);
     expect(otra).toContain('data-sin-factura="ambar"');
     // API previo (sin las llaves): nada.

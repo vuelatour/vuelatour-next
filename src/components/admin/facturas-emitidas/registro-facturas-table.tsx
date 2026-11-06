@@ -160,7 +160,8 @@ export function RegistroFacturasTable({
                   {/* FACTURAS POR COBRO (API 0.0.82): cuántos cobros de este
                       vuelo ampara y cuántos siguen sin factura (ámbar solo
                       cuando importa cuál factura ampara qué; gris con una
-                      sola factura global sin clasificar). */}
+                      sola factura global sin clasificar o que ya cuadra
+                      con lo que amparó, #305). */}
                   {textoCobrosDeVueloRegistro(v.cobros_n) && (
                     <span className="ml-1 font-sans text-[10px] text-muted-foreground">
                       {textoCobrosDeVueloRegistro(v.cobros_n)}
@@ -168,9 +169,9 @@ export function RegistroFacturasTable({
                   )}
                   {textoSinFacturaRegistro(v.cobros_sin_factura) && (
                     <span
-                      data-sin-factura={tonoSinFacturaRegistro(v)}
+                      data-sin-factura={tonoSinFacturaRegistro(v, f)}
                       className={`ml-1 font-sans text-[10px] ${
-                        tonoSinFacturaRegistro(v) === "ambar"
+                        tonoSinFacturaRegistro(v, f) === "ambar"
                           ? "text-amber-700 dark:text-amber-300"
                           : "text-muted-foreground"
                       }`}

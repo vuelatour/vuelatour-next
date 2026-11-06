@@ -11081,12 +11081,24 @@ determinista). Fuente única del panel: `lib/admin/cobro-factura.ts`
   partes de sobre, nada. «Eliminar» un cobro amparado lo dice en la
   confirmación (`textoEliminarCobroConFactura`).
 - **Tono de «sin factura asignada» (`tonoSinFactura`)**: ÁMBAR solo cuando
-  importa cuál factura ampara qué (≥ 2 vigentes, una vigente que ya
-  clasificó algún cobro, o cobros que EXIGEN factura sin ninguna: #332 tras
-  el backfill); GRIS con una sola vigente «global» sin clasificar y cobros
-  que no exigen (A-0430 ×6, FA-A-0433 ×12, FA-A-0449 ×11): no es un
+  importa cuál factura ampara qué (≥ 2 vigentes, cobros que EXIGEN factura
+  sin ninguna —#332 tras el backfill—, o una vigente que ya clasificó algún
+  cobro y a la que LE QUEDA importe por amparar: `facturaConSaldoPorAmparar`,
+  su `total` contra la Σ de `cobros_monto` en su moneda con la tolerancia de
+  $1.00; sin `cobros_monto` o con otra moneda, conservador = ámbar); GRIS
+  con una sola vigente «global» sin clasificar y cobros que no exigen
+  (A-0430 ×6, FA-A-0433 ×12, FA-A-0449 ×11) o con una vigente que ya cuadra
+  con lo que amparó y cobros que no exigen (#305, 5-nov-2026: A-0423
+  $860.47 = la transferencia; los $600 USD «Dólares directo» no llevan
+  factura y la oficina leía el ámbar como «falta factura»): no es un
   problema, es trabajo pendiente opcional. Sin esto ~30 cards amanecían en
-  ámbar sin que nada estuviera mal.
+  ámbar sin que nada estuviera mal. En GRIS los textos lo dicen: chip del
+  cobro «Sin factura (no la exige)» (`textoCobroSinFactura`,
+  `tituloCobroSinFactura`) y en la burbuja «1 cobro sin factura (no la
+  exige)» / «N cobros sin factura (no la exigen)»
+  (`textoCobrosSinFactura(n, tono)`, `tituloCobrosSinFactura`); «Asignar
+  factura» sigue disponible (gris ⇒ ningún cobro sin factura la exige:
+  `cobros_sin_factura_exigen` = 0).
 - **Burbuja**: cada chip «Factura A-0420» suma «· 1 cobro» / «· 3 cobros» /
   «· sin cobro asignado» (title «Ampara 1 cobro de este vuelo: $68,208
   MXN»); tras los chips, «3 cobros sin factura asignada»
@@ -11159,10 +11171,12 @@ determinista). Fuente única del panel: `lib/admin/cobro-factura.ts`
   su tooltip son los `alertas_detalle[].mensaje` unidos por « · » (sin
   detalle, la ayuda general). Un vuelo con 2 facturas que cuadran ya no es
   alerta. Bajo cada folio de «Vuelo(s)»: «· 1 cobro» / «· 3 cobros» y «· 3
-  sin factura» (`tonoSinFacturaRegistro`: ámbar solo si esta factura ya
-  clasificó cobros de ese vuelo o el vuelo tiene otra vigente; gris con una
-  sola factura global sin clasificar, para que FA-A-0433 ×12 no amanezca
-  en ámbar).
+  sin factura» (`tonoSinFacturaRegistro(v, f)`: ámbar si el vuelo tiene
+  otra vigente o si esta factura ya clasificó cobros de ese vuelo y le
+  queda importe por amparar —`total` contra la Σ de `f.cobros`, de todos
+  sus vuelos; sin `cobros` del API, ámbar—; gris con una sola factura
+  global sin clasificar, para que FA-A-0433 ×12 no amanezca en ámbar, o que
+  ya cuadra con lo que amparó, #305).
 - **Pre-cierre** (`lib/admin/pre-cierre-factura.ts`): el renglón
   `vuelos_cobrados_sin_factura` acepta vuelos que YA tienen factura cuando
   el API manda `registrada` + `cobros_sin_factura` ⇒ chip «#332 (A-0420 · 3
