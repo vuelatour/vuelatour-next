@@ -24,6 +24,7 @@ import {
   BeakerIcon,
   WrenchScrewdriverIcon,
   ArchiveBoxIcon,
+  ShoppingCartIcon,
   WalletIcon,
   ArrowsRightLeftIcon,
   ArrowTrendingUpIcon,
@@ -141,11 +142,22 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ["ADMIN", "COORDINADOR", "MECANICO"],
       },
       {
-        // «Inventario/Tienda» (pedido del cliente, 12-oct-2026): la bodega
-        // también es la tienda que vende refacciones a los aviones.
-        label: "Inventario/Tienda",
+        // DOS pantallas (6-nov-2026, pedido del dueño: «separar en dos
+        // pantallas el inventario y las compras o gastos de la tienda»):
+        // «Inventario» = la bodega (existencias, salidas, cardex) y «Compras
+        // de la tienda» = lo que se compra y lo que se paga por ello (compra
+        // directa, pedidos por recibir, gastos de compras). Antes era un solo
+        // ítem «Inventario/Tienda» (12-oct-2026). `itemNavActivo` enciende
+        // solo el más específico (la ruta de compras cuelga de la de bodega).
+        label: "Inventario",
         href: "/admin/inventory",
         icon: ArchiveBoxIcon,
+        roles: ["ADMIN", "COORDINADOR", "MECANICO", "SOCIO"],
+      },
+      {
+        label: "Compras de la tienda",
+        href: "/admin/inventory/compras",
+        icon: ShoppingCartIcon,
         roles: ["ADMIN", "COORDINADOR", "MECANICO", "SOCIO"],
       },
       {

@@ -38,7 +38,7 @@
  *  - Detalle con folio o código: «Vuelo #315 · Beh Kay», «Avión XB-PEV».
  *  - Detalle de una persona: «Piloto · Juan Pérez» (la misma persona puede
  *    ser piloto, socio y tener caja chica: el tipo va primero).
- *  - Producto: su nombre primero, «Aceite 15W-50 · Inventario/Tienda».
+ *  - Producto: su nombre primero, «Aceite 15W-50 · Inventario».
  */
 import { MESES_LARGOS_ES } from "@/lib/datetime";
 import { NOMBRE_LIBRO_VUELATOUR, type DestinoVistaBalance } from "./balance-vista";
@@ -114,7 +114,8 @@ export const TITULOS_SECCION = {
   helices: "Hélices",
   ingenieria: "Ingeniería",
   vencimientos: "Vencimientos",
-  inventario: "Inventario/Tienda",
+  inventario: "Inventario",
+  comprasTienda: "Compras de la tienda",
   multas: "Multas",
   rutas: "Rutas",
   clientes: "Clientes",
@@ -161,6 +162,7 @@ export const RUTA_SECCION: Readonly<Record<SeccionMenu, string>> = {
   ingenieria: "/admin/ingenieria",
   vencimientos: "/admin/expirations",
   inventario: "/admin/inventory",
+  comprasTienda: "/admin/inventory/compras",
   multas: "/admin/multas",
   rutas: "/admin/routes",
   clientes: "/admin/clients",
@@ -200,7 +202,6 @@ export const TITULOS_PAGINA = {
   cotizacionNueva: "Nueva cotización",
   grupos: "Grupos",
   grupoNuevo: "Nuevo grupo",
-  compras: "Compras",
   iniciarSesion: "Iniciar sesión",
   errorSesion: "No se pudo iniciar sesión",
 } as const;
@@ -263,7 +264,7 @@ export function tituloAvion(matricula?: unknown): string {
 }
 
 /**
- * «Aceite AeroShell 15W-50 · Inventario/Tienda» · «Producto». El NOMBRE va
+ * «Aceite AeroShell 15W-50 · Inventario» · «Producto». El NOMBRE va
  * primero: es lo que distingue una pestaña de otra (ninguna otra pantalla
  * enseña nombres de productos, así que no hace falta el tipo delante).
  */
@@ -383,10 +384,10 @@ export const PESTANAS_COMPRAS: Readonly<Record<FiltroCompras, string>> = {
   todas: "Todas",
 };
 
-/** «Compras · Por recibir» (default) · «Compras · Sin gasto» · «Compras · Completas» · «Compras» (Todas). */
+/** «Compras de la tienda · Por recibir» (default) · «… · Sin gasto» · «… · Completas» · «Compras de la tienda» (Todas). */
 export function tituloCompras(filtro?: FiltroCompras | null): string {
   return conPestana(
-    TITULOS_PAGINA.compras,
+    TITULOS_SECCION.comprasTienda,
     filtro && filtro !== "todas" ? PESTANAS_COMPRAS[filtro] : null,
   );
 }

@@ -481,7 +481,7 @@ describe("«Compra directa»: textos y decisiones puras", async () => {
     expect(m.HINT_RECIBIR_AHORA).toContain("Nace sin marcar");
     expect(m.tituloRegistrarCompra("directa")).toBe("Compra directa");
     expect(m.tituloRegistrarCompra("compras")).toBe("Registrar compra");
-    expect(m.descripcionRegistrarCompra("directa")).toContain("sin pasar por Compras");
+    expect(m.descripcionRegistrarCompra("directa")).toContain("sin el paso de pedirla y recibirla");
     expect(m.descripcionRegistrarCompra("directa")).toContain("marca «Ya está en bodega»");
     expect(m.descripcionRegistrarCompra("compras")).toBe(m.DESCRIPCION_REGISTRAR_COMPRA);
     expect(m.ETIQUETA_RECIBIR_AHORA).toBe("Ya está en bodega: dar entrada al inventario ahora");
@@ -505,10 +505,10 @@ describe("«Compra directa»: textos y decisiones puras", async () => {
     expect(m.toastCompraDirecta(c, 3)).toContain("3 líneas ya están en el inventario");
     expect(m.toastCompraRecibida(15, 2)).toBe("Compra #15 registrada y recibida: 2 líneas ya están en el inventario.");
     expect(m.avisoCompraSinRecepcion(15, "Cargos sin tipo de cambio.")).toBe(
-      "La compra #15 quedó registrada, pero NO entró a bodega: Cargos sin tipo de cambio. Recíbela desde Compras con «Ya llegó: recibir en bodega».",
+      "La compra #15 quedó registrada, pero NO entró a bodega: Cargos sin tipo de cambio. Recíbela desde «Por recibir» con «Ya llegó: recibir en bodega».",
     );
     expect(m.avisoCompraSinRecepcion(15, null)).toBe(
-      "La compra #15 quedó registrada, pero NO entró a bodega: Recíbela desde Compras con «Ya llegó: recibir en bodega».",
+      "La compra #15 quedó registrada, pero NO entró a bodega: Recíbela desde «Por recibir» con «Ya llegó: recibir en bodega».",
     );
   });
 

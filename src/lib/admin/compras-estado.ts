@@ -53,6 +53,10 @@ export function hrefPestanaCompras(f: FiltroCompras): string {
   return f === FILTRO_COMPRAS_DEFAULT ? "/admin/inventory/compras" : `/admin/inventory/compras?f=${f}`;
 }
 
+/** La pantalla «Compras de la tienda» (6-nov-2026): qué se lleva aquí y qué no. */
+export const AYUDA_PANTALLA_COMPRAS_TIENDA =
+  "Lo que se compra para la bodega y lo que se paga por ello: compras directas, pedidos por recibir y los gastos de cada compra. Las existencias y las salidas están en Inventario.";
+
 /** La cabecera: el flujo en una línea. */
 export const AYUDA_FLUJO_COMPRAS =
   "Registra la compra cuando la pides, recíbela en bodega cuando llega y registra (o vincula) su gasto cuando la pagas: cada compra dice qué le falta.";
@@ -865,7 +869,7 @@ export function etiquetaRolCompra(rol: CompraRol | string | null | undefined): s
 }
 
 // =============================================================================
-// «Compra directa» desde Inventario/Tienda (6-nov-2026). Pedido del dueño:
+// «Compra directa» (6-nov-2026; desde la pantalla «Compras de la tienda»). Pedido del dueño:
 // «un botón para registrar un gasto desde ahí sin que entre a una compra,
 // porque se compró directamente». Lo que se compró directo y ya está en
 // bodega se captura en UN paso: la compra (sigue siendo el contenedor del
@@ -879,13 +883,13 @@ export type ModoRegistrarCompra = "compras" | "directa";
 
 export const TITULO_COMPRA_DIRECTA = "Compra directa";
 export const TITULO_BOTON_COMPRA_DIRECTA =
-  "Compraste refacciones directo: en un paso quedan la compra y su gasto (y el envío o la aduana, si los hubo), sin entrar a Compras";
+  "Compraste refacciones directo: en un paso quedan la compra y su gasto (y el envío o la aduana, si los hubo), sin pedirla ni recibirla aparte";
 export const DESCRIPCION_COMPRA_DIRECTA =
-  "Para lo que se compró directo: captura qué compraste y cómo lo pagaste. Quedan registrados la compra y su gasto (en «Gastos de compras»), sin pasar por Compras. Si ya lo tienes en bodega, marca «Ya está en bodega» para darle entrada al inventario.";
+  "Para lo que se compró directo: captura qué compraste y cómo lo pagaste. Quedan registrados la compra y su gasto (en «Gastos de compras»), sin el paso de pedirla y recibirla. Si ya lo tienes en bodega, marca «Ya está en bodega» para darle entrada al inventario.";
 export const ETIQUETA_COMO_SE_PAGO = "¿Cómo se pagó?";
 export const ETIQUETA_RECIBIR_AHORA = "Ya está en bodega: dar entrada al inventario ahora";
 export const HINT_RECIBIR_AHORA =
-  "Las unidades de cada línea entran al stock con su costo. Nace sin marcar: márcalo solo si la mercancía ya está en bodega; si no, recíbela desde Compras cuando llegue.";
+  "Las unidades de cada línea entran al stock con su costo. Nace sin marcar: márcalo solo si la mercancía ya está en bodega; si no, recíbela desde «Por recibir» cuando llegue.";
 export const BOTON_COMPRA_DIRECTA = "Registrar compra directa";
 
 /**
@@ -924,7 +928,7 @@ export function toastCompraDirecta(c: Pick<CompraConGastoRegistrado, "folio" | "
 /** Compra (y gasto) registrados, pero la entrada a bodega falló: se dice completo. */
 export function avisoCompraSinRecepcion(folio: number, error: string | null | undefined): string {
   const motivo = (error ?? "").trim();
-  return `La compra #${folio} quedó registrada, pero NO entró a bodega: ${motivo ? `${motivo} ` : ""}Recíbela desde Compras con «Ya llegó: recibir en bodega».`;
+  return `La compra #${folio} quedó registrada, pero NO entró a bodega: ${motivo ? `${motivo} ` : ""}Recíbela desde «Por recibir» con «Ya llegó: recibir en bodega».`;
 }
 
 /** Compra recibida en el mismo paso (sin gasto: «Todavía no la pago»). */

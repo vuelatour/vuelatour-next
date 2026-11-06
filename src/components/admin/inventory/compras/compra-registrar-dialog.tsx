@@ -112,7 +112,7 @@ export interface ItemCompraOption {
  * de ese gasto). El envío y la aduana que se pagan aparte se agregan en el
  * detalle con «Agregar gasto».
  *
- * «Compra directa» (6-nov-2026, `modo="directa"`, botón de Inventario/Tienda):
+ * «Compra directa» (6-nov-2026, `modo="directa"`, botón principal de «Compras de la tienda»):
  * lo que se compró directo y ya está en bodega, en UN paso. El pago es
  * siempre «ahora» y «Ya está en bodega» nace marcado: tras el gasto se
  * llama `recibir` y las líneas entran al inventario; al terminar se queda en
@@ -129,7 +129,7 @@ export function CompraRegistrarDialog({
   items: ItemCompraOption[];
   /** T.C. oficial de hoy (sugerencia del gasto; null = sin dato). */
   tcOficialHoy?: number | null;
-  /** `directa` = desde Inventario/Tienda: pagada y ya en bodega, en un paso. */
+  /** `directa` = compra ya pagada, en un paso (y a bodega si se marca). */
   modo?: ModoRegistrarCompra;
 }) {
   const router = useRouter();
@@ -565,7 +565,7 @@ export function CompraRegistrarDialog({
             </fieldset>
 
             {/* «Ya está en bodega» (6-nov-2026): la entrada al inventario en el
-                mismo paso. Nace marcado en la compra directa; en Compras, no. */}
+                mismo paso. Nace SIN marcar en los dos modos (6-nov-2026). */}
             <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3 text-sm" data-recibir-ahora={recibirAhora ? "1" : "0"}>
               <input
                 type="checkbox"

@@ -14,9 +14,7 @@ import {
 } from "@/components/ui/card";
 import { ItemsTable } from "@/components/admin/inventory/items-table";
 import { ItemCreateButton } from "@/components/admin/inventory/item-create-button";
-import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
 import { ItemBulkUploadDialog } from "@/components/admin/inventory/item-bulk-upload-dialog";
-import { CompraRegistrarDialog } from "@/components/admin/inventory/compras/compra-registrar-dialog";
 import { CodigoSearch } from "@/components/admin/inventory/codigo-search";
 import {
   EntradasSinCosto,
@@ -30,7 +28,6 @@ import {
   listUbicaciones,
 } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
-import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
 import { todayCancun } from "@/lib/datetime";
@@ -83,7 +80,7 @@ export default async function InventoryPage({
   // CATÁLOGOS de los selectores degradan a vacío + aviso; la bodega —el dato
   // por el que existe la pantalla— jamás se disfraza de «sin ítems».
   const degradado = new Degradaciones();
-  const [bodega, providersRes, aircraftRes, me, sinCostoRes, ubicacionesRes, tienda, tcOficialHoy] =
+  const [bodega, providersRes, aircraftRes, me, sinCostoRes, ubicacionesRes, tienda] =
     await Promise.all([
       // PRINCIPAL. Toda la bodega (pagina hasta count): la tabla no debe
       // "perder" ítems. `desde/hasta` acotan SOLO la utilidad por ítem.
@@ -102,8 +99,6 @@ export default async function InventoryPage({
       // Utilidad de la tienda del periodo. Nunca lanza: null ⇒ la tarjeta
       // usa las sumas de la lista (misma moneda, jamás cruzadas).
       getTiendaResumen(rango ?? {}),
-      // T.C. oficial de hoy: solo la sugerencia de «Compra directa» (best-effort).
-      getTipoCambioOficial().catch(() => null),
     ]);
   const {
     data: items,
@@ -180,8 +175,6 @@ export default async function InventoryPage({
     tc_usd_mxn: m.tc_usd_mxn != null ? Number(m.tc_usd_mxn) : null,
   }));
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
-  // Artículos para las líneas de «Compra directa» (toda la bodega ya cargada).
-  const itemsCompra = items.map((i) => ({ id: i.id, nombre: i.nombre, numero_parte: i.numero_parte ?? null }));
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const bajos = items.filter((i) => i.bajo_stock).length;
   // Categorías existentes (únicas) para el selector del formulario: elegir
@@ -193,7 +186,9 @@ export default async function InventoryPage({
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <p className="text-sm text-muted-foreground">Bodega</p>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Inventario/Tienda</h1>
+          {/* DOS pantallas (6-nov-2026, pedido del dueño): aquí la bodega;
+              las compras y sus gastos, en «Compras de la tienda». */}
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Inventario</h1>
           {/* Con la bodega sin cargar NO se pinta ni un número: "0 ítems ·
               valorizado $0.00" se leería como bodega vacía. */}
           {!bodega.ok ? (
@@ -211,16 +206,15 @@ export default async function InventoryPage({
           )}
           <p className="text-xs text-muted-foreground/80 mt-1">
             Toca un producto para ver sus compras, sus ventas y el resumen por día.{" "}
-            {/* El botón «Compras» se retiró de la cabecera (6-nov-2026, pedido del
-                dueño: «vamos a usar más el de compra directa»); los pedidos que
-                aún no llegan siguen en su pantalla, con este enlace discreto. */}
+            {/* Lo que se compra y lo que se paga vive en su propia pantalla
+                (6-nov-2026): aquí solo el enlace. */}
             <Link
               href="/admin/inventory/compras"
               prefetch={false}
               className="underline underline-offset-2 hover:text-foreground"
-              data-enlace-compras-pedidas
+              data-enlace-compras-tienda
             >
-              Compras pedidas (pendientes de recibir)
+              Compras y gastos de la tienda ›
             </Link>
           </p>
           {/* Por qué el valorizado en pesos puede verse en cero: casi toda la
@@ -230,16 +224,11 @@ export default async function InventoryPage({
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
-          {/* «Compra directa» (6-nov-2026, pedido del dueño): lo que se compró
-              directo y ya está en bodega, en un paso (compra + gasto + entrada),
-              sin entrar a Compras. Bloqueado para SOCIO como el resto de altas. */}
-          {puedeAltaMasiva && (
-            <CompraRegistrarDialog modo="directa" providers={providers} items={itemsCompra} tcOficialHoy={tcOficialHoy} />
-          )}
-          {/* Los exports Valorizado/Cardex se retiraron de aquí: el reporte
-              de inventario vive en el Balance general VuelaTour (hoja Inventario). El
-              cardex por ítem sigue en el detalle ("Cardex (Excel)"). */}
-          <ImportCompraButton providers={providers} />
+          {/* «Compra directa», «Registrar compra» e «Importar PDF» viven en
+              «Compras de la tienda» (6-nov-2026). Los exports Valorizado/Cardex
+              se retiraron de aquí: el reporte de inventario vive en el Balance
+              general VuelaTour (hoja Inventario); el cardex por ítem sigue en el
+              detalle ("Cardex (Excel)"). */}
           {puedeAltaMasiva && <ItemBulkUploadDialog />}
           <ItemCreateButton
             categorias={categorias}

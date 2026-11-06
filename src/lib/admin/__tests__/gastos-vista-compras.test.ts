@@ -52,7 +52,7 @@ describe("los gastos de compras se excluyen SIEMPRE de Gastos (salvo la vista en
   });
 
   it("la nota: título, texto según la vista y el enlace a Compras", () => {
-    expect(TITULO_COMPRAS_FUERA_DE_GASTOS).toBe("Los gastos de las compras de refacciones se llevan en Inventario/Tienda");
+    expect(TITULO_COMPRAS_FUERA_DE_GASTOS).toBe("Los gastos de las compras de refacciones se llevan en Compras de la tienda");
     expect(textoNotaComprasFueraDeGastos(false)).toBe(DESCRIPCION_COMPRAS_FUERA_DE_GASTOS);
     expect(textoNotaComprasFueraDeGastos(true)).toBe(DESCRIPCION_COMPRAS_EN_VISTA_ENFOCADA);
     expect(DESCRIPCION_COMPRAS_FUERA_DE_GASTOS).toContain("conciliación");

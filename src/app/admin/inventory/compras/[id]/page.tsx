@@ -91,14 +91,14 @@ export default async function CompraDetallePage({
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         iconClassName="h-4 w-4"
       >
-        Compras
+        Compras de la tienda
       </BackLink>
 
       <AvisoDegradado faltantes={degradado.faltantes} />
 
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-sm text-muted-foreground">Inventario/Tienda · Compra</p>
+          <p className="text-sm text-muted-foreground">Compras de la tienda · Compra</p>
           <h1 className="flex flex-wrap items-center gap-3 text-2xl md:text-3xl font-semibold tracking-tight">
             Compra #{compra.folio}
             <span className="flex flex-wrap gap-2">

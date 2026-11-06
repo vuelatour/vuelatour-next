@@ -75,11 +75,16 @@ describe("cableado del selector y de Reportes", () => {
     expect(src).toMatch(/<Suspense key=\{`\$\{desde\}:\$\{hasta\}`\} fallback=\{<PreCierreCardCargando \/>\}>\s*<PreCierreCard desde=\{desde\} hasta=\{hasta\} \/>\s*<\/Suspense>/);
   });
 
-  it("el menú y la pantalla dicen «Inventario/Tienda» (pedido del cliente, 12-oct-2026)", () => {
+  it("el menú trae DOS pantallas: «Inventario» y «Compras de la tienda» (6-nov-2026, pedido del dueño)", () => {
     const nav = readFileSync(path.resolve(raiz, "lib/admin/nav-items.ts"), "utf8");
-    expect(nav).toContain('label: "Inventario/Tienda"');
-    expect(nav).not.toMatch(/label: "Inventario",/);
+    expect(nav).toContain('label: "Inventario",');
+    expect(nav).toContain('label: "Compras de la tienda",');
+    expect(nav).toContain('href: "/admin/inventory/compras",');
+    expect(nav).not.toContain("Inventario/Tienda\"");
     const pagina = readFileSync(path.resolve(raiz, "app/admin/inventory/page.tsx"), "utf8");
-    expect(pagina).toContain(">Inventario/Tienda</h1>");
+    expect(pagina).toContain(">Inventario</h1>");
+    const compras = readFileSync(path.resolve(raiz, "app/admin/inventory/compras/page.tsx"), "utf8");
+    expect(compras).toContain(">Compras de la tienda</h1>");
+    expect(compras).not.toContain("<BackLink");
   });
 });

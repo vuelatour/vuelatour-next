@@ -13282,6 +13282,30 @@ no aparezca marcada la opción de agregar al inventario».
   `compras-ui.test.tsx` (orden compra → gasto → gastos aparte → recibir, sin
   botón «Compras»).
 
+## Inventario y Compras de la tienda: DOS pantallas (6-nov-2026)
+
+Pedido del dueño: «separar en dos pantallas el inventario y las compras o
+gastos de la tienda». Antes todo colgaba de un solo ítem «Inventario/Tienda».
+
+- Menú (`lib/admin/nav-items.ts`, grupo Flota): «Inventario»
+  (`/admin/inventory`) y «Compras de la tienda» (`/admin/inventory/compras`),
+  mismos roles; `itemNavActivo` enciende solo el más específico.
+- `/admin/inventory` = la bodega: existencias, valorizado, utilidad de la
+  tienda, lector de código, entradas sin costo, productos y salidas. Sin
+  «Compra directa», sin «Importar PDF» y sin «Registrar compra»; solo el
+  enlace «Compras y gastos de la tienda ›» (`data-enlace-compras-tienda`).
+- `/admin/inventory/compras` = «Compras de la tienda» (kicker «Tienda», sin
+  `BackLink`): «Compra directa» (`modo="directa"`, botón principal),
+  «Registrar compra» (pedida: se recibe cuando llega), «Importar PDF», las
+  pestañas Por recibir / Sin gasto / Completas / Todas y la card «Gastos de
+  compras». `AYUDA_PANTALLA_COMPRAS_TIENDA` dice qué se lleva aquí.
+- Títulos de pestaña: `TITULOS_SECCION.inventario = "Inventario"`,
+  `TITULOS_PAGINA.compras = "Compras de la tienda"` («Compras de la tienda ·
+  Por recibir»). Los textos que mandaban a «Inventario/Tienda → Compras»
+  (nota de Refacción del alta de gasto, nota de Gastos) dicen «Compras de la
+  tienda». Los `href` no cambiaron: `hrefCompraDeGasto`,
+  `HREF_GASTOS_DE_COMPRAS` siguen valiendo.
+
 ## La reserva de overhaul se descuenta a TODOS los socios (6-nov-2026, API 0.0.125)
 
 Decisión del cliente: «lo de overhaul ya se les va a apartar en las utilidades a

@@ -457,16 +457,20 @@ describe("«Compra directa»: el botón de Inventario/Tienda y el diálogo en mo
     const normal = renderToStaticMarkup(<CompraRegistrarDialog providers={[]} items={[]} />);
     expect(normal).toContain("data-registrar-compra");
     expect(normal).not.toContain("data-compra-directa");
+    // DOS pantallas (6-nov-2026): «Compra directa» es el botón principal de
+    // «Compras de la tienda»; Inventario ya no registra compras ni importa PDF,
+    // solo enlaza a la otra pantalla.
+    const compras = leer("app/admin/inventory/compras/page.tsx");
+    expect(compras).toContain('<CompraRegistrarDialog modo="directa" providers={providers} items={items} tcOficialHoy={tcOficialHoy} />');
+    expect(compras).toContain("getTipoCambioOficial().catch(() => null)");
+    expect(compras).toContain("{AYUDA_PANTALLA_COMPRAS_TIENDA}");
     const inventario = leer("app/admin/inventory/page.tsx");
-    expect(inventario).toContain('<CompraRegistrarDialog modo="directa" providers={providers} items={itemsCompra} tcOficialHoy={tcOficialHoy} />');
-    expect(inventario).toContain("getTipoCambioOficial().catch(() => null)");
-    expect(inventario).toContain("{puedeAltaMasiva && (");
-    // 6-nov-2026: el botón «Compras» se retiró de la cabecera; queda un enlace
-    // discreto a los pedidos pendientes de recibir.
+    expect(inventario).not.toContain("CompraRegistrarDialog");
+    expect(inventario).not.toContain("ImportCompraButton");
+    expect(inventario).not.toContain("getTipoCambioOficial");
     expect(inventario).not.toContain("ShoppingCartIcon");
-    expect(inventario).not.toContain("buttonVariants(");
-    expect(inventario).toContain("data-enlace-compras-pedidas");
-    expect(inventario).toContain("Compras pedidas (pendientes de recibir)");
+    expect(inventario).toContain("data-enlace-compras-tienda");
+    expect(inventario).toContain("Compras y gastos de la tienda ›");
   });
 
   it("el diálogo: en modo directa el pago es «ahora» sin radios, pregunta cómo se pagó, «Ya está en bodega» nace sin marcar, registra los gastos aparte y al final recibe (si se marcó) y se queda en Inventario", () => {

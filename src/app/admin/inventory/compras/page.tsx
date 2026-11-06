@@ -4,7 +4,6 @@ import Link from "next/link";
 import { ShoppingCartIcon } from "@heroicons/react/24/outline";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { BackLink } from "@/components/admin/back-link";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ComprasTable } from "@/components/admin/inventory/compras/compras-table";
 import { ComprasGastosTable } from "@/components/admin/inventory/compras/compras-gastos-table";
@@ -18,6 +17,7 @@ import { listProviders } from "@/lib/api/providers-server";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import {
   AYUDA_FLUJO_COMPRAS,
+  AYUDA_PANTALLA_COMPRAS_TIENDA,
   AYUDA_PESTANA_COMPRAS,
   DESCRIPCION_GASTOS_DE_COMPRAS,
   TITULO_GASTOS_DE_COMPRAS,
@@ -87,25 +87,35 @@ export default async function ComprasPage({
 
   return (
     <div className="space-y-6">
-      <BackLink
-        href="/admin/inventory"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        iconClassName="h-4 w-4"
-      >
-        Inventario
-      </BackLink>
-
+      {/* PANTALLA PROPIA (6-nov-2026, pedido del dueño: «separar en dos
+          pantallas el inventario y las compras o gastos de la tienda»): entra
+          desde el menú; el inventario (existencias y salidas) es la otra. */}
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-sm text-muted-foreground">Inventario/Tienda</p>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Compras</h1>
-          <p className="text-sm text-muted-foreground mt-1" data-ayuda-flujo>
+          <p className="text-sm text-muted-foreground">Tienda</p>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Compras de la tienda</h1>
+          <p className="text-sm text-muted-foreground mt-1" data-ayuda-pantalla>
+            {AYUDA_PANTALLA_COMPRAS_TIENDA}{" "}
+            <Link
+              href="/admin/inventory"
+              prefetch={false}
+              className="underline underline-offset-2 hover:text-foreground"
+              data-enlace-inventario
+            >
+              Ir al inventario ›
+            </Link>
+          </p>
+          <p className="text-xs text-muted-foreground/80 mt-1" data-ayuda-flujo>
             {AYUDA_FLUJO_COMPRAS}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <ImportCompraButton providers={providers} />
+          {/* «Compra directa» (6-nov-2026): lo que se compró y pagó directo, en
+              un paso (compra + gasto; la entrada a bodega si se marca). Es el
+              botón principal de la pantalla. */}
+          <CompraRegistrarDialog modo="directa" providers={providers} items={items} tcOficialHoy={tcOficialHoy} />
           <CompraRegistrarDialog providers={providers} items={items} tcOficialHoy={tcOficialHoy} />
+          <ImportCompraButton providers={providers} />
         </div>
       </div>
 

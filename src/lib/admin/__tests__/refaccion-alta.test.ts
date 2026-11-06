@@ -17,7 +17,7 @@ describe("notaRefaccionAlta", () => {
     expect(notaRefaccionAlta({ conAvion: true })).toBe(NOTA_REFACCION_CON_AVION);
     expect(notaRefaccionAlta({ conAvion: false })).toBe(NOTA_REFACCION_SIN_AVION);
     expect(NOTA_REFACCION_CON_AVION).toContain("hoja Gastos Indirectos");
-    expect(NOTA_REFACCION_CON_AVION).toContain("Inventario/Tienda → Compras");
+    expect(NOTA_REFACCION_CON_AVION).toContain("regístrala desde Compras de la tienda");
     expect(NOTA_REFACCION_SIN_AVION).toContain("gasto de la empresa");
     expect(NOTA_REFACCION_SIN_AVION).toContain("Vincular gasto ya registrado");
     // Nada de «¿A dónde va la refacción?» ni de precio de venta obligatorio.

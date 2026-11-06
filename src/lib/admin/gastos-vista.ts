@@ -251,14 +251,14 @@ export const CAMPOS_OPCIONALES_GASTOS: readonly string[] = [CAMPO_EXCLUIR_CATEGO
  * `sin_compras=true` SIEMPRE (lista, contadores y Excel), salvo en una vista
  * ENFOCADA (`?gasto=` de Conciliación o `ids` del pre-cierre): ahí se
  * incluyen para que el gasto buscado aparezca. Los pagos de compras viven en
- * Inventario/Tienda → Compras («Gastos de compras» y cada compra).
+ * «Compras de la tienda» («Gastos de compras» y cada compra).
  */
 export interface OpcionesQueryGastos {
   /** Vista enfocada: incluir los gastos de compras. */
   conCompras?: boolean;
 }
 
-export const TITULO_COMPRAS_FUERA_DE_GASTOS = "Los gastos de las compras de refacciones se llevan en Inventario/Tienda";
+export const TITULO_COMPRAS_FUERA_DE_GASTOS = "Los gastos de las compras de refacciones se llevan en Compras de la tienda";
 export const DESCRIPCION_COMPRAS_FUERA_DE_GASTOS =
   "Lo pagado por una compra (la factura de la mercancía, el envío, la aduana) no sale aquí: vive en cada compra y en «Gastos de compras». Sí cuenta en conciliación, balance y reportes.";
 export const DESCRIPCION_COMPRAS_EN_VISTA_ENFOCADA =

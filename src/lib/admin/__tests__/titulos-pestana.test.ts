@@ -84,7 +84,10 @@ describe("secciones = las etiquetas del menú (nav-items)", () => {
   it("textos de las secciones que más se usan", () => {
     expect(TITULOS_SECCION.gastos).toBe("Gastos");
     expect(TITULOS_SECCION.conciliacion).toBe("Conciliación");
-    expect(TITULOS_SECCION.inventario).toBe("Inventario/Tienda");
+    expect(TITULOS_SECCION.inventario).toBe("Inventario");
+    // DOS pantallas (6-nov-2026): la de compras es un ítem del menú con su título.
+    expect(TITULOS_SECCION.comprasTienda).toBe("Compras de la tienda");
+    expect(RUTA_SECCION.comprasTienda).toBe("/admin/inventory/compras");
     expect(TITULOS_SECCION.facturacionAutomatica).toBe("Facturación automática");
     expect(TITULOS_SECCION.entidadesFiscales).toBe("Entidades fiscales");
     expect(TITULOS_SECCION.tarjetas).toBe("Tarjetas corp.");
@@ -102,7 +105,6 @@ describe("secciones = las etiquetas del menú (nav-items)", () => {
       cotizacionNueva: "Nueva cotización",
       grupos: "Grupos",
       grupoNuevo: "Nuevo grupo",
-      compras: "Compras",
       iniciarSesion: "Iniciar sesión",
       errorSesion: "No se pudo iniciar sesión",
     });
@@ -179,9 +181,9 @@ describe("detalles: lo distintivo primero", () => {
   });
 
   it("producto: el nombre primero y la sección del menú después", () => {
-    expect(tituloProducto("Aceite AeroShell 15W-50")).toBe("Aceite AeroShell 15W-50 · Inventario/Tienda");
+    expect(tituloProducto("Aceite AeroShell 15W-50")).toBe("Aceite AeroShell 15W-50 · Inventario");
     expect(tituloProducto("Aceite AeroShell W100 Plus 15W-50 para motores de pistón (cuarto)")).toBe(
-      "Aceite AeroShell W100 Plus 15W-50 para… · Inventario/Tienda",
+      "Aceite AeroShell W100 Plus 15W-50 para… · Inventario",
     );
     expect(tituloProducto(null)).toBe("Producto");
     expect(tituloProducto()).toBe("Producto");
@@ -272,11 +274,11 @@ describe("pestañas de una sección: «Sección · Pestaña»", () => {
   });
 
   it("Compras (Por recibir es el default; Todas no se nombra)", () => {
-    expect(tituloCompras("por-recibir")).toBe("Compras · Por recibir");
-    expect(tituloCompras("sin-gasto")).toBe("Compras · Sin gasto");
-    expect(tituloCompras("completas")).toBe("Compras · Completas");
-    expect(tituloCompras("todas")).toBe("Compras");
-    expect(tituloCompras(null)).toBe("Compras");
+    expect(tituloCompras("por-recibir")).toBe("Compras de la tienda · Por recibir");
+    expect(tituloCompras("sin-gasto")).toBe("Compras de la tienda · Sin gasto");
+    expect(tituloCompras("completas")).toBe("Compras de la tienda · Completas");
+    expect(tituloCompras("todas")).toBe("Compras de la tienda");
+    expect(tituloCompras(null)).toBe("Compras de la tienda");
   });
 });
 

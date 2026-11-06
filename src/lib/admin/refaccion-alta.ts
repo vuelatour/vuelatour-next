@@ -8,15 +8,15 @@
  *
  * El alta ya NO manda el bloque `inventario` (deprecado en el API). Con
  * avión, la refacción es el gasto indirecto del avión de siempre; sin avión,
- * un gasto de la empresa pendiente de ligar a una compra desde
- * Inventario/Tienda. Esta es la FUENTE ÚNICA (PURA) de la nota que lo dice.
+ * un gasto de la empresa pendiente de ligar a una compra desde «Compras de
+ * la tienda». Esta es la FUENTE ÚNICA (PURA) de la nota que lo dice.
  */
 
 export const NOTA_REFACCION_CON_AVION =
-  "Se carga directo al avión (hoja Gastos Indirectos). No pasa por Inventario/Tienda: si la pieza va a la bodega, regístrala desde Inventario/Tienda → Compras y vincula este gasto.";
+  "Se carga directo al avión (hoja Gastos Indirectos). No pasa por el inventario: si la pieza va a la bodega, regístrala desde Compras de la tienda y vincula este gasto.";
 
 export const NOTA_REFACCION_SIN_AVION =
-  "Sin avión queda como gasto de la empresa. Cuando la pieza llegue a bodega, vincula este gasto desde Inventario/Tienda → Compras («Vincular gasto ya registrado») o desde la entrada del artículo.";
+  "Sin avión queda como gasto de la empresa. Cuando la pieza llegue a bodega, vincula este gasto desde Compras de la tienda («Vincular gasto ya registrado») o desde la entrada del artículo.";
 
 /** La nota bajo la categoría Refacción del alta, según haya avión elegido. */
 export function notaRefaccionAlta(p: { conAvion: boolean }): string {
