@@ -123,6 +123,7 @@ const { CompraAgregarGastoDialog } = await import("../compra-agregar-gasto-dialo
 const { CompraPagosCard } = await import("../compra-pagos-card");
 const { CompraCargosFacturaCard } = await import("../compra-cargos-factura-card");
 const { CompraRegistrarGastoDialog } = await import("../compra-registrar-gasto-dialog");
+const { CompraRegistrarDialog } = await import("../compra-registrar-dialog");
 
 const raiz = path.resolve(__dirname, "../../../../../");
 /** La etiqueta `<input …>` del T.C. (controlado: SÍ pinta `value` en SSR). */
@@ -437,10 +438,49 @@ describe("«Agregar gasto»: el diálogo y la tarjeta «Gastos de esta compra»"
     expect(subida).toBeLessThan(alta);
     expect(alta).toBeLessThan(gasto);
     expect(OPCIONES_PAGO_COMPRA.map((o) => o.value)).toEqual(["ahora", "despues", "vincular"]);
-    expect(fuente).toContain("{ETIQUETA_Y_EL_PAGO}");
+    expect(fuente).toContain("{directa ? ETIQUETA_COMO_SE_PAGO : ETIQUETA_Y_EL_PAGO}");
     expect(ETIQUETA_Y_EL_PAGO).toBe("¿Y el pago?");
     // Con «Ya la pagué» el T.C. de la compra es el del gasto (un solo campo).
     expect(fuente).toContain("{ ...form, tc_usd_mxn: gastoForm.tc }");
     expect(fuente).toContain("{!conGasto && (");
+  });
+});
+
+// ===== «Compra directa» desde Inventario/Tienda (6-nov-2026) =====
+
+describe("«Compra directa»: el botón de Inventario/Tienda y el diálogo en modo directa", () => {
+  it("el botón de Inventario abre el mismo diálogo en modo directa (con el T.C. oficial y los artículos de la bodega)", () => {
+    const html = renderToStaticMarkup(<CompraRegistrarDialog modo="directa" providers={[]} items={[]} tcOficialHoy={18.5} />);
+    expect(html).toContain("data-compra-directa");
+    expect(html).toContain("Compra directa");
+    expect(html).not.toContain("data-registrar-compra");
+    const normal = renderToStaticMarkup(<CompraRegistrarDialog providers={[]} items={[]} />);
+    expect(normal).toContain("data-registrar-compra");
+    expect(normal).not.toContain("data-compra-directa");
+    const inventario = leer("app/admin/inventory/page.tsx");
+    expect(inventario).toContain('<CompraRegistrarDialog modo="directa" providers={providers} items={itemsCompra} tcOficialHoy={tcOficialHoy} />');
+    expect(inventario).toContain("getTipoCambioOficial().catch(() => null)");
+    expect(inventario).toContain("{puedeAltaMasiva && (");
+  });
+
+  it("el diálogo: en modo directa el pago es «ahora» sin radios, pregunta cómo se pagó, «Ya está en bodega» nace marcado y al final recibe y se queda en Inventario", () => {
+    const fuente = leer("components/admin/inventory/compras/compra-registrar-dialog.tsx");
+    expect(fuente).toContain('setPago(modo === "directa" ? "ahora" : PAGO_COMPRA_DEFAULT)');
+    expect(fuente).toContain("setRecibirAhora(recibirAhoraDefault(modo))");
+    expect(fuente).toContain("{!directa && OPCIONES_PAGO_COMPRA.map((o) => (");
+    expect(fuente).toContain("{directa ? ETIQUETA_COMO_SE_PAGO : ETIQUETA_Y_EL_PAGO}");
+    expect(fuente).toContain("data-recibir-ahora={recibirAhora ?");
+    // Orden: compra → gasto → recibir; si todo salió, se queda en Inventario.
+    const crea = fuente.indexOf("await createCompraAction(cuerpoCompra)");
+    const gasto = fuente.indexOf("await registrarGastoCompraAction(compra.id");
+    const recibe = fuente.indexOf("await recibirCompraAction(compra.id)");
+    expect(crea).toBeGreaterThan(0);
+    expect(gasto).toBeGreaterThan(crea);
+    expect(recibe).toBeGreaterThan(gasto);
+    expect(fuente).toContain("if (directa && todoBien) router.refresh();");
+    expect(fuente).toContain("avisoCompraSinRecepcion(compra.folio, rec.error)");
+    expect(fuente).toContain("toastCompraDirecta(gastoOk, lineas)");
+    // Dinero o entrada a bodega ⇒ confirmación.
+    expect(fuente).toContain("if (conGasto || recibirAhora) setConfirmar(true);");
   });
 });

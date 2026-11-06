@@ -13217,3 +13217,37 @@ DÓNDE se ven.
   (tolerancia por campo y `solo_compras` sin tolerar),
   `compras-gastos-table.test.tsx`; `gastos-vista.test.ts` y
   `gastos-vista-nomina.test.ts` actualizados (`sin_compras` en la base).
+
+## «Compra directa» desde Inventario/Tienda (6-nov-2026)
+
+Pedido del dueño (captura de Inventario/Tienda): «un botón para registrar un
+gasto desde ahí sin que entre a una compra, porque se compró directamente».
+Lo que se compró directo y ya está en bodega se captura en UN paso. Sin API
+nuevo: el mismo `CompraRegistrarDialog` con `modo="directa"` encadena
+`createCompraAction` → `registrarGastoCompraAction` → `recibirCompraAction`.
+
+- **Botón** en la cabecera de `app/admin/inventory/page.tsx` (primero, solo
+  con `puedeAltaMasiva`: SOCIO no da de alta): `<CompraRegistrarDialog
+  modo="directa" providers items={itemsCompra} tcOficialHoy />`; la página
+  lee `getTipoCambioOficial().catch(() => null)` para la sugerencia del T.C.
+- **El diálogo en modo directa**: título «Compra directa», el pago es siempre
+  «ahora» (sin radios: el fieldset pregunta «¿Cómo se pagó?» con
+  `CompraGastoCampos`), «Fecha de la compra», «Líneas (lo que compraste)» y
+  el checkbox «Ya está en bodega: dar entrada al inventario ahora»
+  (`data-recibir-ahora`, `recibirAhoraDefault(modo)`: marcado en directa,
+  sin marcar en Compras, donde también existe). Botón
+  `etiquetaBotonRegistrarCompra` («Registrar compra directa» / «Registrar
+  compra, su gasto y la entrada» / …). Confirmación con dinero o entrada
+  (`textoConfirmarCompraConGasto({ …, recibir })`).
+- **Flujo**: comprobante → compra → gasto (si «ahora») → `recibir` (si el
+  checkbox). Toasts: `toastCompraDirecta` (todo), `toastCompraConGasto` (sin
+  entrada), `toastCompraRecibida` (sin gasto); si el gasto o la entrada
+  fallan, aviso completo (`avisoCompraSinGasto` / `avisoCompraSinRecepcion`)
+  y se ABRE la compra para terminarla ahí. Con todo bien en modo directa,
+  `router.refresh()`: la oficina se queda en Inventario (no «entra a una
+  compra»); en Compras, al detalle como siempre.
+- **Textos** (`lib/admin/compras-estado.ts`): ya ningún texto de compras dice
+  que un pago «está en Gastos» (invariante 118): «quedó en «Gastos de
+  compras»», «Nace como gasto de Paquetería», etc.
+- Tests: `compras-estado.test.ts` («Compra directa») y `compras-ui.test.tsx`
+  (botón por modo, cableado de la página y orden compra → gasto → recibir).

@@ -18,6 +18,7 @@ import { ItemsTable } from "@/components/admin/inventory/items-table";
 import { ItemCreateButton } from "@/components/admin/inventory/item-create-button";
 import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
 import { ItemBulkUploadDialog } from "@/components/admin/inventory/item-bulk-upload-dialog";
+import { CompraRegistrarDialog } from "@/components/admin/inventory/compras/compra-registrar-dialog";
 import { CodigoSearch } from "@/components/admin/inventory/codigo-search";
 import {
   EntradasSinCosto,
@@ -31,6 +32,7 @@ import {
   listUbicaciones,
 } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
+import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { getMe } from "@/lib/api/me";
 import { todayCancun } from "@/lib/datetime";
@@ -83,7 +85,7 @@ export default async function InventoryPage({
   // CATÁLOGOS de los selectores degradan a vacío + aviso; la bodega —el dato
   // por el que existe la pantalla— jamás se disfraza de «sin ítems».
   const degradado = new Degradaciones();
-  const [bodega, providersRes, aircraftRes, me, sinCostoRes, ubicacionesRes, tienda] =
+  const [bodega, providersRes, aircraftRes, me, sinCostoRes, ubicacionesRes, tienda, tcOficialHoy] =
     await Promise.all([
       // PRINCIPAL. Toda la bodega (pagina hasta count): la tabla no debe
       // "perder" ítems. `desde/hasta` acotan SOLO la utilidad por ítem.
@@ -102,6 +104,8 @@ export default async function InventoryPage({
       // Utilidad de la tienda del periodo. Nunca lanza: null ⇒ la tarjeta
       // usa las sumas de la lista (misma moneda, jamás cruzadas).
       getTiendaResumen(rango ?? {}),
+      // T.C. oficial de hoy: solo la sugerencia de «Compra directa» (best-effort).
+      getTipoCambioOficial().catch(() => null),
     ]);
   const {
     data: items,
@@ -178,6 +182,8 @@ export default async function InventoryPage({
     tc_usd_mxn: m.tc_usd_mxn != null ? Number(m.tc_usd_mxn) : null,
   }));
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
+  // Artículos para las líneas de «Compra directa» (toda la bodega ya cargada).
+  const itemsCompra = items.map((i) => ({ id: i.id, nombre: i.nombre, numero_parte: i.numero_parte ?? null }));
   const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
   const bajos = items.filter((i) => i.bajo_stock).length;
   // Categorías existentes (únicas) para el selector del formulario: elegir
@@ -215,6 +221,12 @@ export default async function InventoryPage({
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
+          {/* «Compra directa» (6-nov-2026, pedido del dueño): lo que se compró
+              directo y ya está en bodega, en un paso (compra + gasto + entrada),
+              sin entrar a Compras. Bloqueado para SOCIO como el resto de altas. */}
+          {puedeAltaMasiva && (
+            <CompraRegistrarDialog modo="directa" providers={providers} items={itemsCompra} tcOficialHoy={tcOficialHoy} />
+          )}
           {/* Compras de refacciones: factura + envío + impuestos → costo real
               en bodega. Sin submenú en el sidebar; la entrada es este botón. */}
           <Link

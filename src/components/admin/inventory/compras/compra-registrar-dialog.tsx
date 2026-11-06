@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, ShoppingBagIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -28,32 +28,47 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Field } from "@/components/admin/form-field";
 import { ProveedorSelector } from "@/components/admin/expenses/proveedor-selector";
-import { createCompraAction, registrarGastoCompraAction } from "@/app/admin/inventory/compras/actions";
+import {
+  createCompraAction,
+  recibirCompraAction,
+  registrarGastoCompraAction,
+} from "@/app/admin/inventory/compras/actions";
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import { todayCancun } from "@/lib/datetime";
 import {
-  DESCRIPCION_REGISTRAR_COMPRA,
+  ETIQUETA_COMO_SE_PAGO,
+  ETIQUETA_RECIBIR_AHORA,
   ETIQUETA_Y_EL_PAGO,
+  HINT_RECIBIR_AHORA,
   HINT_LINEAS_COMPRA,
   HINT_TC_COMPRA_OPCIONAL,
   MSG_LINEAS_SIN_COSTO_PARA_GASTO,
   OPCIONES_PAGO_COMPRA,
   PAGO_COMPRA_DEFAULT,
+  TITULO_BOTON_COMPRA_DIRECTA,
   TITULO_REGISTRAR_COMPRA,
   avisoCompraSinGasto,
+  avisoCompraSinRecepcion,
   cuerpoRegistrarCompra,
   cuerpoRegistrarGastoCompra,
+  descripcionRegistrarCompra,
+  etiquetaBotonRegistrarCompra,
   formGastoCompraVacio,
   formRegistrarCompraVacio,
   lineaCompraVacia,
   lineasConCosto,
+  recibirAhoraDefault,
   tcInicialCompra,
   textoConfirmarCompraConGasto,
+  tituloRegistrarCompra,
   toastCompraConGasto,
+  toastCompraDirecta,
+  toastCompraRecibida,
   toastCompraRegistrada,
   type FormGastoCompra,
   type FormRegistrarCompra,
   type LineaCompraForm,
+  type ModoRegistrarCompra,
   type OpcionPagoCompra,
 } from "@/lib/admin/compras-estado";
 import type { CompraMoneda, GastoCandidatoCompra } from "@/types/compras";
@@ -83,22 +98,33 @@ export interface ItemCompraOption {
  * vincula (y, sin líneas capturadas, el API las arma con lo que leyó la IA
  * de ese gasto). El envío y la aduana que se pagan aparte se agregan en el
  * detalle con «Agregar gasto».
+ *
+ * «Compra directa» (6-nov-2026, `modo="directa"`, botón de Inventario/Tienda):
+ * lo que se compró directo y ya está en bodega, en UN paso. El pago es
+ * siempre «ahora» y «Ya está en bodega» nace marcado: tras el gasto se
+ * llama `recibir` y las líneas entran al inventario; al terminar se queda en
+ * Inventario (sin entrar a la compra). En Compras el mismo checkbox existe,
+ * sin marcar.
  */
 export function CompraRegistrarDialog({
   providers,
   items,
   tcOficialHoy = null,
+  modo = "compras",
 }: {
   providers: { id: string; nombre: string }[];
   items: ItemCompraOption[];
   /** T.C. oficial de hoy (sugerencia del gasto; null = sin dato). */
   tcOficialHoy?: number | null;
+  /** `directa` = desde Inventario/Tienda: pagada y ya en bodega, en un paso. */
+  modo?: ModoRegistrarCompra;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<FormRegistrarCompra>(() => formRegistrarCompraVacio(todayCancun()));
   const [pago, setPago] = useState<OpcionPagoCompra>(PAGO_COMPRA_DEFAULT);
+  const [recibirAhora, setRecibirAhora] = useState(() => recibirAhoraDefault(modo));
   const [gastoForm, setGastoForm] = useState<FormGastoCompra>(() =>
     formGastoCompraVacio({ tc: tcInicialCompra(null, tcOficialHoy), fecha: todayCancun() }),
   );
@@ -116,7 +142,9 @@ export function CompraRegistrarDialog({
     if (o) {
       const hoy = todayCancun();
       setForm(formRegistrarCompraVacio(hoy));
-      setPago(PAGO_COMPRA_DEFAULT);
+      // Compra directa: siempre pagada («ahora»).
+      setPago(modo === "directa" ? "ahora" : PAGO_COMPRA_DEFAULT);
+      setRecibirAhora(recibirAhoraDefault(modo));
       setGastoForm(formGastoCompraVacio({ tc: tcInicialCompra(null, tcOficialHoy), fecha: hoy }));
       setArchivo(null);
       setGasto(null);
@@ -149,6 +177,7 @@ export function CompraRegistrarDialog({
   const quitarLinea = (key: string) =>
     setForm((f) => ({ ...f, lineas: f.lineas.length > 1 ? f.lineas.filter((l) => l.key !== key) : f.lineas }));
 
+  const directa = modo === "directa";
   const conGasto = pago === "ahora";
   // Con «Ya la pagué» el T.C. del gasto es también el de la compra (un solo campo).
   const formCompra: FormRegistrarCompra = conGasto ? { ...form, tc_usd_mxn: gastoForm.tc } : form;
@@ -175,8 +204,8 @@ export function CompraRegistrarDialog({
       toast.error(e);
       return;
     }
-    // Dinero (se crea un gasto) ⇒ confirmación; sin gasto, directo.
-    if (conGasto) setConfirmar(true);
+    // Dinero (se crea un gasto) o entrada a bodega ⇒ confirmación; si no, directo.
+    if (conGasto || recibirAhora) setConfirmar(true);
     else registrar();
   };
 
@@ -203,6 +232,9 @@ export function CompraRegistrarDialog({
         return;
       }
       const compra = r.data;
+      const lineas = cuerpoCompra.lineas.length;
+      let gastoOk: Parameters<typeof toastCompraConGasto>[0] | null = null;
+      let todoBien = true;
       if (conGasto && cuerpoGasto) {
         const g = await registrarGastoCompraAction(compra.id, {
           ...cuerpoGasto,
@@ -211,18 +243,40 @@ export function CompraRegistrarDialog({
           ...(cuerpoCompra.referencia ? { folio_ticket: cuerpoCompra.referencia } : {}),
           ...(fotoPath ? { foto_url: fotoPath } : {}),
         });
-        setConfirmar(false);
         if (g.ok && g.data) {
-          toast.success(toastCompraConGasto(g.data), { duration: 8000 });
+          gastoOk = g.data;
         } else {
           // La compra SÍ nació: se dice completo y se abre para que la terminen ahí.
+          todoBien = false;
           toast.warning(avisoCompraSinGasto(compra.folio, g.error), { duration: 15000 });
         }
-      } else {
+      }
+      // «Ya está en bodega»: la entrada al inventario en el mismo paso.
+      let recibida = false;
+      if (recibirAhora) {
+        const rec = await recibirCompraAction(compra.id);
+        if (rec.ok) {
+          recibida = true;
+        } else {
+          todoBien = false;
+          toast.warning(avisoCompraSinRecepcion(compra.folio, rec.error), { duration: 15000 });
+        }
+      }
+      setConfirmar(false);
+      if (gastoOk && recibida) {
+        toast.success(toastCompraDirecta(gastoOk, lineas), { duration: 8000 });
+      } else if (gastoOk) {
+        toast.success(toastCompraConGasto(gastoOk), { duration: 8000 });
+      } else if (recibida) {
+        toast.success(toastCompraRecibida(compra.folio, lineas), { duration: 8000 });
+      } else if (!conGasto && !recibirAhora) {
         toast.success(toastCompraRegistrada(compra));
       }
       setOpen(false);
-      router.push(`/admin/inventory/compras/${compra.id}`);
+      // Compra directa: no hace falta entrar a la compra; la bodega se refresca.
+      // Si algo falló, sí se abre la compra para terminarla ahí.
+      if (directa && todoBien) router.refresh();
+      else router.push(`/admin/inventory/compras/${compra.id}`);
     });
   };
 
@@ -233,15 +287,22 @@ export function CompraRegistrarDialog({
 
   return (
     <>
-      <Button onClick={() => abrir(true)} className="gap-2" data-registrar-compra>
-        <PlusIcon className="h-4 w-4" />
-        {TITULO_REGISTRAR_COMPRA}
-      </Button>
+      {directa ? (
+        <Button onClick={() => abrir(true)} className="gap-2" data-compra-directa title={TITULO_BOTON_COMPRA_DIRECTA}>
+          <ShoppingBagIcon className="h-4 w-4" />
+          {tituloRegistrarCompra(modo)}
+        </Button>
+      ) : (
+        <Button onClick={() => abrir(true)} className="gap-2" data-registrar-compra>
+          <PlusIcon className="h-4 w-4" />
+          {TITULO_REGISTRAR_COMPRA}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={(o) => !pending && abrir(o)}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-modo-compra={modo}>
           <DialogHeader>
-            <DialogTitle>{TITULO_REGISTRAR_COMPRA}</DialogTitle>
-            <DialogDescription>{DESCRIPCION_REGISTRAR_COMPRA}</DialogDescription>
+            <DialogTitle>{tituloRegistrarCompra(modo)}</DialogTitle>
+            <DialogDescription>{descripcionRegistrarCompra(modo)}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -249,7 +310,7 @@ export function CompraRegistrarDialog({
               <Field label="Proveedor">
                 <ProveedorSelector providers={providers} value={form.proveedor_id} onChange={(v) => set({ proveedor_id: v })} />
               </Field>
-              <Field label="Fecha del pedido / factura" required>
+              <Field label={directa ? "Fecha de la compra" : "Fecha del pedido / factura"} required>
                 <Input type="date" value={form.fecha} onChange={(e) => set({ fecha: e.target.value })} />
               </Field>
               <Field label="Referencia" hint="Número de orden o factura del proveedor.">
@@ -279,7 +340,7 @@ export function CompraRegistrarDialog({
             <div className="space-y-2 rounded-lg border border-border p-3" data-lineas-compra>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium">Líneas (lo que pediste)</p>
+                  <p className="text-sm font-medium">{directa ? "Líneas (lo que compraste)" : "Líneas (lo que pediste)"}</p>
                   <p className="text-xs text-muted-foreground">{HINT_LINEAS_COMPRA}</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" className="gap-1" onClick={agregarLinea}>
@@ -341,10 +402,11 @@ export function CompraRegistrarDialog({
               ))}
             </div>
 
-            {/* ¿Y el pago? Tres caminos, uno solo elegido. */}
+            {/* ¿Y el pago? Tres caminos, uno solo elegido. En la compra directa el
+                pago es «ahora» y solo se pregunta cómo se pagó. */}
             <fieldset className="space-y-2 rounded-lg border border-border p-3" data-pago-compra={pago}>
-              <legend className="px-1 text-sm font-medium">{ETIQUETA_Y_EL_PAGO}</legend>
-              {OPCIONES_PAGO_COMPRA.map((o) => (
+              <legend className="px-1 text-sm font-medium">{directa ? ETIQUETA_COMO_SE_PAGO : ETIQUETA_Y_EL_PAGO}</legend>
+              {!directa && OPCIONES_PAGO_COMPRA.map((o) => (
                 <label key={o.value} className="flex cursor-pointer items-start gap-2 text-sm">
                   <input
                     type="radio"
@@ -384,6 +446,21 @@ export function CompraRegistrarDialog({
               )}
             </fieldset>
 
+            {/* «Ya está en bodega» (6-nov-2026): la entrada al inventario en el
+                mismo paso. Nace marcado en la compra directa; en Compras, no. */}
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3 text-sm" data-recibir-ahora={recibirAhora ? "1" : "0"}>
+              <input
+                type="checkbox"
+                checked={recibirAhora}
+                onChange={(e) => setRecibirAhora(e.target.checked)}
+                className="mt-0.5 h-4 w-4 cursor-pointer accent-brand-600"
+              />
+              <span>
+                <span className="font-medium">{ETIQUETA_RECIBIR_AHORA}</span>
+                <span className="block text-xs text-muted-foreground">{HINT_RECIBIR_AHORA}</span>
+              </span>
+            </label>
+
             <Field label="Notas">
               <Textarea rows={2} value={form.notas} onChange={(e) => set({ notas: e.target.value })} />
             </Field>
@@ -394,7 +471,7 @@ export function CompraRegistrarDialog({
               Cancelar
             </Button>
             <Button onClick={pedir} disabled={pending} data-accion="registrar-compra">
-              {pending ? "Registrando…" : conGasto ? "Registrar compra y su gasto" : TITULO_REGISTRAR_COMPRA}
+              {pending ? "Registrando…" : etiquetaBotonRegistrarCompra({ modo, conGasto, recibir: recibirAhora })}
             </Button>
           </DialogFooter>
 
@@ -402,7 +479,9 @@ export function CompraRegistrarDialog({
           <AlertDialog open={confirmar} onOpenChange={(o) => !o && setConfirmar(false)}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>¿Registrar la compra y su gasto?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {conGasto ? "¿Registrar la compra y su gasto?" : "¿Registrar la compra y darle entrada a bodega?"}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
                   {veredictoCompra.ok && veredictoGasto && veredictoGasto.ok
                     ? textoConfirmarCompraConGasto({
@@ -411,8 +490,11 @@ export function CompraRegistrarDialog({
                         tc: veredictoGasto.cuerpo.tc_usd_mxn,
                         fecha: veredictoGasto.cuerpo.fecha_gasto,
                         medio: veredictoGasto.cuerpo.medio_pago,
+                        recibir: recibirAhora,
                       })
-                    : ""}
+                    : veredictoCompra.ok
+                      ? `Se registra la compra con ${veredictoCompra.cuerpo.lineas.length} ${veredictoCompra.cuerpo.lineas.length === 1 ? "línea" : "líneas"} y sus unidades entran a bodega de inmediato (sin gasto todavía).`
+                      : ""}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

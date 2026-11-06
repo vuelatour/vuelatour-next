@@ -430,14 +430,14 @@ describe("los campos del gasto de una compra (compartidos)", () => {
     expect(
       textoConfirmarAgregarGasto({ folio: 12, rol: "ENVIO", monto: 1850.5, moneda: "MXN", tc: 18.8052, fecha: "2026-11-04", medio: "TARJETA_CORP" }),
     ).toBe(
-      `Se crea en Gastos un gasto por ${fmtMontoMoneda(1850.5, "MXN")} (${textoEquivalente(1850.5, "MXN", 18.8052)} al T.C. 18.8052) con fecha 04 nov 2026, pagado por Tarjeta corporativa, y queda ligado a la compra #12 como envío.`,
+      `Se crea un gasto por ${fmtMontoMoneda(1850.5, "MXN")} (${textoEquivalente(1850.5, "MXN", 18.8052)} al T.C. 18.8052) con fecha 04 nov 2026, pagado por Tarjeta corporativa, y queda ligado a la compra #12 como envío.`,
     );
     expect(
       toastGastoAgregado(
         { folio: 12, gasto_registrado: { id: "g", monto: 1850.5, moneda: "MXN", tc_gasto: null, fecha_gasto: null, medio_pago: null, estado_pago: null }, tc_compra_fijado: true },
         "IMPUESTOS",
       ),
-    ).toBe(`Gasto agregado a la compra #12 por ${fmtMontoMoneda(1850.5, "MXN")} (impuestos / aduana): ya está en Gastos · el tipo de cambio quedó también en la compra.`);
+    ).toBe(`Gasto agregado a la compra #12 por ${fmtMontoMoneda(1850.5, "MXN")} (impuestos / aduana): quedó en «Gastos de compras» · el tipo de cambio quedó también en la compra.`);
   });
 });
 
@@ -460,12 +460,60 @@ describe("«Registrar compra»: ¿Y el pago?", () => {
     );
     expect(
       toastCompraConGasto({ folio: 14, gasto_registrado: { id: "g", monto: 300, moneda: "USD", tc_gasto: null, fecha_gasto: null, medio_pago: null, estado_pago: null } }),
-    ).toBe(`Compra #14 registrada y su gasto por ${fmtMontoMoneda(300, "USD")} ya está en Gastos.`);
+    ).toBe(`Compra #14 registrada y su gasto por ${fmtMontoMoneda(300, "USD")} quedó en «Gastos de compras».`);
     expect(avisoCompraSinGasto(14, "Folio duplicado.")).toBe(
       "La compra #14 quedó registrada, pero su gasto NO: Folio duplicado. Regístralo desde la compra con «Registrar gasto».",
     );
     expect(avisoCompraSinGasto(14, undefined)).toBe(
       "La compra #14 quedó registrada, pero su gasto NO: Regístralo desde la compra con «Registrar gasto».",
     );
+  });
+});
+
+// ===== «Compra directa» desde Inventario/Tienda (6-nov-2026) =====
+
+describe("«Compra directa»: textos y decisiones puras", async () => {
+  const m = await import("@/lib/admin/compras-estado");
+
+  it("nace con «Ya está en bodega» marcado solo en modo directa; título y descripción por modo", () => {
+    expect(m.recibirAhoraDefault("directa")).toBe(true);
+    expect(m.recibirAhoraDefault("compras")).toBe(false);
+    expect(m.tituloRegistrarCompra("directa")).toBe("Compra directa");
+    expect(m.tituloRegistrarCompra("compras")).toBe("Registrar compra");
+    expect(m.descripcionRegistrarCompra("directa")).toContain("sin pasar por Compras");
+    expect(m.descripcionRegistrarCompra("compras")).toBe(m.DESCRIPCION_REGISTRAR_COMPRA);
+    expect(m.ETIQUETA_RECIBIR_AHORA).toBe("Ya está en bodega: dar entrada al inventario ahora");
+    expect(m.ETIQUETA_COMO_SE_PAGO).toBe("¿Cómo se pagó?");
+  });
+
+  it("el botón dice lo que va a pasar", () => {
+    expect(m.etiquetaBotonRegistrarCompra({ modo: "directa", conGasto: true, recibir: true })).toBe("Registrar compra directa");
+    expect(m.etiquetaBotonRegistrarCompra({ modo: "compras", conGasto: true, recibir: true })).toBe("Registrar compra, su gasto y la entrada");
+    expect(m.etiquetaBotonRegistrarCompra({ modo: "compras", conGasto: true, recibir: false })).toBe("Registrar compra y su gasto");
+    expect(m.etiquetaBotonRegistrarCompra({ modo: "compras", conGasto: false, recibir: true })).toBe("Registrar compra y recibirla");
+    expect(m.etiquetaBotonRegistrarCompra({ modo: "compras", conGasto: false, recibir: false })).toBe("Registrar compra");
+  });
+
+  it("la confirmación menciona la entrada a bodega solo con «recibir»; toasts y aviso de recepción fallida", () => {
+    const base = { lineas: 2, moneda: "USD", tc: 18.8052, fecha: "2026-11-06", medio: "TARJETA_CORP" };
+    expect(m.textoConfirmarCompraConGasto(base)).not.toContain("entran a bodega");
+    expect(m.textoConfirmarCompraConGasto({ ...base, recibir: true })).toMatch(/ Las líneas entran a bodega de inmediato\.$/);
+    const c = { folio: 15, gasto_registrado: { monto: 300, moneda: "USD" } } as Parameters<typeof m.toastCompraDirecta>[0];
+    expect(m.toastCompraDirecta(c, 1)).toBe(`Compra directa #15 registrada: gasto por ${fmtMontoMoneda(300, "USD")} y 1 línea ya está en el inventario.`);
+    expect(m.toastCompraDirecta(c, 3)).toContain("3 líneas ya están en el inventario");
+    expect(m.toastCompraRecibida(15, 2)).toBe("Compra #15 registrada y recibida: 2 líneas ya están en el inventario.");
+    expect(m.avisoCompraSinRecepcion(15, "Cargos sin tipo de cambio.")).toBe(
+      "La compra #15 quedó registrada, pero NO entró a bodega: Cargos sin tipo de cambio. Recíbela desde Compras con «Ya llegó: recibir en bodega».",
+    );
+    expect(m.avisoCompraSinRecepcion(15, null)).toBe(
+      "La compra #15 quedó registrada, pero NO entró a bodega: Recíbela desde Compras con «Ya llegó: recibir en bodega».",
+    );
+  });
+
+  it("ningún texto de compras manda a «Gastos» como si los pagos vivieran ahí (invariante 118)", () => {
+    for (const o of m.ROL_OTRO_GASTO_OPTIONS) expect(o.description).not.toContain("en Gastos");
+    expect(m.DESCRIPCION_GASTOS_COMPRA).not.toContain("en Gastos");
+    expect(m.TITULO_BOTON_AGREGAR_GASTO).not.toContain("en Gastos");
+    expect(m.HINT_COMPROBANTE).toContain("«Ver / editar»");
   });
 });

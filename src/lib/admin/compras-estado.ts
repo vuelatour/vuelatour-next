@@ -59,7 +59,7 @@ export const AYUDA_FLUJO_COMPRAS =
 
 export const AYUDA_PESTANA_COMPRAS: Readonly<Record<FiltroCompras, string>> = {
   "por-recibir": "Pedidas y todavía sin recibir en bodega.",
-  "sin-gasto": "Sin su gasto de mercancía en Gastos (o con el gasto incompleto).",
+  "sin-gasto": "Sin su gasto de mercancía registrado (o con el gasto incompleto).",
   completas: "Recibidas en bodega y con su gasto registrado.",
   todas: "Todas las compras.",
 };
@@ -71,7 +71,7 @@ export const VACIO_PESTANA_COMPRAS: Readonly<Record<FiltroCompras, { titulo: str
   },
   "sin-gasto": {
     titulo: "Todas las compras tienen su gasto",
-    descripcion: "Cada compra ya está en Gastos (registrado o vinculado).",
+    descripcion: "Cada compra ya tiene su gasto (registrado o vinculado).",
   },
   completas: {
     titulo: "Sin compras completas",
@@ -346,7 +346,7 @@ export function descripcionRegistrarGasto(c: {
   resumen: Pick<CompraDetalle["resumen"], "total_factura">;
 }): string {
   const monto = c.resumen.total_factura == null ? null : fmtMontoMoneda(c.resumen.total_factura, c.moneda);
-  return `Se crea en Gastos UN gasto de Refacción${monto ? ` por ${monto}` : ""} (líneas + cargos impresos en la factura), ligado a esta compra como su factura de mercancía. Si ese gasto ya existe en Gastos, usa «${BOTON_VINCULAR_GASTO}».`;
+  return `Se crea UN gasto de Refacción${monto ? ` por ${monto}` : ""} (líneas + cargos impresos en la factura), ligado a esta compra como su factura de mercancía. Si ese gasto ya se capturó suelto en Gastos, usa «${BOTON_VINCULAR_GASTO}».`;
 }
 
 export const ETIQUETA_TC_COMPRA = "Tipo de cambio (MXN por USD)";
@@ -401,7 +401,7 @@ export const CODIGO_GASTO_YA_REGISTRADO = "COMPRA_GASTO_YA_REGISTRADO";
 // ===== «Vincular gasto ya registrado» (selector de candidatos) =====
 
 export const PLACEHOLDER_BUSCAR_CANDIDATO = "Buscar por proveedor, folio, notas o monto…";
-export const HINT_CANDIDATOS = "Gastos en Gastos que todavía no pertenecen a ninguna compra (ni son cargos de bodega).";
+export const HINT_CANDIDATOS = "Gastos capturados sueltos en Gastos que todavía no pertenecen a ninguna compra (ni son cargos de bodega).";
 export const TEXTO_SIN_CANDIDATOS = "Ningún gasto coincide en esas fechas. Amplía el rango o registra el gasto desde la compra.";
 export const TEXTO_CANDIDATOS_TRUNCADOS = "Hay más gastos de los que se pueden mostrar: acota las fechas o busca por texto.";
 
@@ -574,9 +574,9 @@ export function toastCompraRegistrada(c: Pick<CompraDetalle, "folio" | "lineas">
 
 /** Qué paga un gasto agregado a la compra (todo menos la mercancía). */
 export const ROL_OTRO_GASTO_OPTIONS: ReadonlyArray<{ value: CompraRolOtro; label: string; description: string }> = [
-  { value: "ENVIO", label: "Envío (UPS, DHL, FedEx…)", description: "Nace en Gastos como Paquetería." },
-  { value: "IMPUESTOS", label: "Impuestos / aduana", description: "Nace en Gastos como «Otros gastos VuelaTour»." },
-  { value: "OTRO", label: "Otro cargo", description: "Nace en Gastos como «Otros gastos VuelaTour»." },
+  { value: "ENVIO", label: "Envío (UPS, DHL, FedEx…)", description: "Nace como gasto de Paquetería." },
+  { value: "IMPUESTOS", label: "Impuestos / aduana", description: "Nace como gasto «Otros gastos VuelaTour»." },
+  { value: "OTRO", label: "Otro cargo", description: "Nace como gasto «Otros gastos VuelaTour»." },
 ];
 
 export const ETIQUETA_ROL_OTRO_GASTO: Readonly<Record<CompraRolOtro, string>> = {
@@ -700,20 +700,20 @@ export function cuerpoAgregarGastoCompra(
 // ===== «Agregar gasto» (el diálogo) =====
 
 export const BOTON_AGREGAR_GASTO = "Agregar gasto";
-export const TITULO_BOTON_AGREGAR_GASTO = "El envío, la aduana u otro cargo de esta compra: nace como gasto en Gastos";
+export const TITULO_BOTON_AGREGAR_GASTO = "El envío, la aduana u otro cargo de esta compra: nace como un gasto más de la compra";
 
 export function tituloAgregarGasto(folio: number): string {
   return `Agregar un gasto a la compra #${folio}`;
 }
 
 export const DESCRIPCION_AGREGAR_GASTO =
-  "Otro pago de esta compra (el envío, la aduana, otro cargo): se crea en Gastos como un gasto normal —con su moneda, su comprobante y su cruce con el banco— y queda ligado a la compra. La factura de las refacciones se registra con «Registrar gasto».";
+  "Otro pago de esta compra (el envío, la aduana, otro cargo): se crea como un gasto normal —con su moneda, su comprobante y su cruce con el banco— y queda ligado a la compra. La factura de las refacciones se registra con «Registrar gasto».";
 export const ETIQUETA_QUE_PAGASTE = "¿Qué pagaste?";
 export const ETIQUETA_MONTO_GASTO = "Monto pagado";
 export const ETIQUETA_MONEDA_GASTO = "Moneda";
 export const HINT_MONEDA_GASTO = "La de la factura de este pago: UPS cobra en pesos aunque la compra sea en dólares.";
 export const ETIQUETA_COMPROBANTE = "Comprobante (foto o PDF)";
-export const HINT_COMPROBANTE = "Opcional: queda en el gasto. También se puede subir después desde Gastos.";
+export const HINT_COMPROBANTE = "Opcional: queda en el gasto. También se puede subir después desde «Ver / editar».";
 export const HINT_PROVEEDOR_OTRO_GASTO = "El de ESTE pago (UPS, el agente aduanal…), no el de las refacciones.";
 export const HINT_TC_OTRO_GASTO = "Con él el cargo entra al costo de las refacciones aunque la compra esté en otra moneda.";
 
@@ -727,7 +727,7 @@ export function textoConfirmarAgregarGasto(p: {
   medio: string;
 }): string {
   const equivalente = textoEquivalente(p.monto, p.moneda, p.tc);
-  return `Se crea en Gastos un gasto por ${fmtMontoMoneda(p.monto, p.moneda)}${
+  return `Se crea un gasto por ${fmtMontoMoneda(p.monto, p.moneda)}${
     equivalente ? ` (${equivalente} al T.C. ${p.tc})` : ""
   } con fecha ${fmtDateOnly(p.fecha)}, pagado por ${medioPagoLabel(p.medio)}, y queda ligado a la compra #${p.folio} como ${ETIQUETA_ROL_OTRO_GASTO[p.rol].toLowerCase()}.`;
 }
@@ -737,7 +737,7 @@ export function toastGastoAgregado(
   rol: CompraRolOtro,
 ): string {
   const g = r.gasto_registrado;
-  return `Gasto agregado a la compra #${r.folio} por ${fmtMontoMoneda(g.monto, g.moneda)} (${ETIQUETA_ROL_OTRO_GASTO[rol].toLowerCase()}): ya está en Gastos${
+  return `Gasto agregado a la compra #${r.folio} por ${fmtMontoMoneda(g.monto, g.moneda)} (${ETIQUETA_ROL_OTRO_GASTO[rol].toLowerCase()}): quedó en «Gastos de compras»${
     r.tc_compra_fijado ? " · el tipo de cambio quedó también en la compra" : ""
   }.`;
 }
@@ -746,12 +746,12 @@ export function toastGastoAgregado(
 
 export const TITULO_GASTOS_COMPRA = "Gastos de esta compra";
 export const DESCRIPCION_GASTOS_COMPRA =
-  "Cada pago es un gasto en Gastos con su comprobante y su cruce con el banco: la factura de las refacciones, el envío, la aduana… El total de la compra es informativo.";
+  "Cada pago es un gasto con su comprobante y su cruce con el banco: la factura de las refacciones, el envío, la aduana… El total de la compra es informativo.";
 export const VACIO_GASTOS_COMPRA =
-  "Todavía no hay gastos ligados. «Registrar gasto» crea en Gastos el de la factura de las refacciones; «Agregar gasto», el envío, la aduana u otro cargo; «Vincular gasto ya registrado», uno que ya esté en Gastos.";
+  "Todavía no hay gastos ligados. «Registrar gasto» crea el de la factura de las refacciones; «Agregar gasto», el envío, la aduana u otro cargo; «Vincular gasto ya registrado», uno capturado suelto en Gastos.";
 export const ETIQUETA_SUMA_GASTOS = "Suma de los gastos ligados (por moneda)";
 export const ETIQUETA_TOTAL_COMPRA = "Total de la compra (informativo)";
-export const TITULO_ABRIR_GASTO = "Abrir este gasto en Gastos";
+export const TITULO_ABRIR_GASTO = "Ver / editar este gasto (se abre resaltado en Gastos)";
 
 // ===== «Cargos impresos en ESTA factura» (lo que confundió a la oficina) =====
 
@@ -781,7 +781,7 @@ export const OPCIONES_PAGO_COMPRA: ReadonlyArray<{ value: OpcionPagoCompra; labe
     value: "ahora",
     label: "Ya la pagué: registrar su gasto ahora",
     description:
-      "Se crea la compra y, enseguida, su gasto en Gastos por el total de las líneas, con la fecha, el medio y el comprobante de abajo.",
+      "Se crea la compra y, enseguida, su gasto por el total de las líneas, con la fecha, el medio y el comprobante de abajo.",
   },
   {
     value: "despues",
@@ -802,13 +802,23 @@ export function lineasConCosto(f: Pick<FormRegistrarCompra, "lineas">): boolean 
   return f.lineas.some((l) => (l.nombre.trim() || l.item_id) && Number(l.costo_unitario) > 0);
 }
 
-export function textoConfirmarCompraConGasto(p: { lineas: number; moneda: string; tc: number; fecha: string; medio: string }): string {
-  return `Se registra la compra con ${p.lineas} ${p.lineas === 1 ? "línea" : "líneas"} y, enseguida, su gasto de Refacción en ${p.moneda} por el total de la factura (lo calcula el API) al T.C. ${p.tc}, con fecha ${fmtDateOnly(p.fecha)} y pagado por ${medioPagoLabel(p.medio)}.`;
+export function textoConfirmarCompraConGasto(p: {
+  lineas: number;
+  moneda: string;
+  tc: number;
+  fecha: string;
+  medio: string;
+  /** «Ya está en bodega»: las líneas entran al inventario en el mismo paso. */
+  recibir?: boolean;
+}): string {
+  return `Se registra la compra con ${p.lineas} ${p.lineas === 1 ? "línea" : "líneas"} y, enseguida, su gasto de Refacción en ${p.moneda} por el total de la factura (lo calcula el API) al T.C. ${p.tc}, con fecha ${fmtDateOnly(p.fecha)} y pagado por ${medioPagoLabel(p.medio)}.${
+    p.recibir ? " Las líneas entran a bodega de inmediato." : ""
+  }`;
 }
 
 export function toastCompraConGasto(c: Pick<CompraConGastoRegistrado, "folio" | "gasto_registrado">): string {
   const g = c.gasto_registrado;
-  return `Compra #${c.folio} registrada y su gasto por ${fmtMontoMoneda(g.monto, g.moneda)} ya está en Gastos.`;
+  return `Compra #${c.folio} registrada y su gasto por ${fmtMontoMoneda(g.monto, g.moneda)} quedó en «Gastos de compras».`;
 }
 
 /** La compra nació pero su gasto no: se dice completo (no un toast que desaparece). */
@@ -852,4 +862,66 @@ export const ETIQUETA_ROL_COMPRA: Readonly<Record<CompraRol, string>> = {
 export function etiquetaRolCompra(rol: CompraRol | string | null | undefined): string {
   if (!rol) return "—";
   return (ETIQUETA_ROL_COMPRA as Record<string, string>)[rol] ?? rol;
+}
+
+// =============================================================================
+// «Compra directa» desde Inventario/Tienda (6-nov-2026). Pedido del dueño:
+// «un botón para registrar un gasto desde ahí sin que entre a una compra,
+// porque se compró directamente». Lo que se compró directo y ya está en
+// bodega se captura en UN paso: la compra (sigue siendo el contenedor del
+// costo), su gasto (en «Gastos de compras», invariante 118) y la entrada al
+// inventario (`POST /compras/:id/recibir`). El mismo diálogo de «Registrar
+// compra» con `modo="directa"`: el pago es siempre «ahora» y «Ya está en
+// bodega» viene marcado; en Compras el checkbox existe pero nace sin marcar.
+// =============================================================================
+
+export type ModoRegistrarCompra = "compras" | "directa";
+
+export const TITULO_COMPRA_DIRECTA = "Compra directa";
+export const TITULO_BOTON_COMPRA_DIRECTA =
+  "Compraste refacciones y ya las tienes: en un paso quedan la compra, su gasto y la entrada a bodega (sin entrar a Compras)";
+export const DESCRIPCION_COMPRA_DIRECTA =
+  "Para lo que se compró directo y ya está aquí: captura qué compraste y cómo lo pagaste. Quedan registrados la compra, su gasto (en «Gastos de compras») y la entrada al inventario, sin pasar por Compras.";
+export const ETIQUETA_COMO_SE_PAGO = "¿Cómo se pagó?";
+export const ETIQUETA_RECIBIR_AHORA = "Ya está en bodega: dar entrada al inventario ahora";
+export const HINT_RECIBIR_AHORA =
+  "Las unidades de cada línea entran al stock con su costo. Si todavía no llega, déjalo sin marcar y recíbela desde Compras cuando llegue.";
+export const BOTON_COMPRA_DIRECTA = "Registrar compra directa";
+
+export function recibirAhoraDefault(modo: ModoRegistrarCompra): boolean {
+  return modo === "directa";
+}
+
+export function tituloRegistrarCompra(modo: ModoRegistrarCompra): string {
+  return modo === "directa" ? TITULO_COMPRA_DIRECTA : TITULO_REGISTRAR_COMPRA;
+}
+
+export function descripcionRegistrarCompra(modo: ModoRegistrarCompra): string {
+  return modo === "directa" ? DESCRIPCION_COMPRA_DIRECTA : DESCRIPCION_REGISTRAR_COMPRA;
+}
+
+/** El texto del botón que registra, según lo que va a pasar. */
+export function etiquetaBotonRegistrarCompra(p: { modo: ModoRegistrarCompra; conGasto: boolean; recibir: boolean }): string {
+  if (p.modo === "directa") return BOTON_COMPRA_DIRECTA;
+  if (p.conGasto && p.recibir) return "Registrar compra, su gasto y la entrada";
+  if (p.conGasto) return "Registrar compra y su gasto";
+  if (p.recibir) return "Registrar compra y recibirla";
+  return TITULO_REGISTRAR_COMPRA;
+}
+
+/** Todo salió: compra, gasto y entrada (un solo toast). */
+export function toastCompraDirecta(c: Pick<CompraConGastoRegistrado, "folio" | "gasto_registrado">, lineas: number): string {
+  const g = c.gasto_registrado;
+  return `Compra directa #${c.folio} registrada: gasto por ${fmtMontoMoneda(g.monto, g.moneda)} y ${lineas} ${lineas === 1 ? "línea ya está" : "líneas ya están"} en el inventario.`;
+}
+
+/** Compra (y gasto) registrados, pero la entrada a bodega falló: se dice completo. */
+export function avisoCompraSinRecepcion(folio: number, error: string | null | undefined): string {
+  const motivo = (error ?? "").trim();
+  return `La compra #${folio} quedó registrada, pero NO entró a bodega: ${motivo ? `${motivo} ` : ""}Recíbela desde Compras con «Ya llegó: recibir en bodega».`;
+}
+
+/** Compra recibida en el mismo paso (sin gasto: «Todavía no la pago»). */
+export function toastCompraRecibida(folio: number, lineas: number): string {
+  return `Compra #${folio} registrada y recibida: ${lineas} ${lineas === 1 ? "línea ya está" : "líneas ya están"} en el inventario.`;
 }
