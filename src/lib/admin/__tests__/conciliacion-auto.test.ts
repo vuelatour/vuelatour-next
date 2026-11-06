@@ -204,8 +204,7 @@ describe("candidato de gasto (lo que desempata a ojo)", () => {
     // El mes abreviado lo pone Intl (sep/sept según la versión de ICU): se
     // afirman las partes, no la abreviatura.
     const etiqueta = etiquetaCandidatoGasto(gasto);
-    expect(etiqueta.startsWith("Aterrizaje · $125.82 MXN · 04 sep")).toBe(true);
-    expect(etiqueta.endsWith("2026 · ASUR")).toBe(true);
+    expect(etiqueta).toBe("Aterrizaje · $125.82 MXN · 04/09/2026 · ASUR");
   });
 
   it("la descripción trae terminación, nota, matrícula y vuelo", () => {

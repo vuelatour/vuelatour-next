@@ -94,7 +94,7 @@ describe("chipSyncGoogle", () => {
       ultimo_reconcile_at: "2026-09-12T14:15:00Z",
       ultimo_resync_at: "2026-09-12T21:40:00Z", // 16:40 Cancún
     });
-    // `fmtDateTime` es-MX ⇒ "12 sep 2026, 9:15 a.m." (hora de pared Cancún).
+    // `fmtDateTime` es-MX ⇒ "12/09/2026, 9:15 a.m." (hora de pared Cancún).
     expect(chip.detalle).toContain("9:15");
     expect(chip.detalle).toContain("4:40");
     // Ni la hora UTC (14:15 / 21:40) ni su versión de 12 h (2:15 / 9:40).
@@ -159,8 +159,8 @@ describe("toastResyncGoogle", () => {
       hasta: "2027-09-12",
     });
     // El día NO se corre a 12 ago / 11 sep por zona horaria.
-    expect(t.detalle).toContain("Ventana: 13 ago 2026 a 12 sep 2027.");
-    expect(t.detalle).not.toContain("12 ago 2026");
+    expect(t.detalle).toContain("Ventana: 13/08/2026 a 12/09/2027.");
+    expect(t.detalle).not.toContain("12/08/2026");
   });
 
   it("sin ventana en la respuesta (API viejo) no inventa una", () => {

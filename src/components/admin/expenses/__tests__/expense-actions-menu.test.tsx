@@ -102,7 +102,7 @@ describe("el botón ⋯ real (Base UI)", () => {
     );
     const boton = html.match(/<button[^>]*aria-label="Acciones del gasto[^"]*"[^>]*>/)?.[0] ?? "";
     expect(boton).not.toBe("");
-    expect(boton).toContain('aria-label="Acciones del gasto de $4,250.50 MXN del 01 oct 2026"');
+    expect(boton).toContain('aria-label="Acciones del gasto de $4,250.50 MXN del 01/10/2026"');
     expect(boton).toMatch(/class="[^"]*\bcursor-pointer\b/);
     expect(boton).toContain('title="Más acciones"');
   }, 20_000);

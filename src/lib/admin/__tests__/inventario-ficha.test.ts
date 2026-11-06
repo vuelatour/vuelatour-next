@@ -317,10 +317,10 @@ describe("«Corregir el costo de la compra» (D7: reconocer las salidas)", () =>
     expect(c?.n).toBe(2);
     expect(c?.sinCargo).toBe(1);
     expect(lineaSalidaDependiente(c!.salidas[0], "qt")).toBe(
-      "01 sep 2026 · 12 qt · XA-VGV · costo $21.25 USD",
+      "01/09/2026 · 12 qt · XA-VGV · costo $21.25 USD",
     );
     expect(lineaSalidaDependiente(c!.salidas[1])).toBe(
-      "03 sep 2026 · 2 unidades · toda la flota · sin cargo ($0)",
+      "03/09/2026 · 2 unidades · toda la flota · sin cargo ($0)",
     );
     // Otro 409 (nace de una compra) no abre el recuadro.
     expect(confirmacionDeConflicto({ status: 409, code: "MOVIMIENTO_DE_COMPRA" })).toBeNull();

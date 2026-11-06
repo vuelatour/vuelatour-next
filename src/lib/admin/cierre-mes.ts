@@ -45,6 +45,7 @@ import { esMesValido, etiquetaMes, mesDePeriodo, rangoDeMes, sumarMeses } from "
 import { hrefReportesDesdeVista } from "./balance-vista";
 import { atajoAntesDelInicio, type InicioOficial } from "./inicio-oficial";
 import { esErrorTecnico } from "./errores-tecnicos";
+import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 
 // =============================================================================
 // Roles (ESPEJO del `@Roles` de `CierresController`, contrato §3)
@@ -87,49 +88,35 @@ export function mesCorto(mes: string): string {
   return `${MESES_CORTOS[Number(mes.slice(5, 7)) - 1]}-${mes.slice(0, 4)}`;
 }
 
-/**
- * timestamptz ⇒ «16-oct-2026» en día Cancún (determinista: sin depender del
- * nombre corto que Intl dé al mes). Inválido ⇒ «—».
- */
+/** timestamptz ⇒ «16/10/2026» en día Cancún (DD/MM/AAAA, 6-nov-2026). Inválido ⇒ «—». */
 export function fechaCortaCancun(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const partes = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Cancun",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  }).formatToParts(d);
-  const n = (t: string) => Number(partes.find((p) => p.type === t)?.value ?? "0");
-  const m = n("month");
-  if (m < 1 || m > 12) return "—";
-  return `${n("day")}-${MESES_CORTOS[m - 1]}-${n("year")}`;
+  return fmtDate(iso);
 }
 
-/** «2026-09» ⇒ «30-sep» (el corte del cobro: último día del mes). */
+/** «2026-09» ⇒ «30/09/2026» (el corte del cobro: último día del mes). */
 export function ultimoDiaCorto(mes: string): string {
   const r = rangoDeMes(mes);
   if (!r) return mes;
-  return `${Number(r.hasta.slice(8, 10))}-${MESES_CORTOS[Number(mes.slice(5, 7)) - 1]}`;
+  return fmtDateOnly(r.hasta);
 }
 
 /**
- * «2026-10-04» ⇒ «4-oct» (espejo de `diaCortoDeDia` del API). El API manda
- * la fecha del cobro posterior y el corte como DÍA Cancún `YYYY-MM-DD`;
- * cualquier otra cosa ⇒ null (jamás se adivina el día de un timestamp).
+ * «2026-10-04» ⇒ «04/10/2026» (espejo de `diaCortoDeDia` del API). El API
+ * manda la fecha del cobro posterior y el corte como DÍA Cancún
+ * `YYYY-MM-DD`; cualquier otra cosa ⇒ null (jamás se adivina el día de un
+ * timestamp).
  */
 export function diaCortoDeDia(dia: string | null | undefined): string | null {
   if (typeof dia !== "string" || !DIA_RE.test(dia)) return null;
   const m = Number(dia.slice(5, 7));
   const d = Number(dia.slice(8, 10));
   if (m < 1 || m > 12 || d < 1 || d > 31) return null;
-  return `${d}-${MESES_CORTOS[m - 1]}`;
+  return fmtDateOnly(dia);
 }
 
 /**
  * El corte con el que se midió «cobrado al cierre» de un vuelo que pasa a
- * `destino`: el último día del mes ANTERIOR («2026-10» ⇒ «30-sep»). Mes
+ * `destino`: el último día del mes ANTERIOR («2026-10» ⇒ «30/09/2026»). Mes
  * inválido ⇒ null.
  */
 export function corteCortoDeDestino(destino: string | null | undefined): string | null {
@@ -437,7 +424,7 @@ function badgeEnCurso(mes: string): BadgeEstadoCierre {
   const sig = sumarMeses(mes, 1);
   return {
     tono: "en-curso",
-    texto: sig ? `En curso (se cierra a partir del 1-${MESES_CORTOS[Number(sig.slice(5, 7)) - 1]})` : "En curso",
+    texto: sig ? `En curso (se cierra a partir del ${fmtDateOnly(`${sig}-01`)})` : "En curso",
   };
 }
 
@@ -1416,7 +1403,7 @@ export function chipsResumenDiferidos(
   const folios = (l: VueloDiferidoMarca[]) => l.map(folioDiferido).join(", ");
   const mes = (m: string | undefined, alt: string) => (m && esMesValido(m) ? mesEnMinuscula(m) : alt);
   const n = (k: number, uno: string, varios: string) => `${k} ${k === 1 ? uno : varios}`;
-  // Caso #351: «sin cobro completo al 30-sep» (cierto de todos los que pasan,
+  // Caso #351: «sin cobro completo al 30/09/2026» (cierto de todos los que pasan,
   // también de los que ya se cobraron después). El corte: el del API
   // (`corte`, balances 0.0.91) o, sin él, el último día del mes anterior al
   // destino.

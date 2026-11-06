@@ -62,14 +62,14 @@ describe("ordenarVencimientos · «Vence» (fecha calendario)", () => {
   it("default: la fecha más cercana arriba (los vencidos primero); sin fecha al final, A–Z por documento", () => {
     expect(ORDEN_VENCIMIENTOS_DEFAULT).toBe("vence");
     expect(ids(ordenarVencimientos(LISTA, "vence"))).toEqual([
-      "seg", // 27 sep 2025 (hace 391 d)
-      "rui", // 29 jul 2026
-      "bia", // 08 ago 2026
-      "tar", // 10 ago 2026
-      "int", // 21 nov 2026
-      "seg2", // 24 nov 2026
-      "elt", // 01 dic 2026
-      "int2", // 04 ene 2027
+      "seg", // 27/09/2025 (hace 391 d)
+      "rui", // 29/07/2026
+      "bia", // 08/08/2026
+      "tar", // 10/08/2026
+      "int", // 21/11/2026
+      "seg2", // 24/11/2026
+      "elt", // 01/12/2026
+      "int2", // 04/01/2027
       "per", // sin fecha: «Certificado…» antes que «Overhaul…»
       "tbo",
     ]);

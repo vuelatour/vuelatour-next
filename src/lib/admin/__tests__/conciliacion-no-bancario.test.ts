@@ -623,7 +623,7 @@ describe("errores del API al vincular", () => {
     expect(textoJustificacionRequerida("JUSTIFICACION_REQUERIDA: …", details)).toEqual({
       titulo: "Escribe por qué se vincula este gasto",
       descripcion:
-        "El gasto del 28 sep está en efectivo: para vincularlo a un cargo del banco escribe por qué (no cambia el medio de pago).",
+        "El gasto del 28/09/2026 está en efectivo: para vincularlo a un cargo del banco escribe por qué (no cambia el medio de pago).",
     });
     const e = mensajeErrorVincularGastos({ ok: false, code: "JUSTIFICACION_REQUERIDA", status: 400, details });
     expect(e.recargar).toBe(false);
@@ -649,13 +649,13 @@ describe("errores del API al vincular", () => {
         gastos_no_bancarios: [{ id: G28, medio_pago: "PERSONAL_PABLO", fecha_gasto: "2026-09-28", monto: 212 }],
       }).descripcion,
     ).toBe(
-      "El gasto del 28 sep se pagó con Personal Pablo: para vincularlo a un cargo del banco escribe por qué (no cambia el medio de pago).",
+      "El gasto del 28/09/2026 se pagó con Personal Pablo: para vincularlo a un cargo del banco escribe por qué (no cambia el medio de pago).",
     );
     // Sin details: el mensaje del API (sin el código) o el genérico; jamás inglés técnico.
     expect(
-      textoJustificacionRequerida("JUSTIFICACION_REQUERIDA: El gasto del 28 sep está en efectivo: escribe por qué", null)
+      textoJustificacionRequerida("JUSTIFICACION_REQUERIDA: El gasto del 28/09/2026 está en efectivo: escribe por qué", null)
         .descripcion,
-    ).toBe("El gasto del 28 sep está en efectivo: escribe por qué");
+    ).toBe("El gasto del 28/09/2026 está en efectivo: escribe por qué");
     expect(textoJustificacionRequerida("Bad Gateway", null).descripcion).toBe(
       "Uno de los gastos no se pagó por el banco: para vincularlo escribe por qué (no cambia el medio de pago).",
     );
@@ -664,7 +664,7 @@ describe("errores del API al vincular", () => {
   it("409 GASTO_BODEGA con el contrato REAL del API (`details.gastos_bodega` + mensaje con la fecha)", () => {
     // Lo que manda `validarMediosVinculo` del API 0.0.63.
     const MSG_API =
-      "El gasto del 28 sep es una salida de inventario (Bodega): no se pagó con el banco y no se puede vincular a un cargo.";
+      "El gasto del 28/09/2026 es una salida de inventario (Bodega): no se pagó con el banco y no se puede vincular a un cargo.";
     const details = { gastos_bodega: [{ id: G28, fecha_gasto: "2026-09-28", monto: 212 }] };
     // Con la etiqueta del gasto marcado: dice CUÁL quitar.
     expect(textoGastoBodega(MSG_API, details, (id) => (id === G28 ? "Refacción · $212.00 MXN" : null))).toEqual({

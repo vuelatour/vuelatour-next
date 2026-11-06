@@ -169,7 +169,7 @@ describe("«Pagos a socios» (lista de cuentas)", () => {
     expect(html).toContain('data-estado-cuenta="ADELANTADO"');
     expect(html).toContain('data-estado-cuenta="POR_ENTREGAR"');
     expect(html).toContain('data-estado-cuenta="AL_CORRIENTE"');
-    expect(html).toMatch(/01 oct\.? 2026 · \$70,000 MXN · Efectivo/);
+    expect(html).toContain("01/10/2026 · $70,000 MXN · Efectivo");
     expect(html).toContain("Sin entregas");
     expect(html).toContain("N4142R 69 %");
   });
@@ -411,7 +411,7 @@ describe("Reparto de utilidades: «Socios · por entregar»", () => {
     const html = renderToStaticMarkup(
       <SociosPorEntregarSection carga={ok} aviones={AVIONES} desde="2026-10-01" hasta="2026-10-15" puedeRegistrar={false} registro={REGISTRO} />,
     );
-    expect(html).toMatch(/Generó del 01 oct\.? 2026 al 15 oct\.? 2026/);
+    expect(html).toContain("Generó del 01/10/2026 al 15/10/2026");
     expect(html).not.toContain('data-accion="registrar-entrega-socio"');
     expect(html).toContain('data-accion="ver-cuenta-socio"');
   });

@@ -39,7 +39,7 @@ const { GastoBancoDetalle } = await import("../expenses/gasto-banco-detalle");
 const { InicioOficialProvider } = await import("../inicio-oficial-provider");
 
 const INICIO = "2026-09-01";
-const CHIP = "De antes del inicio oficial (1-sep-2026)";
+const CHIP = "De antes del inicio oficial (01/09/2026)";
 const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
 
 describe("Conciliación: movimiento enfocado de antes del inicio", () => {
@@ -58,10 +58,10 @@ describe("Conciliación: movimiento enfocado de antes del inicio", () => {
 
   it("el aviso dice la verdad (no «quita los filtros») y sin inicio es el de siempre", () => {
     expect(textoMovimientoNoEncontrado({ gasto: "g" }, INICIO)).toBe(
-      "El cargo que abriste desde Gastos es de antes del inicio oficial (1-sep-2026): se conserva, pero ya no aparece en Conciliación. Sus datos siguen en la hoja desde donde lo abriste.",
+      "El cargo que abriste desde Gastos es de antes del inicio oficial (01/09/2026): se conserva, pero ya no aparece en Conciliación. Sus datos siguen en la hoja desde donde lo abriste.",
     );
     expect(textoMovimientoNoEncontrado({ gasto: null }, INICIO)).toBe(
-      "El movimiento que abriste es de antes del inicio oficial (1-sep-2026): se conserva, pero ya no aparece en Conciliación. Sus datos siguen en la hoja desde donde lo abriste.",
+      "El movimiento que abriste es de antes del inicio oficial (01/09/2026): se conserva, pero ya no aparece en Conciliación. Sus datos siguen en la hoja desde donde lo abriste.",
     );
     expect(textoMovimientoNoEncontrado({ gasto: "g" }, null)).toBe(TEXTO_MOVIMIENTO_NO_ENCONTRADO);
     expect(textoMovimientoNoEncontrado({ gasto: null })).toBe(TEXTO_MOVIMIENTO_NO_ENCONTRADO_GENERICO);

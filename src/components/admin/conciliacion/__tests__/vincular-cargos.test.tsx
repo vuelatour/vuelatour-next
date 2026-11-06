@@ -201,8 +201,8 @@ describe("el diálogo al abrir (antes de la respuesta del API)", () => {
     expect(html).toContain("Los cargos se suman y pagan UN gasto (una factura cobrada en varios cargos).");
     expect(html).toContain("2 cargos seleccionados");
     expect(html).not.toContain("suman $");
-    expect(html).toContain("03 ago · MERPAGO*AGREGADOR · ref 0025830577");
-    expect(html).toContain("03 ago · REST EL TACO LOCO · ref 0025830577");
+    expect(html).toContain("03/08/2026 · MERPAGO*AGREGADOR · ref 0025830577");
+    expect(html).toContain("03/08/2026 · REST EL TACO LOCO · ref 0025830577");
     expect(html).toContain(">$120.00</span>");
     expect(html).toContain(">$280.00</span>");
     expect(html).toContain('aria-label="Cargos que se vincularán"');
@@ -256,7 +256,7 @@ describe("los cargos con la respuesta del API", () => {
 
   it("el encabezado con la SUMA DEL API; sin avisos cuando el API no ve nada raro", () => {
     const h = pinta();
-    expect(h).toContain("2 cargos de GASTOS GNRAL · suman $400.00 MXN · 03 ago 2026");
+    expect(h).toContain("2 cargos de GASTOS GNRAL · suman $400.00 MXN · 03/08/2026");
     expect(h).not.toContain("cuadra solo");
     expect(h).not.toContain("No se pudo revisar");
     expect(h).not.toContain("Los cargos son de");
@@ -287,9 +287,9 @@ describe("los cargos con la respuesta del API", () => {
       aliasPorCuenta: { ...ALIAS_CUENTAS, [EJE]: "EJE SCOTIA" },
       monedaPorCuenta: { ...MONEDA_CUENTAS, [EJE]: "MXN" },
     });
-    expect(h).toContain("2 cargos de 2 cuentas · suman $400.00 MXN · 03 ago 2026");
+    expect(h).toContain("2 cargos de 2 cuentas · suman $400.00 MXN · 03/08/2026");
     expect(h).toMatch(/data-aviso-varias-cuentas=""[^>]*class="[^"]*amber[^"]*">Los cargos son de 2 cuentas \(GASTOS GNRAL, EJE SCOTIA\)\.</);
-    expect(h).toContain("03 ago · EJE SCOTIA · REST EL TACO LOCO");
+    expect(h).toContain("03/08/2026 · EJE SCOTIA · REST EL TACO LOCO");
   });
 });
 
@@ -313,7 +313,7 @@ describe("la lista de gastos con la respuesta del API", () => {
 
   it("la ficha de cada gasto: etiqueta de siempre + «capturó …»; el orden es el del API", () => {
     const h = lista();
-    expect(h).toContain("Comida · $400.00 MXN · 03 ago 2026");
+    expect(h).toContain("Comida · $400.00 MXN · 03/08/2026");
     expect(h).toContain("[CARGA-EXCEL-AGO28] Viáticos · N621TX · vuelo #104 · capturó Itzi");
     expect(h.indexOf("Queda cubierto")).toBeLessThan(h.indexOf("Quedaría parcial"));
     expect(h.indexOf("Quedaría parcial")).toBeLessThan(h.indexOf("Se pasa por"));
@@ -358,9 +358,9 @@ describe("la lista de gastos con la respuesta del API", () => {
   });
 
   it("con lista pero NINGUNO cubre: los avisos de los que no entraron van debajo de la lista", () => {
-    const avisos = [{ motivo: "YA_CONCILIADO", texto: "1 gasto de $400.00 (3 ago) ya está conciliado.", ligas: [], mostrar: null }];
+    const avisos = [{ motivo: "YA_CONCILIADO", texto: "1 gasto de $400.00 (03/08/2026) ya está conciliado.", ligas: [], mostrar: null }];
     const h = lista({ filas: [G_PARCIAL, G_EXCEDE], avisos });
-    expect(h.indexOf("Se pasa por")).toBeLessThan(h.indexOf("1 gasto de $400.00 (3 ago) ya está conciliado."));
+    expect(h.indexOf("Se pasa por")).toBeLessThan(h.indexOf("1 gasto de $400.00 (03/08/2026) ya está conciliado."));
   });
 
   it("error de la lectura: su texto con «Reintentar» y, si el API nombró cargos, «Quitar…»; JAMÁS el vacío", () => {
@@ -572,8 +572,8 @@ const casilla = (html: string) => html.match(/<input[^>]*type="checkbox"[^>]*>/)
 describe("paso 4 · el paso previo «Crear el gasto con la suma»", () => {
   it("los cargos con la SUMA DEL API, la nota de la IA, la casilla con la suma y la nota al pie", () => {
     const h = paso();
-    expect(h).toContain("2 cargos de HSBC Pesos · suman $752.84 MXN · 30 sep 2026");
-    expect(h).toContain("30 sep · C ADMINISTRACION RENTA");
+    expect(h).toContain("2 cargos de HSBC Pesos · suman $752.84 MXN · 30/09/2026");
+    expect(h).toContain("30/09/2026 · C ADMINISTRACION RENTA");
     expect(h).toContain("Posibles duplicados (mismo monto, ±120 días)");
     expect(h).toContain("La IA revisa un cargo a la vez: con varios cargos, revisa tú la lista.");
     expect(h).toContain("Revisé la lista y este gasto NO está registrado: crearlo por $752.84 y vincularle los 2 cargos.");
@@ -644,7 +644,7 @@ describe("paso 4 · el paso previo «Crear el gasto con la suma»", () => {
       }),
     });
     expect(veces(h, "data-duplicado-suma")).toBe(1);
-    expect(h).toContain("Operaciones · $752.84 MXN · 29 sep 2026");
+    expect(h).toContain("Operaciones · $752.84 MXN · 29/09/2026");
     expect(h).toContain("en efectivo");
     expect(h).not.toContain("No hay ningún gasto");
   });

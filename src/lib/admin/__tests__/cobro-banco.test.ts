@@ -73,7 +73,7 @@ const COBRO_3400: FlightCobro = {
   tc_usd_mxn: "17.35",
   referencia: null,
   cuenta_destino: "Scotiabank Pesos",
-  fecha_cobro: "2026-09-15T17:00:00+00:00", // 15 sep, 12:00 Cancún
+  fecha_cobro: "2026-09-15T17:00:00+00:00", // 15/09/2026, 12:00 Cancún
   foto_voucher_url: null,
   registrado_por: null,
   notas: null,
@@ -196,19 +196,19 @@ describe("badge de las cards de cobros", () => {
 
   it("tooltip con UN abono, con DOS y en un lote (textos.badge del 0.0.78)", () => {
     expect(tituloBadgeCobro(CONCILIADO_1)).toBe(
-      "Conciliado con el banco: abono del 15 sep 2026 en EJE SCOTIA por $3,400 MXN.",
+      "Conciliado con el banco: abono del 15/09/2026 en EJE SCOTIA por $3,400 MXN.",
     );
     expect(tituloBadgeCobro(COMPLETO_2)).toBe(
-      "Conciliado con 2 abonos del banco: 15 sep 2026 · $1,700 MXN (EJE SCOTIA) y 15 sep 2026 · $1,700 MXN (EJE SCOTIA).",
+      "Conciliado con 2 abonos del banco: 15/09/2026 · $1,700 MXN (EJE SCOTIA) y 15/09/2026 · $1,700 MXN (EJE SCOTIA).",
     );
     expect(tituloBadgeCobro(EN_LOTE)).toBe(
-      "Conciliado con el banco: $68,205.55 MXN de un abono de $69,183 MXN del 15 sep 2026 (EJE SCOTIA) que pagó 2 cobros.",
+      "Conciliado con el banco: $68,205.55 MXN de un abono de $69,183 MXN del 15/09/2026 (EJE SCOTIA) que pagó 2 cobros.",
     );
   });
 
   it("tooltip del PARCIAL: lo que respalda el banco, lo que falta y qué hacer", () => {
     expect(tituloBadgeCobro(PARCIAL)).toBe(
-      "El banco respalda $1,700 MXN de $3,400 MXN (1 abono: 15 sep 2026 · EJE SCOTIA). Faltan $1,700 MXN: vincula el otro abono en Conciliación cuando llegue. Mientras, este cobro sale en «Cobros sin banco».",
+      "El banco respalda $1,700 MXN de $3,400 MXN (1 abono: 15/09/2026 · EJE SCOTIA). Faltan $1,700 MXN: vincula el otro abono en Conciliación cuando llegue. Mientras, este cobro sale en «Cobros sin banco».",
     );
     // Dos abonos que todavía no completan un cobro de $5,000.
     const dos = {
@@ -220,14 +220,14 @@ describe("badge de las cards de cobros", () => {
       abonos_banco: [abono(), abono({ movimiento_id: MOV_2, fecha: "2026-09-16", cuenta_alias: null })],
     };
     expect(tituloBadgeCobro(dos)).toBe(
-      "El banco respalda $3,400 MXN de $5,000 MXN (2 abonos: 15 sep 2026 · EJE SCOTIA y 16 sep 2026). Faltan $1,600 MXN: vincula el otro abono en Conciliación cuando llegue. Mientras, este cobro sale en «Cobros sin banco».",
+      "El banco respalda $3,400 MXN de $5,000 MXN (2 abonos: 15/09/2026 · EJE SCOTIA y 16/09/2026). Faltan $1,600 MXN: vincula el otro abono en Conciliación cuando llegue. Mientras, este cobro sale en «Cobros sin banco».",
     );
   });
 
   it("revisión 15-oct-2026: un PARCIAL de BillPocket NO promete «Cobros sin banco» (esa lista no lo trae)", () => {
     const billpocket = { ...PARCIAL, metodo_cobro: "BILLPOCKET" as const };
     expect(tituloBadgeCobro(billpocket)).toBe(
-      "El banco respalda $1,700 MXN de $3,400 MXN (1 abono: 15 sep 2026 · EJE SCOTIA). Faltan $1,700 MXN: vincula el otro abono en Conciliación cuando llegue. Mientras, lo que falta se ve en esta tarjeta y en Ingresos.",
+      "El banco respalda $1,700 MXN de $3,400 MXN (1 abono: 15/09/2026 · EJE SCOTIA). Faltan $1,700 MXN: vincula el otro abono en Conciliación cuando llegue. Mientras, lo que falta se ve en esta tarjeta y en Ingresos.",
     );
     expect(tituloBadgeCobro(billpocket)).not.toContain("Cobros sin banco");
     // Los métodos de «Cobros sin banco»: los cuatro del cruce automático, BillPocket no.
@@ -293,7 +293,7 @@ describe("badge de las cards de cobros", () => {
       monto_vinculado: 1000,
       abonos_banco: [abono({ monto_parte: 17000, monto_abono: 17000 })],
     };
-    expect(tituloBadgeCobro(cruzado)).toBe("Conciliado con el banco: abono del 15 sep 2026 en EJE SCOTIA por $17,000.");
+    expect(tituloBadgeCobro(cruzado)).toBe("Conciliado con el banco: abono del 15/09/2026 en EJE SCOTIA por $17,000.");
   });
 });
 
@@ -327,7 +327,7 @@ describe("renglón «Banco» debajo del cobro", () => {
     const l = lineaBancoCobro(PARCIAL, { conEnlaces: true });
     expect(l?.tono).toBe("aviso");
     expect(textoLineaBanco(l)).toBe(
-      "Banco: $1,700 de $3,400 · abono del 15 sep 2026 (ver) · faltan $1,700 MXN · Buscar el abono que falta",
+      "Banco: $1,700 de $3,400 · abono del 15/09/2026 (ver) · faltan $1,700 MXN · Buscar el abono que falta",
     );
     const enlaces = (l?.piezas ?? []).filter((p) => p.tipo === "enlace");
     expect(enlaces.map((p) => [p.texto, p.tipo === "enlace" ? p.href : ""])).toEqual([
@@ -338,15 +338,15 @@ describe("renglón «Banco» debajo del cobro", () => {
 
   it("PARCIAL sin permiso de conciliar: el mismo texto, sin ligas", () => {
     const l = lineaBancoCobro(PARCIAL);
-    expect(textoLineaBanco(l)).toBe("Banco: $1,700 de $3,400 · abono del 15 sep 2026 · faltan $1,700 MXN");
+    expect(textoLineaBanco(l)).toBe("Banco: $1,700 de $3,400 · abono del 15/09/2026 · faltan $1,700 MXN");
     expect(l?.piezas.every((p) => p.tipo === "texto")).toBe(true);
   });
 
   it("completo con 2 abonos: textos.detalle_banco.completo_2_abonos (gris)", () => {
     const l = lineaBancoCobro(COMPLETO_2, { conEnlaces: true });
     expect(l?.tono).toBe("neutro");
-    expect(textoLineaBanco(l)).toBe("Banco: 2 abonos · 15 sep 2026 $1,700 (ver) · 15 sep 2026 $1,700 (ver)");
-    expect(textoLineaBanco(lineaBancoCobro(COMPLETO_2))).toBe("Banco: 2 abonos · 15 sep 2026 $1,700 · 15 sep 2026 $1,700");
+    expect(textoLineaBanco(l)).toBe("Banco: 2 abonos · 15/09/2026 $1,700 (ver) · 15/09/2026 $1,700 (ver)");
+    expect(textoLineaBanco(lineaBancoCobro(COMPLETO_2))).toBe("Banco: 2 abonos · 15/09/2026 $1,700 · 15/09/2026 $1,700");
   });
 
   it("liga vieja con abono de más (Palma: $55,053 contra $27,526.50): el texto único del sobrante", () => {
@@ -436,7 +436,7 @@ describe("desvincular UN abono de un cobro con varios (D22)", () => {
 
   it("con OTROS abonos: textos.desvincular.cuerpo_con_otros con `faltante_sin_este` del API", () => {
     expect(textoConfirmarDesvincularAbono(CONC, { monto: "1700.00", fecha: "2026-09-15", moneda: "MXN" })).toBe(
-      "El abono de $1,700 MXN del 15 sep 2026 vuelve a quedar pendiente. El cobro del vuelo #315 sigue ligado a 1 abono más y queda «Conciliado parcial»: faltarán $1,700 MXN. No se borra ningún cobro.",
+      "El abono de $1,700 MXN del 15/09/2026 vuelve a quedar pendiente. El cobro del vuelo #315 sigue ligado a 1 abono más y queda «Conciliado parcial»: faltarán $1,700 MXN. No se borra ningún cobro.",
     );
     // Con 3 abonos y lo que falta dentro de la tolerancia del API: sigue completo.
     expect(
@@ -494,7 +494,7 @@ describe("«Cobros sin banco»: columna «Banco» (textos.cobros_sin_banco del 0
     const c = celdaBancoCobroSinBanco(fila());
     expect(c?.texto).toBe("Parcial");
     expect(c?.clase).toBe(CLASE_BADGE_COBRO.PARCIAL);
-    expect(c?.titulo).toBe("Conciliado $1,700 MXN de $3,400 MXN con 1 abono (15 sep 2026): faltan $1,700 MXN.");
+    expect(c?.titulo).toBe("Conciliado $1,700 MXN de $3,400 MXN con 1 abono (15/09/2026): faltan $1,700 MXN.");
     expect(c?.enlaces).toEqual([
       {
         key: MOV_1,
@@ -518,8 +518,8 @@ describe("«Cobros sin banco»: columna «Banco» (textos.cobros_sin_banco del 0
         ],
       }),
     );
-    expect(c?.titulo).toBe("Conciliado $3,400 MXN de $5,100 MXN con 2 abonos (15 sep 2026 y 16 sep 2026): faltan $1,700 MXN.");
-    expect(c?.enlaces.map((e) => e.texto)).toEqual(["Ver abono del 15 sep 2026", "Ver abono del 16 sep 2026"]);
+    expect(c?.titulo).toBe("Conciliado $3,400 MXN de $5,100 MXN con 2 abonos (15/09/2026 y 16/09/2026): faltan $1,700 MXN.");
+    expect(c?.enlaces.map((e) => e.texto)).toEqual(["Ver abono del 15/09/2026", "Ver abono del 16/09/2026"]);
   });
 
   it("sin abonos: badge gris «Sin abono»; API previo (sin `parcial`): null y la columna no se pinta", () => {
@@ -537,7 +537,7 @@ describe("«Cobros sin banco»: columna «Banco» (textos.cobros_sin_banco del 0
   });
 
   it("revisión 15-oct-2026: la cabecera dice lo que FALTA en el banco (`por_moneda[].faltante` del API), no la Σ bruta", () => {
-    const VENTANA = "cobros del 17 jul 2026 al 15 oct 2026";
+    const VENTANA = "cobros del 17/07/2026 al 15/10/2026";
     // El #315 de $3,400 con un abono de $1,700: el API manda monto 3400 (bruto) y faltante 1700.
     const nuevo = encabezadoCobrosSinBanco({ por_moneda: [{ moneda: "MXN", monto: 3400, faltante: 1700 }], parciales: 1 }, VENTANA);
     expect(nuevo).toEqual({

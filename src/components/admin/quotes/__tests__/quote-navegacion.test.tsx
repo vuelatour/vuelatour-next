@@ -85,15 +85,15 @@ describe("QuoteNavegacion · marcado", () => {
     }
   });
 
-  it("el destino se lee SIN pasar el mouse («#346 · 20 sep») y el tooltip dice el cliente", () => {
+  it("el destino se lee SIN pasar el mouse («#346 · 20/09/2026») y el tooltip dice el cliente", () => {
     const html = render(VECINOS);
-    expect(html).toContain("#346 · 20 sep");
-    expect(html).toContain("#340 · 19 sep");
+    expect(html).toContain("#346 · 20/09/2026");
+    expect(html).toContain("#340 · 19/09/2026");
     expect(flecha(html, "siguiente")).toContain(
-      'title="Vuelo siguiente: #346 · 20 sep · Maqar"',
+      'title="Vuelo siguiente: #346 · 20/09/2026 · Maqar"',
     );
     expect(flecha(html, "anterior")).toContain(
-      'aria-label="Vuelo anterior: #340 · 19 sep · Punta Pájaros"',
+      'aria-label="Vuelo anterior: #340 · 19/09/2026 · Punta Pájaros"',
     );
     expect(html).toContain(">Anterior<");
     expect(html).toContain(">Siguiente<");

@@ -89,25 +89,25 @@ describe("saltosDeCadena — tacómetros del avión", () => {
 describe("rótulos de lo que el API 0.0.85 ya recorta", () => {
   it("textoSinFilasDesde: con saldo dice desde cuándo; sin él, el de siempre", () => {
     expect(textoSinFilasDesde({ fecha: INICIO }, "Sin lecturas registradas.", "lecturas")).toBe(
-      "Sin lecturas desde el 1-sep-2026.",
+      "Sin lecturas desde el 01/09/2026.",
     );
     expect(textoSinFilasDesde(null, "Sin lecturas registradas.", "lecturas")).toBe("Sin lecturas registradas.");
     expect(textoSinFilasDesde(undefined, "Sin movimientos todavía.")).toBe("Sin movimientos todavía.");
   });
 
-  it("ficha del avión: «Horas mes / año» ⇒ «Horas mes / desde el 1-sep-2026» con `anio_desde`", () => {
-    expect(rotuloHorasMesAnio(INICIO)).toBe("Horas mes / desde el 1-sep-2026");
+  it("ficha del avión: «Horas mes / año» ⇒ «Horas mes / desde el 01/09/2026» con `anio_desde`", () => {
+    expect(rotuloHorasMesAnio(INICIO)).toBe("Horas mes / desde el 01/09/2026");
     for (const sin of [undefined, null, "", "basura"]) expect(rotuloHorasMesAnio(sin)).toBe("Horas mes / año");
   });
 
-  it("honorarios del externo: «Histórico» ⇒ «Desde el 1-sep-2026» con `honorarios.desde`", () => {
-    expect(rotuloTotalHonorarios(INICIO)).toBe("Desde el 1-sep-2026");
+  it("honorarios del externo: «Histórico» ⇒ «Desde el 01/09/2026» con `honorarios.desde`", () => {
+    expect(rotuloTotalHonorarios(INICIO)).toBe("Desde el 01/09/2026");
     expect(rotuloTotalHonorarios(undefined)).toBe("Histórico");
     expect(rotuloTotalHonorarios(null)).toBe("Histórico");
   });
 
-  it("facturas emitidas: «Registradas» ⇒ «Registradas desde el 1-sep-2026» con `resumen.desde`", () => {
-    expect(rotuloRegistradas(INICIO)).toBe("Registradas desde el 1-sep-2026");
+  it("facturas emitidas: «Registradas» ⇒ «Registradas desde el 01/09/2026» con `resumen.desde`", () => {
+    expect(rotuloRegistradas(INICIO)).toBe("Registradas desde el 01/09/2026");
     expect(rotuloRegistradas(undefined)).toBe("Registradas");
     expect(rotuloRegistradas(null)).toBe("Registradas");
   });

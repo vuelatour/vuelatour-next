@@ -45,7 +45,7 @@ describe("tarjetaPrecios — CH48108 (la captura de la oficina)", () => {
     });
     expect(t.vigente).toEqual({
       valor: "$46.06 USD",
-      sub: ["Entrada del 01 sep 2026 · T.C. 17.0077", "≈ $783.37 MXN al T.C. de hoy 17.0077"],
+      sub: ["Entrada del 01/09/2026 · T.C. 17.0077", "≈ $783.37 MXN al T.C. de hoy 17.0077"],
     });
     expect(t.venta).toEqual({
       valor: "$57.575 USD",
@@ -68,14 +68,14 @@ describe("tarjetaPrecios — CH48108 (la captura de la oficina)", () => {
   it("compra en PESOS: «captura en pesos», sin renglón de pesos de hoy; sin T.C. de hoy: «en pesos de hoy»", () => {
     expect(
       subPrecioVigente({ fecha: "2026-09-01", moneda: "MXN", tc_compra: 17.51, unitario_mxn_hoy: 350 }),
-    ).toEqual(["Entrada del 01 sep 2026 · captura en pesos"]);
+    ).toEqual(["Entrada del 01/09/2026 · captura en pesos"]);
     expect(subPrecioVigente(CH48108, null)).toEqual([
-      "Entrada del 01 sep 2026 · T.C. 17.0077",
+      "Entrada del 01/09/2026 · T.C. 17.0077",
       "≈ $783.37 MXN en pesos de hoy",
     ]);
     expect(
       subPrecioVigente({ fecha: "2026-09-01", moneda: "USD", tc_compra: null, unitario_mxn_hoy: null }),
-    ).toEqual(["Entrada del 01 sep 2026"]);
+    ).toEqual(["Entrada del 01/09/2026"]);
   });
 
   it("origen de la venta: margen (con el % vigente), precio fijo del producto, a costo (ámbar)", () => {

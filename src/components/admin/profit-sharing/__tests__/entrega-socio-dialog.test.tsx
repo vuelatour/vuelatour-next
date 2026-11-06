@@ -167,7 +167,7 @@ describe("«Registrar entrega»", () => {
     // El T.C. va en las DOS monedas (API 0.0.101): prellenado con el oficial de hoy.
     expect(html).toContain("Tipo de cambio USD/MXN");
     expect(html).toContain('value="18.45"');
-    expect(html).toMatch(/T\.C\. oficial de referencia de hoy \(01 oct\.? 2026\) — puedes editarlo\. Solo para el dato informativo en dólares/);
+    expect(html).toMatch(/T\.C\. oficial de referencia de hoy \(01\/10\/2026\) — puedes editarlo\. Solo para el dato informativo en dólares/);
     // En pesos la vista previa es solo el dólar informativo (1,395.94 ÷ 18.45).
     expect(html).toMatch(/data-preview-entrega="MXN"[^>]*>≈ \$75\.66 USD \(informativo\)\.</);
   });

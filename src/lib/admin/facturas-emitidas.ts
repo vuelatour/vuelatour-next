@@ -23,7 +23,7 @@
  */
 
 import { fmtMonto, fmtUsd } from "@/lib/format";
-import { CANCUN_TZ } from "@/lib/datetime";
+import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 import { esDiaValido, rangoFiltro, uuidFiltro, valorDeCatalogo } from "./url-params";
 import { MAX_BYTES_FACTURA, textoPesoExcedido } from "./factura-cliente";
 import { estadoCobroSemaforo, type EstadoCobroSemaforo } from "./cobros";
@@ -299,18 +299,10 @@ export function semaforoDeCobro(c: CobroResumen): EstadoCobroSemaforo {
 // Fechas cortas (hora Cancún) y la solicitud de factura
 // =============================================================================
 
-const fechaCorta = new Intl.DateTimeFormat("es-MX", {
-  day: "numeric",
-  month: "short",
-  timeZone: CANCUN_TZ,
-});
-
-/** «24 sep» en hora Cancún (un instante UTC de la madrugada es el día anterior). */
+/** «24/09/2026» en día Cancún (un instante UTC de la madrugada es el día anterior); sin fecha legible, "". */
 export function fechaCortaCancun(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return fechaCorta.format(d);
+  const t = fmtDate(iso);
+  return t === "—" ? "" : t;
 }
 
 /** « por Itzi · 24 sep» (sin nombre: « · 24 sep»; nunca se inventa a nadie). */
@@ -439,18 +431,11 @@ export function textoSolicitudRetirada(folio: number, yaNoAplica = false): strin
 /** Tope de sugerencias por vuelo (espejo del API). */
 export const MAX_FACTURAS_DEL_CLIENTE = 3;
 
-const fechaCortaUtc = new Intl.DateTimeFormat("es-MX", {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
-
-/** «8 oct» de un DÍA de pared `YYYY-MM-DD` (sin corrimiento de zona). */
+/** «08/10/2026» de un DÍA de pared `YYYY-MM-DD` (sin corrimiento de zona). */
 export function fechaCortaDeDia(dia: string | null | undefined): string {
   const d = (dia ?? "").slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "";
-  const t = new Date(`${d}T12:00:00Z`);
-  return Number.isNaN(t.getTime()) ? "" : fechaCortaUtc.format(t);
+  return fmtDateOnly(d);
 }
 
 /** «vuelo #375» · «vuelos #375 y #376» · «sin vuelo». */

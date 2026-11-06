@@ -385,17 +385,12 @@ function fmtNum(n: number | null, unidad = ""): string {
   return `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}${unidad}`;
 }
 
-const MESES_CORTOS_DIFF = [
-  "ene", "feb", "mar", "abr", "may", "jun",
-  "jul", "ago", "sep", "oct", "nov", "dic",
-];
-
-/** "YYYY-MM-DDTHH:mm" (pared Cancún) → "12 sep 08:00". Solo texto, sin Date. */
+/** "YYYY-MM-DDTHH:mm" (pared Cancún) → «12/09/2026 08:00» (o «12/09/2026»). Solo texto, sin Date. */
 function fechaCorta(v: unknown): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(str(v));
   if (!m) return str(v) ? str(v) : "—";
-  const mes = MESES_CORTOS_DIFF[Number(m[2]) - 1] ?? m[2];
-  return m[4] ? `${Number(m[3])} ${mes} ${m[4]}:${m[5]}` : `${Number(m[3])} ${mes}`;
+  const dia = `${m[3]}/${m[2]}/${m[1]}`;
+  return m[4] ? `${dia} ${m[4]}:${m[5]}` : dia;
 }
 
 function siNo(b: boolean): string {

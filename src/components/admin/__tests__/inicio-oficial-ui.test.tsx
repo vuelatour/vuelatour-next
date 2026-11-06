@@ -95,7 +95,7 @@ describe("Chip, franja y avisos", () => {
 
   it("chip solo para registros de antes (cobro del 31-ago a las 20:00 Cancún)", () => {
     expect(con(<ChipInicioOficial fecha="2026-09-01T01:00:00Z" />)).toContain(
-      "De antes del inicio oficial (1-sep-2026)",
+      "De antes del inicio oficial (01/09/2026)",
     );
     expect(con(<ChipInicioOficial fecha="2026-09-01T05:00:00Z" />)).toBe("");
     expect(renderToStaticMarkup(<ChipInicioOficial fecha="2026-08-31" />)).toBe("");
@@ -103,7 +103,7 @@ describe("Chip, franja y avisos", () => {
 
   it("franja del detalle por id", () => {
     expect(renderToStaticMarkup(<FranjaAntesDelInicio fecha="2026-08-07" inicio={INICIO} />)).toContain(
-      "Este registro es de antes del inicio oficial (1-sep-2026). Se conserva solo para consulta: no aparece en listados ni reportes.",
+      "Este registro es de antes del inicio oficial (01/09/2026). Se conserva solo para consulta: no aparece en listados ni reportes.",
     );
     expect(renderToStaticMarkup(<FranjaAntesDelInicio fecha="2026-09-07" inicio={INICIO} />)).toBe("");
     expect(renderToStaticMarkup(<FranjaAntesDelInicio fecha="2026-08-07" inicio={null} />)).toBe("");
@@ -111,7 +111,7 @@ describe("Chip, franja y avisos", () => {
 
   it("aviso de periodo ajustado solo con `ajustado` e inicio", () => {
     expect(renderToStaticMarkup(<AvisoPeriodoAjustado inicio={INICIO} ajustado />)).toContain(
-      "El sistema arranca el 1-sep-2026; ajustamos el periodo a partir de esa fecha.",
+      "El sistema arranca el 01/09/2026; ajustamos el periodo a partir de esa fecha.",
     );
     expect(renderToStaticMarkup(<AvisoPeriodoAjustado inicio={INICIO} ajustado={false} />)).toBe("");
     expect(renderToStaticMarkup(<AvisoPeriodoAjustado inicio={null} ajustado />)).toBe("");
@@ -119,7 +119,7 @@ describe("Chip, franja y avisos", () => {
 
   it("aviso de captura no bloqueante", () => {
     expect(con(<AvisoCapturaAntesDelInicio fecha="2026-08-29" />)).toContain(
-      "La fecha es anterior al inicio oficial (1-sep-2026): se guardará, pero no aparecerá en listados ni reportes.",
+      "La fecha es anterior al inicio oficial (01/09/2026): se guardará, pero no aparecerá en listados ni reportes.",
     );
     expect(con(<AvisoCapturaAntesDelInicio fecha="2026-09-02" />)).toBe("");
     expect(renderToStaticMarkup(<AvisoCapturaAntesDelInicio fecha="2026-08-29" />)).toBe("");

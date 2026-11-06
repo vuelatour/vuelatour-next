@@ -112,13 +112,13 @@ describe("lista: orden, badges y autoría", () => {
     expect(resueltas).toHaveLength(1);
     expect(html).toMatch(/amber[^"]*"[^>]*>Pendiente</);
     expect(html).toMatch(/green[^"]*"[^>]*>Resuelta</);
-    expect(html).toMatch(/Resuelta por Mari · 29 sept?\.? 2026/);
+    expect(html).toContain("Resuelta por Mari · 29/09/2026");
     expect(html).toContain("↳ Se agregó como extra en la v3.");
   });
 
   it("quién anotó y cuándo (hora Cancún)", () => {
     // 19:05 UTC = 14:05 en Cancún.
-    expect(html).toMatch(/Itzi · 29 sept?\.? 2026, 2:05/);
+    expect(html).toContain("Itzi · 29/09/2026, 2:05");
   });
 
   it("una nota que no cambia la cotización se marca «Solo seguimiento»", () => {

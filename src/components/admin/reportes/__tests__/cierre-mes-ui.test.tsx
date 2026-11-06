@@ -1,5 +1,5 @@
 /**
- * Cierre de mes formal (16-oct-2026, API 0.0.88) en pantalla: render estático
+ * Cierre de mes formal (16/10/2026, API 0.0.88) en pantalla: render estático
  * de los botones, de los avisos del reparto y cableado (por regex) de la
  * previa, el `PREVIA_CAMBIO`, el pre-cierre y el aviso 409 `MES_CERRADO` en
  * los formularios de captura. Sin DOM (runner `node`).
@@ -179,19 +179,19 @@ describe("CierreAvionAcciones: chip del avión + botón según rol (tile de «Ba
     expect(html).toContain(">Abierto<");
     expect(html).not.toContain("<button");
   });
-  it("avión cerrado: chip «Cerrado el 16-oct-2026 por Ale»; «Reabrir» solo ADMIN", () => {
+  it("avión cerrado: chip «Cerrado el 16/10/2026 por Ale»; «Reabrir» solo ADMIN", () => {
     const admin = pintar("ADMIN", N58BT);
-    expect(admin).toContain("Cerrado el 16-oct-2026 por Ale");
+    expect(admin).toContain("Cerrado el 16/10/2026 por Ale");
     expect(admin).toContain('aria-label="¿Reabrir septiembre 2026 · N58BT?"');
     expect(admin).toContain(">Reabrir<");
     expect(admin).not.toContain("Cerrar septiembre");
     const fact = pintar("FACTURACION", N58BT);
-    expect(fact).toContain("Cerrado el 16-oct-2026 por Ale");
+    expect(fact).toContain("Cerrado el 16/10/2026 por Ale");
     expect(fact).not.toContain("<button");
   });
   it("«Este mes»: el chip «En curso» sí, los botones no; sin fila del avión ⇒ nada", () => {
     const html = pintar("ADMIN", N621, true);
-    expect(html).toContain("En curso (se cierra a partir del 1-oct)");
+    expect(html).toContain("En curso (se cierra a partir del 01/10/2026)");
     expect(html).not.toContain("<button");
     expect(pintar("ADMIN", null)).toBe("");
   });
@@ -241,7 +241,7 @@ describe("CierreFlotaBloque: el cierre de la flota en «Balance mensual»", () =
     };
     const c = pintar(cargaOk([cerrado]), "ADMIN");
     expect(c).toContain(">Cerrado<");
-    expect(c).toContain('title="Cerrado el 16-oct-2026 por Ale · 2 de 2 aviones cerrados"');
+    expect(c).toContain('title="Cerrado el 16/10/2026 por Ale · 2 de 2 aviones cerrados"');
     expect(c).toContain("Reabrir mes");
     expect(c).not.toContain("Cerrar septiembre");
   });
@@ -258,7 +258,7 @@ describe("CierreFlotaBloque: el cierre de la flota en «Balance mensual»", () =
   it("«Este mes»: chip «En curso» y la guía a «Mes pasado», sin botones; un rango que no es un mes ⇒ solo la guía", () => {
     const oct: MesCierre = { ...SEP_PARCIAL, periodo: "2026-10", estado: "ABIERTO", aviones_cerrados: 0, puede_cerrar: false, motivo_no_cerrable: "MES_EN_CURSO" };
     const html = pintar(cargaOk([SEP_PARCIAL, oct]), "ADMIN", "2026-10-01", HOY);
-    expect(html).toContain("En curso (se cierra a partir del 1-nov)");
+    expect(html).toContain("En curso (se cierra a partir del 01/11/2026)");
     expect(html).toContain("elige «Mes pasado · Septiembre 2026»");
     expect(html).not.toContain("<button");
     const rango = pintar(cargaOk([SEP_PARCIAL]), "ADMIN", "2026-09-05", "2026-09-30");
@@ -506,11 +506,11 @@ describe("reparto: estado del mes y listas (texto del API)", () => {
       },
     ],
   };
-  it("badge, aviso rojo de snapshot y bloque «Pasan a octubre 2026 (sin cobro completo al 30-sep, no se reparten)»", () => {
+  it("badge, aviso rojo de snapshot y bloque «Pasan a octubre 2026 (sin cobro completo al 30/09/2026, no se reparten)»", () => {
     const html = renderToStaticMarkup(<CierreRepartoAviso cierre={cierre} />);
-    expect(html).toContain("Cerrado el 16-oct-2026 por Ale");
-    expect(html).toContain("Los números de hoy no coinciden con el cierre del 16-oct-2026");
-    expect(html).toContain("Pasan a octubre 2026 (sin cobro completo al 30-sep, no se reparten)");
+    expect(html).toContain("Cerrado el 16/10/2026 por Ale");
+    expect(html).toContain("Los números de hoy no coinciden con el cierre del 16/10/2026");
+    expect(html).toContain("Pasan a octubre 2026 (sin cobro completo al 30/09/2026, no se reparten)");
     expect(html).toContain("#316 · Mike Nelson · N990GG · $2,076.40 USD");
     expect(html).toContain('data-chip-cierre="pasa"');
   });
@@ -547,14 +547,14 @@ describe("reparto: estado del mes y listas (texto del API)", () => {
               motivo: "COBRO_POSTERIOR",
               cobrado_posterior_usd: 2343.2,
               fecha_cobro_posterior: "2026-10-14",
-              leyenda: "Pasará a octubre 2026 al cerrar · cobrado el 14-oct, después del 30-sep (al 30-sep: $0.00 de $2,343.20 USD)",
+              leyenda: "Pasará a octubre 2026 al cerrar · cobrado el 14/10/2026, después del 30/09/2026 (al 30/09/2026: $0.00 de $2,343.20 USD)",
             },
           ],
         }}
       />,
     );
-    expect(html).toContain("Pasarán a octubre 2026 al cerrar el mes (sin cobro completo al 30-sep)");
-    expect(html).toContain("cobrado el 14-oct, después del 30-sep");
+    expect(html).toContain("Pasarán a octubre 2026 al cerrar el mes (sin cobro completo al 30/09/2026)");
+    expect(html).toContain("cobrado el 14/10/2026, después del 30/09/2026");
     expect(html).toContain('data-chip-cierre="pasaria"');
     expect(html).not.toMatch(/pendientes? de cobro/i);
   });

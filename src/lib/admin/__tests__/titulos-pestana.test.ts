@@ -220,7 +220,7 @@ describe("detalles: lo distintivo primero", () => {
 
   it("pantalla por avión del reparto (20-oct-2026): «Reparto N621TX · septiembre 2026» e «Histórico N621TX»; sin matrícula, el genérico", () => {
     expect(tituloRepartoAvion("N621TX", "2026-09-01", "2026-09-30")).toBe("Reparto N621TX · septiembre 2026");
-    expect(tituloRepartoAvion("N621TX", "2026-10-01", "2026-10-14")).toBe("Reparto N621TX · 1–14 oct 2026");
+    expect(tituloRepartoAvion("N621TX", "2026-10-01", "2026-10-14")).toBe("Reparto N621TX · 01/10/2026 – 14/10/2026");
     expect(tituloRepartoAvion("N621TX")).toBe("Reparto N621TX");
     expect(tituloRepartoAvion("", "2026-09-01", "2026-09-30")).toBe("Reparto del avión");
     expect(tituloRepartoAvion()).toBe(TITULOS_DETALLE.repartoAvion);
@@ -280,55 +280,55 @@ describe("pestañas de una sección: «Sección · Pestaña»", () => {
   });
 });
 
-describe("periodo corto (días de pared Cancún)", () => {
+describe("periodo corto (días de pared Cancún, DD/MM/AAAA desde el 6-nov-2026)", () => {
   it("un día, un mes parcial, el mes completo", () => {
-    expect(periodoCorto("2026-10-14", "2026-10-14")).toBe("14 oct 2026");
-    expect(periodoCorto("2026-10-01", "2026-10-14")).toBe("1–14 oct 2026");
+    expect(periodoCorto("2026-10-14", "2026-10-14")).toBe("14/10/2026");
+    expect(periodoCorto("2026-10-01", "2026-10-14")).toBe("01/10/2026 – 14/10/2026");
     expect(periodoCorto("2026-09-01", "2026-09-30")).toBe("septiembre 2026");
     expect(periodoCorto("2026-02-01", "2026-02-28")).toBe("febrero 2026");
     // 2028 es bisiesto: el 28 de febrero NO cierra el mes.
-    expect(periodoCorto("2028-02-01", "2028-02-28")).toBe("1–28 feb 2028");
+    expect(periodoCorto("2028-02-01", "2028-02-28")).toBe("01/02/2028 – 28/02/2028");
     expect(periodoCorto("2028-02-01", "2028-02-29")).toBe("febrero 2028");
   });
 
   it("varios meses y años", () => {
-    expect(periodoCorto("2026-09-28", "2026-10-14")).toBe("28 sep – 14 oct 2026");
-    expect(periodoCorto("2025-12-28", "2026-01-03")).toBe("28 dic 2025 – 3 ene 2026");
+    expect(periodoCorto("2026-09-28", "2026-10-14")).toBe("28/09/2026 – 14/10/2026");
+    expect(periodoCorto("2025-12-28", "2026-01-03")).toBe("28/12/2025 – 03/01/2026");
     expect(periodoCorto("2026-07-01", "2026-09-30")).toBe("jul – sep 2026");
     expect(periodoCorto("2026-01-01", "2026-12-31")).toBe("2026");
     expect(periodoCorto("2025-11-01", "2026-02-28")).toBe("nov 2025 – feb 2026");
   });
 
   it("invertido se endereza; un extremo; inválidos", () => {
-    expect(periodoCorto("2026-10-14", "2026-10-01")).toBe("1–14 oct 2026");
-    expect(periodoCorto("2026-10-01", null)).toBe("desde 1 oct 2026");
-    expect(periodoCorto(undefined, "2026-10-14")).toBe("hasta 14 oct 2026");
-    expect(periodoCorto("2026-02-30", "2026-03-01")).toBe("hasta 1 mar 2026");
+    expect(periodoCorto("2026-10-14", "2026-10-01")).toBe("01/10/2026 – 14/10/2026");
+    expect(periodoCorto("2026-10-01", null)).toBe("desde 01/10/2026");
+    expect(periodoCorto(undefined, "2026-10-14")).toBe("hasta 14/10/2026");
+    expect(periodoCorto("2026-02-30", "2026-03-01")).toBe("hasta 01/03/2026");
     expect(periodoCorto("2026-13-45", "nada")).toBeNull();
     expect(periodoCorto(null, undefined)).toBeNull();
     // Un ISO con hora no es un día de pared: se ignora.
-    expect(periodoCorto("2026-10-01T05:00:00Z", "2026-10-14")).toBe("hasta 14 oct 2026");
+    expect(periodoCorto("2026-10-01T05:00:00Z", "2026-10-14")).toBe("hasta 14/10/2026");
   });
 
-  it("los doce meses cortos salen de MESES_LARGOS_ES", () => {
+  it("diaCorto en DD/MM/AAAA los doce meses; mesLargo con el nombre del mes", () => {
     const cortos = Array.from({ length: 12 }, (_, i) =>
       diaCorto(`2026-${String(i + 1).padStart(2, "0")}-05`),
     );
     expect(cortos).toEqual([
-      "5 ene 2026",
-      "5 feb 2026",
-      "5 mar 2026",
-      "5 abr 2026",
-      "5 may 2026",
-      "5 jun 2026",
-      "5 jul 2026",
-      "5 ago 2026",
-      "5 sep 2026",
-      "5 oct 2026",
-      "5 nov 2026",
-      "5 dic 2026",
+      "05/01/2026",
+      "05/02/2026",
+      "05/03/2026",
+      "05/04/2026",
+      "05/05/2026",
+      "05/06/2026",
+      "05/07/2026",
+      "05/08/2026",
+      "05/09/2026",
+      "05/10/2026",
+      "05/11/2026",
+      "05/12/2026",
     ]);
-    expect(diaCorto("2026-10-14")).toBe("14 oct 2026");
+    expect(diaCorto("2026-10-14")).toBe("14/10/2026");
     expect(diaCorto("2026-02-30")).toBeNull();
     expect(mesLargo(2026, 10)).toBe("octubre 2026");
     expect(mesLargo(2026, 13)).toBeNull();
@@ -343,10 +343,10 @@ describe("libros, reportes y vistas con fecha", () => {
 
   it("balance de la flota: el libro y su periodo", () => {
     expect(tituloBalance({ tipo: "vuelatour", modo: "general" }, "2026-10-01", "2026-10-14")).toBe(
-      "Balance general · 1–14 oct 2026",
+      "Balance general · 01/10/2026 – 14/10/2026",
     );
     expect(tituloBalance({ tipo: "vuelatour", modo: "mensual" }, "2026-10-01", "2026-10-14")).toBe(
-      "Balance mensual · 1–14 oct 2026",
+      "Balance mensual · 01/10/2026 – 14/10/2026",
     );
     expect(tituloBalance({ tipo: "vuelatour", modo: "mensual" }, "2026-09-01", "2026-09-30")).toBe(
       "Balance mensual · septiembre 2026",
@@ -358,13 +358,13 @@ describe("libros, reportes y vistas con fecha", () => {
       "Balance XB-PEV · septiembre 2026",
     );
     expect(tituloBalance({ tipo: "avion", avionId }, "2026-10-01", "2026-10-14", null)).toBe(
-      "Balance del avión · 1–14 oct 2026",
+      "Balance del avión · 01/10/2026 – 14/10/2026",
     );
     expect(tituloBalance({ tipo: "avion", avionId }, "nada", "nada")).toBe("Balance del avión");
   });
 
   it("reparto de utilidades", () => {
-    expect(tituloReparto("2026-10-01", "2026-10-14")).toBe("Reparto de utilidades · 1–14 oct 2026");
+    expect(tituloReparto("2026-10-01", "2026-10-14")).toBe("Reparto de utilidades · 01/10/2026 – 14/10/2026");
     expect(tituloReparto("2026-09-01", "2026-09-30")).toBe("Reparto de utilidades · septiembre 2026");
     expect(tituloReparto(null, null)).toBe("Reparto de utilidades");
   });
@@ -380,7 +380,7 @@ describe("libros, reportes y vistas con fecha", () => {
     const hoy = "2026-10-14";
     expect(tituloTacometros(undefined, hoy)).toBe("Tacómetros en vivo");
     expect(tituloTacometros("2026-10-14", hoy)).toBe("Tacómetros en vivo");
-    expect(tituloTacometros("2026-10-13", hoy)).toBe("Tacómetros en vivo · 13 oct 2026");
+    expect(tituloTacometros("2026-10-13", hoy)).toBe("Tacómetros en vivo · 13/10/2026");
     expect(tituloTacometros("nada", hoy)).toBe("Tacómetros en vivo");
   });
 

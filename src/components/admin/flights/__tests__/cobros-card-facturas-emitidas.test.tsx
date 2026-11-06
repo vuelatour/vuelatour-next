@@ -98,7 +98,7 @@ const SIN_NADA: FacturaServicioBloque = {
 
 const PEDIDA: FacturaServicioBloque = {
   solicitud: {
-    // 24 sep 2026, 10:00 hora Cancún.
+    // 24/09/2026, 10:00 hora Cancún.
     solicitada_at: "2026-09-24T15:00:00.000Z",
     solicitada_por: { id: "u-itzi", nombre: "Itzi" },
     nota: "Mandó sus datos por correo",
@@ -246,7 +246,7 @@ describe("burbuja de FACTURA", () => {
 
   it("pedida: chip ámbar con quién y cuándo (hora Cancún), «Paga contra factura» y «Retirar»", () => {
     const html = vuelo({ facturaServicio: PEDIDA, rol: "ADMIN" });
-    expect(html).toContain("Factura pedida por Itzi · 24 sep — pendiente");
+    expect(html).toContain("Factura pedida por Itzi · 24/09/2026 — pendiente");
     expect(html).toContain("Paga contra factura");
     expect(html).toContain("Nota: Mandó sus datos por correo");
     expect(html).toContain(">Retirar<");
@@ -257,7 +257,7 @@ describe("burbuja de FACTURA", () => {
     const html = vuelo({ facturaServicio: FACTURADA, rol: "ADMIN" });
     expect(html).toMatch(/<button[^>]*>Factura <span[^>]*>A-123<\/span><\/button>/);
     expect(html).toContain("Abrir el PDF de la factura A-123");
-    expect(html).toContain("Pedida por Itzi · 24 sep");
+    expect(html).toContain("Pedida por Itzi · 24/09/2026");
     expect(html).toContain("1 cancelada");
     expect(html).toContain("/admin/facturas-emitidas?vuelo_id=v-1");
   });
@@ -277,7 +277,7 @@ describe("burbuja de FACTURA", () => {
     const marcada: FacturaServicioBloque = { ...PEDIDA, por_facturar: false, marcado_sin_registro: true };
     for (const html of [vuelo({ facturaServicio: marcada, rol: "ADMIN" }), cotizacion({ facturaServicio: marcada, rol: "ADMIN" })]) {
       expect(html).toContain(
-        "Factura pedida por Itzi · 24 sep — marcada «Facturado» en el vuelo, sin factura registrada",
+        "Factura pedida por Itzi · 24/09/2026 — marcada «Facturado» en el vuelo, sin factura registrada",
       );
       expect(html).toContain("data-solicitud-marcada");
       expect(html).not.toContain("— pendiente");
@@ -291,7 +291,7 @@ describe("burbuja de FACTURA", () => {
     // Sin el campo (API previo) o en false: el chip ámbar de siempre.
     for (const bloque of [PEDIDA, { ...PEDIDA, marcado_sin_registro: false }]) {
       const html = vuelo({ facturaServicio: bloque, rol: "ADMIN" });
-      expect(html).toContain("Factura pedida por Itzi · 24 sep — pendiente");
+      expect(html).toContain("Factura pedida por Itzi · 24/09/2026 — pendiente");
       expect(html).not.toContain("data-solicitud-marcada");
     }
   });
@@ -350,7 +350,7 @@ describe("burbuja: FACTURA OBLIGATORIA por la cuenta de cobro (13-oct-2026, inva
   it("pedida y pendiente: también se dice (junto al chip ámbar)", () => {
     const html = vuelo({ facturaServicio: PEDIDA, rol: "ADMIN" });
     expect(html).toContain(OBLIGATORIA);
-    expect(html).toContain("Factura pedida por Itzi · 24 sep — pendiente");
+    expect(html).toContain("Factura pedida por Itzi · 24/09/2026 — pendiente");
   });
 
   it("con factura VIGENTE ya está cumplida: no se anuncia", () => {
@@ -538,7 +538,7 @@ describe("burbuja con la EXIGENCIA del API 0.0.77 (14-oct-2026: «un anticipo de
       vuelo({ facturaServicio: YA_NO_APLICA, rol: "ADMIN", cobros: DEVUELTO_EN_EFECTIVO }),
       cotizacion({ facturaServicio: YA_NO_APLICA, rol: "ADMIN", cobros: DEVUELTO_EN_EFECTIVO }),
     ]) {
-      expect(html).toContain("Factura pedida por Itzi · 5 oct — ya no aplica: el vuelo ya no exige factura");
+      expect(html).toContain("Factura pedida por Itzi · 05/10/2026 — ya no aplica: el vuelo ya no exige factura");
       expect(html).toContain("data-solicitud-ya-no-aplica");
       expect(html).toContain(
         "Se pidió sola al registrar un cobro que exigía factura, pero el dinero se devolvió (o se corrigió o eliminó ese cobro): un anticipo devuelto no lleva factura. Ya no cuenta en «Por facturar»; retírala si no hace falta. Nota: Solicitada automáticamente: cobro en HSBC Pesos",
@@ -593,7 +593,7 @@ describe("burbuja con la EXIGENCIA del API 0.0.77 (14-oct-2026: «un anticipo de
       rol: "ADMIN",
     });
     expect(facturada).toContain("A-123");
-    expect(facturada).toContain("Pedida por Itzi · 5 oct");
+    expect(facturada).toContain("Pedida por Itzi · 05/10/2026");
     expect(facturada).not.toContain("data-solicitud-ya-no-aplica");
   });
 

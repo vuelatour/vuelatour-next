@@ -276,8 +276,8 @@ describe("textos del rango (congelados)", () => {
     expect(textoRangoCotizaciones({ desde: "2026-10-01" })).toBe(`con fecha de vuelo desde el ${d1}`);
     expect(textoRangoCotizaciones({ hasta: "2026-10-31" })).toBe(`con fecha de vuelo hasta el ${d31}`);
     expect(textoRangoCotizaciones({})).toBeNull();
-    // El formato es el de `fmtDateOnly` («01 oct 2026»), el mismo del panel.
-    expect(d1).toMatch(/^01 \S+ 2026$/);
+    // El formato es el de `fmtDateOnly` («01/10/2026»), el mismo del panel.
+    expect(d1).toBe("01/10/2026");
   });
 
   it("textoEncabezadoCotizaciones: singular, plural y «(todas las fechas)» sin rango", () => {
@@ -573,25 +573,25 @@ describe("la consulta pendiente y los borradores CADUCAN (revisión del 14-oct-2
 });
 
 describe("textos de las flechas", () => {
-  it("«#341 · 27 sep · Maqar» con la fecha en hora Cancún", () => {
-    expect(textoVecino(V341)).toBe("#341 · 27 sep · Maqar");
-    expect(textoCortoVecino(V341)).toBe("#341 · 27 sep");
+  it("«#341 · 27/09/2026 · Maqar» con la fecha en hora Cancún", () => {
+    expect(textoVecino(V341)).toBe("#341 · 27/09/2026 · Maqar");
+    expect(textoCortoVecino(V341)).toBe("#341 · 27/09/2026");
   });
 
-  it("el día es el de CANCÚN: 20-sep 23:30 local sale como 20 sep aunque en UTC ya sea 21", () => {
+  it("el día es el de CANCÚN: 20-sep 23:30 local sale como 20/09/2026 aunque en UTC ya sea 21", () => {
     expect(
       textoCortoVecino({ folio: 7, fecha_vuelo: "2026-09-21T04:30:00+00:00" }),
-    ).toBe("#7 · 20 sep");
+    ).toBe("#7 · 20/09/2026");
   });
 
   it("sin cliente no se inventa nada (ni «null» ni «—»)", () => {
-    expect(textoVecino({ ...V341, cliente_nombre: null })).toBe("#341 · 27 sep");
-    expect(textoVecino({ ...V341, cliente_nombre: "   " })).toBe("#341 · 27 sep");
+    expect(textoVecino({ ...V341, cliente_nombre: null })).toBe("#341 · 27/09/2026");
+    expect(textoVecino({ ...V341, cliente_nombre: "   " })).toBe("#341 · 27/09/2026");
   });
 
   it("tooltip: adónde lleva, o por qué está apagada", () => {
-    expect(tituloFlecha("siguiente", V341)).toBe("Vuelo siguiente: #341 · 27 sep · Maqar");
-    expect(tituloFlecha("anterior", V341)).toBe("Vuelo anterior: #341 · 27 sep · Maqar");
+    expect(tituloFlecha("siguiente", V341)).toBe("Vuelo siguiente: #341 · 27/09/2026 · Maqar");
+    expect(tituloFlecha("anterior", V341)).toBe("Vuelo anterior: #341 · 27/09/2026 · Maqar");
     expect(tituloFlecha("anterior", null, { conFiltros: true })).toBe(
       "No hay un vuelo anterior con estos filtros",
     );

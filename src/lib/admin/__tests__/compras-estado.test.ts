@@ -121,7 +121,7 @@ describe("badges de recepción y gasto", () => {
     expect(recepcionDe(fila())).toEqual({ estado: "PEDIDA", etiqueta: ETIQUETA_PEDIDA, tono: "ambar" });
     // 12-oct 03:30 UTC = 11-oct 22:30 Cancún: el día es el de Cancún.
     const r = recepcionDe(fila({ estado: "RECIBIDA", recibida_at: "2026-10-12T03:30:00+00:00" }));
-    expect(r).toEqual({ estado: "RECIBIDA", etiqueta: `${ETIQUETA_RECIBIDA} · 11 oct 2026`, tono: "verde" });
+    expect(r).toEqual({ estado: "RECIBIDA", etiqueta: `${ETIQUETA_RECIBIDA} · 11/10/2026`, tono: "verde" });
     expect(recepcionDe(fila({ estado: "RECIBIDA", recibida_at: null })).etiqueta).toBe(ETIQUETA_RECIBIDA);
   });
 
@@ -201,7 +201,7 @@ describe("la línea de pasos del detalle", () => {
       ["recibida", "pendiente"],
       ["gasto", "pendiente"],
     ]);
-    expect(pasos[0].detalle).toBe(`Registrada el 02 oct 2026 · 1 línea · factura ${fmtMontoMoneda(722.9, "USD")}`);
+    expect(pasos[0].detalle).toBe(`Registrada el 02/10/2026 · 1 línea · factura ${fmtMontoMoneda(722.9, "USD")}`);
     expect(pasos[1].detalle).toContain(ETIQUETA_ACCION.recibir);
     expect(pasos[2].detalle).toContain(ETIQUETA_SIN_GASTO);
     expect(accionSiguiente(pasos)).toBe("recibir");
@@ -237,7 +237,7 @@ describe("la línea de pasos del detalle", () => {
     });
     const pasosCompleta = pasosCompra(completa);
     expect(pasosCompleta.every((p) => p.estado === "hecho")).toBe(true);
-    expect(pasosCompleta[1].detalle).toBe(`${ETIQUETA_RECIBIDA} · 12 oct 2026`);
+    expect(pasosCompleta[1].detalle).toBe(`${ETIQUETA_RECIBIDA} · 12/10/2026`);
     expect(accionSiguiente(pasosCompleta)).toBeNull();
   });
 });
@@ -277,7 +277,7 @@ describe("«Registrar gasto»", () => {
     expect(
       textoConfirmarRegistrarGasto({ folio: 12, monto: 722.9, moneda: "USD", tc: 18.25, fecha: "2026-10-21", medio: "TRANSFERENCIA" }),
     ).toBe(
-      `Se crea un gasto de Refacción por ${usd} (≈ $13,192.93 MXN al T.C. 18.25) con fecha 21 oct 2026, pagado por Transferencia, y queda ligado a la compra #12 como su factura de mercancía.`,
+      `Se crea un gasto de Refacción por ${usd} (≈ $13,192.93 MXN al T.C. 18.25) con fecha 21/10/2026, pagado por Transferencia, y queda ligado a la compra #12 como su factura de mercancía.`,
     );
     expect(
       toastGastoRegistrado({
@@ -308,7 +308,7 @@ describe("candidatos y entrada desde un gasto", () => {
         puede_mercancia: true,
       }),
     ).toEqual({
-      titulo: `02 oct 2026 · Refacción · ${fmtMontoMoneda(722.9, "USD")}`,
+      titulo: `02/10/2026 · Refacción · ${fmtMontoMoneda(722.9, "USD")}`,
       detalle: "Aircraft Spruce · Filtros · Folio AS-1 · Transferencia · Conciliado con el banco",
     });
   });
@@ -430,7 +430,7 @@ describe("los campos del gasto de una compra (compartidos)", () => {
     expect(
       textoConfirmarAgregarGasto({ folio: 12, rol: "ENVIO", monto: 1850.5, moneda: "MXN", tc: 18.8052, fecha: "2026-11-04", medio: "TARJETA_CORP" }),
     ).toBe(
-      `Se crea un gasto por ${fmtMontoMoneda(1850.5, "MXN")} (${textoEquivalente(1850.5, "MXN", 18.8052)} al T.C. 18.8052) con fecha 04 nov 2026, pagado por Tarjeta corporativa, y queda ligado a la compra #12 como envío.`,
+      `Se crea un gasto por ${fmtMontoMoneda(1850.5, "MXN")} (${textoEquivalente(1850.5, "MXN", 18.8052)} al T.C. 18.8052) con fecha 04/11/2026, pagado por Tarjeta corporativa, y queda ligado a la compra #12 como envío.`,
     );
     expect(
       toastGastoAgregado(
@@ -456,7 +456,7 @@ describe("«Registrar compra»: ¿Y el pago?", () => {
 
   it("los textos: confirmación, toast de compra + gasto y el aviso cuando la compra nació sin su gasto", () => {
     expect(textoConfirmarCompraConGasto({ lineas: 1, moneda: "USD", tc: 18.8052, fecha: "2026-11-02", medio: "TARJETA_CORP" })).toBe(
-      "Se registra la compra con 1 línea y, enseguida, su gasto de Refacción en USD por el total de la factura (lo calcula el API) al T.C. 18.8052, con fecha 02 nov 2026 y pagado por Tarjeta corporativa.",
+      "Se registra la compra con 1 línea y, enseguida, su gasto de Refacción en USD por el total de la factura (lo calcula el API) al T.C. 18.8052, con fecha 02/11/2026 y pagado por Tarjeta corporativa.",
     );
     expect(
       toastCompraConGasto({ folio: 14, gasto_registrado: { id: "g", monto: 300, moneda: "USD", tc_gasto: null, fecha_gasto: null, medio_pago: null, estado_pago: null } }),

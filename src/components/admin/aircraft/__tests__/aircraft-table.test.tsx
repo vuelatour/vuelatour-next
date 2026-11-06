@@ -116,7 +116,7 @@ describe("AircraftTable · columnas del pizarrón", () => {
   it("pinta los números del N4142R con su etapa y su fecha", () => {
     const t = texto(html);
     expect(t).toContain("4455.1 h");
-    expect(t).toContain("Servicio 50 hrs · 12 sep 2026");
+    expect(t).toContain("Servicio 50 hrs · 12/09/2026");
     expect(t).toContain("4500.0 h");
     expect(t).toContain("faltan 42.0 h");
     expect(t).toContain("100 hrs");

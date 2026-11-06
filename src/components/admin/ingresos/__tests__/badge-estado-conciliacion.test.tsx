@@ -111,7 +111,7 @@ describe("las celdas de las tablas", () => {
   it("una entrada de «Todos»: el nombre accesible empieza con el texto visible", () => {
     const html = pintar(<CeldaConciliacionEntrada entrada={ENTRADA} alAbrir={noop} />);
     expect(html).toContain(
-      'aria-label="Conciliado: ver la conciliación con el banco del cobro del vuelo #332 de $977.45 del 15 sep 2026"',
+      'aria-label="Conciliado: ver la conciliación con el banco del cobro del vuelo #332 de $977.45 del 15/09/2026"',
     );
     // Un reembolso NO_BANCARIO: nunca botón y su title dice por qué.
     const reembolso = pintar(
@@ -142,7 +142,7 @@ describe("las celdas de las tablas", () => {
       baja: null,
     } as unknown as Ingreso;
     const vivo = pintar(<CeldaConciliacionIngreso ingreso={ingreso} alAbrir={noop} />);
-    expect(vivo).toContain('aria-label="Sin conciliar: ver la conciliación con el banco del ingreso ING-3 de $78.00 del 10 sep 2026"');
+    expect(vivo).toContain('aria-label="Sin conciliar: ver la conciliación con el banco del ingreso ING-3 de $78.00 del 10/09/2026"');
     const baja = pintar(
       <CeldaConciliacionIngreso ingreso={{ ...ingreso, baja: { at: "2026-10-01T12:00:00Z", por_nombre: null, motivo: "x" } }} alAbrir={noop} />,
     );
@@ -186,7 +186,7 @@ describe("CobroConciliadoBadge (tarjetas de cobros)", () => {
     const html = pintar(<CobroConciliadoBadge cobro={COBRO} alAbrir={noop} />);
     expect(html).toContain('<button type="button"');
     expect(html).toContain('aria-haspopup="dialog"');
-    expect(html).toContain('aria-label="Conciliado: ver la conciliación con el banco del cobro de $977.45 del 15 sep 2026"');
+    expect(html).toContain('aria-label="Conciliado: ver la conciliación con el banco del cobro de $977.45 del 15/09/2026"');
     expect(html).toContain("cursor-pointer hover:bg-muted/60");
     expect(html).toContain("Clic para ver el abono del banco y su estado de cuenta.");
   });

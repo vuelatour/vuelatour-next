@@ -273,13 +273,13 @@ describe("Monto, Fecha y Concepto", () => {
     expect(fila(html, "g-1")).toContain(">Efectivo<");
   });
 
-  it("fecha: «Cap. 14 oct 10:33» (el lector oye «Capturado …»), el nombre y el origen «panel» con el COLOR del distintivo Oficina", () => {
+  it("fecha: «Cap. 14/10/2026 10:33» (el lector oye «Capturado …»), el nombre y el origen «panel» con el COLOR del distintivo Oficina", () => {
     const f = fila(html, "g-1");
-    expect(f).toContain("14 oct 2026");
+    expect(f).toContain("14/10/2026");
     // «Capturado …» medía hasta 119 px en las 112 de la columna (revisión del
     // 14-oct-2026): visible la forma corta, el lector la larga.
     expect(f).toContain(
-      '<span aria-hidden="true">Cap. 14 oct 10:33</span><span class="sr-only">Capturado 14 oct 10:33</span>',
+      '<span aria-hidden="true">Cap. 14/10/2026 10:33</span><span class="sr-only">Capturado 14/10/2026 10:33</span>',
     );
     expect(f).toContain(">Mary Cruz<");
     expect(f).toMatch(/<span data-distintivo="OFICINA" class="[^"]*text-sky-600 dark:text-sky-400[^"]*" title="Oficina: lo capturó administración desde el panel.">panel<span class="sr-only"> \(Oficina\)<\/span><\/span>/);
@@ -481,12 +481,12 @@ describe("fecha del vuelo bajo «Vuelo #375» (19-oct-2026, API 0.0.96)", () => 
   it("la fecha (día Cancún) va justo bajo el enlace del vuelo, con su title y el prefijo del lector", () => {
     const f = fila(html, "g-375");
     expect(f).toMatch(
-      />Vuelo #375<\/a><span(?=[^>]*data-fecha-vuelo="")[^>]*><span class="sr-only">Fecha del vuelo: <\/span>14 oct 2026<\/span>/,
+      />Vuelo #375<\/a><span(?=[^>]*data-fecha-vuelo="")[^>]*><span class="sr-only">Fecha del vuelo: <\/span>14\/10\/2026<\/span>/,
     );
     expect(f).toContain('title="Fecha del vuelo #375 (salida, hora Cancún). La fecha del gasto es la del pago."');
     // La fecha del gasto (la del pago) sigue en su columna, distinta.
-    expect(f).toContain('<span class="block">15 oct 2026</span>');
-    expect(f.match(/14 oct 2026/g)).toHaveLength(1);
+    expect(f).toContain('<span class="block">15/10/2026</span>');
+    expect(f.match(/14\/10\/2026/g)).toHaveLength(1);
   });
 
   it("sin la llave (API previo) la celda queda como antes: sin línea de fecha", () => {

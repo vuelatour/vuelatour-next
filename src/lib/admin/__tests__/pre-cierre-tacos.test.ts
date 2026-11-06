@@ -42,7 +42,7 @@ describe("lineasTramosTacos (pre-cierre: cuáles son los tacos en revisión)", (
     expect(lineas[0].href).toBe("/admin/flights/v1");
     // 18:30 UTC = 13:30 en Cancún (UTC−5, sin horario de verano).
     expect(lineas[0].texto).toBe(
-      "T1 CUN → CZM · 14 sep, 01:30 p.m. · Juan Pérez · Sin lectura de llegada",
+      "T1 CUN → CZM · 14/09/2026, 01:30 p.m. · Juan Pérez · Sin lectura de llegada",
     );
   });
 
@@ -160,7 +160,7 @@ describe("lineasTramosOmitidos (pre-cierre: renglón informativo «Tacómetros o
     expect(lineas[0].folio).toBe("#300");
     expect(lineas[0].href).toBe("/admin/flights/v300");
     expect(`${lineas[0].folio} · ${lineas[0].texto}`).toBe(
-      "#300 · T1 CET → CUN · 12 sep, 03:00 p.m. · Juan Pérez · Omitido por Itzi (15 oct, 10:40 a.m.): Falló el tacómetro",
+      "#300 · T1 CET → CUN · 12/09/2026, 03:00 p.m. · Juan Pérez · Omitido por Itzi (15/10/2026, 10:40 a.m.): Falló el tacómetro",
     );
   });
 

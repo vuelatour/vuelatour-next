@@ -298,7 +298,7 @@ describe("textos", () => {
       ["/admin/flights/v379", "Vuelo #379 · Maqar"],
       ["/admin/flights/v380", "Vuelo #380 · Maqar"],
     ]);
-    expect(r?.lineas[0].secundaria).toContain("vuelo 04 oct 2026");
+    expect(r?.lineas[0].secundaria).toContain("vuelo 04/10/2026");
     expect(r?.lineas[0].secundaria).toContain("$1,000 MXN");
     expect(r?.diferencia).toBeNull();
     expect(resumenLoteCobrosFila({ ...MOV, cobros_diferencia: 0.01 })?.diferencia).toBe("diferencia $0.01 MXN");
@@ -660,7 +660,7 @@ describe("guiaAlVincular: el veredicto del API con UN cobro marcado (D18)", () =
     expect(textoConfirmarParcial(PARCIAL_315, ABONO_1700)).toEqual({
       titulo: "¿Vincular como pago parcial?",
       cuerpo:
-        "El abono de $1,700 MXN del 15 sep 2026 cubre solo una parte del cobro del vuelo #315 ($3,400 MXN). El cobro quedará «Conciliado parcial · faltan $1,700 MXN» y seguirá en «Cobros sin banco» hasta que vincules el resto. Úsalo cuando el cliente pagó el cobro en varias transferencias. Si en realidad son dos cobros distintos, mejor regístralos por separado.",
+        "El abono de $1,700 MXN del 15/09/2026 cubre solo una parte del cobro del vuelo #315 ($3,400 MXN). El cobro quedará «Conciliado parcial · faltan $1,700 MXN» y seguirá en «Cobros sin banco» hasta que vincules el resto. Úsalo cuando el cliente pagó el cobro en varias transferencias. Si en realidad son dos cobros distintos, mejor regístralos por separado.",
       aviso: null,
       boton: "Sí, vincular como parcial",
     });

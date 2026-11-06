@@ -4,7 +4,7 @@
  * Pregunta del cliente: «¿Cómo puedo conciliar los cargos reembolsados?».
  * Qué se custodia aquí:
  *  1. la fila conciliada por reverso dice CON QUÉ se emparejó («Reverso de un
- *     cargo» + «devuelve el cargo del 21 sep · ASUR CANCUN» / «devuelto el 23
+ *     cargo» + «devuelve el cargo del 21/09/2026 · ASUR CANCUN» / «devuelto el 23
  *     sep · …») y el tooltip «Conciliado con: …»;
  *  2. un ABONO pendiente que dice «CARGO INDEBIDO» lleva la pista «Parece
  *     devolución»; con un API previo (sin aditivos) la fila clasificada se
@@ -129,10 +129,10 @@ describe("la tabla", () => {
   it("la pareja dice con qué se concilió cada lado", () => {
     const html = tabla([ABONO_PAREADO, CARGO_PAREADO]);
     expect(html).toContain("Reverso de un cargo");
-    expect(html).toContain("devuelve el cargo del 21 sep · ASUR CANCUN");
-    expect(html).toContain("devuelto el 23 sep · CARGO INDEBIDO 21 SEP 35552");
+    expect(html).toContain("devuelve el cargo del 21/09/2026 · ASUR CANCUN");
+    expect(html).toContain("devuelto el 23/09/2026 · CARGO INDEBIDO 21 SEP 35552");
     expect(html).toContain(
-      "Conciliado con: Reverso de un cargo · devuelve el cargo del 21 sep · ASUR CANCUN",
+      "Conciliado con: Reverso de un cargo · devuelve el cargo del 21/09/2026 · ASUR CANCUN",
     );
   });
 

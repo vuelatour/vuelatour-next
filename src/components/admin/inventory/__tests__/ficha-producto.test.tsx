@@ -504,7 +504,7 @@ describe("ficha del producto · API 0.0.36 (aceite 15W-50 tras la migración de 
     const t = texto(html);
     expect(t).toContain("Precios de este producto");
     expect(t).toContain("Precio vigente · último precio de compra $21.25 USD");
-    expect(t).toContain("Entrada del 29 ago 2026 · T.C. 17.0115");
+    expect(t).toContain("Entrada del 29/08/2026 · T.C. 17.0115");
     expect(t).toContain("≈ $375.55 MXN al T.C. de hoy 17.6729");
     expect(t).toContain("Se cobra al avión · en la siguiente salida $26.5625 USD");
     expect(t).toContain("= precio vigente + 25 % (margen de la tienda, se cambia en Configuración)");
@@ -940,8 +940,8 @@ describe("«Corregir el costo de la compra»: nada cambia en silencio (D7)", () 
     );
     const t = texto(html);
     expect(t).toContain("Este precio ya se usó en 2 salidas: conservan su costo y lo que se cobró al avión.");
-    expect(t).toContain("01 sep 2026 · 12 qt · XA-VGV · costo $21.25 USD");
-    expect(t).toContain("03 sep 2026 · 2 qt · N4142R · sin cargo ($0)");
+    expect(t).toContain("01/09/2026 · 12 qt · XA-VGV · costo $21.25 USD");
+    expect(t).toContain("03/09/2026 · 2 qt · N4142R · sin cargo ($0)");
     expect(html).toMatch(/text-red-600[^"]*">1 de esas salidas salió a costo \$0 y NO se cobró al avión/);
     expect(html).toMatch(/<button[^>]*cursor-pointer[^>]*>Guardar de todos modos<\/button>/);
   });

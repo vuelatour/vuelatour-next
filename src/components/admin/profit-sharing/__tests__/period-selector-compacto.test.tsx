@@ -7,6 +7,7 @@
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { textoDeIso } from "@/lib/fecha-input";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
@@ -27,8 +28,13 @@ const etiqueta = (id: string, texto: string) =>
   new RegExp(`<label(?=[^>]*for="${id}")[^>]*>${texto}</label>`);
 const etiquetaSoloLectores = (id: string, texto: string) =>
   new RegExp(`<label(?=[^>]*class="[^"]*sr-only[^"]*")(?=[^>]*for="${id}")[^>]*>${texto}</label>`);
+// Fechas DD/MM/AAAA (6-nov-2026): el `id` (y la etiqueta) van en el campo de
+// TEXTO visible, que enseña «01/09/2026»; el nativo `type="date"` sigue detrás
+// con el ISO y el `name` (lo que viaja al servidor).
 const input = (id: string, valor: string) =>
-  new RegExp(`<input(?=[^>]*id="${id}")(?=[^>]*type="date")(?=[^>]*value="${valor}")[^>]*/?>`);
+  new RegExp(
+    `<input(?=[^>]*id="${id}")(?=[^>]*type="text")(?=[^>]*value="${textoDeIso(valor)}")[^>]*/?>`,
+  );
 
 describe("PeriodSelector compacto", () => {
   it("sin Card, en UNA línea: dos inputs de fecha con nombre accesible y la etiqueta solo para lectores de pantalla", () => {
@@ -45,7 +51,10 @@ describe("PeriodSelector compacto", () => {
     expect(html).toMatch(etiquetaSoloLectores("periodo-hasta", "Periodo hasta"));
     expect(html).toMatch(input("periodo-desde", "2026-09-01"));
     expect(html).toMatch(input("periodo-hasta", "2026-09-30"));
-    expect((html.match(/<input/g) ?? []).length).toBe(2);
+    // Cada fecha pinta DOS <input> (6-nov-2026): el texto DD/MM/AAAA que se ve y el nativo escondido del calendario.
+    expect((html.match(/data-fecha-texto="date"/g) ?? []).length).toBe(2);
+    expect((html.match(/data-fecha-nativo="date"/g) ?? []).length).toBe(2);
+    expect((html.match(/<input/g) ?? []).length).toBe(4);
     // Chicos y de ancho fijo, con el guion entre los dos. 16 px en el celular
     // (iOS Safari hace zoom al enfocar un campo con letra menor) y 12 px desde md.
     expect(html).toMatch(/<input[^>]*class="[^"]*w-\[9\.5rem\][^"]*"/);

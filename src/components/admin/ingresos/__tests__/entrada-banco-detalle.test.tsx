@@ -110,12 +110,12 @@ describe("con datos (casos reales)", () => {
     ligasCorrectas(html);
   });
 
-  it("#293: la línea de la comisión y «Liga anterior al 12 oct 2026…»", () => {
+  it("#293: la línea de la comisión y «Liga anterior al 12/10/2026…»", () => {
     const html = pintar(respuesta293());
     expect(html).toContain(
       "El cliente pagó $12,495.00; la comisión registrada es de $624.76, así que al banco debe llegar el neto: $11,870.24.",
     );
-    expect(html).toContain("Liga anterior al 12 oct 2026: el sistema todavía no guardaba quién la hizo.");
+    expect(html).toContain("Liga anterior al 12/10/2026: el sistema todavía no guardaba quién la hizo.");
     expect(html).toContain("Paywise · Paywise (MXN) · pasarela de pago");
   });
 
@@ -126,7 +126,7 @@ describe("con datos (casos reales)", () => {
     expect(html).toContain("Ese día Morena Mia tiene 2 cobros más sin conciliar:");
     expect(html).toContain("Buscar un abono por $2,407.00 USD (los 3 cobros del día)");
     expect(html).toContain('href="/admin/conciliacion?f=pendientes&amp;desde=2026-08-11&amp;hasta=2026-10-10&amp;mvq=Morena+Mia"');
-    expect(html).toContain("Movimientos importados por cuenta: HSBC USD del 01 sep 2026 al 06 oct 2026.");
+    expect(html).toContain("Movimientos importados por cuenta: HSBC USD del 01/09/2026 al 06/10/2026.");
     expect(html).toContain("Si el estado de cuenta de ese periodo ya está importado, prueba «Cruzar pendientes» en Conciliación.");
     // La búsqueda principal en negritas.
     expect(html).toMatch(/<a [^>]*class="[^"]*font-medium[^"]*"[^>]*>Buscar el abono en Conciliación<\/a>/);
@@ -137,7 +137,7 @@ describe("con datos (casos reales)", () => {
     expect(pintar(respuesta379())).toContain("Buscar un abono por $59,081.00 (los 2 cobros del día)");
     const html = pintar(respuesta383());
     expect(html).toContain('data-cruce-no-corrio=""');
-    expect(html).toContain("Abrir Conciliación del 05 oct 2026 al 11 oct 2026");
+    expect(html).toContain("Abrir Conciliación del 05/10/2026 al 11/10/2026");
     expect(html.indexOf("data-cruce-no-corrio")).toBeLessThan(html.indexOf("Que el estado de cuenta de esas fechas"));
   });
 

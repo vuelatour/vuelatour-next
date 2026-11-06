@@ -24,7 +24,7 @@ const { AircraftKpiStrip } = await import("../aircraft/aircraft-kpi-strip");
 const { RenglonSaldoInicial } = await import("../renglon-saldo-inicial");
 
 const INICIO = "2026-09-01";
-const CHIP = "De antes del inicio oficial (1-sep-2026)";
+const CHIP = "De antes del inicio oficial (01/09/2026)";
 const leer = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
 const conInicio = (el: React.ReactNode, inicio: string | null = INICIO) =>
   renderToStaticMarkup(<InicioOficialProvider inicio={inicio}>{el}</InicioOficialProvider>);
@@ -45,7 +45,7 @@ describe("a. Ficha del piloto: mes de las estadísticas", () => {
     expect(src).toContain("ajustarMesAlInicio(mesUrl, inicio)");
     expect(src).toContain("pilot = await getPilot(id, mes);");
     expect(src).toContain("<AvisoPeriodoAjustado inicio={inicio} ajustado={ajusteMes.ajustado} />");
-    // «Histórico» de honorarios ⇒ «Desde el 1-sep-2026» con `honorarios.desde`.
+    // «Histórico» de honorarios ⇒ «Desde el 01/09/2026» con `honorarios.desde`.
     expect(src).toContain("{rotuloTotalHonorarios(honorarios.desde)}");
     const sel = leer("../pilots/mes-stats-selector.tsx");
     expect(sel).toContain("min={mesInicio(inicio)}");
@@ -69,9 +69,9 @@ describe("b. Ficha del avión: «Horas mes / año»", () => {
       ...extra,
     }) as unknown as AircraftMetricsDetalle;
 
-  it("con `anio_desde` ⇒ «Horas mes / desde el 1-sep-2026»; números del API tal cual", () => {
+  it("con `anio_desde` ⇒ «Horas mes / desde el 01/09/2026»; números del API tal cual", () => {
     const html = renderToStaticMarkup(<AircraftKpiStrip metrics={metrics({ anio_desde: INICIO })} />);
-    expect(html).toContain("Horas mes / desde el 1-sep-2026");
+    expect(html).toContain("Horas mes / desde el 01/09/2026");
     expect(html).toContain("12.3 / 80.4 h");
     expect(html).not.toContain("Horas mes / año");
   });
@@ -87,12 +87,12 @@ describe("c. Saldo inicial de tacómetros (el cardex ya no lo lleva)", () => {
   it("renglón sintético con las cifras del API", () => {
     const html = renderToStaticMarkup(
       <RenglonSaldoInicial
-        etiqueta="Saldo inicial al 1-sep-2026"
+        etiqueta="Saldo inicial al 01/09/2026"
         piezas={[{ titulo: "Tacómetro", valor: "1006.5" }]}
       />,
     );
     expect(html).toContain("data-saldo-inicial");
-    expect(html).toContain("Saldo inicial al 1-sep-2026");
+    expect(html).toContain("Saldo inicial al 01/09/2026");
     expect(html).toContain("1006.5");
   });
 

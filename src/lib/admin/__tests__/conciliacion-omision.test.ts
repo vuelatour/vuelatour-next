@@ -170,13 +170,13 @@ describe("el diálogo «Omitir la conciliación»", () => {
       "Dejan de contar como pendientes («Faltan …») sin ligarse a ningún gasto, cobro ni ingreso. Quedan como «Omitido» con tu motivo, tu nombre y la fecha, y se regresan a Pendientes desde la pestaña «Omitidos».",
     );
     const m = { fecha: "2026-09-24", descripcion: "IVA - COMISIONES", monto: "1.12", tipo: "CARGO" as const };
-    expect(lineaListaOmitir(m, "GASTOS GNRAL", "MXN")).toBe("24 sep · GASTOS GNRAL · IVA - COMISIONES · $1.12 (cargo)");
-    expect(lineaListaOmitir({ ...m, tipo: "ABONO", monto: "825.13" }, null)).toBe("24 sep · IVA - COMISIONES · $825.13 (abono)");
-    expect(lineaListaOmitir({ ...m, monto: "17.00" }, "HSBC USD", "USD")).toBe("24 sep · HSBC USD · IVA - COMISIONES · $17.00 USD (cargo)");
-    expect(fechaCortaMovimiento("2026-08-10")).toBe("10 ago");
+    expect(lineaListaOmitir(m, "GASTOS GNRAL", "MXN")).toBe("24/09/2026 · GASTOS GNRAL · IVA - COMISIONES · $1.12 (cargo)");
+    expect(lineaListaOmitir({ ...m, tipo: "ABONO", monto: "825.13" }, null)).toBe("24/09/2026 · IVA - COMISIONES · $825.13 (abono)");
+    expect(lineaListaOmitir({ ...m, monto: "17.00" }, "HSBC USD", "USD")).toBe("24/09/2026 · HSBC USD · IVA - COMISIONES · $17.00 USD (cargo)");
+    expect(fechaCortaMovimiento("2026-08-10")).toBe("10/08/2026");
     expect(fechaCortaMovimiento(null)).toBe("sin fecha");
     expect(lineaMovimientoAviso({ fecha: "2026-08-10", descripcion: "ASA CANCUN", monto: 3216.27, moneda: "MXN" })).toBe(
-      "10 ago · ASA CANCUN $3,216.27",
+      "10/08/2026 · ASA CANCUN $3,216.27",
     );
   });
 
@@ -341,7 +341,7 @@ describe("mensajeErrorOmision: cada respuesta del API en palabras del operador",
 
   it("409 MOVIMIENTO_NO_PENDIENTE: el texto del API, los ids para quitarlos y refrescar al cerrar", () => {
     const texto =
-      "No se omitió ninguno: 1 de los 2 movimientos ya no está pendiente — 12 oct · ASA CANCUN $8,468.91 (ya está vinculado a un gasto). Recarga la lista y vuelve a seleccionar.";
+      "No se omitió ninguno: 1 de los 2 movimientos ya no está pendiente — 12/10/2026 · ASA CANCUN $8,468.91 (ya está vinculado a un gasto). Recarga la lista y vuelve a seleccionar.";
     expect(
       mensajeErrorOmision(
         {
@@ -386,7 +386,7 @@ describe("mensajeErrorOmision: cada respuesta del API en palabras del operador",
   });
 
   it("409 MOVIMIENTO_NO_OMITIDO (deshacer) y un 4xx sin texto útil (nada se escribió)", () => {
-    const texto = "No se restauró ninguno: 1 de los 3 ya no está omitido (24 sep · IVA - COMISIONES $1.12). Recarga la lista.";
+    const texto = "No se restauró ninguno: 1 de los 3 ya no está omitido (24/09/2026 · IVA - COMISIONES $1.12). Recarga la lista.";
     expect(
       mensajeErrorOmision({ ok: false, status: 409, code: "MOVIMIENTO_NO_OMITIDO", error: texto, details: { movimientos: [{ id: ID2 }] } }, "deshacer"),
     ).toEqual({ titulo: texto, incierto: false, refrescar: true, quitarIds: [ID2] });
@@ -451,8 +451,8 @@ describe("página: pestaña «Omitidos (N)» y tarjetas", () => {
     expect(TEXTO_OMITIDOS_NO_DISPONIBLE).toBe("Esta pestaña todavía no está activa: avisa a sistemas.");
     expect(TEXTO_OMITIDOS_NO_CARGO).toBe("No se pudo consultar la lista de omitidos: recarga la página.");
     expect(textoVacioOmitidos(null)).toBe("No hay movimientos omitidos.");
-    expect(textoVacioOmitidos("del 01 oct 2026 al 12 oct 2026", true)).toBe(
-      "No hay movimientos omitidos del 01 oct 2026 al 12 oct 2026 en esta cuenta.",
+    expect(textoVacioOmitidos("del 01/10/2026 al 12/10/2026", true)).toBe(
+      "No hay movimientos omitidos del 01/10/2026 al 12/10/2026 en esta cuenta.",
     );
   });
 

@@ -103,9 +103,9 @@ describe("archivo de la factura", () => {
           subida_at: "2026-09-22T18:00:00Z",
           subida_por_nombre: "Itzi",
         },
-        "22 sep 2026",
+        "22/09/2026",
       ),
-    ).toBe("factura-232.pdf · subió Itzi · 22 sep 2026");
+    ).toBe("factura-232.pdf · subió Itzi · 22/09/2026");
     // Sin nombre de quien subió no se inventa un «—».
     expect(
       textoArchivoFactura({ path: "p", nombre: null, subida_at: null }, undefined),
@@ -249,18 +249,18 @@ describe("renglón del archivo con folio", () => {
     expect(
       textoArchivoFactura(
         { path: "p", nombre: "factura.pdf", subida_at: null, subida_por_nombre: "Itzi" },
-        "23 sep 2026",
+        "23/09/2026",
         "A-1234",
       ),
-    ).toBe("Folio A-1234 · factura.pdf · subió Itzi · 23 sep 2026");
+    ).toBe("Folio A-1234 · factura.pdf · subió Itzi · 23/09/2026");
     // Sin folio: el renglón de siempre.
     expect(
       textoArchivoFactura(
         { path: "p", nombre: "factura.pdf", subida_at: null, subida_por_nombre: "Itzi" },
-        "23 sep 2026",
+        "23/09/2026",
         null,
       ),
-    ).toBe("factura.pdf · subió Itzi · 23 sep 2026");
+    ).toBe("factura.pdf · subió Itzi · 23/09/2026");
   });
 
   it("toast de éxito", () => {

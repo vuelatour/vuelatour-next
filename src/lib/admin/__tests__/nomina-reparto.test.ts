@@ -154,8 +154,8 @@ describe("pagos del mes", () => {
     expect(estadoPagoNomina(p)).toBe("Repartido: N4142R, ¿?");
     expect(pagoNominaDeGasto(gasto({ id: G2, vuelo_id: "v" })).repartible).toBe(false);
     expect(estadoPagoNomina(pagoNominaDeGasto(gasto({ id: G3 })))).toBe(ESTADO_SIN_REPARTIR);
-    expect(lineaPagoNomina(pagoNominaDeGasto(gasto({ id: G3 })))).toBe("15 oct 2026 · Luis · 1a oct · $5,000 MXN");
-    expect(lineaPagoNomina(pagoNominaDeGasto(gasto({ id: G3, notas: null })))).toBe("15 oct 2026 · Sin notas · $5,000 MXN");
+    expect(lineaPagoNomina(pagoNominaDeGasto(gasto({ id: G3 })))).toBe("15/10/2026 · Luis · 1a oct · $5,000 MXN");
+    expect(lineaPagoNomina(pagoNominaDeGasto(gasto({ id: G3, notas: null })))).toBe("15/10/2026 · Sin notas · $5,000 MXN");
   });
 });
 
@@ -287,11 +287,11 @@ describe("errores por pago y reemplazo", () => {
     expect(errores).toEqual([
       {
         gasto_id: G1,
-        pago: "15 oct 2026 · Luis · 1a oct · $5,000 MXN",
+        pago: "15/10/2026 · Luis · 1a oct · $5,000 MXN",
         code: "MES_CERRADO",
         mensaje: "Septiembre 2026 ya está cerrado.",
       },
-      { gasto_id: G2, pago: "15 oct 2026 · $6,830 MXN", code: "GASTO_CON_VUELO", mensaje: "No se pudo repartir este pago." },
+      { gasto_id: G2, pago: "15/10/2026 · $6,830 MXN", code: "GASTO_CON_VUELO", mensaje: "No se pudo repartir este pago." },
     ]);
     expect(erroresDeRespuestaReparto(null, pagos)).toEqual([]);
   });

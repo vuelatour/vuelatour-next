@@ -62,7 +62,7 @@ vi.mock("@/components/ui/dialog", () => {
 const { MovimientosTable } = await import("../movimientos-table");
 
 const CUENTA = "76a931e0-7c06-47c6-a574-6c7d4a698c14";
-/** La refacción AIRCRAFT SPRUCE de la captura: 24 sep 2026, $794.61 USD, sin vuelo. */
+/** La refacción AIRCRAFT SPRUCE de la captura: 24/09/2026, $794.61 USD, sin vuelo. */
 const G_REFACCION = "7f2c1b40-5a3e-4c8d-9e21-0a6b7c8d9e01";
 const G_430 = "2a3e7a09-5d1c-4b7e-9f00-000000000430";
 const VUELO_430 = "f4300000-0000-4000-8000-000000000430";

@@ -112,7 +112,7 @@ describe("Tacómetros en vivo: fila con tacómetro omitido", () => {
     expect(html).toContain("border-slate-400/50");
     expect(html).toContain(
       esc(
-        "Omitido por Itzi · 15 oct 2026, 10:40 a.m. · Falló el tacómetro. No pide lectura y aporta 0 h. Si al final hay lectura, captúrala con «Corregir» y la omisión se retira sola.",
+        "Omitido por Itzi · 15/10/2026, 10:40 a.m. · Falló el tacómetro. No pide lectura y aporta 0 h. Si al final hay lectura, captúrala con «Corregir» y la omisión se retira sola.",
       ),
     );
   });

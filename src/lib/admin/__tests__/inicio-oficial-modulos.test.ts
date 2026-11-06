@@ -95,9 +95,9 @@ describe("Ingresos: filtros y atajos", () => {
     expect(filtrosIngresosDeUrl({}, "ADMIN", HOY, INICIO)).toEqual(filtrosIngresosDeUrl({}, "ADMIN", HOY));
   });
 
-  it("atajos: en sep-2026 sin «Mes anterior» y con «Desde el 1-sep-2026»", () => {
+  it("atajos: en sep-2026 sin «Mes anterior» y con «Desde el 01/09/2026»", () => {
     const r = periodosRapidos("2026-09-20", INICIO);
-    expect(r.map((p) => p.etiqueta)).toEqual(["Este mes", "Desde el 1-sep-2026"]);
+    expect(r.map((p) => p.etiqueta)).toEqual(["Este mes", "Desde el 01/09/2026"]);
     expect(r[1]).toMatchObject({ desde: INICIO, hasta: "2026-09-20" });
     expect(periodosRapidos("2026-09-20", null)).toEqual(periodosRapidos("2026-09-20"));
     expect(periodosRapidos("2026-09-20").map((p) => p.etiqueta)).toEqual([
@@ -124,7 +124,7 @@ describe("Conciliación: rango, «sin banco» y atajos", () => {
     expect(rangoParaSinBanco({}, INICIO)).toEqual({});
   });
 
-  it("texto de la ventana «sin banco»: «desde el 01 sep 2026» mientras hoy − 90 caiga antes", () => {
+  it("texto de la ventana «sin banco»: «desde el 01/09/2026» mientras hoy − 90 caiga antes", () => {
     expect(textoVentanaSinBanco({}, INICIO, HOY)).toBe(`desde el ${fmtDateOnly(INICIO)}`);
     expect(textoVentanaSinBanco({}, INICIO, "2027-01-15")).toBe("últimos 90 días");
     expect(textoVentanaSinBanco({}, null, HOY)).toBe("últimos 90 días");
@@ -136,17 +136,17 @@ describe("Conciliación: rango, «sin banco» y atajos", () => {
   it("atajos: sep-2026 sin «Mes anterior»; null ⇒ los de siempre", () => {
     expect(periodosRapidosConciliacion("2026-09-20", INICIO).map((p) => p.etiqueta)).toEqual([
       "Este mes",
-      "Desde el 1-sep-2026",
+      "Desde el 01/09/2026",
     ]);
     expect(periodosRapidosConciliacion("2026-09-20", null)).toEqual(periodosRapidosConciliacion("2026-09-20"));
   });
 });
 
 describe("Cotizaciones: rango, encabezado, nota y atajos", () => {
-  it("sin rango: «desde el 1-sep-2026» en lugar de «(todas las fechas)»", () => {
-    expect(textoEncabezadoCotizaciones(12, {}, INICIO)).toBe("12 cotizaciones (desde el 1-sep-2026).");
+  it("sin rango: «desde el 01/09/2026» en lugar de «(todas las fechas)»", () => {
+    expect(textoEncabezadoCotizaciones(12, {}, INICIO)).toBe("12 cotizaciones (desde el 01/09/2026).");
     expect(textoEncabezadoCotizaciones(12, {}, null)).toBe("12 cotizaciones (todas las fechas).");
-    expect(notaRangoCotizaciones({}, { inicio: INICIO })).toContain("se muestran las cotizaciones desde el 1-sep-2026");
+    expect(notaRangoCotizaciones({}, { inicio: INICIO })).toContain("se muestran las cotizaciones desde el 01/09/2026");
     expect(notaRangoCotizaciones({}, { inicio: null })).toBe(notaRangoCotizaciones({}));
   });
 
@@ -200,7 +200,7 @@ describe("Facturas emitidas: filtros de la URL", () => {
   });
 });
 
-describe("Caja chica: historial desde el inicio y «Saldo inicial al 1-sep-2026»", () => {
+describe("Caja chica: historial desde el inicio y «Saldo inicial al 01/09/2026»", () => {
   // Libro como lo manda el API: del más reciente al más viejo (`.reverse()`).
   const historial = [
     { id: "c", fecha: "2026-09-10", saldo: 700, por_reponer: 300 },
@@ -246,7 +246,7 @@ describe("Caja chica: historial desde el inicio y «Saldo inicial al 1-sep-2026�
   });
 
   it("«Limpiar» vuelve a desde el inicio, no al libro completo", () => {
-    expect(tituloLimpiarPeriodo(INICIO)).toBe("Quitar el filtro de fechas y ver desde el 1-sep-2026");
+    expect(tituloLimpiarPeriodo(INICIO)).toBe("Quitar el filtro de fechas y ver desde el 01/09/2026");
     expect(tituloLimpiarPeriodo(null)).toBe(TITULO_LIMPIAR_PERIODO);
   });
 });

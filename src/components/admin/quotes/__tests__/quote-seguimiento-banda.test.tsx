@@ -46,8 +46,8 @@ describe("el banner APARECE con pendientes que afectan la cotización", () => {
     expect(html).toContain("2 ajustes pendientes por reflejar en esta cotización");
     expect(html).toContain("Los pax pidieron transporte terrestre");
     expect(html).toContain("Catering extra para 4 pax.");
-    expect(html).toMatch(/Itzi · 29 sept?\.? 2026/);
-    expect(html).toMatch(/Alguien · 29 sept?\.? 2026/);
+    expect(html).toContain("Itzi · 29/09/2026");
+    expect(html).toContain("Alguien · 29/09/2026");
   });
 
   it("es ámbar, es un aviso (role=status) y NO es plegable ni ocultable", () => {

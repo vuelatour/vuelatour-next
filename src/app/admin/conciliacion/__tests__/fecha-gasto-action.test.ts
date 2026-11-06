@@ -62,7 +62,7 @@ describe("corregirFechaGastoAction", () => {
     const casos: [string, string, string][] = [
       ["", "2026-10-10", MSG_FECHA_INCOMPLETA],
       ["2026-02-30", "2026-10-10", MSG_FECHA_INCOMPLETA],
-      ["2026-10-15", "2026-10-10", "La fecha del pago no puede ser posterior a hoy (14 oct 2026)."],
+      ["2026-10-15", "2026-10-10", "La fecha del pago no puede ser posterior a hoy (14/10/2026)."],
       ["2025-10-13", "2026-10-10", MSG_FECHA_MUY_ANTIGUA],
       ["2026-10-10", "2026-10-10", MSG_FECHA_IGUAL],
       ["2026-10-12", "x", MSG_FECHA_INCOMPLETA],

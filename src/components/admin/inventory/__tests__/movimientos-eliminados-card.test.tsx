@@ -39,7 +39,7 @@ describe("MovimientosEliminadosCard", () => {
     );
     expect(t).toContain("Movimientos eliminados (1)");
     expect(t).toContain("SALIDA de 10 cuarto (qt)");
-    expect(t).toContain("29 ago 2026");
+    expect(t).toContain("29/08/2026");
     expect(t).toContain("XA-VGV");
     expect(t).toContain("Diego Ramírez");
     // Hora de Cancún, no UTC: 15:30Z son las 10:30 allá.

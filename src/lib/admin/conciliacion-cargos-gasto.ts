@@ -22,7 +22,7 @@
 import type { GastoCreateValues } from "@/app/admin/expenses/schema";
 import { categoriaGastoLabel } from "@/lib/admin/categorias-gasto";
 import { MEDIO_DOMICILIADO } from "@/lib/admin/medios-pago";
-import { fmtDateOnly } from "@/lib/datetime";
+import { fmtDateOnly, MESES_LARGOS_ES } from "@/lib/datetime";
 import type {
   CandidatoGastoPorSuma,
   CargoConCandidatoPropio,
@@ -116,9 +116,8 @@ export const ETIQUETA_LISTA_CARGOS = "Cargos que se vincularán";
 const RE_DIA = /^(\d{4})-(\d{2})-(\d{2})/;
 
 /**
- * Las fechas de los cargos (días de pared): «03 ago 2026» (el mismo día) ·
- * «del 10 al 12 ago 2026» · «del 30 sep al 01 oct 2026» · «del 30 dic 2025 al
- * 02 ene 2026».
+ * Las fechas de los cargos (días de pared), en DD/MM/AAAA: «03/08/2026» (el
+ * mismo día) · «del 10/08/2026 al 12/08/2026».
  */
 export function textoFechasCargos(min: string | null | undefined, max: string | null | undefined): string {
   const a = RE_DIA.exec(String(min ?? ""));
@@ -128,9 +127,7 @@ export function textoFechasCargos(min: string | null | undefined, max: string | 
     return solo ? fmtDateOnly(solo[0]) : "";
   }
   if (a[0] === b[0]) return fmtDateOnly(b[0]);
-  if (a[1] !== b[1]) return `del ${fmtDateOnly(a[0])} al ${fmtDateOnly(b[0])}`;
-  if (a[2] !== b[2]) return `del ${fechaCortaMovimiento(a[0])} al ${fmtDateOnly(b[0])}`;
-  return `del ${a[3]} al ${fmtDateOnly(b[0])}`;
+  return `del ${fmtDateOnly(a[0])} al ${fmtDateOnly(b[0])}`;
 }
 
 /** El alias de una cuenta: el que mandó el API o, si no, el de la página. */
@@ -673,18 +670,19 @@ export function notaPrellenadoSuma(n: number): string {
   return `El alta se abre con la suma, la fecha del último pago, el medio de pago y las leyendas de los cargos; revisa la categoría, el avión o vuelo y el proveedor. Al guardar se registra el gasto y se vinculan los ${n} cargos en un solo paso: si algo falla, no se registra nada.`;
 }
 
-/** «sep» (o «sep 2026» si los años difieren) de un día de pared. */
+/** «septiembre» (o «septiembre 2026» si los años difieren) de un día de pared. */
 function mesDe(m: RegExpExecArray, conAnio: boolean): string {
-  const mes = fechaCortaMovimiento(m[0]).split(" ")[1] ?? "";
+  const mes = MESES_LARGOS_ES[Number(m[2]) - 1] ?? m[2];
   return conAnio ? `${mes} ${m[1]}` : mes;
 }
 
 /**
  * La fecha del gasto quedó en la del ÚLTIMO pago (decisión del 13-oct: la
  * fecha del gasto es la del pago). null el mismo día; «Los cargos son de días
- * distintos (10 y 12 ago): la fecha del gasto quedó en la del último pago (12
- * ago 2026). Cámbiala si la factura dice otra.»; meses distintos: «… (sep y
- * oct): … (01 oct 2026) y el gasto cuenta en ese mes. …».
+ * distintos (10/08/2026 y 12/08/2026): la fecha del gasto quedó en la del
+ * último pago (12/08/2026). Cámbiala si la factura dice otra.»; meses
+ * distintos: «… (septiembre y octubre): … (01/10/2026) y el gasto cuenta en
+ * ese mes. …».
  */
 export function avisoFechasCargos(
   fechaMin: string | null | undefined,
@@ -695,13 +693,13 @@ export function avisoFechasCargos(
   if (!a || !b || a[0] === b[0]) return null;
   const ultimo = fmtDateOnly(b[0]);
   if (a[1] === b[1] && a[2] === b[2]) {
-    return `Los cargos son de días distintos (${a[3]} y ${fechaCortaMovimiento(b[0])}): la fecha del gasto quedó en la del último pago (${ultimo}). Cámbiala si la factura dice otra.`;
+    return `Los cargos son de días distintos (${fmtDateOnly(a[0])} y ${fmtDateOnly(b[0])}): la fecha del gasto quedó en la del último pago (${ultimo}). Cámbiala si la factura dice otra.`;
   }
   const conAnio = a[1] !== b[1];
   return `Los cargos son de meses distintos (${mesDe(a, conAnio)} y ${mesDe(b, conAnio)}): la fecha del gasto quedó en la del último pago (${ultimo}) y el gasto cuenta en ese mes. Cámbiala si la factura dice otra.`;
 }
 
-/** «30-sep» (como las notas del API, sin año); sin fecha legible, nada. */
+/** «30/09/2026» (DD/MM/AAAA, 6-nov-2026); sin fecha legible, nada. */
 function fechaNotaCorta(fecha: string | null | undefined): string {
   return RE_DIA.test(String(fecha ?? "")) ? fechaCortaMovimiento(fecha).replace(" ", "-") : "";
 }

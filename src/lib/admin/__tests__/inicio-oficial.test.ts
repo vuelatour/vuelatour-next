@@ -163,7 +163,7 @@ describe("recortarAtajos", () => {
   it("en sep-2026 quita «Mes pasado» (agosto entero) y renombra la ventana de 90 días", () => {
     const r = recortarAtajos(atajos("2026-09-12"), INICIO, (a) => a.clave === "90");
     expect(r.map((a) => a.clave)).toEqual(["mes", "90"]);
-    expect(r[1]).toEqual({ clave: "90", etiqueta: "Desde el 1-sep-2026", desde: INICIO, hasta: "2026-09-12" });
+    expect(r[1]).toEqual({ clave: "90", etiqueta: "Desde el 01/09/2026", desde: INICIO, hasta: "2026-09-12" });
   });
 
   it("con null ⇒ la MISMA lista", () => {
@@ -215,29 +215,29 @@ describe("calendario: días anteriores en gris y sin eventos", () => {
 
 describe("textos exactos (es-MX)", () => {
   it("fecha corta", () => {
-    expect(fechaInicioCorta("2026-09-01")).toBe("1-sep-2026");
-    expect(fechaInicioCorta("2027-01-15")).toBe("15-ene-2027");
+    expect(fechaInicioCorta("2026-09-01")).toBe("01/09/2026");
+    expect(fechaInicioCorta("2027-01-15")).toBe("15/01/2027");
   });
 
   it("chip, franja, aviso de ajuste y de captura", () => {
-    expect(textoChipAntesDelInicio(INICIO)).toBe("De antes del inicio oficial (1-sep-2026)");
+    expect(textoChipAntesDelInicio(INICIO)).toBe("De antes del inicio oficial (01/09/2026)");
     expect(textoFranjaAntesDelInicio(INICIO)).toBe(
-      "Este registro es de antes del inicio oficial (1-sep-2026). Se conserva solo para consulta: no aparece en listados ni reportes.",
+      "Este registro es de antes del inicio oficial (01/09/2026). Se conserva solo para consulta: no aparece en listados ni reportes.",
     );
     expect(textoAvisoAjuste(INICIO)).toBe(
-      "El sistema arranca el 1-sep-2026; ajustamos el periodo a partir de esa fecha.",
+      "El sistema arranca el 01/09/2026; ajustamos el periodo a partir de esa fecha.",
     );
     expect(textoAvisoCaptura(INICIO)).toBe(
-      "La fecha es anterior al inicio oficial (1-sep-2026): se guardará, pero no aparecerá en listados ni reportes.",
+      "La fecha es anterior al inicio oficial (01/09/2026): se guardará, pero no aparecerá en listados ni reportes.",
     );
   });
 
   it("atajo, «todas las fechas», flecha, saldo inicial y finanzas del avión", () => {
-    expect(etiquetaDesdeInicio(INICIO)).toBe("Desde el 1-sep-2026");
-    expect(textoDesdeInicio(INICIO)).toBe("desde el 1-sep-2026");
+    expect(etiquetaDesdeInicio(INICIO)).toBe("Desde el 01/09/2026");
+    expect(textoDesdeInicio(INICIO)).toBe("desde el 01/09/2026");
     expect(textoArrancaEnMes(INICIO)).toBe("El sistema arranca en septiembre de 2026");
-    expect(textoSaldoInicial(INICIO)).toBe("Saldo inicial al 1-sep-2026");
-    expect(rotuloAcumuladoFinanzas(INICIO)).toBe("desde el 1-sep-2026");
+    expect(textoSaldoInicial(INICIO)).toBe("Saldo inicial al 01/09/2026");
+    expect(rotuloAcumuladoFinanzas(INICIO)).toBe("desde el 01/09/2026");
     expect(rotuloAcumuladoFinanzas(undefined)).toBe("acumulado");
     expect(rotuloAcumuladoFinanzas(null)).toBe("acumulado");
   });

@@ -86,7 +86,7 @@ function mov(p: Partial<CajaMovimiento>): CajaMovimiento {
 function filaEspejo(repuestoA: MovimientoFondoRow["repuestoA"]): MovimientoFondoRow {
   return {
     key: "caja-espejo",
-    fechaFmt: "15 oct 2026",
+    fechaFmt: "15/10/2026",
     tipoLabel: "Reintegro a dirección",
     esGasto: false,
     descripcion: NOTA_ESPEJO,

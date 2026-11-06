@@ -317,15 +317,15 @@ describe("solicitud de factura: textos (hora Cancún)", () => {
   };
 
   it("chip ámbar y línea gris", () => {
-    expect(fechaCortaCancun(s.solicitada_at)).toBe("24 sep");
-    expect(textoSolicitud(s)).toBe("Factura pedida por Itzi · 24 sep — pendiente");
-    expect(textoPedidaPor(s)).toBe("Pedida por Itzi · 24 sep");
+    expect(fechaCortaCancun(s.solicitada_at)).toBe("24/09/2026");
+    expect(textoSolicitud(s)).toBe("Factura pedida por Itzi · 24/09/2026 — pendiente");
+    expect(textoPedidaPor(s)).toBe("Pedida por Itzi · 24/09/2026");
   });
 
   it("sin nombre (usuario borrado) no se inventa nadie", () => {
     const sin = { ...s, solicitada_por: null };
-    expect(textoSolicitud(sin)).toBe("Factura pedida · 24 sep — pendiente");
-    expect(textoPedidaPor(sin)).toBe("Pedida · 24 sep");
+    expect(textoSolicitud(sin)).toBe("Factura pedida · 24/09/2026 — pendiente");
+    expect(textoPedidaPor(sin)).toBe("Pedida · 24/09/2026");
   });
 
   it("a quién se avisó (nunca en silencio)", () => {
@@ -344,10 +344,10 @@ describe("solicitud de factura: textos (hora Cancún)", () => {
 
   it("marcada «Facturado» a mano sin factura registrada (caso #376): chip gris", () => {
     expect(textoSolicitudMarcada(s)).toBe(
-      "Factura pedida por Itzi · 24 sep — marcada «Facturado» en el vuelo, sin factura registrada",
+      "Factura pedida por Itzi · 24/09/2026 — marcada «Facturado» en el vuelo, sin factura registrada",
     );
     expect(textoSolicitudMarcada({ ...s, solicitada_por: null })).toBe(
-      "Factura pedida · 24 sep — marcada «Facturado» en el vuelo, sin factura registrada",
+      "Factura pedida · 24/09/2026 — marcada «Facturado» en el vuelo, sin factura registrada",
     );
     expect(AYUDA_SOLICITUD_MARCADA).toBe(
       "En el vuelo lo marcaron «Facturado» a mano; regístrala aquí para que quede en el registro.",
@@ -832,13 +832,13 @@ describe("solicitud automática que YA NO APLICA: textos exactos", () => {
 
   it("chip gris de la burbuja (quién y cuándo en hora Cancún; sin nombre no se inventa nadie)", () => {
     expect(textoSolicitudYaNoAplica(s)).toBe(
-      "Factura pedida por Itzi · 5 oct — ya no aplica: el vuelo ya no exige factura",
+      "Factura pedida por Itzi · 05/10/2026 — ya no aplica: el vuelo ya no exige factura",
     );
     expect(textoSolicitudYaNoAplica({ ...s, solicitada_por: null })).toBe(
-      "Factura pedida · 5 oct — ya no aplica: el vuelo ya no exige factura",
+      "Factura pedida · 05/10/2026 — ya no aplica: el vuelo ya no exige factura",
     );
     expect(textoSolicitudYaNoAplica({ ...s, solicitada_por: { id: "u", nombre: "  " } })).toBe(
-      "Factura pedida · 5 oct — ya no aplica: el vuelo ya no exige factura",
+      "Factura pedida · 05/10/2026 — ya no aplica: el vuelo ya no exige factura",
     );
   });
 
@@ -879,8 +879,8 @@ describe("Parte B: «el cliente ya tiene registrada la factura A-0440»", () => 
   };
 
   it("fecha de pared sin corrimiento y folios en es-MX", () => {
-    expect(fechaCortaDeDia("2026-10-08")).toBe("8 oct");
-    expect(fechaCortaDeDia("2026-10-01")).toBe("1 oct");
+    expect(fechaCortaDeDia("2026-10-08")).toBe("08/10/2026");
+    expect(fechaCortaDeDia("2026-10-01")).toBe("01/10/2026");
     expect(fechaCortaDeDia("nada")).toBe("");
     expect(fechaCortaDeDia(null)).toBe("");
     expect(textoFoliosVuelos([375])).toBe("vuelo #375");
@@ -892,10 +892,10 @@ describe("Parte B: «el cliente ya tiene registrada la factura A-0440»", () => 
 
   it("la línea de la fila (1 y 2 vuelos, MXN y USD, sin vuelo)", () => {
     expect(textoFacturaDelCliente(A0440)).toBe(
-      "El cliente ya tiene registrada la factura A-0440 (8 oct · $31,435.91 MXN · vuelo #375). Si también cubre este vuelo, lígala.",
+      "El cliente ya tiene registrada la factura A-0440 (08/10/2026 · $31,435.91 MXN · vuelo #375). Si también cubre este vuelo, lígala.",
     );
     expect(textoFacturaDelCliente({ ...A0440, vuelo_folios: [375, 377], moneda: "USD", total: 1809.02 })).toBe(
-      "El cliente ya tiene registrada la factura A-0440 (8 oct · $1,809.02 USD · vuelos #375 y #377). Si también cubre este vuelo, lígala.",
+      "El cliente ya tiene registrada la factura A-0440 (08/10/2026 · $1,809.02 USD · vuelos #375 y #377). Si también cubre este vuelo, lígala.",
     );
     expect(textoFacturaDelCliente({ ...A0440, vuelo_ids: [], vuelo_folios: [] })).toContain("· sin vuelo)");
   });

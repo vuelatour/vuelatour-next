@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { RutaSugerida } from "@/app/admin/quotes/actions";
 import { QuotePlegable } from "./quote-plegable";
 import type { RouteOption } from "./quote-form-types";
+import { fmtDate } from "@/lib/datetime";
 
 /** "CUN → HOL → CUN" de una ruta del catálogo (mismo texto del selector). */
 export function rutaPathTexto(r: RouteOption): string {
@@ -93,7 +94,7 @@ export function QuotePlantillaRuta({
                     onClick={() => onAplicarSugerencia(s)}
                     title={
                       s.ultima_fecha
-                        ? `Última vez: ${new Date(s.ultima_fecha).toLocaleDateString("es-MX", { dateStyle: "medium" })}`
+                        ? `Última vez: ${fmtDate(s.ultima_fecha)}`
                         : undefined
                     }
                     className={cn(

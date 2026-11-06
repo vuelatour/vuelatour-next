@@ -344,17 +344,17 @@ describe("textos exactos", () => {
   it("aria-label único de la casilla", () => {
     const m = mov({ fecha: "2026-08-03", monto: "280.00", descripcion: "REST  EL TACO LOCO " });
     expect(etiquetaCasillaMovimiento(m, "GASTOS GNRAL", "lista", "MXN")).toBe(
-      "Seleccionar el cargo de $280.00 MXN del 03 ago 2026 · REST EL TACO LOCO (GASTOS GNRAL)",
+      "Seleccionar el cargo de $280.00 MXN del 03/08/2026 · REST EL TACO LOCO (GASTOS GNRAL)",
     );
     expect(etiquetaCasillaMovimiento({ ...m, tipo: "ABONO" }, "GASTOS GNRAL", "lista", "MXN")).toBe(
-      "Seleccionar el abono de $280.00 MXN del 03 ago 2026 · REST EL TACO LOCO (GASTOS GNRAL)",
+      "Seleccionar el abono de $280.00 MXN del 03/08/2026 · REST EL TACO LOCO (GASTOS GNRAL)",
     );
     expect(etiquetaCasillaMovimiento(m, "GASTOS GNRAL", "omitidos", "MXN")).toBe(
-      "Seleccionar el cargo omitido de $280.00 MXN del 03 ago 2026 · REST EL TACO LOCO (GASTOS GNRAL)",
+      "Seleccionar el cargo omitido de $280.00 MXN del 03/08/2026 · REST EL TACO LOCO (GASTOS GNRAL)",
     );
     // Sin moneda ni alias: esas partes no se dicen.
     expect(etiquetaCasillaMovimiento(m, null, "lista")).toBe(
-      "Seleccionar el cargo de $280.00 del 03 ago 2026 · REST EL TACO LOCO",
+      "Seleccionar el cargo de $280.00 del 03/08/2026 · REST EL TACO LOCO",
     );
   });
 

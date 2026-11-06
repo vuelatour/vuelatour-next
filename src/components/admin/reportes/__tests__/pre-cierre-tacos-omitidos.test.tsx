@@ -60,7 +60,7 @@ const pintar = async () => renderToStaticMarkup(await PreCierreCard(PERIODO));
 beforeEach(() => preCierre.mockReset());
 
 describe("pre-cierre: renglón «Tacómetros omitidos»", () => {
-  it("informativo (azul), con el chip del vuelo y la línea «Omitido por Itzi (15 oct, 10:40 a.m.): Falló el tacómetro»; sin «Resolver →»", async () => {
+  it("informativo (azul), con el chip del vuelo y la línea «Omitido por Itzi (15/10/2026, 10:40 a.m.): Falló el tacómetro»; sin «Resolver →»", async () => {
     preCierre.mockResolvedValueOnce({ periodo: PERIODO, listo: true, items: [item()] });
     const html = await pintar();
     expect(html).toContain("Todo en orden");
@@ -73,7 +73,7 @@ describe("pre-cierre: renglón «Tacómetros omitidos»", () => {
     expect(tramos).toContain(`href="/admin/flights/${V300}"`);
     expect(tramos).toContain("cursor-pointer");
     expect(tramos).toContain(
-      "T1 CET → CUN · 12 sep, 03:00 p.m. · Juan Pérez · Omitido por Itzi (15 oct, 10:40 a.m.): Falló el tacómetro",
+      "T1 CET → CUN · 12/09/2026, 03:00 p.m. · Juan Pérez · Omitido por Itzi (15/10/2026, 10:40 a.m.): Falló el tacómetro",
     );
     // Nada que resolver: ni «Resolver →» ni foco del pre-cierre.
     expect(html).not.toContain("Resolver →");

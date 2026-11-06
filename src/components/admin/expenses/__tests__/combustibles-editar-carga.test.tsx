@@ -237,8 +237,8 @@ describe("tabla de cargas: un menú ⋯ por carga", () => {
     const t = renderToStaticMarkup(
       <FuelLoadsTable loads={[fila(movida), fila(alDia)]} aircraft={[]} aircraftMenu={[]} providers={[]} />,
     );
-    expect(t).toContain("30 sep 2026");
-    expect(t.match(/1 oct, 02:20 p\.\s?m\.|1 oct, 14:20/g)).toHaveLength(1);
+    expect(t).toContain("30/09/2026");
+    expect(t.match(/01\/10\/2026, 02:20 p\.\s?m\.|01\/10\/2026, 14:20/g)).toHaveLength(1);
   });
 
   it("la columna del menú es la ÚLTIMA y los subtotales siguen alineados", () => {

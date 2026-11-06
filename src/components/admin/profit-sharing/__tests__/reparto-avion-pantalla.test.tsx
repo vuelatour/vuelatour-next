@@ -189,7 +189,7 @@ describe("la card resumida del reparto", () => {
       />,
     );
     expect(cerrado).toContain('data-estado-cierre="cerrado"');
-    expect(cerrado).toContain("Cerrado el 16-oct-2026 por Ale");
+    expect(cerrado).toContain("Cerrado el 16/10/2026 por Ale");
     expect(cerrado).toContain('data-no-coincide-snapshot="N621TX"');
     expect(cerrado).toContain(">No coincide con el cierre<");
     const abierto = renderToStaticMarkup(

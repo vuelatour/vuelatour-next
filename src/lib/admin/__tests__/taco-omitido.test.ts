@@ -111,7 +111,7 @@ describe("textos congelados", () => {
 
   it("textoOmitidoPor en hora Cancún; sin nombre dice «oficina»", () => {
     expect(textoOmitidoPor({ nombre: "Itzi", at: AT, motivo: "Falló el tacómetro" })).toBe(
-      "Omitido por Itzi · 15 oct 2026, 10:40 a.m. · Falló el tacómetro",
+      "Omitido por Itzi · 15/10/2026, 10:40 a.m. · Falló el tacómetro",
     );
     expect(textoOmitidoPor({ nombre: "  ", at: null, motivo: null })).toBe("Omitido por oficina");
   });
@@ -171,7 +171,7 @@ describe("textos congelados", () => {
         omitido_at: AT,
         motivo: "Falló el tacómetro",
       }),
-    ).toBe("Omitido por Itzi (15 oct, 10:40 a.m.): Falló el tacómetro");
+    ).toBe("Omitido por Itzi (15/10/2026, 10:40 a.m.): Falló el tacómetro");
     expect(motivoTramoOmitidoPreCierre({})).toBe("Omitido por oficina: sin motivo");
   });
 });
@@ -184,8 +184,8 @@ describe("tituloBadgeOmitido", () => {
       { orden: 2, origen_iata: "X", destino_iata: "Y", cancelada_at: AT },
     ]);
     expect(t).toBe(
-      "T1 CET → PTU: Omitido por Itzi · 15 oct 2026, 10:40 a.m. · Falló el tacómetro\n" +
-        "T2 PTU → CUN: Omitido por Itzi · 15 oct 2026, 10:40 a.m. · No se tomó la foto",
+      "T1 CET → PTU: Omitido por Itzi · 15/10/2026, 10:40 a.m. · Falló el tacómetro\n" +
+        "T2 PTU → CUN: Omitido por Itzi · 15/10/2026, 10:40 a.m. · No se tomó la foto",
     );
   });
 });

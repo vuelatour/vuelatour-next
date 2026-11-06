@@ -177,11 +177,11 @@ describe("EscalasCard: tramo con tacómetro omitido", () => {
   it("pinta el badge (con el motivo en el title), la línea «Omitido por …» y la nota", () => {
     expect(html).toContain(">Tacómetro omitido<");
     expect(html).toContain(
-      `title="${esc("Omitido por Itzi · 15 oct 2026, 10:40 a.m. · Falló el tacómetro")}"`,
+      `title="${esc("Omitido por Itzi · 15/10/2026, 10:40 a.m. · Falló el tacómetro")}"`,
     );
     expect(html).toContain(
       esc(
-        "Omitido por Itzi · 15 oct 2026, 10:40 a.m. · Falló el tacómetro. No pide lectura y aporta 0 h. Si al final hay lectura, captúrala con «Corregir» y la omisión se retira sola.",
+        "Omitido por Itzi · 15/10/2026, 10:40 a.m. · Falló el tacómetro. No pide lectura y aporta 0 h. Si al final hay lectura, captúrala con «Corregir» y la omisión se retira sola.",
       ),
     );
     expect(html).toContain("border-slate-400/50");

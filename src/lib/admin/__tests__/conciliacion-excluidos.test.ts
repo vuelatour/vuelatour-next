@@ -77,7 +77,7 @@ describe("caso real: cargo de $212.00 del 07-sep y tres gastos en EFECTIVO", () 
     expect(avisos).toHaveLength(1);
     expect(avisos[0].motivo).toBe("EFECTIVO_U_OTRO_MEDIO");
     expect(avisos[0].texto).toBe(
-      `Hay 3 gastos de $212.00 en efectivo (24, 27 y 28 sep · vuelos #338 y #330): ${SOLO_BANCO}. ${SALIDA_VARIOS}`,
+      `Hay 3 gastos de $212.00 en efectivo (24/09/2026, 27/09/2026 y 28/09/2026 · vuelos #338 y #330): ${SOLO_BANCO}. ${SALIDA_VARIOS}`,
     );
     // «Mostrar estos gastos»: los 3 caen en ±30 días del cargo (07-sep) y se buscan por su monto.
     expect(avisos[0].mostrar).toEqual({ dias: 30, monto: 212 });
@@ -87,7 +87,7 @@ describe("caso real: cargo de $212.00 del 07-sep y tres gastos en EFECTIVO", () 
     const [aviso] = textoExcluidosCandidatos([EFECTIVO_REAL], CARGO.monto, { ...CTX, incluyeNoBancarios: true });
     expect(aviso.mostrar).toBeNull();
     expect(aviso.texto).toBe(
-      "Hay 3 gastos de $212.00 en efectivo (24, 27 y 28 sep · vuelos #338 y #330) que no entran ni con los gastos en efectivo incluidos: pueden estar ya conciliados, en otra moneda o fuera de ±30 días del cargo.",
+      "Hay 3 gastos de $212.00 en efectivo (24/09/2026, 27/09/2026 y 28/09/2026 · vuelos #338 y #330) que no entran ni con los gastos en efectivo incluidos: pueden estar ya conciliados, en otra moneda o fuera de ±30 días del cargo.",
     );
     expect(
       textoExcluidosCandidatos([{ ...EFECTIVO_REAL, n: 1, gastos: [T28] }], CARGO.monto, {
@@ -95,7 +95,7 @@ describe("caso real: cargo de $212.00 del 07-sep y tres gastos en EFECTIVO", () 
         incluyeNoBancarios: true,
       })[0].texto,
     ).toBe(
-      "Hay 1 gasto de $212.00 en efectivo (28 sep · vuelo #330) que no entra ni con los gastos en efectivo incluidos: puede estar ya conciliado, en otra moneda o fuera de ±30 días del cargo.",
+      "Hay 1 gasto de $212.00 en efectivo (28/09/2026 · vuelo #330) que no entra ni con los gastos en efectivo incluidos: puede estar ya conciliado, en otra moneda o fuera de ±30 días del cargo.",
     );
   });
 
@@ -117,19 +117,19 @@ describe("caso real: cargo de $212.00 del 07-sep y tres gastos en EFECTIVO", () 
     expect(aviso.ligas).toEqual([
       {
         key: G24,
-        texto: "vuelo #338 (24 sep)",
+        texto: "vuelo #338 (24/09/2026)",
         href: `/admin/flights/${V338}`,
         titulo: "Taxi / estacionamiento · $212.00 · Efectivo. Abre el vuelo #338 en otra pestaña.",
       },
       {
         key: G27,
-        texto: "vuelo #330 (27 sep)",
+        texto: "vuelo #330 (27/09/2026)",
         href: `/admin/flights/${V330}`,
         titulo: "Taxi / estacionamiento · $212.00 · Efectivo. Abre el vuelo #330 en otra pestaña.",
       },
       {
         key: G28,
-        texto: "vuelo #330 (28 sep)",
+        texto: "vuelo #330 (28/09/2026)",
         href: `/admin/flights/${V330}`,
         titulo: "Taxi / estacionamiento · $212.00 · Efectivo. Abre el vuelo #330 en otra pestaña.",
       },
@@ -142,7 +142,7 @@ describe("caso real: cargo de $212.00 del 07-sep y tres gastos en EFECTIVO", () 
       CARGO.monto,
       CTX,
     );
-    expect(aviso.texto).toContain("(24, 27 y 28 sep · vuelos #338 y #330)");
+    expect(aviso.texto).toContain("(24/09/2026, 27/09/2026 y 28/09/2026 · vuelos #338 y #330)");
     expect(aviso.ligas.map((l) => l.key)).toEqual([G24, G27, G28]);
   });
 
@@ -153,13 +153,13 @@ describe("caso real: cargo de $212.00 del 07-sep y tres gastos en EFECTIVO", () 
 
   it("un solo gasto: singular", () => {
     expect(textos([{ motivo: "EFECTIVO_U_OTRO_MEDIO", n: 1, gastos: [T24] }])).toEqual([
-      `Hay 1 gasto de $212.00 en efectivo (24 sep · vuelo #338): ${SOLO_BANCO}. ${SALIDA_UNO}`,
+      `Hay 1 gasto de $212.00 en efectivo (24/09/2026 · vuelo #338): ${SOLO_BANCO}. ${SALIDA_UNO}`,
     ]);
   });
 
   it("`n` mayor que los gastos mandados (el API manda hasta 5): «y N más»", () => {
     expect(textos([{ ...EFECTIVO_REAL, n: 7 }])[0]).toBe(
-      `Hay 7 gastos de $212.00 en efectivo (24, 27 y 28 sep · vuelos #338 y #330, y 4 más): ${SOLO_BANCO}. ${SALIDA_VARIOS}`,
+      `Hay 7 gastos de $212.00 en efectivo (24/09/2026, 27/09/2026 y 28/09/2026 · vuelos #338 y #330, y 4 más): ${SOLO_BANCO}. ${SALIDA_VARIOS}`,
     );
   });
 });
@@ -215,19 +215,19 @@ describe("las ligas: al vuelo o a Gastos de ese día (con el gasto enfocado, 27-
   it("sin `vuelo_id` (el contrato solo promete el folio): Gastos filtrado a ese día y con ?gasto=, y lo dice", () => {
     expect(ligaGastoExcluido(taxi(G24, "2026-09-24", 338, null))).toEqual({
       key: G24,
-      texto: "vuelo #338 (24 sep)",
+      texto: "vuelo #338 (24/09/2026)",
       href: `/admin/expenses?desde=2026-09-24&hasta=2026-09-24&gasto=${G24}`,
       titulo:
-        "Taxi / estacionamiento · $212.00 · Efectivo. Abre Gastos del 24 sep en otra pestaña, con el gasto resaltado.",
+        "Taxi / estacionamiento · $212.00 · Efectivo. Abre Gastos del 24/09/2026 en otra pestaña, con el gasto resaltado.",
     });
   });
 
-  it("gasto sin vuelo: «gasto del 12 jun» ⇒ Gastos de ese día con el gasto enfocado", () => {
+  it("gasto sin vuelo: «gasto del 12/06/2026» ⇒ Gastos de ese día con el gasto enfocado", () => {
     const l = ligaGastoExcluido(taxi(G24, "2026-06-12", null, null, { categoria: "OPERACIONES" }));
-    expect(l.texto).toBe("gasto del 12 jun");
+    expect(l.texto).toBe("gasto del 12/06/2026");
     expect(l.href).toBe(`/admin/expenses?desde=2026-06-12&hasta=2026-06-12&gasto=${G24}`);
     expect(l.titulo).toBe(
-      "Operaciones · $212.00 · Efectivo. Abre Gastos del 12 jun en otra pestaña, con el gasto resaltado.",
+      "Operaciones · $212.00 · Efectivo. Abre Gastos del 12/06/2026 en otra pestaña, con el gasto resaltado.",
     );
   });
 
@@ -240,12 +240,12 @@ describe("las ligas: al vuelo o a Gastos de ese día (con el gasto enfocado, 27-
   it("un id que no es uuid viaja solo con el día (nunca basura en ?gasto=) y no promete resaltado", () => {
     const l = ligaGastoExcluido(taxi("f1", "2026-09-24", 338, null));
     expect(l.href).toBe("/admin/expenses?desde=2026-09-24&hasta=2026-09-24");
-    expect(l.titulo.endsWith("Abre Gastos del 24 sep en otra pestaña.")).toBe(true);
+    expect(l.titulo.endsWith("Abre Gastos del 24/09/2026 en otra pestaña.")).toBe(true);
   });
 
   it("con `vuelo_id` pero sin folio: abre su vuelo", () => {
     const l = ligaGastoExcluido(taxi(G24, "2026-09-24", null, V338));
-    expect(l.texto).toBe("gasto del 24 sep");
+    expect(l.texto).toBe("gasto del 24/09/2026");
     expect(l.href).toBe(`/admin/flights/${V338}`);
     expect(l.titulo).toBe("Taxi / estacionamiento · $212.00 · Efectivo. Abre su vuelo en otra pestaña.");
   });
@@ -270,7 +270,7 @@ describe("las ligas: al vuelo o a Gastos de ese día (con el gasto enfocado, 27-
 describe("EFECTIVO_U_OTRO_MEDIO: el medio va en la frase", () => {
   it("Personal Pablo", () => {
     expect(textos([{ motivo: "EFECTIVO_U_OTRO_MEDIO", n: 1, gastos: [{ ...T24, medio_pago: "PERSONAL_PABLO" }] }])).toEqual([
-      `Hay 1 gasto de $212.00 pagado con Personal Pablo (24 sep · vuelo #338): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_UNO}`,
+      `Hay 1 gasto de $212.00 pagado con Personal Pablo (24/09/2026 · vuelo #338): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_UNO}`,
     ]);
   });
 
@@ -278,7 +278,7 @@ describe("EFECTIVO_U_OTRO_MEDIO: el medio va en la frase", () => {
     expect(
       textos([{ motivo: "EFECTIVO_U_OTRO_MEDIO", n: 2, gastos: [T24, { ...T27, medio_pago: "PERSONAL_ALE" }] }]),
     ).toEqual([
-      `Hay 2 gastos de $212.00 pagados con efectivo y Personal Ale (24 y 27 sep · vuelos #338 y #330): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_VARIOS}`,
+      `Hay 2 gastos de $212.00 pagados con efectivo y Personal Ale (24/09/2026 y 27/09/2026 · vuelos #338 y #330): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_VARIOS}`,
     ]);
   });
 
@@ -292,20 +292,20 @@ describe("EFECTIVO_U_OTRO_MEDIO: el medio va en la frase", () => {
     const bodega = (id: string, fecha: string) =>
       ({ id, fecha_gasto: fecha, monto: 212, moneda: "MXN", medio_pago: "BODEGA", categoria: "REFACCION" }) as const;
     expect(textos([{ motivo: "EFECTIVO_U_OTRO_MEDIO", n: 1, gastos: [bodega(G24, "2026-09-15")] }])).toEqual([
-      "Hay 1 gasto de $212.00 con cargo a bodega (15 sep): es una salida de inventario y nunca pasa por el banco, así que no se concilia.",
+      "Hay 1 gasto de $212.00 con cargo a bodega (15/09/2026): es una salida de inventario y nunca pasa por el banco, así que no se concilia.",
     ]);
     const dos = textos([
       { motivo: "EFECTIVO_U_OTRO_MEDIO", n: 2, gastos: [bodega(G24, "2026-09-15"), bodega(G27, "2026-09-16")] },
     ]);
     expect(dos).toEqual([
-      "Hay 2 gastos de $212.00 con cargo a bodega (15 y 16 sep): son salidas de inventario y nunca pasan por el banco, así que no se concilian.",
+      "Hay 2 gastos de $212.00 con cargo a bodega (15/09/2026 y 16/09/2026): son salidas de inventario y nunca pasan por el banco, así que no se concilian.",
     ]);
     expect(dos[0]).not.toContain("corrige");
   });
 
   it("sin `medio_pago`: «otro medio de pago»", () => {
     expect(textos([{ motivo: "EFECTIVO_U_OTRO_MEDIO", n: 1, gastos: [{ ...T24, medio_pago: null }] }])[0]).toBe(
-      `Hay 1 gasto de $212.00 pagado con otro medio de pago (24 sep · vuelo #338): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_UNO}`,
+      `Hay 1 gasto de $212.00 pagado con otro medio de pago (24/09/2026 · vuelo #338): ${SOLO_BANCO} (tarjeta, transferencia, PayWise o pago domiciliado). ${SALIDA_UNO}`,
     );
   });
 });
@@ -329,20 +329,20 @@ describe("YA_CONCILIADO: con qué cargo (`conciliado_con` de la puente)", () => 
   it("con el cargo y su cuenta", () => {
     expect(
       textos([ya([{ ...T24, medio_pago: "TARJETA_CORP", conciliado_con: [cargo("m1", "2026-09-05")] }])]),
-    ).toEqual([`1 gasto de $212.00 (24 sep · vuelo #338) ya está conciliado con el cargo del 5 sep (GASTOS GNRAL). ${UNO}`]);
+    ).toEqual([`1 gasto de $212.00 (24/09/2026 · vuelo #338) ya está conciliado con el cargo del 05/09/2026 (GASTOS GNRAL). ${UNO}`]);
   });
 
   it("sin cuenta (o con cuentas distintas) no se nombra ninguna", () => {
     expect(textos([ya([{ ...T24, conciliado_con: [cargo("m1", "2026-09-05", null)] }])])[0]).toContain(
-      "ya está conciliado con el cargo del 5 sep. ",
+      "ya está conciliado con el cargo del 05/09/2026. ",
     );
     expect(
       textos([ya([{ ...T24, conciliado_con: [cargo("m1", "2026-09-05"), cargo("m2", "2026-09-09", "OTRA")] }])])[0],
-    ).toContain("ya está conciliado con los cargos del 5 y 9 sep. ");
+    ).toContain("ya está conciliado con los cargos del 05/09/2026 y 09/09/2026. ");
   });
 
   it("la puente no se pudo leer (null), sin cargo ([]) o API sin el campo: no se presume con qué", () => {
-    const esperado = `1 gasto de $212.00 (24 sep · vuelo #338) ya está conciliado. ${UNO}`;
+    const esperado = `1 gasto de $212.00 (24/09/2026 · vuelo #338) ya está conciliado. ${UNO}`;
     expect(textos([ya([{ ...T24, conciliado_con: null }])])).toEqual([esperado]);
     expect(textos([ya([{ ...T24, conciliado_con: [] }])])).toEqual([esperado]);
     expect(textos([ya([T24])])).toEqual([esperado]);
@@ -359,7 +359,7 @@ describe("YA_CONCILIADO: con qué cargo (`conciliado_con` de la puente)", () => 
         ]),
       ])[0],
     ).toBe(
-      `2 gastos de $212.00 (24 y 27 sep · vuelos #338 y #330) ya están conciliados con el cargo del 5 sep (GASTOS GNRAL). ${VARIOS}`,
+      `2 gastos de $212.00 (24/09/2026 y 27/09/2026 · vuelos #338 y #330) ya están conciliados con el cargo del 05/09/2026 (GASTOS GNRAL). ${VARIOS}`,
     );
     expect(
       textos([
@@ -369,10 +369,10 @@ describe("YA_CONCILIADO: con qué cargo (`conciliado_con` de la puente)", () => 
         ]),
       ])[0],
     ).toBe(
-      `2 gastos de $212.00 (24 y 27 sep · vuelos #338 y #330) ya están conciliados con los cargos del 5 y 9 sep (GASTOS GNRAL). ${VARIOS}`,
+      `2 gastos de $212.00 (24/09/2026 y 27/09/2026 · vuelos #338 y #330) ya están conciliados con los cargos del 05/09/2026 y 09/09/2026 (GASTOS GNRAL). ${VARIOS}`,
     );
     expect(textos([ya([{ ...T24, conciliado_con: [cargo("m1", "2026-09-05")] }, { ...T27, conciliado_con: null }])])[0]).toBe(
-      `2 gastos de $212.00 (24 y 27 sep · vuelos #338 y #330) ya están conciliados. ${VARIOS}`,
+      `2 gastos de $212.00 (24/09/2026 y 27/09/2026 · vuelos #338 y #330) ya están conciliados. ${VARIOS}`,
     );
     // Hay más de los que llegaron: no se presume con qué cargos están.
     expect(textos([ya([{ ...T24, conciliado_con: [cargo("m1", "2026-09-05")] }], 3)])[0]).toContain(
@@ -383,7 +383,7 @@ describe("YA_CONCILIADO: con qué cargo (`conciliado_con` de la puente)", () => 
   it("un gasto pagado con DOS cargos (pago parcial): «con los cargos»", () => {
     expect(
       textos([ya([{ ...T24, conciliado_con: [cargo("m1", "2026-09-05"), cargo("m2", "2026-09-09")] }])])[0],
-    ).toBe(`1 gasto de $212.00 (24 sep · vuelo #338) ya está conciliado con los cargos del 5 y 9 sep (GASTOS GNRAL). ${UNO}`);
+    ).toBe(`1 gasto de $212.00 (24/09/2026 · vuelo #338) ya está conciliado con los cargos del 05/09/2026 y 09/09/2026 (GASTOS GNRAL). ${UNO}`);
   });
 });
 
@@ -391,14 +391,14 @@ describe("OTRA_MONEDA", () => {
   it("dólares contra una cuenta en pesos (el monto sin sufijo: la moneda va con palabras)", () => {
     const usd = (g: GastoExcluidoCandidato) => ({ ...g, moneda: "USD", medio_pago: "TARJETA_CORP" });
     expect(textos([{ motivo: "OTRA_MONEDA", n: 2, gastos: [usd(T24), usd(T27)] }])).toEqual([
-      "2 gastos de $212.00 están en dólares (24 y 27 sep · vuelos #338 y #330) y la cuenta es en pesos (MXN). Si se capturaron con la moneda equivocada, corrige la moneda del gasto y vuelve a buscar.",
+      "2 gastos de $212.00 están en dólares (24/09/2026 y 27/09/2026 · vuelos #338 y #330) y la cuenta es en pesos (MXN). Si se capturaron con la moneda equivocada, corrige la moneda del gasto y vuelve a buscar.",
     ]);
   });
 
   it("pesos contra una cuenta en dólares; sin la moneda de la cuenta", () => {
     const grupo: ExcluidosCandidatos = { motivo: "OTRA_MONEDA", n: 1, gastos: [{ ...T24, medio_pago: "TRANSFERENCIA" }] };
     expect(textos([grupo], { monedaCuenta: "USD", dias: 30 })[0]).toBe(
-      "1 gasto de $212.00 está en pesos (24 sep · vuelo #338) y la cuenta es en dólares (USD). Si se capturó con la moneda equivocada, corrige la moneda del gasto y vuelve a buscar.",
+      "1 gasto de $212.00 está en pesos (24/09/2026 · vuelo #338) y la cuenta es en dólares (USD). Si se capturó con la moneda equivocada, corrige la moneda del gasto y vuelve a buscar.",
     );
     expect(textos([grupo], { monedaCuenta: null, dias: 30 })[0]).toContain("y la cuenta es de otra moneda.");
   });
@@ -414,16 +414,16 @@ describe("FUERA_DE_VENTANA", () => {
 
   it("±30 días ⇒ «amplía a 120 días»", () => {
     expect(textos([fuera(1, [junio])])).toEqual([
-      "1 gasto de $212.00 (12 jun) cae fuera de ±30 días del cargo: amplía a 120 días.",
+      "1 gasto de $212.00 (12/06/2026) cae fuera de ±30 días del cargo: amplía a 120 días.",
     ]);
     expect(
       textos([fuera(2, [junio, taxi(G27, "2026-06-20", null, null, { medio_pago: "TARJETA_CORP" })])]),
-    ).toEqual(["2 gastos de $212.00 (12 y 20 jun) caen fuera de ±30 días del cargo: amplía a 120 días."]);
+    ).toEqual(["2 gastos de $212.00 (12/06/2026 y 20/06/2026) caen fuera de ±30 días del cargo: amplía a 120 días."]);
   });
 
   it(`ya en ±${VENTANA_AMPLIADA_DIAS} días: no sugiere ampliar`, () => {
     expect(textos([fuera(1, [junio])], { ...CTX, dias: VENTANA_AMPLIADA_DIAS })).toEqual([
-      "1 gasto de $212.00 (12 jun) cae fuera de ±120 días del cargo.",
+      "1 gasto de $212.00 (12/06/2026) cae fuera de ±120 días del cargo.",
     ]);
   });
 
@@ -455,7 +455,7 @@ describe("mezcla de motivos", () => {
       CTX,
     );
     expect(avisos.map((a) => a.motivo)).toEqual([...ORDEN_MOTIVOS_EXCLUIDOS, "MOTIVO_NUEVO_DEL_API"]);
-    expect(avisos[4].texto).toBe("Hay 1 gasto de $212.00 (20 sep · vuelo #331) que no entra en la lista de candidatos.");
+    expect(avisos[4].texto).toBe("Hay 1 gasto de $212.00 (20/09/2026 · vuelo #331) que no entra en la lista de candidatos.");
     for (const a of avisos) expect(a.texto).not.toMatch(/[A-Z]{2,}_[A-Z_]+/);
     expect(avisos.every((a) => a.ligas.length === 1)).toBe(true);
   });
@@ -518,21 +518,21 @@ describe("grupo sin gastos: el monto de la frase", () => {
 });
 
 describe("textoFechasCortas", () => {
-  it("un mes: «24, 27 y 28 sep» (sin repetir, en orden, día sin cero)", () => {
-    expect(textoFechasCortas(["2026-09-24"])).toBe("24 sep");
-    expect(textoFechasCortas(["2026-09-05"])).toBe("5 sep");
-    expect(textoFechasCortas(["2026-09-28", "2026-09-24", "2026-09-27", "2026-09-24"])).toBe("24, 27 y 28 sep");
-    expect(textoFechasCortas(["2026-09-24T15:00:00Z", "2026-09-27"])).toBe("24 y 27 sep");
+  it("un mes: «24/09/2026, 27/09/2026 y 28/09/2026» (sin repetir, en orden)", () => {
+    expect(textoFechasCortas(["2026-09-24"])).toBe("24/09/2026");
+    expect(textoFechasCortas(["2026-09-05"])).toBe("05/09/2026");
+    expect(textoFechasCortas(["2026-09-28", "2026-09-24", "2026-09-27", "2026-09-24"])).toBe("24/09/2026, 27/09/2026 y 28/09/2026");
+    expect(textoFechasCortas(["2026-09-24T15:00:00Z", "2026-09-27"])).toBe("24/09/2026 y 27/09/2026");
   });
 
   it("varios meses: cada fecha con su mes; de un año a otro, con año", () => {
-    expect(textoFechasCortas(["2026-09-05", "2026-08-30", "2026-09-02"])).toBe("30 ago, 2 sep y 5 sep");
-    expect(textoFechasCortas(["2026-01-03", "2025-12-28"])).toBe("28 dic 2025 y 3 ene 2026");
+    expect(textoFechasCortas(["2026-09-05", "2026-08-30", "2026-09-02"])).toBe("30/08/2026, 02/09/2026 y 05/09/2026");
+    expect(textoFechasCortas(["2026-01-03", "2025-12-28"])).toBe("28/12/2025 y 03/01/2026");
   });
 
   it("lo que no es un día real se ignora", () => {
     expect(textoFechasCortas(["2026-13-45", null, undefined, "", "nada"])).toBe("");
-    expect(textoFechasCortas(["2026-02-30", "2026-09-24"])).toBe("24 sep");
+    expect(textoFechasCortas(["2026-02-30", "2026-09-24"])).toBe("24/09/2026");
   });
 });
 

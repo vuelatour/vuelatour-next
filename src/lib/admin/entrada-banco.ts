@@ -85,7 +85,7 @@ export const NOTA_INGRESO_DADO_DE_BAJA = "Este ingreso está dado de baja.";
 export const TITULO_REGISTRO_LIGA_ENTRADA =
   "Quién hizo la liga: a mano, o quien importó el estado de cuenta, pulsó «Cruzar pendientes», concilió en la Auditoría Paywise o registró el ingreso cuando el sistema la cruzó solo.";
 export const TEXTO_LIGA_COBRO_ANTERIOR =
-  "Liga anterior al 12 oct 2026: el sistema todavía no guardaba quién la hizo.";
+  "Liga anterior al 12/10/2026: el sistema todavía no guardaba quién la hizo.";
 export const TEXTO_LIGA_SOBRE_NO_SE_GUARDA = "El sistema no guarda quién liga el abono de un sobre de grupo.";
 export const TEXTO_LIGA_SIN_BITACORA = "No quedó registro de quién hizo esta liga.";
 export const TEXTO_LIGA_NO_LEIDA = "No se pudo leer quién hizo la liga (vuelve a abrir esta ventana).";

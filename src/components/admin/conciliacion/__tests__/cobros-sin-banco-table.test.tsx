@@ -62,7 +62,7 @@ describe("«Cobros sin banco» con el API 0.0.78", () => {
     expect(banco).toBeLessThan(html.indexOf(">Referencia<"));
     expect(html).toContain(">Parcial<");
     expect(html).toContain(
-      `title="${esc("Conciliado $1,700 MXN de $3,400 MXN con 1 abono (15 sep 2026): faltan $1,700 MXN.")}"`,
+      `title="${esc("Conciliado $1,700 MXN de $3,400 MXN con 1 abono (15/09/2026): faltan $1,700 MXN.")}"`,
     );
     expect(html).toContain(`href="/admin/conciliacion?f=conciliados&amp;desde=2026-09-15&amp;hasta=2026-09-15&amp;mov=${MOV_A}"`);
     expect(html).toContain(">Ver abono<");

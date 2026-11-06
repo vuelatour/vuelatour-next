@@ -54,6 +54,13 @@ const control = (html: string, id: string): string => {
   if (!m) throw new Error(`sin control ${id}`);
   return m[0];
 };
+/** El nativo escondido (`type="date"`, valor ISO) que acompaña al campo visible DD/MM/AAAA (6-nov-2026). */
+const nativo = (html: string, id: string): string => {
+  const i = html.indexOf(`id="${id}"`);
+  const m = i >= 0 ? /<input(?=[^>]*type="date")[^>]*>/.exec(html.slice(i)) : null;
+  if (!m) throw new Error(`sin nativo ${id}`);
+  return m[0];
+};
 const valorDe = (html: string, id: string): string => {
   const i = html.indexOf(`id="${id}"`);
   const fin = html.indexOf("</button>", i);
@@ -99,7 +106,10 @@ describe("sin filtros", () => {
     expect(html).toContain('<span id="gasto-filtro-fecha"');
     expect(html).toContain('role="group" aria-labelledby="gasto-filtro-fecha"');
     const desde = control(html, "gasto-filtro-desde");
-    expect(desde).toContain('type="date"');
+    // Se ve y se teclea en DD/MM/AAAA; el nativo (valor ISO) queda detrás del icono del calendario.
+    expect(desde).toContain('type="text"');
+    expect(desde).toContain('placeholder="DD/MM/AAAA"');
+    expect(nativo(html, "gasto-filtro-desde")).toContain('type="date"');
     expect(desde).toContain('aria-label="Fecha del gasto: desde"');
     expect(desde).toContain('title="Fecha del consumo (la del ticket)"');
     expect(desde).toMatch(/class="[^"]*cursor-pointer/);
@@ -154,7 +164,8 @@ describe("con filtros", () => {
     expect(botonCaptura(html, "rango")).toContain('aria-pressed="true"');
     const desde = control(html, "gasto-filtro-cap-desde");
     expect(desde).toContain('aria-label="Fecha de captura: desde"');
-    expect(desde).toContain('value="2026-10-01"');
+    expect(desde).toContain('value="01/10/2026"');
+    expect(nativo(html, "gasto-filtro-cap-desde")).toContain('value="2026-10-01"');
     expect(desde).toContain(CLASE_FILTRO_ACTIVO);
     expect(control(html, "gasto-filtro-cap-hasta")).toContain('aria-label="Fecha de captura: hasta"');
     expect(desde).toContain(
@@ -165,8 +176,10 @@ describe("con filtros", () => {
   it("fecha del gasto de la URL (también un ISO) en los campos, con la marca de activo", () => {
     const html = pintar("desde=2026-10-31&hasta=2026-10-01T00:00:00Z");
     // Invertido se corrige igual que en el servidor.
-    expect(control(html, "gasto-filtro-desde")).toContain('value="2026-10-01"');
-    expect(control(html, "gasto-filtro-hasta")).toContain('value="2026-10-31"');
+    expect(control(html, "gasto-filtro-desde")).toContain('value="01/10/2026"');
+    expect(control(html, "gasto-filtro-hasta")).toContain('value="31/10/2026"');
+    expect(nativo(html, "gasto-filtro-desde")).toContain('value="2026-10-01"');
+    expect(nativo(html, "gasto-filtro-hasta")).toContain('value="2026-10-31"');
     expect(control(html, "gasto-filtro-desde")).toContain(CLASE_FILTRO_ACTIVO);
   });
 

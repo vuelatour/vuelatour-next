@@ -802,14 +802,6 @@ export interface AvisoExcluidos {
   mostrar: { dias: number; monto: number } | null;
 }
 
-const FMT_DIA_MES = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", timeZone: "UTC" });
-const FMT_DIA_MES_ANIO = new Intl.DateTimeFormat("es-MX", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
 /** «a» · «a y b» · «a, b y c». */
 function listaY(items: readonly string[]): string {
   if (items.length <= 1) return items[0] ?? "";
@@ -823,18 +815,13 @@ function diaDe(fecha: string | null | undefined): string {
 }
 
 /**
- * Fechas para una frase: «24, 27 y 28 sep» (un mes), «30 ago, 2 sep y 5 sep»
- * (varios meses) y con año si cruzan de año («28 dic 2025 y 3 ene 2026»). Sin
+ * Fechas para una frase, en DD/MM/AAAA (6-nov-2026): «24/09/2026»,
+ * «24/09/2026 y 27/09/2026», «24/09/2026, 27/09/2026 y 28/09/2026». Sin
  * repetir y en orden; lo que no es un día real se ignora.
  */
 export function textoFechasCortas(fechas: readonly (string | null | undefined)[]): string {
   const dias = [...new Set(fechas.map(diaDe).filter(Boolean))].sort();
-  if (dias.length === 0) return "";
-  const utc = dias.map((d) => new Date(`${d}T12:00:00Z`));
-  if (new Set(dias.map((d) => d.slice(0, 4))).size > 1) return listaY(utc.map((d) => FMT_DIA_MES_ANIO.format(d)));
-  if (new Set(dias.map((d) => d.slice(0, 7))).size > 1) return listaY(utc.map((d) => FMT_DIA_MES.format(d)));
-  const mes = FMT_DIA_MES.formatToParts(utc[0]).find((p) => p.type === "month")?.value ?? "";
-  return `${listaY(utc.map((d) => String(d.getUTCDate())))} ${mes}`.trim();
+  return listaY(dias.map((d) => fmtDateOnly(d)));
 }
 
 function folioDe(g: GastoExcluidoCandidato): number | null {

@@ -96,8 +96,8 @@ describe("la card lee", () => {
     expect(html).toContain("Hernan Garza");
     expect(html).toContain("Alejandro Canales");
     expect(html).toContain("2 propietarios · 200 % asignado");
-    expect(html).toContain("Socio · desde 01 ene 2020");
-    expect(html).toContain("Administración · desde 18 ago 2026");
+    expect(html).toContain("Socio · desde 01/01/2020");
+    expect(html).toContain("Administración · desde 18/08/2026");
     expect(html).toContain(alertaSumaCard(200, 2)!);
     expect(html).toMatch(/role="alert"[^>]*class="[^"]*text-destructive/);
     expect(html).toMatch(new RegExp(`<button[^>]*class="[^"]*cursor-pointer[^"]*"[^>]*>[^<]*<svg[\\s\\S]*?${ETIQUETA_EDITAR_PROPIETARIOS}`));
@@ -118,7 +118,7 @@ describe("la card lee", () => {
   it("los anteriores en un <details> con «Borrar del historial»; sin historial se dice", () => {
     const html = pintar();
     expect(html).toContain(textoAnteriores(1));
-    expect(html).toMatch(/<details[\s\S]*Mauricio Roque[\s\S]*40\.92 % · 01 ene 2024 – 07 jun 2026/);
+    expect(html).toMatch(/<details[\s\S]*Mauricio Roque[\s\S]*40\.92 % · 01\/01\/2024 – 07\/06\/2026/);
     expect(html).toContain(ETIQUETA_BORRAR_HISTORIAL);
     const sin = pintar({ historial: null });
     expect(sin).toContain(TEXTO_HISTORIAL_NO_CARGO);

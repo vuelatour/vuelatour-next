@@ -145,7 +145,7 @@ describe("fila en PESOS: byte a byte como antes", () => {
   it("la celda del gasto es IDÉNTICA a la del 13-oct (antes del T.C. oficial)", () => {
     const html = tabla([filaMxn]);
     expect(html).toContain(
-      '<a class="block text-sm text-emerald-600 hover:underline" title="Ver el gasto con el que se concilió" href="/admin/flights/7d50c91c-0000-4000-8000-000000000321">Operaciones · $2,231.38<span class="text-muted-foreground"> · vuelo #321</span><span class="block text-[10px] text-muted-foreground">21 sep 2026</span></a>',
+      '<a class="block text-sm text-emerald-600 hover:underline" title="Ver el gasto con el que se concilió" href="/admin/flights/7d50c91c-0000-4000-8000-000000000321">Operaciones · $2,231.38<span class="text-muted-foreground"> · vuelo #321</span><span class="block text-[10px] text-muted-foreground">21/09/2026</span></a>',
     );
     expect(html).not.toContain("data-tc-cruce");
     expect(html).not.toContain(" MXN");

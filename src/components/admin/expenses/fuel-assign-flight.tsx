@@ -17,6 +17,7 @@ import {
   assignVueloGastoAction,
   type SugerirVueloResult,
 } from "@/app/admin/expenses/actions";
+import { fmtDateTimeShort } from "@/lib/datetime";
 
 const RAZON_LABEL: Record<string, string> = {
   EN_RUTA: "Carga en ruta de este vuelo",
@@ -137,13 +138,7 @@ export function FuelAssignFlight({
                       )}
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {c.fecha_vuelo
-                        ? new Date(c.fecha_vuelo).toLocaleString("es-MX", {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                            timeZone: "America/Cancun",
-                          })
-                        : "Sin fecha"}
+                      {c.fecha_vuelo ? fmtDateTimeShort(c.fecha_vuelo) : "Sin fecha"}
                       {esSugerido && res.sugerido?.razon
                         ? ` · ${RAZON_LABEL[res.sugerido.razon] ?? res.sugerido.razon}`
                         : ""}

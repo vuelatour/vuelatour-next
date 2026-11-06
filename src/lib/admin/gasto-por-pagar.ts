@@ -21,7 +21,7 @@
  * la confirmación de siempre, sin filtro, sin chip (ninguna llave nueva
  * viaja). PURO: sin React ni red.
  */
-import { todayCancun } from "@/lib/datetime";
+import { fmtDateOnly, todayCancun } from "@/lib/datetime";
 import { fmtMonto } from "@/lib/format";
 import { esDiaValido, esUuid } from "@/lib/admin/url-params";
 import { fechaGastoSospechosa } from "@/lib/admin/fecha-gasto";
@@ -204,24 +204,25 @@ export function porPagarVigente(g: { estado_pago?: unknown } | null | undefined)
   return e !== null && e !== "PAGADO";
 }
 
-const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] as const;
-
-/** «20 oct» de un día de pared («YYYY-MM-DD»); ilegible ⇒ null. */
+/**
+ * «20/10/2026» de un día de pared («YYYY-MM-DD»); ilegible ⇒ null. Desde el
+ * 6-nov-2026 (fechas DD/MM/AAAA en todos lados) el chip lleva el año: ya no
+ * existe la forma corta «20 oct».
+ */
 export function diaMesCorto(fecha: string | null | undefined): string | null {
   const f = (fecha ?? "").slice(0, 10);
   if (!esDiaValido(f)) return null;
-  return `${Number(f.slice(8, 10))} ${MESES_CORTOS[Number(f.slice(5, 7)) - 1]}`;
+  return fmtDateOnly(f);
 }
 
-/** «20 oct 2026» (para títulos y textos largos). */
+/** La misma fecha para títulos y textos largos (antes «20 oct 2026»). */
 function diaMesAnio(fecha: string | null | undefined): string | null {
-  const corto = diaMesCorto(fecha);
-  return corto ? `${corto} ${(fecha ?? "").slice(0, 4)}` : null;
+  return diaMesCorto(fecha);
 }
 
 export interface ChipEstadoPago {
   estado: Exclude<EstadoPago, "PAGADO">;
-  /** «Por pagar · 20 oct» / «Vencido · 20 oct». */
+  /** «Por pagar · 20/10/2026» / «Vencido · 20/10/2026». */
   texto: string;
   tono: "ambar" | "rojo";
   /** Qué significa y qué hacer. */
@@ -282,7 +283,7 @@ export interface GastoPorPagar {
   estado_pago?: unknown;
 }
 
-/** «Taxi / estacionamiento · $500 MXN · por pagar el 20 oct 2026» / «… · vencido desde el 15 oct 2026» (descripción del diálogo). */
+/** «Taxi / estacionamiento · $500 MXN · por pagar el 20/10/2026» / «… · vencido desde el 15/10/2026» (descripción del diálogo). */
 export function resumenGastoPorPagar(g: GastoPorPagar): string {
   const partes: string[] = [];
   if (g.categoria) partes.push(categoriaGastoLabel(g.categoria));
@@ -327,7 +328,7 @@ export function validarMarcarPagado(
   return errorFechaPago(typeof input?.fecha_gasto === "string" ? input.fecha_gasto : null, hoy);
 }
 
-/** Toast del éxito: «Gasto marcado pagado · 19 oct 2026». */
+/** Toast del éxito: «Gasto marcado pagado · 19/10/2026». */
 export function toastMarcadoPagado(fecha: string): string {
   const largo = diaMesAnio(fecha);
   return largo ? `Gasto marcado pagado · ${largo}` : "Gasto marcado pagado";

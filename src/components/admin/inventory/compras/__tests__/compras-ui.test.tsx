@@ -201,7 +201,7 @@ describe("la lista: qué le falta a cada compra", () => {
     );
     expect(html).toContain('data-recepcion="PEDIDA"');
     expect(html).toContain('data-recepcion="RECIBIDA"');
-    expect(html).toContain("Recibida en bodega · 12 oct 2026");
+    expect(html).toContain("Recibida en bodega · 12/10/2026");
     expect(html).toContain('data-gasto="SIN_GASTO"');
     expect(html).toContain(ETIQUETA_SIN_GASTO);
     expect(html).toContain(`Gasto registrado · ${fmtMontoMoneda(722.9, "USD")}`);

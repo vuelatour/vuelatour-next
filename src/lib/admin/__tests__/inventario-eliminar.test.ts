@@ -38,7 +38,7 @@ const salida10: EliminacionMovimientoPreview = {
   permitido: true,
   codigo_bloqueo: null,
   mensaje:
-    "Se puede eliminar la SALIDA de 10 del 29 ago 2026 a XA-VGV: la existencia pasa de 111 a 121 y ninguna otra salida cambia de costo.",
+    "Se puede eliminar la SALIDA de 10 del 29/08/2026 a XA-VGV: la existencia pasa de 111 a 121 y ninguna otra salida cambia de costo.",
   stock_antes: 111,
   stock_despues: 121,
   movimiento: { tipo: "SALIDA", cantidad: 10, fecha: "2026-08-29", aeronave: "XA-VGV" },
@@ -59,7 +59,7 @@ const salida10: EliminacionMovimientoPreview = {
 const entrada1: EliminacionMovimientoPreview = {
   permitido: true,
   codigo_bloqueo: null,
-  mensaje: "Se puede eliminar la ENTRADA de 1 del 29 ago 2026…",
+  mensaje: "Se puede eliminar la ENTRADA de 1 del 29/08/2026…",
   stock_antes: 111,
   stock_despues: 110,
   movimiento: { tipo: "ENTRADA", cantidad: 1, fecha: "2026-08-29", aeronave: null },
@@ -110,9 +110,9 @@ describe("cantidades, montos y descripción del movimiento", () => {
     expect(montoTxt(null, "MXN")).toBe("—");
   });
 
-  it("arma «la SALIDA de 10 pzas del 29 ago 2026 a XA-VGV»", () => {
+  it("arma «la SALIDA de 10 pzas del 29/08/2026 a XA-VGV»", () => {
     expect(descripcionMovimiento(salida10.movimiento, "pzas")).toBe(
-      "la SALIDA de 10 pzas del 29 ago 2026 a XA-VGV",
+      "la SALIDA de 10 pzas del 29/08/2026 a XA-VGV",
     );
   });
 
@@ -122,20 +122,20 @@ describe("cantidades, montos y descripción del movimiento", () => {
         { tipo: "SALIDA", cantidad: 3, fecha: "2026-08-29", aeronave: "FLOTA" },
         "pzas",
       ),
-    ).toBe("la SALIDA de 3 pzas del 29 ago 2026 a toda la flota");
+    ).toBe("la SALIDA de 3 pzas del 29/08/2026 a toda la flota");
     expect(
       descripcionMovimiento(
         { tipo: "AJUSTE", cantidad: 2, fecha: "2026-08-29", aeronave: null },
         null,
       ),
-    ).toBe("el AJUSTE de 2 unidades del 29 ago 2026");
+    ).toBe("el AJUSTE de 2 unidades del 29/08/2026");
   });
 });
 
 describe("vista previa cuando SÍ se puede eliminar (caso de la captura)", () => {
   it("dice qué se elimina, cómo queda la existencia y qué gasto se va", () => {
     expect(lineasVistaPrevia(salida10, "pzas")).toEqual([
-      "Se eliminará la SALIDA de 10 pzas del 29 ago 2026 a XA-VGV.",
+      "Se eliminará la SALIDA de 10 pzas del 29/08/2026 a XA-VGV.",
       "Regresan 10 pzas a la existencia (de 111 a 121).",
       "También se elimina su gasto de $3,500.00 MXN cargado a XA-VGV.",
     ]);
@@ -143,7 +143,7 @@ describe("vista previa cuando SÍ se puede eliminar (caso de la captura)", () =>
 
   it("una ENTRADA DESCUENTA de la existencia (111 → 110) y lo dice así", () => {
     expect(fraseEliminacion(entrada1, "pzas")).toBe(
-      "Se eliminará la ENTRADA de 1 pzas del 29 ago 2026.",
+      "Se eliminará la ENTRADA de 1 pzas del 29/08/2026.",
     );
     // Verbo en SINGULAR con una sola pieza (la unidad la escribió el
     // operador y no se le inventa el plural, pero el verbo sí concuerda).
@@ -199,7 +199,7 @@ describe("API 0.0.36 · la baja ya no recostea salidas; puede cambiar el último
   const compraSep: EliminacionMovimientoPreview = {
     ...entrada1,
     mensaje:
-      "Se puede eliminar la ENTRADA de 5 del 05 sep 2026: la existencia pasa de 10 a 5. Ninguna salida cambia de costo: cada una guarda el costo con que se cobró.",
+      "Se puede eliminar la ENTRADA de 5 del 05/09/2026: la existencia pasa de 10 a 5. Ninguna salida cambia de costo: cada una guarda el costo con que se cobró.",
     stock_antes: 10,
     stock_despues: 5,
     movimiento: { tipo: "ENTRADA", cantidad: 5, fecha: "2026-09-05", aeronave: null },
@@ -227,7 +227,7 @@ describe("API 0.0.36 · la baja ya no recostea salidas; puede cambiar el último
 
   it("el cambio de precio va en su PROPIO renglón, después de «ninguna salida cambia de costo»", () => {
     expect(fraseCambioPrecioVigente(compraSep)).toBe(
-      "El último precio de compra pasa de $30.00 USD (05 sep 2026) a $21.00 USD (10 ago 2026): con él se valúa la existencia y se cobra la siguiente salida.",
+      "El último precio de compra pasa de $30.00 USD (05/09/2026) a $21.00 USD (10/08/2026): con él se valúa la existencia y se cobra la siguiente salida.",
     );
     const lineas = lineasVistaPrevia(compraSep, "qt");
     expect(lineas).toHaveLength(5);
@@ -324,9 +324,9 @@ describe("resultado del borrado", () => {
       mensajeErrorEliminacion({
         status: 409,
         code: "STOCK_NEGATIVO",
-        error: "elimina primero la SALIDA de 1 del 29 ago 2026 a XA-VGV",
+        error: "elimina primero la SALIDA de 1 del 29/08/2026 a XA-VGV",
       }),
-    ).toBe("elimina primero la SALIDA de 1 del 29 ago 2026 a XA-VGV");
+    ).toBe("elimina primero la SALIDA de 1 del 29/08/2026 a XA-VGV");
     expect(
       mensajeErrorEliminacion({
         status: 503,
@@ -362,12 +362,12 @@ describe("historial de eliminados", () => {
 
   it("resume el movimiento borrado", () => {
     expect(tituloHistorial(3)).toBe("Movimientos eliminados (3)");
-    expect(resumenEliminado(fila, "pzas")).toBe("SALIDA de 10 pzas · 29 ago 2026 · XA-VGV");
+    expect(resumenEliminado(fila, "pzas")).toBe("SALIDA de 10 pzas · 29/08/2026 · XA-VGV");
   });
 
   it("dice QUIÉN y CUÁNDO en hora de Cancún (19:03 UTC = 14:03, no 19:03)", () => {
     const texto = autorEliminado(fila);
-    expect(texto.startsWith("Ana Pérez · 21 sep")).toBe(true);
+    expect(texto.startsWith("Ana Pérez · 21/09/2026, ")).toBe(true);
     expect(texto).toContain("2026");
     // La hora es la de Cancún (UTC−5). El nombre corto del mes y el formato
     // de 12 h los pone Intl (varían con la versión de ICU): aquí solo se

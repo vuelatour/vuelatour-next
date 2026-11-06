@@ -185,10 +185,10 @@ describe("la frase del estado (todas las ramas)", () => {
 
 describe("encabezado de la hoja", () => {
   it("descripción (cliente recortado, sin vacíos), con qué se pagó y quién registró", () => {
-    expect(descripcionHojaEntrada(respuesta332().entrada)).toBe("Vuelo #332 · Cobro de vuelo · $977.45 · 15 sep 2026 · Beh Kay");
-    expect(descripcionHojaEntrada(respuestaIng3().entrada)).toBe("ING-3 · Otros ingresos · $78.00 · 10 sep 2026 · didi");
+    expect(descripcionHojaEntrada(respuesta332().entrada)).toBe("Vuelo #332 · Cobro de vuelo · $977.45 · 15/09/2026 · Beh Kay");
+    expect(descripcionHojaEntrada(respuestaIng3().entrada)).toBe("ING-3 · Otros ingresos · $78.00 · 10/09/2026 · didi");
     expect(descripcionHojaEntrada(respuesta223().entrada)).toBe(
-      "Vuelo #223 · Cobro de vuelo · $812.00 USD · 10 sep 2026 · Morena Mia",
+      "Vuelo #223 · Cobro de vuelo · $812.00 USD · 10/09/2026 · Morena Mia",
     );
     expect(lineaPagoEntrada(respuesta332().entrada)).toBe("Cobrado con: Transferencia · cuenta capturada: Scotiabank Pesos");
     expect(lineaPagoEntrada(respuesta293().entrada)).toBe("Cobrado con: Link de pago (Paywise)");
@@ -222,7 +222,7 @@ describe("la tarjeta de cada abono", () => {
   it("ING-3: cuenta, leyenda, archivo con descarga, «Registró la liga» de la bitácora y «Ver en Conciliación» sin `cobro`", () => {
     const r = respuestaIng3();
     const f = fichaAbonoEntrada(r.abonos[0], r);
-    expect(f.titulo).toBe("Abono del 10 sep 2026");
+    expect(f.titulo).toBe("Abono del 10/09/2026");
     expect(f.monto).toBe("$78.00");
     expect(f.cuenta).toBe("COMBUSTIBLE · Scotiabank (MXN)");
     expect(f.leyenda).toBe(
@@ -443,13 +443,13 @@ describe("«¿Qué hacer?»", () => {
       ["Ver los omitidos de esas fechas", "/admin/conciliacion?f=omitidos&desde=2026-08-11&hasta=2026-10-10"],
     ]);
     expect(a.enlaces[0].titulo).toBe(
-      "Abre en otra pestaña los movimientos pendientes de 30 días antes y después del 10 sep 2026, filtrados por $812.00 USD. Borra la búsqueda si el abono trae otro monto (varios cobros, comisión o un pago en partes).",
+      "Abre en otra pestaña los movimientos pendientes de 30 días antes y después del 10/09/2026, filtrados por $812.00 USD. Borra la búsqueda si el abono trae otro monto (varios cobros, comisión o un pago en partes).",
     );
     expect(a.enlaces[1].titulo).toBe(
-      "Abre en otra pestaña los movimientos pendientes de 30 días antes y después del 10 sep 2026 cuya leyenda menciona «Morena Mia»: un solo abono puede pagar varios vuelos del mismo cliente. Si el depósito no trae el nombre, la lista sale vacía: usa la búsqueda por monto.",
+      "Abre en otra pestaña los movimientos pendientes de 30 días antes y después del 10/09/2026 cuya leyenda menciona «Morena Mia»: un solo abono puede pagar varios vuelos del mismo cliente. Si el depósito no trae el nombre, la lista sale vacía: usa la búsqueda por monto.",
     );
     expect(a.enlaces[2].titulo).toBe(
-      "Abre en otra pestaña los abonos ya conciliados de 7 días antes y después del 10 sep 2026, filtrados por $812.00 USD: si el abono está ligado a OTRO cobro o ingreso, puede ser un cobro duplicado.",
+      "Abre en otra pestaña los abonos ya conciliados de 7 días antes y después del 10/09/2026, filtrados por $812.00 USD: si el abono está ligado a OTRO cobro o ingreso, puede ser un cobro duplicado.",
     );
     expect(a.enlaces[3].titulo).toBe("Abre en otra pestaña los movimientos omitidos de la conciliación de esas fechas.");
     expect(textoDePiezas(a.mismoDia?.piezas)).toBe(
@@ -477,7 +477,7 @@ describe("«¿Qué hacer?»", () => {
     ]);
     expect(a.notas).toEqual([NOTA_COBRO_USD]);
     expect(NOTA_COBRO_USD).toContain("si te pagó en pesos");
-    expect(a.cobertura).toEqual({ aviso: null, detalle: "Movimientos importados por cuenta: HSBC USD del 01 sep 2026 al 06 oct 2026." });
+    expect(a.cobertura).toEqual({ aviso: null, detalle: "Movimientos importados por cuenta: HSBC USD del 01/09/2026 al 06/10/2026." });
     expect(a.notaFinal).toBe("Si el estado de cuenta de ese periodo ya está importado, prueba «Cruzar pendientes» en Conciliación.");
   });
 
@@ -490,7 +490,7 @@ describe("«¿Qué hacer?»", () => {
       etiqueta: "Buscar un abono por $59,081.00 (los 2 cobros del día)",
       href: "/admin/conciliacion?f=pendientes&desde=2026-09-06&hasta=2026-11-05&mvq=59081",
       titulo:
-        "Abre en otra pestaña los movimientos pendientes de 30 días antes y después del 06 oct 2026, filtrados por $59,081.00: un solo depósito puede pagar todos los vuelos del cliente de ese día. Si pagó solo algunos, borra la búsqueda y busca por el nombre o por cada monto.",
+        "Abre en otra pestaña los movimientos pendientes de 30 días antes y después del 06/10/2026, filtrados por $59,081.00: un solo depósito puede pagar todos los vuelos del cliente de ese día. Si pagó solo algunos, borra la búsqueda y busca por el nombre o por cada monto.",
     });
   });
 
@@ -515,10 +515,10 @@ describe("«¿Qué hacer?»", () => {
     expect(a.aviso).toEqual({
       texto: `Este cobro se registró el ${fmtDateTime("2026-10-08T18:43:29.809678+00:00")}, cuando ya estaban importados 4 abonos pendientes de esas fechas: el cruce automático solo corre al importar y no volvió a intentarlo. Pulsa «Cruzar pendientes» en Conciliación.`,
       enlace: {
-        etiqueta: "Abrir Conciliación del 05 oct 2026 al 11 oct 2026",
+        etiqueta: "Abrir Conciliación del 05/10/2026 al 11/10/2026",
         href: "/admin/conciliacion?f=pendientes&desde=2026-10-05&hasta=2026-10-11",
         titulo:
-          "Abre Conciliación en otra pestaña con los movimientos pendientes del 05 oct 2026 al 11 oct 2026: pulsa «Cruzar pendientes» para que el sistema vuelva a intentar el cruce de esas fechas.",
+          "Abre Conciliación en otra pestaña con los movimientos pendientes del 05/10/2026 al 11/10/2026: pulsa «Cruzar pendientes» para que el sistema vuelva a intentar el cruce de esas fechas.",
       },
     });
     expect(a.causas.some((c) => c.includes("registrado DESPUÉS"))).toBe(false);
@@ -537,7 +537,7 @@ describe("«¿Qué hacer?»", () => {
       "La cuenta capturada es Paywise pero el método es «Transferencia»: los abonos de Paywise solo se cruzan solos con cobros «Link de pago (Paywise)». Si entró por Paywise, vincúlalo a mano en Conciliación (o corrige el método del cobro).",
     );
     expect(a.cobertura?.detalle).toBe(
-      "Movimientos importados por cuenta: COMBUSTIBLE del 01 jul 2026 al 12 oct 2026 · EJE SCOTIA del 01 sep 2026 al 12 oct 2026 · GASTOS GNRAL del 01 jul 2026 al 12 oct 2026 · HSBC Pesos del 01 sep 2026 al 07 oct 2026 · Paywise del 01 sep 2026 al 30 sep 2026. Sin movimientos importados: afirme, American Express Ale, Tarjeta credito personal HSBC.",
+      "Movimientos importados por cuenta: COMBUSTIBLE del 01/07/2026 al 12/10/2026 · EJE SCOTIA del 01/09/2026 al 12/10/2026 · GASTOS GNRAL del 01/07/2026 al 12/10/2026 · HSBC Pesos del 01/09/2026 al 07/10/2026 · Paywise del 01/09/2026 al 30/09/2026. Sin movimientos importados: afirme, American Express Ale, Tarjeta credito personal HSBC.",
     );
     expect(a.enlaces[0].href).toBe("/admin/conciliacion?f=pendientes&desde=2026-08-26&hasta=2026-10-25&mvq=10868");
     // Con comisión: «de un solo abono» ⇒ sin la causa de varias transferencias.
@@ -563,7 +563,7 @@ describe("«¿Qué hacer?»", () => {
       titulo: "Abre en otra pestaña la Auditoría Paywise: concilia lo que cuadra y corrige la comisión del cobro.",
     });
     expect(a.notas).toEqual([NOTA_COBRO_PAYWISE]);
-    expect(a.cobertura?.detalle).toBe("Movimientos importados por cuenta: Paywise del 01 sep 2026 al 30 sep 2026.");
+    expect(a.cobertura?.detalle).toBe("Movimientos importados por cuenta: Paywise del 01/09/2026 al 30/09/2026.");
   });
 
   it("PARCIAL: «Buscar el abono que falta» = la liga de la tarjeta (R12), el nombre y los ya conciliados; sin causas", () => {
@@ -574,7 +574,7 @@ describe("«¿Qué hacer?»", () => {
       etiqueta: BOTON_BUSCAR_ABONO_QUE_FALTA,
       href: hrefBuscarAbonoQueFalta({ fecha_cobro: "2026-09-15T17:00:00+00:00", faltante: 1700 }),
       titulo:
-        "Abre en otra pestaña los movimientos pendientes de 7 días antes a 30 días después del 15 sep 2026, filtrados por $1,700.00, lo que falta.",
+        "Abre en otra pestaña los movimientos pendientes de 7 días antes a 30 días después del 15/09/2026, filtrados por $1,700.00, lo que falta.",
     });
     expect(a.enlaces[0].href).toBe("/admin/conciliacion?f=pendientes&desde=2026-09-08&hasta=2026-10-15&mvq=1700");
     expect(a.enlaces[1].href).toBe("/admin/conciliacion?f=pendientes&desde=2026-08-16&hasta=2026-10-15&mvq=Beh+Kay");
@@ -593,7 +593,7 @@ describe("«¿Qué hacer?»", () => {
       ],
       ["Abrir el anticipo ING-12", `/admin/ingresos?tab=anticipos&ingreso=${ANTICIPO_ID}`],
     ]);
-    expect(an.cobertura?.detalle).toBe("Movimientos importados por cuenta: EJE SCOTIA del 01 sep 2026 al 12 oct 2026.");
+    expect(an.cobertura?.detalle).toBe("Movimientos importados por cuenta: EJE SCOTIA del 01/09/2026 al 12/10/2026.");
     const so = accionesPendienteEntrada(respuestaSobreSinConciliar(), HOY)!;
     expect(so.intro).toBe(
       "Este cobro es parte del sobre G-4 («Boda Pérez»): su dinero se concilia UNA sola vez, en el sobre del grupo. Vincula el abono al SOBRE (no a esta parte) en Conciliación.",
@@ -614,18 +614,18 @@ describe("«¿Qué hacer?»", () => {
       [
         "Conciliarlo en «Por conciliar»",
         `/admin/ingresos?tab=por-conciliar&desde=2026-09-03&hasta=2026-10-10&cuenta=${CUENTA_COMBUSTIBLE.id}`,
-        "Abre en otra pestaña los abonos por identificar de COMBUSTIBLE de 7 días antes a 30 días después del 10 sep 2026.",
+        "Abre en otra pestaña los abonos por identificar de COMBUSTIBLE de 7 días antes a 30 días después del 10/09/2026.",
       ],
       [
         BOTON_VER_ABONOS_CONCILIADOS,
         `/admin/conciliacion?f=conciliados&cuenta=${CUENTA_COMBUSTIBLE.id}&desde=2026-09-03&hasta=2026-09-17&mvq=78`,
-        "Abre en otra pestaña los abonos ya conciliados de 7 días antes y después del 10 sep 2026, filtrados por $78.00: si el abono está ligado a OTRO cobro o ingreso, puede ser un cobro duplicado.",
+        "Abre en otra pestaña los abonos ya conciliados de 7 días antes y después del 10/09/2026, filtrados por $78.00: si el abono está ligado a OTRO cobro o ingreso, puede ser un cobro duplicado.",
       ],
     ]);
     expect(a.causas).toContain(
       "Que el abono no esté ligado a OTRO cobro o ingreso, ni clasificado (p. ej. como traspaso entre cuentas), por error: ábrelo con «Ver los abonos ya conciliados».",
     );
-    expect(a.cobertura?.detalle).toBe("Movimientos importados por cuenta: COMBUSTIBLE del 01 jul 2026 al 12 oct 2026.");
+    expect(a.cobertura?.detalle).toBe("Movimientos importados por cuenta: COMBUSTIBLE del 01/07/2026 al 12/10/2026.");
     expect(accionesPendienteEntrada({ ...r, entrada: { ...r.entrada, dado_de_baja: true } }, HOY)).toBeNull();
     // «Por conciliar» no pasa de hoy.
     expect(accionesPendienteEntrada(r, "2026-09-20")!.enlaces[0].href).toContain("hasta=2026-09-20");
@@ -652,27 +652,27 @@ describe("¿qué hay importado por cuenta? (cobertura)", () => {
   it("los 5 avisos, el primero que aplica, con fechas reales", () => {
     // #163 (USD, 19-ago): anterior a TODO lo importado en dólares.
     expect(textoCoberturaEntrada(respuesta163())?.aviso).toBe(
-      "Ningún estado de cuenta importado de estas cuentas llega tan atrás: el más antiguo empieza el 01 sep 2026 (HSBC USD) y este cobro es del 19 ago 2026. Importa el estado de cuenta de esas fechas en Conciliación: el cobro se cruza solo si el monto y la fecha coinciden.",
+      "Ningún estado de cuenta importado de estas cuentas llega tan atrás: el más antiguo empieza el 01/09/2026 (HSBC USD) y este cobro es del 19/08/2026. Importa el estado de cuenta de esas fechas en Conciliación: el cobro se cruza solo si el monto y la fecha coinciden.",
     );
     // Un cobro en pesos del 15-jul: anterior a ALGUNAS cuentas.
     const pesos = conDia(respuesta379(), "2026-07-15");
     expect(textoCoberturaEntrada(pesos)).toEqual({
       aviso:
-        "Del 15 jul 2026 no hay estado de cuenta importado en EJE SCOTIA (desde el 01 sep 2026) y HSBC Pesos (desde el 01 sep 2026): si el cliente depositó ahí, importa ese periodo en Conciliación.",
+        "Del 15/07/2026 no hay estado de cuenta importado en EJE SCOTIA (desde el 01/09/2026) y HSBC Pesos (desde el 01/09/2026): si el cliente depositó ahí, importa ese periodo en Conciliación.",
       detalle:
-        "Movimientos importados por cuenta: COMBUSTIBLE del 01 jul 2026 al 12 oct 2026 · EJE SCOTIA del 01 sep 2026 al 12 oct 2026 · GASTOS GNRAL del 01 jul 2026 al 12 oct 2026 · HSBC Pesos del 01 sep 2026 al 07 oct 2026. Sin movimientos importados: afirme, American Express Ale, Tarjeta credito personal HSBC.",
+        "Movimientos importados por cuenta: COMBUSTIBLE del 01/07/2026 al 12/10/2026 · EJE SCOTIA del 01/09/2026 al 12/10/2026 · GASTOS GNRAL del 01/07/2026 al 12/10/2026 · HSBC Pesos del 01/09/2026 al 07/10/2026. Sin movimientos importados: afirme, American Express Ale, Tarjeta credito personal HSBC.",
     });
     // Posterior a lo importado (empate en el 12-oct: la primera por alias, como en Gastos).
     expect(textoCoberturaEntrada(conDia(respuesta379(), "2026-10-13"))?.aviso).toBe(
-      "Ningún estado de cuenta importado llega todavía al 13 oct 2026 (el más reciente es COMBUSTIBLE, hasta el 12 oct 2026). Impórtalo en Conciliación: el cobro se cruza solo si el monto y la fecha coinciden.",
+      "Ningún estado de cuenta importado llega todavía al 13/10/2026 (el más reciente es COMBUSTIBLE, hasta el 12/10/2026). Impórtalo en Conciliación: el cobro se cruza solo si el monto y la fecha coinciden.",
     );
     // Dentro del margen del cruce (3 días; Paywise 5).
     expect(textoCoberturaEntrada(conDia(respuesta379(), "2026-10-10"))?.aviso).toBe(
-      "El estado de cuenta importado más reciente llega al 12 oct 2026: si el banco registró el abono unos días después del cobro, todavía no está importado.",
+      "El estado de cuenta importado más reciente llega al 12/10/2026: si el banco registró el abono unos días después del cobro, todavía no está importado.",
     );
     expect(textoCoberturaEntrada(conDia(respuesta379(), "2026-10-09"))?.aviso).toBeNull();
     const paywise: ConciliacionDeEntrada = { ...respuesta293(), estado: "SIN_CONCILIAR", abonos: [], ultimos_movimientos: ULTIMOS_PROD };
-    expect(textoCoberturaEntrada(conDia(paywise, "2026-09-26"))?.aviso).toContain("llega al 30 sep 2026");
+    expect(textoCoberturaEntrada(conDia(paywise, "2026-09-26"))?.aviso).toContain("llega al 30/09/2026");
     expect(textoCoberturaEntrada(conDia(paywise, "2026-09-25"))?.aviso).toBeNull();
     expect([MARGEN_CRUCE_ABONO_DIAS, MARGEN_CRUCE_PAYWISE_DIAS]).toEqual([3, 5]);
     // Ninguna cuenta con movimientos.
@@ -689,7 +689,7 @@ describe("¿qué hay importado por cuenta? (cobertura)", () => {
     r.ultimos_movimientos = ULTIMOS_PROD.map(({ cuenta, ultima_fecha }) => ({ cuenta, ultima_fecha }));
     expect(textoCoberturaEntrada(r)).toEqual({
       aviso: null,
-      detalle: "Último movimiento importado por cuenta: HSBC USD 06 oct 2026",
+      detalle: "Último movimiento importado por cuenta: HSBC USD 06/10/2026",
     });
     expect(textoCoberturaEntrada({ ...respuesta223(), ultimos_movimientos: null })).toBeNull();
   });
@@ -856,17 +856,17 @@ describe("filas, botón y nombre accesible", () => {
   it("el nombre accesible EMPIEZA con el texto visible (WCAG 2.5.3)", () => {
     const f = filaBancoDeEntrada(entrada());
     expect(nombreAccesibleEntrada("Conciliado", f)).toBe(
-      "Conciliado: ver la conciliación con el banco del cobro del vuelo #332 de $977.45 del 15 sep 2026",
+      "Conciliado: ver la conciliación con el banco del cobro del vuelo #332 de $977.45 del 15/09/2026",
     );
     expect(
       nombreAccesibleEntrada("Conciliado", { origen: "INGRESO", etiqueta: "ING-3", monto: 78, moneda: "MXN", dia: "2026-09-10" }),
-    ).toBe("Conciliado: ver la conciliación con el banco del ingreso ING-3 de $78.00 del 10 sep 2026");
+    ).toBe("Conciliado: ver la conciliación con el banco del ingreso ING-3 de $78.00 del 10/09/2026");
     expect(
       nombreAccesibleEntrada("Sin conciliar", { origen: "COBRO_VUELO", etiqueta: "Vuelo #223", monto: 812, moneda: "USD", dia: "2026-09-10" }),
-    ).toBe("Sin conciliar: ver la conciliación con el banco del cobro del vuelo #223 de $812.00 USD del 10 sep 2026");
-    // La tarjeta (sin folio): «… del cobro de $977.45 del 15 sep 2026».
+    ).toBe("Sin conciliar: ver la conciliación con el banco del cobro del vuelo #223 de $812.00 USD del 10/09/2026");
+    // La tarjeta (sin folio): «… del cobro de $977.45 del 15/09/2026».
     expect(nombreAccesibleEntrada("Conciliado", { ...f, etiqueta: "" })).toBe(
-      "Conciliado: ver la conciliación con el banco del cobro de $977.45 del 15 sep 2026",
+      "Conciliado: ver la conciliación con el banco del cobro de $977.45 del 15/09/2026",
     );
   });
 

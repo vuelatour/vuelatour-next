@@ -2,8 +2,8 @@
  * Gastos «por pagar» en el panel (19-oct-2026, API 0.0.95, contrato §7). El
  * runner no tiene DOM: render estático de las piezas reales + cableado por
  * regex sobre los fuentes.
- *  1. Chip junto a la fecha (Gastos y gastos del vuelo): «Por pagar · 20 oct»
- *     ámbar / «Vencido · 20 oct» rojo, botón que abre «Marcar pagado»; sin
+ *  1. Chip junto a la fecha (Gastos y gastos del vuelo): «Por pagar · 20/10/2026»
+ *     ámbar / «Vencido · 20/10/2026» rojo, botón que abre «Marcar pagado»; sin
  *     `estado_pago` (API previo) o PAGADO ⇒ NADA.
  *  2. Nota de la captura: con la capacidad, la nota EXACTA; sin ella, nada.
  *  3. El diálogo «Marcar pagado»: fecha del pago default hoy, máximo hoy.
@@ -129,14 +129,14 @@ function gasto(over: Partial<Gasto> = {}): Gasto {
 const CAPACIDAD = { habilitado: true, fechaMax: "2026-11-18" };
 
 describe("chip junto a la fecha", () => {
-  it("«Por pagar · 20 oct» ámbar y «Vencido · 15 oct» rojo, como BOTÓN que abre «Marcar pagado»", () => {
+  it("«Por pagar · 20/10/2026» ámbar y «Vencido · 15/10/2026» rojo, como BOTÓN que abre «Marcar pagado»", () => {
     const por = renderToStaticMarkup(<BotonChipPorPagar gasto={gasto({ estado_pago: "POR_PAGAR" })} />);
     expect(por).toMatch(/^<button type="button"/);
     expect(por).toContain('aria-haspopup="dialog"');
     expect(por).toContain('data-estado-pago="POR_PAGAR"');
     expect(por).toMatch(/class="[^"]*\bcursor-pointer\b/);
     expect(por).toMatch(/class="[^"]*\bborder-amber-500\/50\b/);
-    expect(por).toContain(">Por pagar · 20 oct<");
+    expect(por).toContain(">Por pagar · 20/10/2026<");
     expect(por).toContain("Clic para marcarlo pagado.");
     // Sin abrir no se monta el diálogo.
     expect(por).not.toContain("data-dialogo");
@@ -146,7 +146,7 @@ describe("chip junto a la fecha", () => {
     );
     expect(venc).toContain('data-estado-pago="VENCIDO"');
     expect(venc).toMatch(/class="[^"]*\bdestructive\b/);
-    expect(venc).toContain(">Vencido · 15 oct<");
+    expect(venc).toContain(">Vencido · 15/10/2026<");
   });
 
   it("PAGADO o sin `estado_pago` (API previo) ⇒ NADA", () => {
@@ -178,8 +178,8 @@ describe("chip junto a la fecha", () => {
       />,
     );
     expect(html.match(/data-estado-pago="/g)).toHaveLength(2);
-    expect(html).toContain(">Por pagar · 20 oct<");
-    expect(html).toContain(">Vencido · 15 oct<");
+    expect(html).toContain(">Por pagar · 20/10/2026<");
+    expect(html).toContain(">Vencido · 15/10/2026<");
   });
 
   it("«Marcar pagado» suelto (caja chica): botón con manita que abre el MISMO diálogo", () => {
@@ -237,12 +237,14 @@ describe("el diálogo «Marcar pagado»", () => {
     );
     expect(html).toContain("data-dialogo");
     expect(html).toContain(">Marcar pagado<");
-    expect(html).toContain("Taxi / estacionamiento · $500 MXN · vencido desde el 15 oct 2026");
+    expect(html).toContain("Taxi / estacionamiento · $500 MXN · vencido desde el 15/10/2026");
     expect(html).toContain("esa queda como la fecha del gasto (la fecha del gasto es la del pago)");
     const input = html.match(/<input[^>]*type="date"[^>]*>/)?.[0] ?? "";
     expect(input).toContain('max="2026-10-19"');
     expect(input).toContain('value="2026-10-19"');
-    const id = input.match(/id="([^"]+)"/)?.[1];
+    // La etiqueta apunta al campo VISIBLE (DD/MM/AAAA); el nativo `type="date"` lleva el valor ISO y el máximo.
+    const visible = html.match(/<input[^>]*data-fecha-texto="date"[^>]*>/)?.[0] ?? "";
+    const id = visible.match(/id="([^"]+)"/)?.[1];
     expect(id).toBeTruthy();
     expect(html).toContain(`for="${id}"`);
     expect(html).toContain(">Fecha del pago<");

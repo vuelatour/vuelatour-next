@@ -149,9 +149,9 @@ describe("descripción de una devolución (espejo del API)", () => {
 });
 
 describe("fechas", () => {
-  it("«21 sep» sin correr el día (DATE a mediodía UTC)", () => {
-    expect(diaCorto("2026-09-21")).toBe("21 sep");
-    expect(diaCorto("2026-09-01")).toBe("1 sep");
+  it("«21/09/2026» sin correr el día (DATE a mediodía UTC)", () => {
+    expect(diaCorto("2026-09-21")).toBe("21/09/2026");
+    expect(diaCorto("2026-09-01")).toBe("01/09/2026");
     expect(diaCorto("basura")).toBe("");
     expect(diaCorto(null)).toBe("");
   });
@@ -187,8 +187,8 @@ describe("la fila conciliada por reverso", () => {
   });
 
   it("dice la OTRA fecha y descripción", () => {
-    expect(textoParejaReverso(abonoPareado)).toBe("devuelve el cargo del 21 sep · ASUR CANCUN");
-    expect(textoParejaReverso(cargoPareado)).toBe("devuelto el 23 sep · CARGO INDEBIDO 21 SEP 35552");
+    expect(textoParejaReverso(abonoPareado)).toBe("devuelve el cargo del 21/09/2026 · ASUR CANCUN");
+    expect(textoParejaReverso(cargoPareado)).toBe("devuelto el 23/09/2026 · CARGO INDEBIDO 21 SEP 35552");
     expect(textoParejaReverso({ ...ABONOS_23[1], reverso_de_id: CARGO_21.id })).toBe(
       "devuelve un cargo de esta cuenta",
     );
@@ -197,16 +197,16 @@ describe("la fila conciliada por reverso", () => {
   it("«Conciliado con: Reverso de un cargo · …» + las notas en otra línea", () => {
     expect(ETIQUETA_REVERSO).toBe(CLASIFICACION_REVERSO);
     expect(tituloParejaReverso(abonoPareado)).toBe(
-      "Conciliado con: Reverso de un cargo · devuelve el cargo del 21 sep · ASUR CANCUN\nDevuelve el cargo del 21-09 · ASUR CANCUN",
+      "Conciliado con: Reverso de un cargo · devuelve el cargo del 21/09/2026 · ASUR CANCUN\nDevuelve el cargo del 21-09 · ASUR CANCUN",
     );
     expect(tituloParejaReverso(cargoPareado, "Reverso de un cargo")).toBe(
-      "Conciliado con: Reverso de un cargo · devuelto el 23 sep · CARGO INDEBIDO 21 SEP 35552",
+      "Conciliado con: Reverso de un cargo · devuelto el 23/09/2026 · CARGO INDEBIDO 21 SEP 35552",
     );
   });
 
   it("quitar confirma que LOS DOS vuelven a pendiente (desde cualquiera de los dos)", () => {
     const esperado =
-      "El cargo del 21 sep y su devolución del 23 sep vuelven a quedar Pendientes de conciliar (los dos, no solo esta línea).";
+      "El cargo del 21/09/2026 y su devolución del 23/09/2026 vuelven a quedar Pendientes de conciliar (los dos, no solo esta línea).";
     expect(textoConfirmarQuitarReverso(abonoPareado)).toContain(esperado);
     expect(textoConfirmarQuitarReverso(cargoPareado)).toContain(esperado);
   });
@@ -222,17 +222,17 @@ describe("textos del diálogo y del toast", () => {
     );
   });
 
-  it("toast: «Cargo del 21 sep y su devolución conciliados»", () => {
+  it("toast: «Cargo del 21/09/2026 y su devolución conciliados»", () => {
     const t = toastEmparejado("2026-09-21");
-    expect(t.titulo).toBe("Cargo del 21 sep y su devolución conciliados");
+    expect(t.titulo).toBe("Cargo del 21/09/2026 y su devolución conciliados");
     expect(t.descripcion).toContain("no cuentan como gasto ni como ingreso");
   });
 
   it("la descripción dice de qué movimiento se parte y qué va a pasar", () => {
     expect(descripcionDialogoReverso(ABONOS_23[0])).toBe(
-      "Abono de $825.13 del 23 sep 2026 · CARGO INDEBIDO 21 SEP 35552. Elige el cargo que el banco devolvió: los dos quedan conciliados como «Reverso de un cargo» y no cuentan como gasto ni como ingreso.",
+      "Abono de $825.13 del 23/09/2026 · CARGO INDEBIDO 21 SEP 35552. Elige el cargo que el banco devolvió: los dos quedan conciliados como «Reverso de un cargo» y no cuentan como gasto ni como ingreso.",
     );
-    expect(descripcionDialogoReverso(CARGO_21, "MXN")).toContain("Cargo de $825.13 MXN del 21 sep 2026 · ASUR CANCUN.");
+    expect(descripcionDialogoReverso(CARGO_21, "MXN")).toContain("Cargo de $825.13 MXN del 21/09/2026 · ASUR CANCUN.");
   });
 
   it("confirmación del lote: texto EXACTO del contrato y alcance", () => {
@@ -243,7 +243,7 @@ describe("textos del diálogo y del toast", () => {
     // se dice (antes solo «Todas las cuentas.», y sonaba a TODO el historial).
     expect(textoAlcanceAuto({})).toBe("Todas las cuentas · abonos de los últimos 90 días.");
     expect(textoAlcanceAuto({ cuenta: "GASTOS GNRAL", desde: "2026-09-01", hasta: "2026-09-30" })).toBe(
-      "Cuenta: GASTOS GNRAL · del 01 sep 2026 al 30 sep 2026.",
+      "Cuenta: GASTOS GNRAL · del 01/09/2026 al 30/09/2026.",
     );
   });
 

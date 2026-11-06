@@ -76,7 +76,7 @@ function mov(p: Partial<CajaMovimiento>): CajaMovimiento {
 function fila(p: Partial<MovimientoFondoRow>): MovimientoFondoRow {
   return {
     key: p.key ?? "k",
-    fechaFmt: "21 sep 2026",
+    fechaFmt: "21/09/2026",
     tipoLabel: "Reposición",
     esGasto: false,
     descripcion: null,

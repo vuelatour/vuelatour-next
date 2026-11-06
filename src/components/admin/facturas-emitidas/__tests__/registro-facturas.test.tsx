@@ -308,7 +308,7 @@ describe("Por facturar", () => {
     expect(html).toContain("$8,050.40 USD");
     expect(html).toContain("$136,856.80 MXN");
     expect(html).toContain(">Sin cobro<");
-    expect(html).toContain("Itzi · 24 sep");
+    expect(html).toContain("Itzi · 24/09/2026");
     expect(html).toContain("La necesita para pagar");
     expect(html).toContain("Paga contra factura");
     expect(html).toContain("Marcado «Facturado» sin factura registrada");
@@ -415,7 +415,7 @@ describe("Por facturar", () => {
   it("Parte B: la factura del cliente que quizá cubre este vuelo y «Ligar a A-0440» (solo facturación)", () => {
     const html = renderToStaticMarkup(<PorFacturarTable items={[conSugerencia]} rol="FACTURACION" />);
     expect(html).toContain(
-      "El cliente ya tiene registrada la factura A-0440 (8 oct · $31,435.91 MXN · vuelo #375). Si también cubre este vuelo, lígala.",
+      "El cliente ya tiene registrada la factura A-0440 (08/10/2026 · $31,435.91 MXN · vuelo #375). Si también cubre este vuelo, lígala.",
     );
     expect(html).toMatch(/<button[^>]*cursor-pointer[^>]*>Ligar a A-0440<\/button>/);
     const coord = renderToStaticMarkup(<PorFacturarTable items={[conSugerencia]} rol="COORDINADOR" />);

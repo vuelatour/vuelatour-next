@@ -24,7 +24,7 @@ import {
   textoEstadoGastoEnfocado,
 } from "../gasto-enfocado";
 
-/** La refacción de la captura del cliente (24 sep 2026, $794.61 USD, sin vuelo). */
+/** La refacción de la captura del cliente (24/09/2026, $794.61 USD, sin vuelo). */
 const G = "7f2c1b40-5a3e-4c8d-9e21-0a6b7c8d9e01";
 
 describe("hrefGastoEnfocado — la liga «Ver el gasto con el que se concilió» sin vuelo", () => {

@@ -18,56 +18,100 @@ function valid(iso?: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** timestamptz → "08 jun 2026, 10:00" (hora Cancún). */
+// ===== DD/MM/AAAA en todos lados (6-nov-2026) =====
+// Pedido del dueño: «estandarizar todas las fechas al formato DD/MM/AAAA, en
+// todos lados». Estas funciones son la FUENTE ÚNICA de los textos de fecha del
+// panel: numéricas, con el día de CANCÚN (UTC−5, sin DST) y la hora de 12 h
+// de siempre («10:40 a.m.»). Los inputs de fecha van aparte
+// (`components/ui/input.tsx` + `lib/fecha-input.ts`).
+
+/** Día de la semana corto en español, índice de `getUTCDay`. */
+const DIAS_CORTOS_ES = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"] as const;
+
+function dosDigitos(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** Partes de un instante en HORA CANCÚN: se resta el offset fijo y se leen las partes UTC. */
+function partesCancun(d: Date) {
+  const w = new Date(d.getTime() - CANCUN_OFFSET_MIN * 60_000);
+  return {
+    dd: dosDigitos(w.getUTCDate()),
+    mm: dosDigitos(w.getUTCMonth() + 1),
+    aaaa: String(w.getUTCFullYear()),
+    diaSemana: w.getUTCDay(),
+    hh: dosDigitos(w.getUTCHours()),
+    mi: dosDigitos(w.getUTCMinutes()),
+  };
+}
+
+/** «06/11/2026»: el día calendario en Cancún de un instante. */
+function diaCancun(d: Date): string {
+  const p = partesCancun(d);
+  return `${p.dd}/${p.mm}/${p.aaaa}`;
+}
+
+/** Hora de 12 h en es-MX («10:40 a.m.»), hora Cancún; `dosDigitos` ⇒ «03:00 p.m.». */
+function hora12(d: Date, dosDig = false): string {
+  return new Intl.DateTimeFormat("es-MX", {
+    hour: dosDig ? "2-digit" : "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: CANCUN_TZ,
+  }).format(d);
+}
+
+/** timestamptz → «06/11/2026, 10:40 a.m.» (hora Cancún). */
 export function fmtDateTime(iso?: string | null): string {
   const d = valid(iso);
   if (!d) return "—";
-  return new Intl.DateTimeFormat("es-MX", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: CANCUN_TZ,
-  }).format(d);
+  return `${diaCancun(d)}, ${hora12(d)}`;
 }
 
-/** timestamptz → "08 jun 2026" (el día calendario en Cancún). */
-/** Fecha + hora cortas en TZ Cancun ("12 jun, 14:30"). Para celdas de tabla. */
+/** Fecha + hora para celdas de tabla: «12/06/2026, 02:30 p.m.» (hora Cancún). */
 export function fmtDateTimeShort(iso?: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("es-MX", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Cancun",
-  });
+  const d = valid(iso);
+  if (!d) return "—";
+  return `${diaCancun(d)}, ${hora12(d, true)}`;
 }
 
+/** timestamptz → «06/11/2026» (el día calendario en Cancún). */
 export function fmtDate(iso?: string | null): string {
   const d = valid(iso);
   if (!d) return "—";
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: CANCUN_TZ,
-  }).format(d);
+  return diaCancun(d);
 }
 
 /**
- * timestamptz → "jue, 3 sep, 09:45" (hora Cancún). Para citas/eventos: el
- * día de la semana ayuda a ubicar la cita de un vistazo.
+ * timestamptz → «jue 03/09/2026, 09:45 a.m.» (hora Cancún). Para citas/eventos:
+ * el día de la semana ayuda a ubicar la cita de un vistazo.
  */
 export function fmtWeekdayDateTime(iso?: string | null): string {
   const d = valid(iso);
   if (!d) return "—";
-  return new Intl.DateTimeFormat("es-MX", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: CANCUN_TZ,
-  }).format(d);
+  const p = partesCancun(d);
+  return `${DIAS_CORTOS_ES[p.diaSemana]} ${p.dd}/${p.mm}/${p.aaaa}, ${hora12(d, true)}`;
+}
+
+/** timestamptz → «05/09/2026 14:32» (hora Cancún, 24 h): celdas compactas. */
+export function fmtDateTime24(iso?: string | null): string {
+  const d = valid(iso);
+  if (!d) return "—";
+  const p = partesCancun(d);
+  return `${p.dd}/${p.mm}/${p.aaaa} ${p.hh}:${p.mi}`;
+}
+
+/**
+ * Columna `date` (YYYY-MM-DD) → «jue 03/09/2026» (día de la semana +
+ * DD/MM/AAAA) SIN desplazar el día. Vacío ⇒ «—»; ilegible ⇒ el texto tal cual.
+ */
+export function fmtWeekdayDateOnly(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr.slice(0, 10));
+  if (!m) return dateStr;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return `${DIAS_CORTOS_ES[d.getUTCDay()]} ${m[3]}/${m[2]}/${m[1]}`;
 }
 
 /** timestamptz → "10:00" (hora Cancún). */
@@ -82,22 +126,15 @@ export function fmtTime(iso?: string | null): string {
 }
 
 /**
- * Columna `date` (YYYY-MM-DD, sin hora) → "08 jun 2026" SIN desplazar el día.
- * (Para vencimientos, multas, mantenimientos, gastos por día, etc.)
+ * Columna `date` (YYYY-MM-DD, sin hora) → «06/11/2026» SIN desplazar el día.
+ * (Para vencimientos, multas, mantenimientos, gastos por día, etc.) Vacío ⇒
+ * «—»; ilegible ⇒ el texto tal cual (nunca «Invalid Date»).
  */
 export function fmtDateOnly(dateStr?: string | null): string {
   if (!dateStr) return "—";
-  // Toma solo la parte de fecha y la fija a mediodía UTC para evitar cualquier
-  // corrimiento de día por zona horaria.
-  const ymd = dateStr.slice(0, 10);
-  const d = new Date(`${ymd}T12:00:00Z`);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(d);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr.slice(0, 10));
+  if (!m) return dateStr;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * «Corregir cobro» (26-sep-2026) — pedido del cliente con la captura de la
  * cotización #315 «Beh Kay»: dos cobros «$3,400 MXN · Transferencia →
- * Scotiabank Pesos · 15 sep 2026 · Registró: Itzi» y «$68,205.55 MXN …»,
+ * Scotiabank Pesos · 15/09/2026 · Registró: Itzi» y «$68,205.55 MXN …»,
  * cada uno solo con recibo y bote de basura; «grabaron mal un cobro del 17
  * de septiembre y no podemos editarlo de forma sencilla».
  *
@@ -52,7 +52,7 @@ const COBRO_3400: FlightCobro = {
   comision_banco_monto: null,
   referencia: "SPEI 889922",
   cuenta_destino: "Scotiabank Pesos",
-  fecha_cobro: "2026-09-15T17:00:00+00:00", // 15 sep, 12:00 Cancún
+  fecha_cobro: "2026-09-15T17:00:00+00:00", // 15/09/2026, 12:00 Cancún
   foto_voucher_url: null,
   registrado_por: "u-1",
   registrado_por_nombre: "Itzi",
@@ -254,7 +254,7 @@ describe("diff: SOLO lo que cambió viaja al API", () => {
         antes: "$6,040.97 MXN (8.857 %)",
         despues: "$5,562.69 MXN (8.857 %)",
       },
-      { campo: "fecha_cobro", etiqueta: "Fecha del cobro", antes: "17 sep 2026", despues: "16 sep 2026" },
+      { campo: "fecha_cobro", etiqueta: "Fecha del cobro", antes: "17/09/2026", despues: "16/09/2026" },
     ]);
     expect(resumenCambiosCobro(r.lineas)).toBe("Cambió: monto, comisión del banco, fecha del cobro.");
   });
@@ -453,19 +453,19 @@ describe("validación de la edición", () => {
 describe("textos de la ficha y de la confirmación", () => {
   it("subtítulo: día Cancún, monto con moneda y quién lo registró", () => {
     expect(descripcionFichaEdicion(COBRO_17SEP, "Registró: Itzi")).toBe(
-      "Cobro del 17 sep 2026 · $68,205.55 MXN · Registró: Itzi. Solo se guarda lo que cambies y antes de guardar verás el antes y el después.",
+      "Cobro del 17/09/2026 · $68,205.55 MXN · Registró: Itzi. Solo se guarda lo que cambies y antes de guardar verás el antes y el después.",
     );
     expect(descripcionFichaEdicion(COBRO_3400, null)).toBe(
-      "Cobro del 15 sep 2026 · $3,400 MXN. Solo se guarda lo que cambies y antes de guardar verás el antes y el después.",
+      "Cobro del 15/09/2026 · $3,400 MXN. Solo se guarda lo que cambies y antes de guardar verás el antes y el después.",
     );
   });
 
   it("confirmación: qué cobro y de qué vuelo", () => {
     expect(descripcionConfirmarEdicion(COBRO_17SEP, 315)).toBe(
-      "Cobro del 17 sep 2026 · vuelo #315. Esto es lo que cambia:",
+      "Cobro del 17/09/2026 · vuelo #315. Esto es lo que cambia:",
     );
     expect(descripcionConfirmarEdicion({ ...COBRO_3400, monto: "-1" }, null)).toBe(
-      "Reembolso del 15 sep 2026. Esto es lo que cambia:",
+      "Reembolso del 15/09/2026. Esto es lo que cambia:",
     );
   });
 

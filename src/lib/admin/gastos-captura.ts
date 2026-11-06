@@ -1,4 +1,4 @@
-import { CANCUN_TZ, fmtDateTime } from "@/lib/datetime";
+import { CANCUN_TZ, fmtDateTime, fmtDateTime24 } from "@/lib/datetime";
 import type { Gasto } from "@/types/expenses";
 
 /**
@@ -75,24 +75,9 @@ export function llegoAlServidorDistinto(g: GastoCaptura): boolean {
   return Math.abs(a - b) > LLEGADA_MISMO_INSTANTE_MS;
 }
 
-/** "5 sep 14:32" (hora Cancún), corto para celdas de tabla. */
+/** «05/09/2026 14:32» (hora Cancún), corto para celdas de tabla; sin fecha legible, «—». */
 export function fmtCapturaCorta(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const partes = new Intl.DateTimeFormat("es-MX", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    timeZone: CANCUN_TZ,
-  }).formatToParts(d);
-  const p = (tipo: Intl.DateTimeFormatPartTypes) =>
-    partes.find((x) => x.type === tipo)?.value ?? "";
-  // "sep." → "sep": el punto de la abreviatura estorba en la celda.
-  const mes = p("month").replace(/\.$/, "");
-  return `${p("day")} ${mes} ${p("hour")}:${p("minute")}`;
+  return fmtDateTime24(iso);
 }
 
 /** Día calendario (YYYY-MM-DD) en Cancún de un timestamptz. */

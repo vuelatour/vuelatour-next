@@ -173,21 +173,21 @@ describe("encabezado y cargos (la suma es la del API)", () => {
   });
 
   it("fechas: el mismo día, días, meses y años distintos (días de pared)", () => {
-    expect(textoFechasCargos("2026-08-03", "2026-08-03")).toBe("03 ago 2026");
-    expect(textoFechasCargos("2026-08-10", "2026-08-12")).toBe("del 10 al 12 ago 2026");
-    expect(textoFechasCargos("2026-09-30", "2026-10-01")).toBe("del 30 sep al 01 oct 2026");
-    expect(textoFechasCargos("2025-12-30", "2026-01-02")).toBe("del 30 dic 2025 al 02 ene 2026");
-    expect(textoFechasCargos(null, "2026-10-01")).toBe("01 oct 2026");
+    expect(textoFechasCargos("2026-08-03", "2026-08-03")).toBe("03/08/2026");
+    expect(textoFechasCargos("2026-08-10", "2026-08-12")).toBe("del 10/08/2026 al 12/08/2026");
+    expect(textoFechasCargos("2026-09-30", "2026-10-01")).toBe("del 30/09/2026 al 01/10/2026");
+    expect(textoFechasCargos("2025-12-30", "2026-01-02")).toBe("del 30/12/2025 al 02/01/2026");
+    expect(textoFechasCargos(null, "2026-10-01")).toBe("01/10/2026");
     expect(textoFechasCargos(null, undefined)).toBe("");
   });
 
-  it("«2 cargos de GASTOS GNRAL · suman $400.00 MXN · 03 ago 2026» (alias del API o de la página; varias cuentas; USD)", () => {
-    expect(encabezadoCargos(resumenC())).toBe("2 cargos de GASTOS GNRAL · suman $400.00 MXN · 03 ago 2026");
+  it("«2 cargos de GASTOS GNRAL · suman $400.00 MXN · 03/08/2026» (alias del API o de la página; varias cuentas; USD)", () => {
+    expect(encabezadoCargos(resumenC())).toBe("2 cargos de GASTOS GNRAL · suman $400.00 MXN · 03/08/2026");
     expect(encabezadoCargos(resumenC({ cuentas: [{ id: GASTOS, alias: null }] }), { [GASTOS]: "GASTOS GNRAL" })).toBe(
-      "2 cargos de GASTOS GNRAL · suman $400.00 MXN · 03 ago 2026",
+      "2 cargos de GASTOS GNRAL · suman $400.00 MXN · 03/08/2026",
     );
     expect(encabezadoCargos(resumenC({ cuentas: [{ id: GASTOS, alias: null }] }))).toBe(
-      "2 cargos · suman $400.00 MXN · 03 ago 2026",
+      "2 cargos · suman $400.00 MXN · 03/08/2026",
     );
     expect(
       encabezadoCargos(
@@ -201,7 +201,7 @@ describe("encabezado y cargos (la suma es la del API)", () => {
           ],
         }),
       ),
-    ).toBe("2 cargos de 2 cuentas · suman $9,591.49 MXN · del 10 al 12 ago 2026");
+    ).toBe("2 cargos de 2 cuentas · suman $9,591.49 MXN · del 10/08/2026 al 12/08/2026");
     expect(
       encabezadoCargos(
         resumenC({
@@ -212,22 +212,22 @@ describe("encabezado y cargos (la suma es la del API)", () => {
           cuentas: [{ id: HSBC_USD, alias: "HSBC USD" }],
         }),
       ),
-    ).toBe("2 cargos de HSBC USD · suman $19.72 USD · 01 oct 2026");
+    ).toBe("2 cargos de HSBC USD · suman $19.72 USD · 01/10/2026");
   });
 
   it("renglón del cargo: fecha · descripción · ref, y el monto aparte (« USD» fuera de pesos)", () => {
     const m = { fecha: "2026-08-03", descripcion: "REST EL TACO LOCO", referencia: "0025830577", monto: "-280.00" };
     expect(lineaCargoVincular(m, null, "MXN")).toEqual({
-      texto: "03 ago · REST EL TACO LOCO · ref 0025830577",
+      texto: "03/08/2026 · REST EL TACO LOCO · ref 0025830577",
       monto: "$280.00",
     });
-    expect(lineaCargoVincular(m, "GASTOS GNRAL", "MXN").texto).toBe("03 ago · GASTOS GNRAL · REST EL TACO LOCO · ref 0025830577");
+    expect(lineaCargoVincular(m, "GASTOS GNRAL", "MXN").texto).toBe("03/08/2026 · GASTOS GNRAL · REST EL TACO LOCO · ref 0025830577");
     // La referencia que ya viene en la leyenda no se repite.
     expect(lineaCargoVincular({ ...m, descripcion: "SPEI 0025830577 TACO" }, null, "MXN").texto).toBe(
-      "03 ago · SPEI 0025830577 TACO",
+      "03/08/2026 · SPEI 0025830577 TACO",
     );
     expect(lineaCargoVincular({ ...m, referencia: null, monto: "17.00", fecha: "2026-10-01" }, null, "USD")).toEqual({
-      texto: "01 oct · REST EL TACO LOCO",
+      texto: "01/10/2026 · REST EL TACO LOCO",
       monto: "$17.00 USD",
     });
   });
@@ -337,9 +337,9 @@ describe("la lista de gastos", () => {
         comida({ tarjeta_terminacion: null, nota: null, matricula: null, vuelo_folio: null, capturado_por: null }),
       ),
     ).toBeNull();
-    expect(etiquetaGastoResumen(comida())).toBe("Comida · $400.00 · 03 ago 2026 · vuelo #104");
+    expect(etiquetaGastoResumen(comida())).toBe("Comida · $400.00 · 03/08/2026 · vuelo #104");
     expect(etiquetaGastoResumen(comida({ moneda: "USD", monto: 19.72, vuelo_folio: null, fecha: "2026-10-01" }))).toBe(
-      "Comida · $19.72 USD · 01 oct 2026",
+      "Comida · $19.72 USD · 01/10/2026",
     );
   });
 });
@@ -347,7 +347,7 @@ describe("la lista de gastos", () => {
 describe("la confirmación (resumen visible + botón) y el toast", () => {
   it("resumen con la suma DEL API: cubre, parcial y se pasa", () => {
     expect(textoResumenVincularCargos({ n: 2, suma: 400, moneda: "MXN", gasto: comida() })).toBe(
-      "Se vincularán 2 cargos ($400.00) al gasto «Comida · $400.00 · 03 ago 2026 · vuelo #104» y, según la suma, el gasto queda cubierto.",
+      "Se vincularán 2 cargos ($400.00) al gasto «Comida · $400.00 · 03/08/2026 · vuelo #104» y, según la suma, el gasto queda cubierto.",
     );
     expect(
       textoResumenVincularCargos({
@@ -357,7 +357,7 @@ describe("la confirmación (resumen visible + botón) y el toast", () => {
         gasto: comida({ categoria: "OPERACIONES", monto: 450, fecha: "2026-08-04", vuelo_folio: null, resultado: "PARCIAL", faltante_tras: 50 }),
       }),
     ).toBe(
-      "Se vincularán 2 cargos ($400.00) al gasto «Operaciones · $450.00 · 04 ago 2026» y, según la suma, quedará parcial: le faltarán $50.00.",
+      "Se vincularán 2 cargos ($400.00) al gasto «Operaciones · $450.00 · 04/08/2026» y, según la suma, quedará parcial: le faltarán $50.00.",
     );
     expect(
       textoResumenVincularCargos({
@@ -367,7 +367,7 @@ describe("la confirmación (resumen visible + botón) y el toast", () => {
         gasto: comida({ monto: 380, resultado: "EXCEDE", excedente: 20 }),
       }),
     ).toBe(
-      "Los 2 cargos ($400.00) se pasarían por $20.00 del gasto «Comida · $380.00 · 03 ago 2026 · vuelo #104»: el sistema no lo acepta. Elige otro gasto o revisa la selección.",
+      "Los 2 cargos ($400.00) se pasarían por $20.00 del gasto «Comida · $380.00 · 03/08/2026 · vuelo #104»: el sistema no lo acepta. Elige otro gasto o revisa la selección.",
     );
     expect(
       textoResumenVincularCargos({
@@ -377,7 +377,7 @@ describe("la confirmación (resumen visible + botón) y el toast", () => {
         gasto: comida({ moneda: "USD", monto: 19.72, vuelo_folio: null, fecha: "2026-10-01" }),
       }),
     ).toBe(
-      "Se vincularán 2 cargos ($19.72 USD) al gasto «Comida · $19.72 USD · 01 oct 2026» y, según la suma, el gasto queda cubierto.",
+      "Se vincularán 2 cargos ($19.72 USD) al gasto «Comida · $19.72 USD · 01/10/2026» y, según la suma, el gasto queda cubierto.",
     );
     expect(botonVincularCargos(2)).toBe("Vincular los 2 cargos");
     expect(TEXTO_ELIGE_GASTO).toBe("Elige el gasto que pagaron los cargos.");
@@ -506,7 +506,7 @@ describe("errores al LIGAR (todo o nada en el API)", () => {
 
   it("409 MOVIMIENTO_NO_PENDIENTE: el texto del API (ya dice «No se vinculó…»), «Quitar…» con sus ids y refresh", () => {
     const texto =
-      "No se vinculó ningún cargo: 1 de los 2 ya no está pendiente — 03 ago · REST EL TACO LOCO $280.00 (ya está vinculado a un gasto). Quítalo de la selección y vuelve a intentarlo.";
+      "No se vinculó ningún cargo: 1 de los 2 ya no está pendiente — 03/08/2026 · REST EL TACO LOCO $280.00 (ya está vinculado a un gasto). Quítalo de la selección y vuelve a intentarlo.";
     const e = mensajeErrorCargosGasto({
       ok: false,
       status: 409,
@@ -689,7 +689,7 @@ describe("los gastos del monto de la suma que NO entraron, en palabras de «vari
   it("efectivo: manda a ligarlos cargo por cargo (como el API) y NUNCA «Mostrar estos gastos»", () => {
     const [a] = textoExcluidosCandidatos([efectivo], 400, ctx);
     expect(a.texto).toBe(
-      "Hay 1 gasto de $400.00 en efectivo (3 ago · vuelo #104): la lista solo muestra gastos pagados por el banco. Si en realidad se pagó con tarjeta, transferencia o pago domiciliado, corrige el medio de pago del gasto; si no, vincúlalo cargo por cargo con su justificación (menú ⋯ → Vincular gasto → «Incluir gastos en efectivo y otros medios»).",
+      "Hay 1 gasto de $400.00 en efectivo (03/08/2026 · vuelo #104): la lista solo muestra gastos pagados por el banco. Si en realidad se pagó con tarjeta, transferencia o pago domiciliado, corrige el medio de pago del gasto; si no, vincúlalo cargo por cargo con su justificación (menú ⋯ → Vincular gasto → «Incluir gastos en efectivo y otros medios»).",
     );
     expect(a.mostrar).toBeNull();
     const [varios] = textoExcluidosCandidatos([{ ...efectivo, n: 2 }], 400, ctx);
@@ -700,7 +700,7 @@ describe("los gastos del monto de la suma que NO entraron, en palabras de «vari
 
   it("fuera de la ventana: «de los cargos»; sin la bandera, las frases de UN cargo idénticas", () => {
     expect(textoExcluidosCandidatos([fuera], 400, ctx)[0].texto).toBe(
-      "1 gasto de $400.00 (1 may · vuelo #104) cae fuera de ±30 días de los cargos: amplía a 120 días.",
+      "1 gasto de $400.00 (01/05/2026 · vuelo #104) cae fuera de ±30 días de los cargos: amplía a 120 días.",
     );
     const uno = textoExcluidosCandidatos([efectivo, fuera], 400, { ...ctx, variosCargos: undefined });
     expect(uno[0].texto).toContain("si no, muéstralo y vincúlalo con una justificación (su medio de pago no cambia).");
@@ -803,7 +803,7 @@ describe("paso 4 · textos exactos del enlace, el paso previo y el alta", () => 
 
   it("el contexto del alta: encabezado con la suma del API + todo o nada + solo medios del banco", () => {
     expect(contextoCrearSuma(resumenHsbc())).toBe(
-      "2 cargos de HSBC Pesos · suman $752.84 MXN · 30 sep 2026. Al guardar se vinculan los 2 cargos en el mismo paso: si la liga falla, el gasto no se registra. Para vincular varios cargos el gasto debe pagarse por el banco (tarjeta corporativa, transferencia, Paywise o pago domiciliado).",
+      "2 cargos de HSBC Pesos · suman $752.84 MXN · 30/09/2026. Al guardar se vinculan los 2 cargos en el mismo paso: si la liga falla, el gasto no se registra. Para vincular varios cargos el gasto debe pagarse por el banco (tarjeta corporativa, transferencia, Paywise o pago domiciliado).",
     );
     // La frase nombra TODOS los medios bancarios (espejo de MEDIOS_BANCARIOS del API).
     for (const m of MEDIOS_BANCARIOS_CONCILIACION) {
@@ -816,13 +816,13 @@ describe("paso 4 · la fecha del gasto = la del ÚLTIMO pago, con aviso", () => 
   it("mismo día ⇒ sin aviso; días distintos; meses distintos; años distintos", () => {
     expect(avisoFechasCargos("2026-09-30", "2026-09-30")).toBeNull();
     expect(avisoFechasCargos("2026-08-10", "2026-08-12")).toBe(
-      "Los cargos son de días distintos (10 y 12 ago): la fecha del gasto quedó en la del último pago (12 ago 2026). Cámbiala si la factura dice otra.",
+      "Los cargos son de días distintos (10/08/2026 y 12/08/2026): la fecha del gasto quedó en la del último pago (12/08/2026). Cámbiala si la factura dice otra.",
     );
     expect(avisoFechasCargos("2026-09-30", "2026-10-01")).toBe(
-      "Los cargos son de meses distintos (sep y oct): la fecha del gasto quedó en la del último pago (01 oct 2026) y el gasto cuenta en ese mes. Cámbiala si la factura dice otra.",
+      "Los cargos son de meses distintos (septiembre y octubre): la fecha del gasto quedó en la del último pago (01/10/2026) y el gasto cuenta en ese mes. Cámbiala si la factura dice otra.",
     );
     expect(avisoFechasCargos("2025-12-30", "2026-01-02")).toBe(
-      "Los cargos son de meses distintos (dic 2025 y ene 2026): la fecha del gasto quedó en la del último pago (02 ene 2026) y el gasto cuenta en ese mes. Cámbiala si la factura dice otra.",
+      "Los cargos son de meses distintos (diciembre 2025 y enero 2026): la fecha del gasto quedó en la del último pago (02/01/2026) y el gasto cuenta en ese mes. Cámbiala si la factura dice otra.",
     );
     expect(avisoFechasCargos(null, "2026-10-01")).toBeNull();
     expect(avisoFechasCargos("2026-10-01", "x")).toBeNull();
@@ -830,18 +830,18 @@ describe("paso 4 · la fecha del gasto = la del ÚLTIMO pago, con aviso", () => 
 });
 
 describe("paso 4 · las notas del gasto con las leyendas de los cargos", () => {
-  it("«Pagado en 2 cargos del banco (HSBC Pesos): 30-sep C ADMINISTRACION RENTA $649.00 · 30-sep I.V.A. $103.84»", () => {
+  it("«Pagado en 2 cargos del banco (HSBC Pesos): 30/09/2026 C ADMINISTRACION RENTA $649.00 · 30/09/2026 I.V.A. $103.84»", () => {
     expect(notasDeCargos(HSBC_30SEP, "HSBC Pesos", "MXN")).toBe(
-      "Pagado en 2 cargos del banco (HSBC Pesos): 30-sep C ADMINISTRACION RENTA $649.00 · 30-sep I.V.A. $103.84",
+      "Pagado en 2 cargos del banco (HSBC Pesos): 30/09/2026 C ADMINISTRACION RENTA $649.00 · 30/09/2026 I.V.A. $103.84",
     );
     expect(notasDeCargos(HSBC_30SEP, null, "MXN")).toBe(
-      "Pagado en 2 cargos del banco: 30-sep C ADMINISTRACION RENTA $649.00 · 30-sep I.V.A. $103.84",
+      "Pagado en 2 cargos del banco: 30/09/2026 C ADMINISTRACION RENTA $649.00 · 30/09/2026 I.V.A. $103.84",
     );
   });
 
   it("en orden de fecha; USD con su moneda; sin descripción, solo fecha y monto", () => {
     const usd = [mov("2026-10-01", "CARGO 2", "2.72"), mov("2026-09-30", null, "17.00")];
-    expect(notasDeCargos(usd, "HSBC USD", "USD")).toBe("Pagado en 2 cargos del banco (HSBC USD): 30-sep $17.00 USD · 01-oct CARGO 2 $2.72 USD");
+    expect(notasDeCargos(usd, "HSBC USD", "USD")).toBe("Pagado en 2 cargos del banco (HSBC USD): 30/09/2026 $17.00 USD · 01/10/2026 CARGO 2 $2.72 USD");
   });
 
   it("a lo más 10 cargos nombrados y «y N más»; la leyenda en una línea ≤ 60; nunca más de 2,000", () => {
@@ -849,8 +849,8 @@ describe("paso 4 · las notas del gasto con las leyendas de los cargos", () => {
       mov(`2026-09-${String(10 + i).padStart(2, "0")}`, `COMISION ${i + 1}\n  ESPACIOS`, "1.12"),
     );
     const t = notasDeCargos(doce, "GASTOS GNRAL", "MXN");
-    expect(t.startsWith("Pagado en 12 cargos del banco (GASTOS GNRAL): 10-sep COMISION 1 ESPACIOS $1.12 · 11-sep")).toBe(true);
-    expect(t.endsWith("19-sep COMISION 10 ESPACIOS $1.12 y 2 más")).toBe(true);
+    expect(t.startsWith("Pagado en 12 cargos del banco (GASTOS GNRAL): 10/09/2026 COMISION 1 ESPACIOS $1.12 · 11/09/2026")).toBe(true);
+    expect(t.endsWith("19/09/2026 COMISION 10 ESPACIOS $1.12 y 2 más")).toBe(true);
     expect(t.split(" · ")).toHaveLength(10);
     const larga = notasDeCargos([mov("2026-09-30", "X".repeat(200), "1.00"), mov("2026-09-30", "Y", "2.00")], null, "MXN");
     expect(larga).toContain(`${"X".repeat(59)}… $1.00`);
@@ -868,7 +868,7 @@ describe("paso 4 · el alta prellenada con la SUMA DEL API", () => {
       fecha_gasto: "2026-09-30",
       medio_pago: "TRANSFERENCIA",
       tarjeta_terminacion: "",
-      notas: "Pagado en 2 cargos del banco (HSBC Pesos): 30-sep C ADMINISTRACION RENTA $649.00 · 30-sep I.V.A. $103.84",
+      notas: "Pagado en 2 cargos del banco (HSBC Pesos): 30/09/2026 C ADMINISTRACION RENTA $649.00 · 30/09/2026 I.V.A. $103.84",
     });
   });
 
@@ -908,7 +908,7 @@ describe("paso 4 · el alta prellenada con la SUMA DEL API", () => {
     );
     expect(p.moneda).toBe("USD");
     expect(p.monto).toBe("19.72");
-    expect(p.notas).toBe("Pagado en 2 cargos del banco (HSBC USD): 01-oct COMISION $17.00 USD · 01-oct IVA COMISION $2.72 USD");
+    expect(p.notas).toBe("Pagado en 2 cargos del banco (HSBC USD): 01/10/2026 COMISION $17.00 USD · 01/10/2026 IVA COMISION $2.72 USD");
   });
 
   it("alias de la página si el API no lo manda; varias cuentas en las notas; sin suma o sin fecha, no se inventa", () => {
@@ -1027,7 +1027,7 @@ describe("paso 4 · errores del ALTA por la suma (el alta sigue abierta con este
 
   it("4xx ⇒ el texto del API; cargos no pendientes ⇒ refresh al cerrar; llave en uso ⇒ refresh y releer", () => {
     const noPend =
-      "No se registró el gasto: 1 de los 2 cargos ya no está pendiente — 30 sep · I.V.A. $103.84 (ya está vinculado a un gasto). Cancela, quita esos cargos de la selección y vuelve a intentarlo.";
+      "No se registró el gasto: 1 de los 2 cargos ya no está pendiente — 30/09/2026 · I.V.A. $103.84 (ya está vinculado a un gasto). Cancela, quita esos cargos de la selección y vuelve a intentarlo.";
     expect(mensajeErrorCrearSuma({ ok: false, code: "MOVIMIENTO_NO_PENDIENTE", status: 409, error: noPend })).toEqual({
       texto: noPend,
       incierto: false,
@@ -1099,7 +1099,7 @@ describe("paso 4 · los posibles duplicados (mismo monto, ±120 días) y cuándo
         ok: false,
         code: "MOVIMIENTO_NO_PENDIENTE",
         status: 409,
-        error: "No se vinculó ningún cargo: 1 de los 2 ya no está pendiente — 30 sep · I.V.A. $103.84 (ya está vinculado a un gasto). Quítalo de la selección y vuelve a intentarlo.",
+        error: "No se vinculó ningún cargo: 1 de los 2 ya no está pendiente — 30/09/2026 · I.V.A. $103.84 (ya está vinculado a un gasto). Quítalo de la selección y vuelve a intentarlo.",
         details: { movimientos: [{ id: IVA }] },
       },
       752.84,

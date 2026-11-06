@@ -219,8 +219,8 @@ describe("caja chica: «Por pagar (aún no sale de la caja)»", () => {
     expect(html).toContain("Por pagar (aún no sale de la caja)");
     expect(html).toContain("no cuentan en el saldo ni en lo por reponer hasta marcarlos pagados");
     expect(html.match(/data-por-pagar-item="/g)).toHaveLength(2);
-    expect(html).toContain(">Por pagar · 20 oct<");
-    expect(html).toContain(">Vencido · 15 oct<");
+    expect(html).toContain(">Por pagar · 20/10/2026<");
+    expect(html).toContain(">Vencido · 15/10/2026<");
     expect(html).toContain("Taxi / estacionamiento");
     expect(html).toContain(" · Taxi al hangar");
     expect(html).toContain("$500 MXN");
@@ -234,7 +234,7 @@ describe("caja chica: «Por pagar (aún no sale de la caja)»", () => {
       { id: "g-1", fecha_gasto: "2026-10-20", monto: 500, moneda: "MXN", categoria: "TAXI", concepto: "Taxi", estado_pago: "POR_PAGAR" },
     ];
     const socio = renderToStaticMarkup(<PorPagarCaja moneda="MXN" total={500} items={items} rol="SOCIO" />);
-    expect(socio).toContain(">Por pagar · 20 oct<");
+    expect(socio).toContain(">Por pagar · 20/10/2026<");
     expect(socio).not.toContain("Marcar pagado");
     for (const rol of ["ADMIN", "FACTURACION", null, undefined]) {
       const html = renderToStaticMarkup(<PorPagarCaja moneda="MXN" total={500} items={items} rol={rol} />);

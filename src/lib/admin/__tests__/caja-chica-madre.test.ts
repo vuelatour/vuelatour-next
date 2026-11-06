@@ -129,7 +129,7 @@ describe("reponer a una caja hija desde la madre", () => {
     expect(opcionCajaFondeada(caja())).toEqual({
       value: GREGORIO,
       label: "Gregorio Jurado · por reponer $5,000.00",
-      description: "Última reposición: 01 oct 2026 · $3,000.00",
+      description: "Última reposición: 01/10/2026 · $3,000.00",
     });
     expect(opcionCajaFondeada(caja({ por_reponer: 2738.99, ultima_reposicion: null })).label).toBe(
       "Gregorio Jurado · por reponer $2,738.99",
@@ -165,12 +165,12 @@ describe("reponer a una caja hija desde la madre", () => {
     expect(
       textoConfirmarReposicionHija({ monto: "5000", hija: caja(), madre: "Mary Cruz", fecha: "2026-10-15" }),
     ).toBe(
-      "Se registrará una reposición de $5,000.00 con fecha 15 oct 2026 en la caja de Gregorio Jurado y su reintegro en la caja de Mary Cruz.",
+      "Se registrará una reposición de $5,000.00 con fecha 15/10/2026 en la caja de Gregorio Jurado y su reintegro en la caja de Mary Cruz.",
     );
     // La fecha decide qué gastos quedan repuestos: una fecha cambiada se VE.
     expect(
       textoConfirmarReposicionHija({ monto: "5000", hija: caja(), madre: "Mary Cruz", fecha: "2026-10-01" }),
-    ).toContain("con fecha 01 oct 2026 ");
+    ).toContain("con fecha 01/10/2026 ");
     // Sin fecha (o inválida) el registro usa la de hoy.
     for (const fecha of ["", null, undefined, "2026-13-45"]) {
       expect(textoConfirmarReposicionHija({ monto: "5000", hija: caja(), madre: "Mary Cruz", fecha })).toBe(
@@ -213,16 +213,16 @@ describe("filtro Desde/Hasta del historial", () => {
 
   it("la línea del periodo visto", () => {
     expect(textoPeriodoHistorial({ desde: "2026-10-01", hasta: "2026-10-15" }, 12, 80)).toBe(
-      "Viendo del 01 oct 2026 al 15 oct 2026 · 12 de 80 movimientos",
+      "Viendo del 01/10/2026 al 15/10/2026 · 12 de 80 movimientos",
     );
     expect(textoPeriodoHistorial({ desde: "2026-10-01" }, 0, 1)).toBe(
-      "Viendo desde el 01 oct 2026 · 0 de 1 movimiento",
+      "Viendo desde el 01/10/2026 · 0 de 1 movimiento",
     );
     expect(textoPeriodoHistorial({ hasta: "2026-10-15" }, 3, 4)).toBe(
-      "Viendo hasta el 15 oct 2026 · 3 de 4 movimientos",
+      "Viendo hasta el 15/10/2026 · 3 de 4 movimientos",
     );
     expect(textoPeriodoHistorial({ desde: "2026-10-15", hasta: "2026-10-15" }, 1, 4)).toBe(
-      "Viendo del 15 oct 2026 · 1 de 4 movimientos",
+      "Viendo del 15/10/2026 · 1 de 4 movimientos",
     );
     expect(textoPeriodoHistorial({}, 4, 4)).toBeNull();
   });
@@ -364,7 +364,7 @@ describe("fondo consolidado de la caja madre", () => {
       gastosPendientes: "4 gastos · $3,199.91",
       porReponer: "$3,199.91",
       porReponerTono: "ambar",
-      ultimaReposicion: "15 oct 2026 · $5,000.00",
+      ultimaReposicion: "15/10/2026 · $5,000.00",
     });
     expect(filas[1]).toMatchObject({ porReponer: "$0.00", porReponerTono: "ok", gastosPendientes: "sin gastos" });
     expect(filas[2]).toMatchObject({

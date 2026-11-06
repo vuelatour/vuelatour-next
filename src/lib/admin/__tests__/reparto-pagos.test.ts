@@ -401,7 +401,7 @@ describe("textos (todo dice MXN)", () => {
 
   it("columna «Generó …» del reparto: mes completo o rango", () => {
     expect(etiquetaGeneroPeriodo("2026-09-01", "2026-09-30")).toBe("Generó en Septiembre 2026");
-    expect(etiquetaGeneroPeriodo("2026-10-01", "2026-10-15")).toMatch(/^Generó del 01 oct\.? 2026 al 15 oct\.? 2026$/);
+    expect(etiquetaGeneroPeriodo("2026-10-01", "2026-10-15")).toBe("Generó del 01/10/2026 al 15/10/2026");
   });
 
   it("monto de la entrega: en pesos dice T.C. y el dólar informativo; en dólares dice los PESOS que descontó", () => {
@@ -455,7 +455,7 @@ describe("textos (todo dice MXN)", () => {
         monto_usd: 3783.78,
         metodo: "EFECTIVO",
       }),
-    ).toMatch(/^01 oct\.? 2026 · \$70,000 MXN · Efectivo$/);
+    ).toBe("01/10/2026 · $70,000 MXN · Efectivo");
     expect(
       textoUltimoPago({
         id: EN_DOLARES.id,
@@ -466,7 +466,7 @@ describe("textos (todo dice MXN)", () => {
         monto_usd: 1000,
         metodo: "TRANSFERENCIA",
       }),
-    ).toMatch(/^01 oct\.? 2026 · \$1,000 USD = \$18,500\.00 MXN · Transferencia$/);
+    ).toBe("01/10/2026 · $1,000 USD = $18,500.00 MXN · Transferencia");
   });
 
   it("«Por mes»: la columna dice que agrupa por FECHA de entrega (no por el mes al que corresponde)", () => {
@@ -931,7 +931,7 @@ describe("formulario «Registrar entrega» (la cuenta es en pesos)", () => {
     expect(hintMontoPago({ moneda: "MXN", porEntregarMxn: -5, alta: true })).toBeNull();
     expect(hintMontoPago({ moneda: "MXN", porEntregarMxn: 1, alta: false })).toBeNull();
     expect(hintTcPago({ tc: "18.45", tcOficial: 18.45, hoy: "2026-10-01", moneda: "USD" })).toMatch(
-      /^T\.C\. oficial de referencia de hoy \(01 oct\.? 2026\) — puedes editarlo\. La cuenta del socio es en pesos: la entrega descuenta monto × T\.C\./,
+      /^T\.C\. oficial de referencia de hoy \(01\/10\/2026\) — puedes editarlo\. La cuenta del socio es en pesos: la entrega descuenta monto × T\.C\./,
     );
     expect(hintTcPago({ tc: "19", tcOficial: 18.45, hoy: "2026-10-01", moneda: "USD" })).not.toContain("oficial");
     expect(hintTcPago({ tc: "19", tcOficial: null, hoy: "2026-10-01", moneda: "MXN" })).toBe(

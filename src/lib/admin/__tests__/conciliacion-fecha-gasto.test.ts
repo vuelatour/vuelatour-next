@@ -142,15 +142,15 @@ describe("textos del renglón y del diálogo (Winjet)", () => {
   it("etiqueta del botón (dice CUÁL gasto), descripción, fecha actual y atajo", () => {
     expect(BOTON_FECHA_FILA).toBe("Fecha");
     expect(etiquetaBotonFecha(WINJET)).toBe(
-      "Corregir la fecha del gasto: Taxi / estacionamiento · $321.54 MXN · 10 oct 2026 · vuelo #436 · Winjet · Boleto Adulto ferry CZM-PDC",
+      "Corregir la fecha del gasto: Taxi / estacionamiento · $321.54 MXN · 10/10/2026 · vuelo #436 · Winjet · Boleto Adulto ferry CZM-PDC",
     );
     expect(etiquetaBotonFecha({ id: "x", monto: 0, fecha: null })).toBe(`${TITULO_CORREGIR_FECHA}: $0.00 MXN`);
     // Sin cargo a la vista (o sin fecha del cargo): la frase completa.
     expect(descripcionCorregirFecha(WINJET)).toBe(
       "Taxi / estacionamiento · $321.54 MXN · Winjet · Boleto Adulto ferry CZM-PDC. La fecha del gasto es la del PAGO (la del cargo del banco), no la de la factura.",
     );
-    expect(textoFechaActual("2026-10-10")).toBe("Fecha actual del gasto: 10 oct 2026");
-    expect(botonUsarFechaCargo("2026-10-12")).toBe("Usar la fecha del cargo (12 oct 2026)");
+    expect(textoFechaActual("2026-10-10")).toBe("Fecha actual del gasto: 10/10/2026");
+    expect(botonUsarFechaCargo("2026-10-12")).toBe("Usar la fecha del cargo (12/10/2026)");
   });
 
   it("botones de gastos iguales del MISMO día ya no se llaman igual (lector de pantalla)", () => {
@@ -160,15 +160,15 @@ describe("textos del renglón y del diálogo (Winjet)", () => {
     const c = { ...a, id: "c", vuelo_folio: null, nota: "Aterrizaje nocturno Mérida con recargo por horario extendido" };
     expect(etiquetaBotonFecha(a)).not.toBe(etiquetaBotonFecha(b));
     expect(etiquetaBotonFecha(a)).toBe(
-      "Corregir la fecha del gasto: Operaciones · $332.04 MXN · 10 oct 2026 · vuelo #436 · ASUR Cozumel",
+      "Corregir la fecha del gasto: Operaciones · $332.04 MXN · 10/10/2026 · vuelo #436 · ASUR Cozumel",
     );
     // La nota se recorta (el nombre accesible no es un párrafo).
     expect(etiquetaBotonFecha(c)).toBe(
-      "Corregir la fecha del gasto: Operaciones · $332.04 MXN · 10 oct 2026 · Aterrizaje nocturno Mérida con recargo…",
+      "Corregir la fecha del gasto: Operaciones · $332.04 MXN · 10/10/2026 · Aterrizaje nocturno Mérida con recargo…",
     );
     // Con proveedor, la etiqueta ya lo trae: sin la nota.
     expect(etiquetaBotonFecha({ ...a, proveedor: "VIP SAESA" })).toBe(
-      "Corregir la fecha del gasto: Operaciones · $332.04 MXN · 10 oct 2026 · VIP SAESA · vuelo #436",
+      "Corregir la fecha del gasto: Operaciones · $332.04 MXN · 10/10/2026 · VIP SAESA · vuelo #436",
     );
   });
 
@@ -223,7 +223,7 @@ describe("fechas (mediodía UTC, el mismo borde que el API)", () => {
     expect(v("")).toBe(MSG_FECHA_INCOMPLETA);
     expect(v("2026-02-30")).toBe(MSG_FECHA_INCOMPLETA);
     expect(v("2026-10-10")).toBe(MSG_FECHA_IGUAL);
-    expect(v("2026-10-15")).toBe("La fecha del pago no puede ser posterior a hoy (14 oct 2026).");
+    expect(v("2026-10-15")).toBe("La fecha del pago no puede ser posterior a hoy (14/10/2026).");
     expect(v("2025-10-13")).toBe(MSG_FECHA_MUY_ANTIGUA);
     expect(v("2025-10-14")).toBeNull();
     expect(v("2026-10-12")).toBeNull();
@@ -314,7 +314,7 @@ describe("candado del mes del vuelo (ficha del API 0.0.76, revisión del 14-oct-
     candado_mes_vuelo: { vuelo_dia: "2026-07-31", vuelo_folio: 109 },
   };
   const BLOQUEO_TREN =
-    "No se puede: este gasto es del vuelo #109 (31 jul 2026). Con fecha de agosto 2026 quedaría en otro mes que su vuelo y el balance de julio 2026 lo marcaría como pendiente («fecha FUERA del periodo del libro»). Déjale una fecha de julio 2026; para vincularlo no hace falta cambiarla.";
+    "No se puede: este gasto es del vuelo #109 (31/07/2026). Con fecha de agosto 2026 quedaría en otro mes que su vuelo y el balance de julio 2026 lo marcaría como pendiente («fecha FUERA del periodo del libro»). Déjale una fecha de julio 2026; para vincularlo no hace falta cambiarla.";
 
   it("mes nuevo ≠ mes del vuelo y ≠ el que ya tiene ⇒ el texto del API; dentro del mes o de regreso al del vuelo ⇒ null", () => {
     expect(bloqueoMesDelVuelo(TREN, "2026-08-10", "2026-07-31")).toBe(BLOQUEO_TREN);
@@ -323,10 +323,10 @@ describe("candado del mes del vuelo (ficha del API 0.0.76, revisión del 14-oct-
     const b150 = { candado_mes_vuelo: { vuelo_dia: "2026-08-25", vuelo_folio: 190 } };
     expect(bloqueoMesDelVuelo(b150, "2026-09-30", "2026-09-09")).toBeNull();
     expect(bloqueoMesDelVuelo(b150, "2026-08-25", "2026-09-09")).toBeNull();
-    expect(bloqueoMesDelVuelo(b150, "2026-10-02", "2026-09-09")).toContain("No se puede: este gasto es del vuelo #190 (25 ago 2026).");
+    expect(bloqueoMesDelVuelo(b150, "2026-10-02", "2026-09-09")).toContain("No se puede: este gasto es del vuelo #190 (25/08/2026).");
     // Sin folio, el texto no deja un «#» suelto.
     expect(bloqueoMesDelVuelo({ candado_mes_vuelo: { vuelo_dia: "2026-07-31" } }, "2026-08-10", "2026-07-31")).toContain(
-      "este gasto es del vuelo (31 jul 2026).",
+      "este gasto es del vuelo (31/07/2026).",
     );
   });
 
@@ -354,7 +354,7 @@ describe("candado del mes del vuelo (ficha del API 0.0.76, revisión del 14-oct-
 describe("aviso bajo un renglón MARCADO", () => {
   it("a más de 3 días del cargo ⇒ el texto exacto; a 3 o menos, o en efectivo ⇒ null", () => {
     expect(nudgeFechaMarcado({ ...WINJET, fecha: "2026-09-18" }, "2026-09-30")).toBe(
-      "La fecha del gasto (18 sep 2026) está a 12 días de este cargo (30 sep 2026). Si este cargo es su pago, corrígela con «Fecha».",
+      "La fecha del gasto (18/09/2026) está a 12 días de este cargo (30/09/2026). Si este cargo es su pago, corrígela con «Fecha».",
     );
     expect(nudgeFechaMarcado({ ...WINJET, fecha: "2026-09-27" }, "2026-09-30")).toBeNull();
     expect(nudgeFechaMarcado({ ...WINJET, fecha: "2026-09-18", medio_pago: "EFECTIVO" }, "2026-09-30")).toBeNull();
@@ -474,7 +474,7 @@ describe("respuesta de la action ⇒ qué hace el diálogo", () => {
   });
 
   it("FUERA_DEL_MES_DEL_VUELO y SOLO_BANCARIOS ⇒ bloqueo con el texto del API", () => {
-    const fuera = "El gasto es del vuelo #201 (27 ago 2026): su fecha no puede salir de agosto 2026. …";
+    const fuera = "El gasto es del vuelo #201 (27/08/2026): su fecha no puede salir de agosto 2026. …";
     expect(
       resultadoCorregirFecha({ ok: false, status: 409, code: "FECHA_GASTO_FUERA_DEL_MES_DEL_VUELO", error: fuera }),
     ).toEqual({ tipo: "bloqueo", texto: fuera });
@@ -497,7 +497,7 @@ describe("respuesta de la action ⇒ qué hace el diálogo", () => {
     ).toEqual({
       tipo: "fecha_vigente",
       fecha: "2026-10-11",
-      texto: "Alguien cambió la fecha de este gasto mientras tanto: ahora dice 11 oct 2026. Revisa y vuelve a guardar.",
+      texto: "Alguien cambió la fecha de este gasto mientras tanto: ahora dice 11/10/2026. Revisa y vuelve a guardar.",
     });
     expect(
       resultadoCorregirFecha({ ok: false, status: 409, code: "FECHA_GASTO_CAMBIO", error: "La fecha del gasto cambió…" }),
@@ -606,7 +606,7 @@ describe("mensajeErrorFechaGasto (diálogo y «Deshacer»)", () => {
     expect(mensajeErrorFechaGasto({ code: "BAD_REQUEST", status: 400, error: "fecha_gasto debe ser AAAA-MM-DD" })).toBe(
       MSG_FECHA_DATOS_RECHAZADOS,
     );
-    const futura = "La fecha del pago (15 oct 2026) es posterior a hoy (14 oct 2026): el banco no cobra en días que no han pasado.";
+    const futura = "La fecha del pago (15/10/2026) es posterior a hoy (14/10/2026): el banco no cobra en días que no han pasado.";
     expect(mensajeErrorFechaGasto({ code: "FECHA_GASTO_FUTURA", status: 400, error: futura })).toBe(futura);
     // La action ni contestó: tampoco se sabe si el PATCH llegó.
     expect(mensajeErrorFechaGasto({ error: MSG_SIN_CONEXION })).toBe(MSG_FECHA_TECNICO);
@@ -637,7 +637,7 @@ describe("mensajeErrorFechaGasto (diálogo y «Deshacer»)", () => {
 
 describe("avisos (toasts)", () => {
   it("corregida: título con las dos fechas y, sin aviso ni hora de carga, sin descripción", () => {
-    expect(toastFechaCorregida(cambio())).toEqual({ titulo: "Fecha del gasto corregida: 10 oct 2026 → 12 oct 2026" });
+    expect(toastFechaCorregida(cambio())).toEqual({ titulo: "Fecha del gasto corregida: 10/10/2026 → 12/10/2026" });
   });
 
   it("con la línea del API y la hora de carga movida ⇒ las dos, unidas con un espacio", () => {
@@ -647,13 +647,13 @@ describe("avisos (toasts)", () => {
         cambio({ aviso, fecha_hora_carga: "2026-10-12T15:30:00+00:00", fecha_hora_carga_movida: true }),
       ),
     ).toEqual({
-      titulo: "Fecha del gasto corregida: 10 oct 2026 → 12 oct 2026",
+      titulo: "Fecha del gasto corregida: 10/10/2026 → 12/10/2026",
       descripcion: `${aviso} La hora de la carga de combustible pasó al mismo día.`,
     });
     expect(
       toastFechaCorregida(cambio({ fecha_hora_carga: "2026-10-12T15:30:00+00:00", fecha_hora_carga_movida: true })),
     ).toEqual({
-      titulo: "Fecha del gasto corregida: 10 oct 2026 → 12 oct 2026",
+      titulo: "Fecha del gasto corregida: 10/10/2026 → 12/10/2026",
       descripcion: NOTA_HORA_CARGA_MOVIDA,
     });
   });
@@ -661,14 +661,14 @@ describe("avisos (toasts)", () => {
   it("la hora de carga que YA caía en el día nuevo (no se movió) NO se anuncia; un API sin la bandera tampoco", () => {
     // 21:00 Cancún del 12-oct (02:00Z del 13-oct) con fecha_gasto 13-oct → 12-oct.
     const r = cambio({ fecha_anterior: "2026-10-13", fecha_hora_carga: "2026-10-13T02:00:00+00:00", fecha_hora_carga_movida: false });
-    expect(toastFechaCorregida(r)).toEqual({ titulo: "Fecha del gasto corregida: 13 oct 2026 → 12 oct 2026" });
+    expect(toastFechaCorregida(r)).toEqual({ titulo: "Fecha del gasto corregida: 13/10/2026 → 12/10/2026" });
     expect(toastFechaCorregida(cambio({ fecha_hora_carga: "2026-10-12T15:30:00+00:00" })).descripcion).toBeUndefined();
   });
 
   it("ya tenía esa fecha ⇒ «no se cambió nada»; restaurada ⇒ su fecha", () => {
     expect(toastFechaCorregida(cambio({ cambio: false, fecha_anterior: "2026-10-12" }))).toEqual({ titulo: MSG_FECHA_SIN_CAMBIO });
     expect(MSG_FECHA_SIN_CAMBIO).toBe("El gasto ya tenía esa fecha: no se cambió nada.");
-    expect(toastFechaRestaurada({ fecha_gasto: "2026-10-10" })).toBe("Fecha restaurada: 10 oct 2026");
+    expect(toastFechaRestaurada({ fecha_gasto: "2026-10-10" })).toBe("Fecha restaurada: 10/10/2026");
   });
 });
 
@@ -726,7 +726,7 @@ describe("paridad con vuelatour-api", () => {
       expect(util).toContain(frase);
     }
     expect(bloqueoMesDelVuelo({ candado_mes_vuelo: { vuelo_dia: "2026-08-27", vuelo_folio: 201 } }, "2026-09-07", "2026-08-27")).toBe(
-      "No se puede: este gasto es del vuelo #201 (27 ago 2026). Con fecha de septiembre 2026 quedaría en otro mes que su vuelo y el balance de agosto 2026 lo marcaría como pendiente («fecha FUERA del periodo del libro»). Déjale una fecha de agosto 2026; para vincularlo no hace falta cambiarla.",
+      "No se puede: este gasto es del vuelo #201 (27/08/2026). Con fecha de septiembre 2026 quedaría en otro mes que su vuelo y el balance de agosto 2026 lo marcaría como pendiente («fecha FUERA del periodo del libro»). Déjale una fecha de agosto 2026; para vincularlo no hace falta cambiarla.",
     );
   });
 

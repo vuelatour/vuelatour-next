@@ -1,5 +1,5 @@
 /**
- * Cierre de mes formal (16-oct-2026, API 0.0.88): reglas PURAS del panel.
+ * Cierre de mes formal (16/10/2026, API 0.0.88): reglas PURAS del panel.
  * El panel no calcula dinero ni decide qué vuelo pasa de mes: aquí se prueba
  * que copia lo del API, arma los textos es-MX, no miente cuando no pudo leer
  * y que un API previo (llaves ausentes) deja todo como hoy.
@@ -106,7 +106,7 @@ import type { MesCierre, MesCierreAvion, PreviaCierre } from "@/types/cierres";
 const SEP_CERRADO: MesCierre = {
   periodo: "2026-09",
   estado: "CERRADO",
-  // 16-oct-2026 14:02 Cancún (UTC−5).
+  // 16/10/2026 14:02 Cancún (UTC−5).
   cerrado_at: "2026-10-16T19:02:00Z",
   cerrado_por: { id: "u1", nombre: "Ale" },
   reabierto_at: null,
@@ -187,15 +187,15 @@ describe("meses y fechas es-MX (hora Cancún)", () => {
   it("etiquetas", () => {
     expect(mesEnMinuscula("2026-09")).toBe("septiembre 2026");
     expect(mesCorto("2026-10")).toBe("oct-2026");
-    expect(ultimoDiaCorto("2026-09")).toBe("30-sep");
-    expect(ultimoDiaCorto("2026-02")).toBe("28-feb");
+    expect(ultimoDiaCorto("2026-09")).toBe("30/09/2026");
+    expect(ultimoDiaCorto("2026-02")).toBe("28/02/2026");
     expect(etiquetaBotonCerrar("2026-09")).toBe("Cerrar septiembre 2026");
     expect(textoCheckboxCerrar("2026-09")).toBe("Entiendo que septiembre 2026 quedará bloqueado para capturas");
   });
   it("fechaCortaCancun usa el día de Cancún, no el de UTC", () => {
-    expect(fechaCortaCancun("2026-10-16T19:02:00Z")).toBe("16-oct-2026");
-    // 1-oct 03:00 UTC = 30-sep 22:00 Cancún.
-    expect(fechaCortaCancun("2026-10-01T03:00:00Z")).toBe("30-sep-2026");
+    expect(fechaCortaCancun("2026-10-16T19:02:00Z")).toBe("16/10/2026");
+    // 01/10/2026 03:00 UTC = 30/09/2026 22:00 Cancún.
+    expect(fechaCortaCancun("2026-10-01T03:00:00Z")).toBe("30/09/2026");
     expect(fechaCortaCancun(null)).toBe("—");
     expect(fechaCortaCancun("nada")).toBe("—");
   });
@@ -203,10 +203,10 @@ describe("meses y fechas es-MX (hora Cancún)", () => {
     expect(hrefReportesMes("2026-09")).toBe("/admin/reportes?desde=2026-09-01&hasta=2026-09-30");
     expect(hrefReportesMes("basura")).toBeNull();
   });
-  it("diaCortoDeDia: espejo del API (día sin cero; solo un DÍA `YYYY-MM-DD`)", () => {
-    expect(diaCortoDeDia("2026-10-04")).toBe("4-oct");
-    expect(diaCortoDeDia("2026-10-14")).toBe("14-oct");
-    expect(diaCortoDeDia("2026-09-30")).toBe("30-sep");
+  it("diaCortoDeDia: espejo del API (DD/MM/AAAA; solo un DÍA `YYYY-MM-DD`)", () => {
+    expect(diaCortoDeDia("2026-10-04")).toBe("04/10/2026");
+    expect(diaCortoDeDia("2026-10-14")).toBe("14/10/2026");
+    expect(diaCortoDeDia("2026-09-30")).toBe("30/09/2026");
     // Un timestamp no se recorta: su día Cancún podría ser otro.
     expect(diaCortoDeDia("2026-10-01T03:00:00Z")).toBeNull();
     expect(diaCortoDeDia("2026-13-01")).toBeNull();
@@ -216,10 +216,10 @@ describe("meses y fechas es-MX (hora Cancún)", () => {
     expect(diaCortoDeDia(undefined)).toBeNull();
   });
   it("corteCortoDeDestino: último día del mes anterior al destino", () => {
-    expect(corteCortoDeDestino("2026-10")).toBe("30-sep");
-    expect(corteCortoDeDestino("2026-11")).toBe("31-oct");
-    expect(corteCortoDeDestino("2026-03")).toBe("28-feb");
-    expect(corteCortoDeDestino("2027-01")).toBe("31-dic");
+    expect(corteCortoDeDestino("2026-10")).toBe("30/09/2026");
+    expect(corteCortoDeDestino("2026-11")).toBe("31/10/2026");
+    expect(corteCortoDeDestino("2026-03")).toBe("28/02/2026");
+    expect(corteCortoDeDestino("2027-01")).toBe("31/12/2026");
     expect(corteCortoDeDestino("nada")).toBeNull();
     expect(corteCortoDeDestino(null)).toBeNull();
   });
@@ -309,16 +309,16 @@ describe("normalizarCierres / normalizarPrevia (lectura defensiva)", () => {
 });
 
 describe("badge del estado del mes", () => {
-  it("Cerrado el 16-oct-2026 por Ale", () => {
+  it("Cerrado el 16/10/2026 por Ale", () => {
     expect(badgeEstadoCierre(SEP_CERRADO, "2026-09", false)).toEqual({
       tono: "cerrado",
-      texto: "Cerrado el 16-oct-2026 por Ale",
+      texto: "Cerrado el 16/10/2026 por Ale",
     });
   });
-  it("En curso (se cierra a partir del 1-nov)", () => {
+  it("En curso (se cierra a partir del 01/11/2026)", () => {
     expect(badgeEstadoCierre(null, "2026-10", true)).toEqual({
       tono: "en-curso",
-      texto: "En curso (se cierra a partir del 1-nov)",
+      texto: "En curso (se cierra a partir del 01/11/2026)",
     });
   });
   it("Reabierto con quién y motivo; Abierto sin fila", () => {
@@ -329,7 +329,7 @@ describe("badge del estado del mes", () => {
       reabierto_por: { id: "u1", nombre: "Ale" },
       reabierto_motivo: "corregir T.C.",
     };
-    expect(badgeEstadoCierre(reab, "2026-09", false).texto).toBe("Reabierto el 17-oct-2026 por Ale (corregir T.C.)");
+    expect(badgeEstadoCierre(reab, "2026-09", false).texto).toBe("Reabierto el 17/10/2026 por Ale (corregir T.C.)");
     expect(badgeEstadoCierre(null, "2026-09", false)).toEqual({ tono: "abierto", texto: "Abierto" });
   });
 });
@@ -385,7 +385,7 @@ describe("diálogos: toasts, confirmación y motivo", () => {
   it("resumen de la previa y antes/después solo de los aviones que cambian", () => {
     const p = normalizarPrevia(PREVIA_SEP) as PreviaCierre;
     expect(resumenPrevia(p)).toBe(
-      "91 vuelos: 84 completados y 7 cancelados · 5 pasan a octubre 2026 ($16,199.76 USD por cobrar al 30-sep; después se cobraron $16,199.76 USD) · 6 con $0 cierran aquí",
+      "91 vuelos: 84 completados y 7 cancelados · 5 pasan a octubre 2026 ($16,199.76 USD por cobrar al 30/09/2026; después se cobraron $16,199.76 USD) · 6 con $0 cierran aquí",
     );
     expect(deltasReparto(p.reparto)).toEqual([
       { matricula: "N990GG", antes: 10000, despues: 8478.02, delta: 8478.02 - 10000 },
@@ -439,8 +439,8 @@ describe("chips (texto del API; el panel solo elige el color)", () => {
         cerrado_at: "2026-10-16T19:02:00Z",
         cerrado_por_nombre: "Ale",
       })?.texto,
-    ).toBe("Cerrado el 16-oct-2026 por Ale");
-    expect(textoNoCoincideSnapshot("2026-10-16T19:02:00Z")).toMatch(/^Los números de hoy no coinciden con el cierre del 16-oct-2026/);
+    ).toBe("Cerrado el 16/10/2026 por Ale");
+    expect(textoNoCoincideSnapshot("2026-10-16T19:02:00Z")).toMatch(/^Los números de hoy no coinciden con el cierre del 16\/10\/2026/);
   });
   it("chips del vuelo", () => {
     expect(chipsCierreVuelo(null)).toEqual([]);
@@ -465,7 +465,7 @@ describe("chips (texto del API; el panel solo elige el color)", () => {
       {
         tono: "pasa",
         texto: "2 pasan a octubre 2026",
-        title: "Sin cobro completo al 30-sep: no suman en este mes (#316, #337).",
+        title: "Sin cobro completo al 30/09/2026: no suman en este mes (#316, #337).",
       },
     ]);
     expect(
@@ -482,11 +482,11 @@ describe("chips (texto del API; el panel solo elige el color)", () => {
 
 describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () => {
   // Las marcas del API 0.0.91 (mes-contable.util.ts) tal cual.
-  const POSTERIOR_CERRADO = "Pasa a octubre 2026 (cobrado después del 30-sep; al cierre: $0.00 MXN de $36,632.89 MXN)";
-  const POSTERIOR_PREVIA = "Pasa a octubre 2026 · cobrado el 14-oct, después del 30-sep (al 30-sep: $0.00 de $2,343.20 USD)";
-  const POSTERIOR_PASARA = "Pasará a octubre 2026 al cerrar · cobrado el 14-oct, después del 30-sep";
+  const POSTERIOR_CERRADO = "Pasa a octubre 2026 (cobrado después del 30/09/2026; al cierre: $0.00 MXN de $36,632.89 MXN)";
+  const POSTERIOR_PREVIA = "Pasa a octubre 2026 · cobrado el 14/10/2026, después del 30/09/2026 (al 30/09/2026: $0.00 de $2,343.20 USD)";
+  const POSTERIOR_PASARA = "Pasará a octubre 2026 al cerrar · cobrado el 14/10/2026, después del 30/09/2026";
   const PARCIAL_PASARA =
-    "Pendiente de cobro: pasará a octubre 2026 al cerrar (al 30-sep: cobrado $500.00 de $2,076.40 USD; después: $500.00 USD)";
+    "Pendiente de cobro: pasará a octubre 2026 al cerrar (al 30/09/2026: cobrado $500.00 de $2,076.40 USD; después: $500.00 USD)";
   it("las marcas nuevas del API conservan su color (el prefijo no cambió)", () => {
     expect(tonoMarcaCierre(POSTERIOR_CERRADO)).toBe("pasa");
     expect(tonoMarcaCierre(POSTERIOR_PREVIA)).toBe("pasa");
@@ -494,8 +494,8 @@ describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () =
     expect(tonoMarcaCierre(PARCIAL_PASARA)).toBe("pasaria");
   });
   it("títulos del reparto: «sin cobro completo al <corte>», jamás «pendientes de cobro»", () => {
-    expect(tituloBloquePasan("2026-10")).toBe("Pasan a octubre 2026 (sin cobro completo al 30-sep, no se reparten)");
-    expect(tituloBloquePasarian("2026-11")).toBe("Pasarán a noviembre 2026 al cerrar el mes (sin cobro completo al 31-oct)");
+    expect(tituloBloquePasan("2026-10")).toBe("Pasan a octubre 2026 (sin cobro completo al 30/09/2026, no se reparten)");
+    expect(tituloBloquePasarian("2026-11")).toBe("Pasarán a noviembre 2026 al cerrar el mes (sin cobro completo al 31/10/2026)");
     expect(tituloBloqueVienen("2026-09")).toBe("Vienen de septiembre 2026");
     // Sin destino legible: sin corte, sin inventar.
     expect(tituloBloquePasan(undefined)).toBe("Pasan al mes siguiente (no se reparten)");
@@ -511,12 +511,12 @@ describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () =
       {
         tono: "viene",
         texto: "Viene de septiembre 2026",
-        title: "Sin cobro completo al 30-sep (cierre de septiembre 2026): su dinero cuenta en el mes al que pasó.",
+        title: "Sin cobro completo al 30/09/2026 (cierre de septiembre 2026): su dinero cuenta en el mes al que pasó.",
       },
       {
         tono: "pasa",
         texto: "Pasa a noviembre 2026",
-        title: "Sin cobro completo al 31-oct: su dinero cuenta en noviembre 2026.",
+        title: "Sin cobro completo al 31/10/2026: su dinero cuenta en noviembre 2026.",
       },
     ]);
     expect(chipsCierreVuelo({ diferido_de: "nada", diferido_a: null, mes_cerrado: false, cierre: null })[0].title).toBe(
@@ -544,7 +544,7 @@ describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () =
     });
     expect(conCorte.map((x) => x.title)).toEqual([
       "Vuelos de meses anteriores sin cobro completo al cerrar su mes: suman completos aquí (#316).",
-      "Sin cobro completo al 31-oct: si el mes se cierra hoy, pasan completos al mes siguiente (#351).",
+      "Sin cobro completo al 31/10/2026: si el mes se cierra hoy, pasan completos al mes siguiente (#351).",
     ]);
     const sinDestino = chipsResumenDiferidos({
       disponible: true,
@@ -557,7 +557,7 @@ describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () =
   });
   it("diálogo de cierre: «Cobrado después» con la fecha del cobro (API 0.0.91) o solo el monto", () => {
     expect(textoCobradoPosterior({ cobrado_posterior_usd: 2343.2, fecha_cobro_posterior: "2026-10-14" })).toBe(
-      "$2,343.20 USD · el 14-oct",
+      "$2,343.20 USD · el 14/10/2026",
     );
     // API previo: la llave no viaja ⇒ solo el monto.
     expect(textoCobradoPosterior({ cobrado_posterior_usd: 2076.4 })).toBe("$2,076.40 USD");
@@ -575,7 +575,7 @@ describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () =
       totales: { ...PREVIA_SEP.totales, pasan_cobrado_posterior_usd: 0 },
     }) as PreviaCierre;
     expect(resumenPrevia(sinDespues)).toBe(
-      "91 vuelos: 84 completados y 7 cancelados · 5 pasan a octubre 2026 ($16,199.76 USD por cobrar al 30-sep) · 6 con $0 cierran aquí",
+      "91 vuelos: 84 completados y 7 cancelados · 5 pasan a octubre 2026 ($16,199.76 USD por cobrar al 30/09/2026) · 6 con $0 cierran aquí",
     );
   });
   it("«Por cobrar al <corte>» en gris solo si el API dice que ya se cobró después", () => {
@@ -586,7 +586,7 @@ describe("caso #351: un vuelo que pasa de mes no siempre está por cobrar", () =
   });
   it("descripción del diálogo: la regla tal cual (también los cobrados después)", () => {
     expect(textoDescripcionCerrar("2026-09", "2026-10")).toBe(
-      "Al cerrar, septiembre 2026 queda bloqueado para capturas (gastos, cobros, ingresos, caja chica, cotizaciones). Los vuelos que no estén cobrados completos al 30-sep pasan completos a octubre 2026, también los que se cobraron después de esa fecha: su dinero cuenta en ese mes.",
+      "Al cerrar, septiembre 2026 queda bloqueado para capturas (gastos, cobros, ingresos, caja chica, cotizaciones). Los vuelos que no estén cobrados completos al 30/09/2026 pasan completos a octubre 2026, también los que se cobraron después de esa fecha: su dinero cuenta en ese mes.",
     );
   });
 });
@@ -614,7 +614,7 @@ describe("pre-cierre: leyenda por vuelo", () => {
   });
 });
 
-describe("revisión adversaria (16-oct-2026): el texto del API gana y nada se confirma a ciegas", () => {
+describe("revisión adversaria (16/10/2026): el texto del API gana y nada se confirma a ciegas", () => {
   const previa = normalizarPrevia(PREVIA_SEP) as PreviaCierre;
 
   it("la previa conserva `texto_no_cerrable` del API y el diálogo lo usa tal cual", () => {
@@ -845,7 +845,7 @@ describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105)", () => {
     expect(resumenFlota({ ...SEP_CERRADO, aviones_activos: 7, aviones_cerrados: 7 }, "2026-09", false)).toEqual({
       tono: "cerrado",
       texto: "Cerrado",
-      title: "Cerrado el 16-oct-2026 por Ale · 7 de 7 aviones cerrados",
+      title: "Cerrado el 16/10/2026 por Ale · 7 de 7 aviones cerrados",
     });
     expect(
       resumenFlota(
@@ -853,18 +853,18 @@ describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105)", () => {
         "2026-09",
         false,
       ),
-    ).toEqual({ tono: "reabierto", texto: "Reabierto", title: "Reabierto el 17-oct-2026 por Ale (T.C.)" });
-    expect(resumenFlota({ ...PARCIAL, estado: "ABIERTO" }, "2026-10", true).texto).toBe("En curso (se cierra a partir del 1-nov)");
+    ).toEqual({ tono: "reabierto", texto: "Reabierto", title: "Reabierto el 17/10/2026 por Ale (T.C.)" });
+    expect(resumenFlota({ ...PARCIAL, estado: "ABIERTO" }, "2026-10", true).texto).toBe("En curso (se cierra a partir del 01/11/2026)");
     // Sin conteos (API que no los manda): sin el sufijo.
     expect(resumenFlota({ ...PARCIAL, aviones_activos: undefined, aviones_cerrados: undefined }, "2026-09", false).texto).toBe("Parcial");
     expect(resumenFlota(null, "2026-09", false)).toEqual({ tono: "abierto", texto: "Abierto", title: "Ningún avión cerrado" });
     // FALLBACK GLOBAL: el badge largo de siempre.
-    expect(resumenFlota(SEP_CERRADO, "2026-09", false, "GLOBAL")).toEqual({ tono: "cerrado", texto: "Cerrado el 16-oct-2026 por Ale" });
+    expect(resumenFlota(SEP_CERRADO, "2026-09", false, "GLOBAL")).toEqual({ tono: "cerrado", texto: "Cerrado el 16/10/2026 por Ale" });
     expect(resumenFlota(null, "2026-09", false, "GLOBAL")).toEqual({ tono: "abierto", texto: "Abierto" });
   });
 
   it("badge por avión y PARCIAL en badgeEstadoCierre", () => {
-    expect(badgeEstadoAvion(N58BT, "2026-09", false)).toEqual({ tono: "cerrado", texto: "Cerrado el 16-oct-2026 por Ale" });
+    expect(badgeEstadoAvion(N58BT, "2026-09", false)).toEqual({ tono: "cerrado", texto: "Cerrado el 16/10/2026 por Ale" });
     expect(badgeEstadoAvion(N621, "2026-09", false)).toEqual({ tono: "abierto", texto: "Abierto" });
     expect(badgeEstadoAvion(N621, "2026-10", true)?.tono).toBe("en-curso");
     expect(badgeEstadoAvion(null, "2026-09", false)).toBeNull();
@@ -1038,12 +1038,12 @@ describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105)", () => {
     ).toEqual({ tono: "abierto", texto: "Abierto", title: "Toda la flota: parcial (cerrados: N58BT)" });
     expect(textoBadgeCierrePeriodo({ disponible: true, periodo: "2026-09", estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z", estado_flota: "CERRADO" })).toEqual({
       tono: "cerrado",
-      texto: "Cerrado el 16-oct-2026",
+      texto: "Cerrado el 16/10/2026",
       title: "Toda la flota: cerrada",
     });
     expect(badgeCierreAvion({ estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z", cerrado_por_nombre: "Ale" })).toEqual({
       tono: "cerrado",
-      texto: "Cerrado el 16-oct-2026 por Ale",
+      texto: "Cerrado el 16/10/2026 por Ale",
     });
     expect(badgeCierreAvion({ estado: "ABIERTO" })).toEqual({ tono: "abierto", texto: "Abierto" });
     expect(badgeCierreAvion({ estado: "REABIERTO" })).toEqual({ tono: "reabierto", texto: "Reabierto" });
@@ -1052,7 +1052,7 @@ describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104, invariante 105)", () => {
     // La pantalla por avión: el del avión gana; sin él, el global; sin `periodo`, nada.
     const global = { disponible: true, periodo: "2026-09", estado: "PARCIAL" as const, aviones_cerrados: ["N58BT"] };
     expect(badgeCierreDelAvion({ ...global, cierre_avion: { estado: "ABIERTO" } })?.texto).toBe("Abierto");
-    expect(badgeCierreDelAvion(global, { estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z" })?.texto).toBe("Cerrado el 16-oct-2026");
+    expect(badgeCierreDelAvion(global, { estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z" })?.texto).toBe("Cerrado el 16/10/2026");
     expect(badgeCierreDelAvion(global)?.texto).toBe("Parcial · 1 avión");
     expect(badgeCierreDelAvion({ ...global, periodo: null }, { estado: "CERRADO" })).toBeNull();
     expect(badgeCierreDelAvion(null)).toBeNull();
@@ -1076,7 +1076,7 @@ describe("INCLUIR EN EL MES (21-oct-2026): los cobrados después del corte se qu
     expect(puedeQuedarseEnMes({ motivo: null })).toBe(false);
   });
   it("textos: la casilla, el título de la tabla y la nota", () => {
-    expect(textoQuedarseEnMes("2026-09", v("COBRO_POSTERIOR"))).toBe("Se queda en septiembre 2026 (ya se cobró el 2-oct)");
+    expect(textoQuedarseEnMes("2026-09", v("COBRO_POSTERIOR"))).toBe("Se queda en septiembre 2026 (ya se cobró el 02/10/2026)");
     expect(textoQuedarseEnMes("2026-09", v("COBRO_POSTERIOR", null))).toBe(
       "Se queda en septiembre 2026 (ya se cobró después del corte)",
     );

@@ -135,13 +135,11 @@ export function tituloOmitir(n: number): string {
 export const DESCRIPCION_OMITIR =
   "Dejan de contar como pendientes («Faltan …») sin ligarse a ningún gasto, cobro ni ingreso. Quedan como «Omitido» con tu motivo, tu nombre y la fecha, y se regresan a Pendientes desde la pestaña «Omitidos».";
 
-const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] as const;
-
-/** «24 sep» (día de pared YYYY-MM-DD, sin Intl: determinista). */
+/** «24/09/2026» (día de pared YYYY-MM-DD, sin Intl: determinista; DD/MM/AAAA desde el 6-nov-2026). */
 export function fechaCortaMovimiento(fecha: string | null | undefined): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(fecha ?? ""));
-  const mes = m ? MESES_CORTOS[Number(m[2]) - 1] : undefined;
-  return m && mes ? `${m[3]} ${mes}` : "sin fecha";
+  const mes = m ? Number(m[2]) : 0;
+  return m && mes >= 1 && mes <= 12 ? `${m[3]}/${m[2]}/${m[1]}` : "sin fecha";
 }
 
 function unaLinea(s: string | null | undefined, max: number): string {

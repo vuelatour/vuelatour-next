@@ -16,26 +16,11 @@
  *
  * Espejo de `src/common/inicio-oficial.util.ts` del API (invariante 86).
  */
-import { MESES_LARGOS_ES } from "@/lib/datetime";
+import { fmtDateOnly, MESES_LARGOS_ES } from "@/lib/datetime";
 import { esDiaValido } from "./url-params";
 
 /** «AAAA-MM-DD» del inicio oficial, o `null` = sin piso (comportamiento de siempre). */
 export type InicioOficial = string | null;
-
-const MESES_CORTOS = [
-  "ene",
-  "feb",
-  "mar",
-  "abr",
-  "may",
-  "jun",
-  "jul",
-  "ago",
-  "sep",
-  "oct",
-  "nov",
-  "dic",
-] as const;
 
 /** Valida lo que mande el API: solo un día real «AAAA-MM-DD»; lo demás ⇒ `null`. */
 export function normalizarInicioOficial(valor: unknown): InicioOficial {
@@ -52,11 +37,10 @@ export function inicioOficialDeMe(
   return normalizarInicioOficial(me?.config?.inicio_oficial);
 }
 
-/** «2026-09-01» ⇒ «1-sep-2026». Inválida ⇒ la entrada tal cual. */
+/** «2026-09-01» ⇒ «01/09/2026» (DD/MM/AAAA, 6-nov-2026). Inválida ⇒ la entrada tal cual. */
 export function fechaInicioCorta(inicio: string): string {
   if (!esDiaValido(inicio)) return inicio;
-  const [a, m, d] = inicio.split("-");
-  return `${Number(d)}-${MESES_CORTOS[Number(m) - 1]}-${a}`;
+  return fmtDateOnly(inicio);
 }
 
 /** «AAAA-MM» del mes del inicio (para `min` de un `type="month"`). */

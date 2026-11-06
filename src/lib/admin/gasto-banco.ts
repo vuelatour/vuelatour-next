@@ -113,7 +113,7 @@ export const NOTA_ESPEJO = "Detalle simplificado: la base de datos todavía no t
 export const TITULO_VER_EN_CONCILIACION = "Abre Conciliación en otra pestaña con este cargo primero y resaltado";
 export const TITULO_REGISTRO_LIGA =
   "Quién hizo la liga: a mano, o quien importó el estado de cuenta o capturó el gasto cuando el sistema la cruzó solo.";
-export const TEXTO_LIGA_ANTERIOR = "Liga anterior al 2 oct 2026: el sistema todavía no guardaba quién la hizo.";
+export const TEXTO_LIGA_ANTERIOR = "Liga anterior al 02/10/2026: el sistema todavía no guardaba quién la hizo.";
 export const INTRO_SIN_CONCILIAR =
   "Se cruza solo al importar el estado de cuenta, cuando el monto y la fecha coinciden (hasta 3 días de diferencia). Si no se cruzó, revisa:";
 export const CAUSAS_SIN_CONCILIAR = [

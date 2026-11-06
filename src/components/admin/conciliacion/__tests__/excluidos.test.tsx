@@ -111,7 +111,7 @@ describe("caso real: tres gastos de $212.00 en EFECTIVO", () => {
 
   it("primero el vacío de siempre y DEBAJO, en ámbar, el porqué", () => {
     const iVacio = html.indexOf(VACIO_212.texto);
-    const iPorque = html.indexOf("Hay 3 gastos de $212.00 en efectivo (24, 27 y 28 sep · vuelos #338 y #330)");
+    const iPorque = html.indexOf("Hay 3 gastos de $212.00 en efectivo (24/09/2026, 27/09/2026 y 28/09/2026 · vuelos #338 y #330)");
     expect(iVacio).toBeGreaterThan(-1);
     expect(iPorque).toBeGreaterThan(iVacio);
     expect(html).toContain("la lista solo muestra gastos pagados por el banco.");
@@ -144,9 +144,9 @@ describe("caso real: tres gastos de $212.00 en EFECTIVO", () => {
     expect(cuenta(html, 'target="_blank"')).toBe(3);
     expect(cuenta(html, `href="/admin/flights/${V338}"`)).toBe(1);
     expect(cuenta(html, `href="/admin/flights/${V330}"`)).toBe(2);
-    expect(html).toContain(">vuelo #338 (24 sep)</a>");
-    expect(html).toContain(">vuelo #330 (27 sep)</a>");
-    expect(html).toContain(">vuelo #330 (28 sep)</a>");
+    expect(html).toContain(">vuelo #338 (24/09/2026)</a>");
+    expect(html).toContain(">vuelo #330 (27/09/2026)</a>");
+    expect(html).toContain(">vuelo #330 (28/09/2026)</a>");
     expect(html).toContain('title="Taxi / estacionamiento · $212.00 · Efectivo. Abre el vuelo #338 en otra pestaña."');
   });
 
@@ -182,10 +182,10 @@ describe("mezcla de motivos: una frase por motivo, en orden", () => {
       { motivo: "EFECTIVO_U_OTRO_MEDIO", n: 1, gastos: [EFECTIVO_REAL.gastos[0]] },
     ]);
     const orden = [
-      "Hay 1 gasto de $212.00 en efectivo (24 sep · vuelo #338)",
-      "1 gasto de $212.00 (28 sep · vuelo #330) ya está conciliado con el cargo del 5 sep (GASTOS GNRAL).",
-      "2 gastos de $212.00 están en dólares (27 sep · vuelo #330, y 1 más) y la cuenta es en pesos (MXN).",
-      "1 gasto de $212.00 (12 jun · vuelo #301) cae fuera de ±30 días del cargo: amplía a 120 días.",
+      "Hay 1 gasto de $212.00 en efectivo (24/09/2026 · vuelo #338)",
+      "1 gasto de $212.00 (28/09/2026 · vuelo #330) ya está conciliado con el cargo del 05/09/2026 (GASTOS GNRAL).",
+      "2 gastos de $212.00 están en dólares (27/09/2026 · vuelo #330, y 1 más) y la cuenta es en pesos (MXN).",
+      "1 gasto de $212.00 (12/06/2026 · vuelo #301) cae fuera de ±30 días del cargo: amplía a 120 días.",
     ].map((t) => html.indexOf(t));
     expect(orden.every((i) => i > -1)).toBe(true);
     expect([...orden].sort((a, b) => a - b)).toEqual(orden);

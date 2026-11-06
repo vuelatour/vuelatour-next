@@ -258,7 +258,7 @@ describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): chip y botón de cierre 
     expect(n621).toContain('aria-label="Cerrar septiembre 2026 · N621TX"');
     expect(n621).toContain(">Ver en pantalla<");
     const n58 = tile(html, "N58BT");
-    expect(n58).toContain("Cerrado el 16-oct-2026 por Ale");
+    expect(n58).toContain("Cerrado el 16/10/2026 por Ale");
     expect(n58).toContain('aria-label="¿Reabrir septiembre 2026 · N58BT?"');
     expect(n58).not.toContain("Cerrar septiembre");
     expect(tile(html, "XB-IJP")).not.toContain("data-cierre-avion");
@@ -273,7 +273,7 @@ describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): chip y botón de cierre 
     expect(html).not.toContain("<a ");
     expect(html).toContain("Cessna Caravan");
     expect((html.match(/aria-label="Cerrar septiembre 2026 · /g) ?? []).length).toBe(5);
-    expect(tile(html, "N58BT")).toContain("Cerrado el 16-oct-2026 por Ale");
+    expect(tile(html, "N58BT")).toContain("Cerrado el 16/10/2026 por Ale");
     expect(html).not.toContain("Reabrir");
   });
 
@@ -297,7 +297,7 @@ describe("CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): chip y botón de cierre 
 
   it("«Este mes»: chip «En curso» y sin botones; rango que no es un mes o mes sin fila: ni chip ni botón", () => {
     const enCurso = pintar({ rol: "ADMIN", periodo: { mes: "2026-10", enCurso: true } });
-    expect(enCurso).toContain("En curso (se cierra a partir del 1-nov)");
+    expect(enCurso).toContain("En curso (se cierra a partir del 01/11/2026)");
     expect(conBotonesCierre(enCurso)).toBe(false);
     const sinMes = pintar({ rol: "ADMIN", periodo: null });
     expect(sinMes).not.toContain("data-cierre-avion");

@@ -3,7 +3,7 @@
  * y de la ventana «Editar propietarios».
  *
  * Caso real (captura del cliente, XA-VGV): Hernan Garza 100 % desde el
- * 1-ene-2020 «termina el 19 oct 2026» + Alejandro Canales 100 % desde el
+ * 1-ene-2020 «termina el 19/10/2026» + Alejandro Canales 100 % desde el
  * 18-ago-2026 = 200 % asignado. Lo que se congela:
  *  1. el selector lista socios y empresas de CUALQUIER estado (los socios
  *     reales están INACTIVOS) y a los demás solo ACTIVOS; «＋ Nuevo socio…»
@@ -167,9 +167,9 @@ describe("porcentajes", () => {
   });
 
   it("la vigencia se lee en días de pared", () => {
-    expect(lineaVigencia(HERNAN, HOY)).toBe("desde 01 ene 2020");
-    expect(lineaVigencia({ ...HERNAN, vigente_hasta: HOY }, HOY)).toBe("desde 01 ene 2020 · último día 19 oct 2026");
-    expect(lineaVigencia({ ...HERNAN, vigente_hasta: "2026-06-07" }, HOY)).toBe("01 ene 2020 – 07 jun 2026");
+    expect(lineaVigencia(HERNAN, HOY)).toBe("desde 01/01/2020");
+    expect(lineaVigencia({ ...HERNAN, vigente_hasta: HOY }, HOY)).toBe("desde 01/01/2020 · último día 19/10/2026");
+    expect(lineaVigencia({ ...HERNAN, vigente_hasta: "2026-06-07" }, HOY)).toBe("01/01/2020 – 07/06/2026");
   });
 });
 
@@ -211,7 +211,7 @@ describe("la ventana: filas, quitar, validar", () => {
     const filas = filasDeVigentes([HERNAN, ALE]);
     const s = sugerenciaUltimoDia(filas[0], filas, HOY, NOMBRES);
     expect(s).toEqual({ dia: "2026-08-17", motivo: "RELEVO", relevo: "Alejandro Canales" });
-    expect(textoSugerenciaUltimoDia(s)).toBe("El día anterior a que entró Alejandro Canales: 17 ago 2026.");
+    expect(textoSugerenciaUltimoDia(s)).toBe("El día anterior a que entró Alejandro Canales: 17/08/2026.");
     const sinRelevo = sugerenciaUltimoDia(filas[1], filas, HOY, NOMBRES);
     expect(sinRelevo).toEqual({ dia: "2026-10-18", motivo: "AYER" });
     const hoyFila: FilaPropietario = { ...filas[1], vigente_desde: HOY };
@@ -221,7 +221,7 @@ describe("la ventana: filas, quitar, validar", () => {
   it("un último día antes del primero se rechaza con el texto del API", () => {
     const [h] = filasDeVigentes([HERNAN]);
     expect(errorUltimoDia(h, "2019-12-31", "Hernan Garza")).toBe(
-      "Hernan Garza empezó el 01 ene 2020: no puede terminar antes. Si se agregó por error, elige «Se agregó por error».",
+      "Hernan Garza empezó el 01/01/2020: no puede terminar antes. Si se agregó por error, elige «Se agregó por error».",
     );
     expect(errorUltimoDia(h, "", "Hernan Garza")).toBe("Elige el último día.");
     expect(errorUltimoDia(h, "2026-08-17", "Hernan Garza")).toBeNull();
@@ -281,7 +281,7 @@ describe("el plan de llamadas", () => {
       NOMBRES,
     );
     expect(plan).toEqual([{ tipo: "cerrar", id: HERNAN.id, hasta: "2026-08-17", nombre: "Hernan Garza" }]);
-    expect(descripcionPaso(plan[0])).toBe("Hernan Garza: último día 17 ago 2026");
+    expect(descripcionPaso(plan[0])).toBe("Hernan Garza: último día 17/08/2026");
     expect(planPideConfirmacion(plan, 100)).toBe(false);
   });
 
@@ -296,7 +296,7 @@ describe("el plan de llamadas", () => {
     expect(plan.map((p) => p.tipo)).toEqual(["borrar", "actualizar", "crear"]);
     expect(plan[1]).toMatchObject({ patch: { porcentaje: 70 } });
     expect(plan[2]).toMatchObject({ alta: { socio_id: MAU_ID, porcentaje: 30, vigente_desde: HOY } });
-    expect(descripcionPaso(plan[2])).toBe("Mauricio Roque: agregado con 30 % desde 19 oct 2026");
+    expect(descripcionPaso(plan[2])).toBe("Mauricio Roque: agregado con 30 % desde 19/10/2026");
     expect(planPideConfirmacion(plan, 100)).toBe(true);
     // Uno sube y otro baja: baja primero.
     const plan2 = planPropietarios(
@@ -318,10 +318,10 @@ describe("el plan de llamadas", () => {
     expect(textoConfirmarBorrados([])).toBe("");
     const paso = { tipo: "crear" as const, alta: { socio_id: MAU_ID, porcentaje: 30, vigente_desde: HOY }, nombre: "Mauricio Roque" };
     expect(textoGuardadoParcial(0, 2, paso, "boom")).toBe(
-      "No se aplicó ningún cambio. Falló «Mauricio Roque: agregado con 30 % desde 19 oct 2026»: boom",
+      "No se aplicó ningún cambio. Falló «Mauricio Roque: agregado con 30 % desde 19/10/2026»: boom",
     );
     expect(textoGuardadoParcial(1, 2, paso, "boom")).toBe(
-      "Se aplicaron 1 de 2 cambios (ya están guardados). Falló «Mauricio Roque: agregado con 30 % desde 19 oct 2026»: boom",
+      "Se aplicaron 1 de 2 cambios (ya están guardados). Falló «Mauricio Roque: agregado con 30 % desde 19/10/2026»: boom",
     );
   });
 });

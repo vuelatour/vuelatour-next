@@ -128,7 +128,7 @@ describe("ResumenMadreCard", () => {
     expect(html).toContain(">Gregorio Jurado<");
     expect(html).toContain("$1,800.09");
     expect(html).toContain("4 gastos · $3,199.91");
-    expect(html).toContain("15 oct 2026 · $5,000.00");
+    expect(html).toContain("15/10/2026 · $5,000.00");
     expect(html).toContain(">Alexander E. Saab<");
     expect(html).toContain("sin gastos");
     // Totales (del API, no sumados aquí).

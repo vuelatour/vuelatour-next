@@ -104,7 +104,7 @@ describe("prellenado del alta desde el cargo", () => {
   });
 
   it("el resumen del cargo", () => {
-    expect(textoResumenCargo(CARGO, "MXN")).toBe("Cargo de $212 MXN del 07 sep 2026 · ASUR CANCUN");
+    expect(textoResumenCargo(CARGO, "MXN")).toBe("Cargo de $212 MXN del 07/09/2026 · ASUR CANCUN");
   });
 });
 

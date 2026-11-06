@@ -160,7 +160,7 @@ describe("atajosPeriodoReportes: «Este mes» y «Mes pasado» como enlaces puro
       "/admin/reportes?desde=2026-09-01&hasta=2026-09-30",
     ]);
     expect(atajos[0].href).toBe(hrefReportesDesdeVista("2026-10-01", "2026-10-12"));
-    // El tooltip con el formato REAL de `fmtDateOnly` («01 oct 2026»), nunca tecleado a mano.
+    // El tooltip con el formato REAL de `fmtDateOnly` («01/10/2026»), nunca tecleado a mano.
     expect(atajos.map((a) => a.title)).toEqual([
       textoPeriodoVista("2026-10-01", "2026-10-12"),
       textoPeriodoVista("2026-09-01", "2026-09-30"),

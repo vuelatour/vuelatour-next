@@ -140,9 +140,9 @@ describe("con selección (pestañas «Todos»/«Pendientes»)", () => {
       expect(c).toContain("cursor-pointer");
       expect(c).toContain("accent-brand-600");
     }
-    expect(etiquetas).toContain(esc("Seleccionar el cargo de $1.12 MXN del 24 sep 2026 · IVA - COMISIONES (GASTOS GNRAL)"));
+    expect(etiquetas).toContain(esc("Seleccionar el cargo de $1.12 MXN del 24/09/2026 · IVA - COMISIONES (GASTOS GNRAL)"));
     expect(etiquetas).toContain(
-      esc("Seleccionar el abono de $825.13 MXN del 23 sep 2026 · CARGO INDEBIDO 21 SEP 35552 (GASTOS GNRAL)"),
+      esc("Seleccionar el abono de $825.13 MXN del 23/09/2026 · CARGO INDEBIDO 21 SEP 35552 (GASTOS GNRAL)"),
     );
   });
 
@@ -198,7 +198,7 @@ describe("pestaña «Omitidos»", () => {
   it("la casilla en la fila omitida dice «cargo omitido» y el botón cuenta omitidos", () => {
     expect(casillas(html)).toHaveLength(1);
     expect(casillas(html)[0]).toContain(
-      esc("Seleccionar el cargo omitido de $1.12 MXN del 24 sep 2026 · IVA - COMISIONES (GASTOS GNRAL)"),
+      esc("Seleccionar el cargo omitido de $1.12 MXN del 24/09/2026 · IVA - COMISIONES (GASTOS GNRAL)"),
     );
     expect(html).toContain("Seleccionar el omitido de la lista");
   });

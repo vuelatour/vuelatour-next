@@ -111,14 +111,14 @@ describe("Último servicio (Últ. Tact. Serv. del pizarrón)", () => {
   it("N4142R: el taco con el que se hizo, con etapa y fecha corta", () => {
     expect(textoUltimoServicio(n4142r)).toEqual({
       taco: "4455.1 h",
-      detalle: "Servicio 50 hrs · 12 sep 2026",
+      detalle: "Servicio 50 hrs · 12/09/2026",
     });
   });
 
   it("XA-VGV: 2216.9 h del 28 de agosto", () => {
     expect(textoUltimoServicio(xaVgv)).toEqual({
       taco: "2216.9 h",
-      detalle: "50 hrs · 28 ago 2026",
+      detalle: "50 hrs · 28/08/2026",
     });
   });
 
@@ -269,7 +269,7 @@ describe("Sublínea de la orden (reusa estadoOrdenServicio)", () => {
         },
       },
     });
-    expect(e?.texto).toBe("Orden programada para 25 sep 2026");
+    expect(e?.texto).toBe("Orden programada para 25/09/2026");
   });
 
   it("sin orden la LISTA calla (la promesa «se genera sola» es del expediente)", () => {

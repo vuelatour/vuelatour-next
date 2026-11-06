@@ -88,8 +88,8 @@ describe("el diálogo «Omitir la conciliación» al abrir", () => {
     expect(html).toContain("Omitir la conciliación de 3 movimientos");
     expect(html).toContain(esc("Dejan de contar como pendientes («Faltan …») sin ligarse a ningún gasto, cobro ni ingreso."));
     expect(html).toContain("3 movimientos · 2 cargos $8.12 MXN · 1 abono $825.13 MXN");
-    expect(html).toContain("24 sep · GASTOS GNRAL · IVA - COMISIONES · $1.12 (cargo)");
-    expect(html).toContain("23 sep · GASTOS GNRAL · CARGO INDEBIDO 21 SEP 35552 · $825.13 (abono)");
+    expect(html).toContain("24/09/2026 · GASTOS GNRAL · IVA - COMISIONES · $1.12 (cargo)");
+    expect(html).toContain("23/09/2026 · GASTOS GNRAL · CARGO INDEBIDO 21 SEP 35552 · $825.13 (abono)");
   });
 
   it("mientras revisa lo dice; el aviso de abonos manda a Ingresos", () => {
@@ -149,7 +149,7 @@ describe("«¿Deshacer la omisión…?»", () => {
     expect(html).toContain(
       esc("Vuelven a «Pendientes» y a contar en «Faltan». De sus notas se quita solo la línea «Omitido de la conciliación…»; lo demás no cambia."),
     );
-    expect(html).toContain("24 sep · GASTOS GNRAL · IVA - COMISIONES · $1.12 (cargo)");
+    expect(html).toContain("24/09/2026 · GASTOS GNRAL · IVA - COMISIONES · $1.12 (cargo)");
     expect(html).toContain("Comisión o IVA del banco");
     expect(html).toMatch(/<button type="button" class="cursor-pointer bg-destructive[^"]*">Deshacer la omisión<\/button>/);
   });

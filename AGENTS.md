@@ -13281,3 +13281,69 @@ no aparezca marcada la opción de agregar al inventario».
 - Tests: `compras-estado.test.ts` («gastos aparte…», default sin marcar) y
   `compras-ui.test.tsx` (orden compra → gasto → gastos aparte → recibir, sin
   botón «Compras»).
+
+## Fechas en DD/MM/AAAA en todos lados (6-nov-2026)
+
+Pedido del dueño (capturas de «Fecha del gasto» y «Periodo desde/hasta» con
+11/06/2026 por el 6 de noviembre): «estandarizar todas las fechas al formato
+DD/MM/AAAA, en todos lados… a lo mejor es por el idioma de la máquina, pero
+que por defecto ya todas salgan con este formato».
+
+- **Textos** (`lib/datetime.ts`, fuente única): `fmtDateOnly` «06/11/2026»,
+  `fmtDate` (día Cancún), `fmtDateTime` «06/11/2026, 10:40 a.m.»,
+  `fmtDateTimeShort` «06/11/2026, 03:00 p.m.» (ahora con año),
+  `fmtWeekdayDateTime` «jue 03/09/2026, 09:45 a.m.». La hora sigue en 12 h
+  es-MX; el día es SIEMPRE el de Cancún (`partesCancun`, sin `Intl` para el
+  día). `fechaLargaDia` («7 de octubre de 2026») y las etiquetas de mes
+  («Noviembre 2026») no cambian. Prueba: `lib/__tests__/datetime-formato.test.ts`.
+- **Inputs** (`components/ui/input.tsx`): `type="date"` y
+  `type="datetime-local"` se pintan con `FechaInput`: un campo de TEXTO con
+  máscara DD/MM/AAAA (o DD/MM/AAAA HH:MM; `lib/fecha-input.ts`:
+  `mascaraFecha`, `isoDeTexto`, `textoDeIso`, PUROS) y, detrás del icono del
+  calendario, el nativo con `opacity-0` como selector. El nativo lleva
+  `name`, `min`/`max`, `defaultValue`/valor ISO, el `ref` y el `onChange` /
+  `onBlur` del consumidor: el VALOR que viaja sigue siendo el ISO de
+  siempre, así que controlados (`value`/`onChange(e.target.value)`),
+  react-hook-form (`register`) y los `<form action>` no cambian. El texto
+  visible lleva `id` (la etiqueta), `placeholder`, `aria-*`, `data-*`,
+  `required`/`disabled`. Al teclear una fecha completa y válida se escribe el
+  ISO en el nativo con el setter del prototipo + evento `input` (React y RHF
+  se enteran); las escrituras programáticas al nativo (`reset` de RHF) se
+  interceptan (`Object.defineProperty(el, "value")`) para refrescar el
+  texto; un texto incompleto al salir vuelve al último valor válido. Los
+  tests que buscan `<input … type="date" … value="2026-10-01">` siguen
+  encontrando el nativo; el `id` está en el texto visible
+  (`period-selector-compacto.test` lo refleja). El único `<input type="date">`
+  crudo (sin `Input`) es `paywise-auditoria.tsx` (filtros con `name` para un
+  `<form>`): si se migra, usar `Input`.
+- Los tests con fechas literales («14 oct 2026», «15 oct, 10:40 a.m.») se
+  reescribieron a DD/MM/AAAA con un regex el 6-nov-2026.
+- **Formateadores propios migrados** (ya no hay «20 oct», «30-sep» ni
+  «1-sep-2026» en el panel): `titulos-pestana` (`diaCorto` «14/10/2026»;
+  `periodoCorto` con días sueltos SIEMPRE completo «01/10/2026 – 14/10/2026»,
+  las formas de mes «septiembre 2026» / «jul – sep 2026» / «2026» se quedan),
+  `cierre-mes` (`fechaCortaCancun`, `ultimoDiaCorto`, `diaCortoDeDia`, «se
+  cierra a partir del 01/11/2026»), `gasto-por-pagar` (`diaMesCorto` =
+  `diaMesAnio` = «20/10/2026»: el chip lleva el año), `conciliacion-lote`
+  (`textoFechasCortas` «24/09/2026, 27/09/2026 y 28/09/2026»),
+  `conciliacion-omision` (`fechaCortaMovimiento`), `conciliacion-reverso`
+  (`diaCorto`), `conciliacion-cargos-gasto` (rangos «del 10/08/2026 al
+  12/08/2026», meses distintos con nombre largo «septiembre y octubre», notas
+  «30/09/2026 C ADMINISTRACION…»), `inicio-oficial` (`fechaInicioCorta`),
+  `facturas-emitidas` (`fechaCortaCancun`, `fechaCortaDeDia`),
+  `gastos-captura` (`fmtCapturaCorta` «05/09/2026 14:32» vía el nuevo
+  `fmtDateTime24`), `quote-revision` («12/09/2026 08:00»),
+  `vuelos-semana-table` (`fmtWeekdayDateOnly` «jue 03/09/2026»),
+  `fuel-assign-flight` (`fmtDateTimeShort`), `quote-plantilla-ruta`
+  (`fmtDate`), y los textos fijos «Liga anterior al 12/10/2026» /
+  «02/10/2026». Las etiquetas SOLO de mes («oct-2026», «Noviembre 2026»,
+  calendario, combustibles, créditos de IA) no cambian.
+- **Se queda como está la hoja de cotización** (`quote-sheet.ts` `fechaDia`
+  «3 sep 2026», `quote-sheet-interna.ts` `diaMes` «26-jun» / `diaLargo`): es
+  el espejo del PDF que arma pyservices con la plantilla de administración;
+  si el cliente también la quiere en DD/MM/AAAA se cambia en los dos lados a
+  la vez. Los textos que llegan del API («cobrado el 2-oct», «(Ale, 16-oct)»,
+  «lun 14 sep 09:00» de las notificaciones) se pasan a DD/MM/AAAA en el API.
+- Goldens regenerados a propósito el 6-nov-2026: `alta-gasto.golden.json`
+  (`ACTUALIZAR_GOLDEN=1`, cambió el marcado del input de fecha) y
+  `seleccion.golden.html` (solo las fechas «24 sep 2026» ⇒ «24/09/2026»).

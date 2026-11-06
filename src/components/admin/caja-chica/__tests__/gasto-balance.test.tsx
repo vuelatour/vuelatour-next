@@ -109,7 +109,7 @@ function filaGasto(
       : { id: G_436, origen: "gasto" as const, balance };
   return {
     key: `gasto-${G_436}`,
-    fechaFmt: "10 oct 2026",
+    fechaFmt: "10/10/2026",
     tipoLabel: "Gasto en efectivo",
     esGasto: true,
     descripcion: "Taxi / estacionamiento",
@@ -126,7 +126,7 @@ function filaGasto(
 
 const FILA_CAJA: MovimientoFondoRow = {
   key: "caja-rep",
-  fechaFmt: "01 oct 2026",
+  fechaFmt: "01/10/2026",
   tipoLabel: "Reposición",
   esGasto: false,
   descripcion: "Fondo de octubre",

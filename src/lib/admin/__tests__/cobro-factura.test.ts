@@ -193,13 +193,13 @@ describe("cupo de una factura y preselección del selector (revisión #3)", () =
     expect(facturaPreseleccionada([A0420], "edicion", COBRO)).toBe("");
   });
 
-  it("opciones: «Sin factura todavía» + «A-0420 · $68,208 MXN · 21 sep 2026» con lo que ampara", () => {
+  it("opciones: «Sin factura todavía» + «A-0420 · $68,208 MXN · 21/09/2026» con lo que ampara", () => {
     const ops = opcionesFacturaDeCobro([A0420_COMPLETA, A0430_GLOBAL]);
     expect(ops[0]).toEqual(OPCION_SIN_FACTURA);
     expect(ops[0].label).toBe("Sin factura todavía");
     expect(ops[1]).toEqual({
       value: "f-0420",
-      label: "A-0420 · $68,208 MXN · 21 sep 2026",
+      label: "A-0420 · $68,208 MXN · 21/09/2026",
       description: "Ampara $68,208 MXN",
     });
     expect(ops[2].description).toBe("No ampara ningún cobro todavía");
@@ -328,9 +328,9 @@ describe("textos de los chips (card y burbuja)", () => {
 describe("casillas «¿Qué cobros cubre esta factura?»", () => {
   it("encabezado y texto de cada casilla", () => {
     expect(tituloCobrosDeVuelo(332)).toBe("¿Qué cobros cubre esta factura? — Vuelo #332");
-    expect(textoCobroCandidato(C_68208)).toBe("21 sep 2026 · $68,208 MXN · Transferencia → Scotiabank Pesos");
+    expect(textoCobroCandidato(C_68208)).toBe("21/09/2026 · $68,208 MXN · Transferencia → Scotiabank Pesos");
     expect(textoCobroCandidato({ ...C_977, cuenta_destino: null, metodo_cobro: "EFECTIVO" })).toBe(
-      "15 sep 2026 · $977.45 MXN · Efectivo",
+      "15/09/2026 · $977.45 MXN · Efectivo",
     );
     expect(textoYaTieneFactura("A-0420")).toBe("· ya tiene A-0420");
     expect(NOTA_COBROS_NO_CARGADOS).toBe(

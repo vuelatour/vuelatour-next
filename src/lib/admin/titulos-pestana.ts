@@ -417,14 +417,16 @@ function ultimoDiaDelMes(anio: number, mes: number): number {
   return new Date(Date.UTC(anio, mes, 0)).getUTCDate();
 }
 
+const dd2 = (n: number) => String(n).padStart(2, "0");
+
+/** «14/10/2026» (fechas DD/MM/AAAA en todos lados, 6-nov-2026). */
 function corto(p: PartesDia): string {
-  return `${p.dia} ${MESES_CORTOS[p.mes - 1]} ${p.anio}`;
+  return `${dd2(p.dia)}/${dd2(p.mes)}/${p.anio}`;
 }
 
 /**
- * «14 oct 2026»: un día de PARED (ya en hora Cancún) sin cero a la
- * izquierda. Sin `Date` local ni `Intl`: el día nunca se corre. Inválido ⇒
- * null.
+ * «14/10/2026»: un día de PARED (ya en hora Cancún). Sin `Date` local ni
+ * `Intl`: el día nunca se corre. Inválido ⇒ null.
  */
 export function diaCorto(dia: unknown): string | null {
   const p = partesDia(dia);
@@ -440,13 +442,14 @@ export function mesLargo(anio: unknown, mes: unknown): string | null {
 }
 
 /**
- * Periodo CORTO para el título, con días de pared Cancún `YYYY-MM-DD`:
- *  - un día: «14 oct 2026»;
- *  - mismo mes: «1–14 oct 2026»; el mes COMPLETO: «septiembre 2026»;
+ * Periodo CORTO para el título, con días de pared Cancún `YYYY-MM-DD`
+ * (fechas en DD/MM/AAAA desde el 6-nov-2026):
+ *  - un día: «14/10/2026»;
+ *  - días sueltos: «01/10/2026 – 14/10/2026» (igual entre meses o años:
+ *    «28/12/2025 – 03/01/2026»); el mes COMPLETO: «septiembre 2026»;
  *  - meses completos: «jul – sep 2026», el año completo «2026»,
  *    entre años «nov 2025 – feb 2026»;
- *  - mismo año: «28 sep – 14 oct 2026»; entre años «28 dic 2025 – 3 ene 2026»;
- *  - un solo extremo: «desde 1 oct 2026» / «hasta 14 oct 2026».
+ *  - un solo extremo: «desde 01/10/2026» / «hasta 14/10/2026».
  * El rango invertido se endereza; sin ningún día válido ⇒ null.
  */
 export function periodoCorto(desde: unknown, hasta: unknown): string | null {
@@ -466,8 +469,6 @@ export function periodoCorto(desde: unknown, hasta: unknown): string | null {
     if (d.anio === h.anio) return `${MESES_CORTOS[d.mes - 1]} – ${MESES_CORTOS[h.mes - 1]} ${d.anio}`;
     return `${MESES_CORTOS[d.mes - 1]} ${d.anio} – ${MESES_CORTOS[h.mes - 1]} ${h.anio}`;
   }
-  if (d.anio === h.anio && d.mes === h.mes) return `${d.dia}–${h.dia} ${MESES_CORTOS[d.mes - 1]} ${d.anio}`;
-  if (d.anio === h.anio) return `${d.dia} ${MESES_CORTOS[d.mes - 1]} – ${corto(h)}`;
   return `${corto(d)} – ${corto(h)}`;
 }
 

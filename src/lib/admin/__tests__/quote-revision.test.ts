@@ -160,7 +160,7 @@ describe("resumirCambios", () => {
       aviones: [{ id: "av-kodiak", modelo: "Kodiak" }, { id: "av-seneca", modelo: "Piper Seneca V" }],
     });
     expect(cambios.map((c) => c.texto)).toEqual([
-      "Fecha traslado inicial 12 sep 08:00→13 sep 08:00",
+      "Fecha traslado inicial 12/09/2026 08:00→13/09/2026 08:00",
       "Avión Kodiak→Piper Seneca V",
     ]);
     expect(cambiosTocanTripulacion(cambios)).toBe(true);
@@ -515,7 +515,7 @@ describe("tripulación y fechas de un vuelo ya volado (#338)", () => {
   it("#338 COMPLETADO: ni el avión ni el regreso avisan a la tripulación", () => {
     const cambios = resumirCambios(v1(), v2338(), { aviones });
     expect(cambios.map((c) => c.texto)).toEqual([
-      "Fecha traslado final —→24 sep 10:00",
+      "Fecha traslado final —→24/09/2026 10:00",
       "Avión PIPER SENECA V→Cessna 206",
     ]);
     // Sin contexto (vuelo por volar) sí avisan, como siempre.

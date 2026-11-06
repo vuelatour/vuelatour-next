@@ -46,7 +46,7 @@ describe("nombre accesible del botón ⋯", () => {
   it("dice de QUÉ gasto son las acciones", () => {
     expect(
       etiquetaAccionesGasto({ monto: "4250.5", moneda: "MXN", fecha_gasto: "2026-10-01" }),
-    ).toBe("Acciones del gasto de $4,250.50 MXN del 01 oct 2026");
+    ).toBe("Acciones del gasto de $4,250.50 MXN del 01/10/2026");
     expect(etiquetaAccionesGasto({ monto: null, moneda: null, fecha_gasto: null })).toBe(
       "Acciones del gasto",
     );

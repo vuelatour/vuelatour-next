@@ -158,20 +158,13 @@ export function diaMasReverso(ymd: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-const fmtDiaCorto = new Intl.DateTimeFormat("es-MX", {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
-
 /**
- * «21 sep» de una columna DATE (`YYYY-MM-DD`): el movimiento del banco es un
- * día de pared, se fija a mediodía UTC para no correrlo.
+ * «21/09/2026» de una columna DATE (`YYYY-MM-DD`): el movimiento del banco es
+ * un día de pared, no pasa por zona horaria (DD/MM/AAAA desde el 6-nov-2026).
  */
 export function diaCorto(ymd: string | null | undefined): string {
   if (!ymd || !/^\d{4}-\d{2}-\d{2}/.test(ymd)) return "";
-  const d = new Date(`${ymd.slice(0, 10)}T12:00:00Z`);
-  return Number.isNaN(d.getTime()) ? "" : fmtDiaCorto.format(d);
+  return fmtDateOnly(ymd.slice(0, 10));
 }
 
 // ─────────────────────── Movimiento emparejado ───────────────────────

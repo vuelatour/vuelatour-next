@@ -75,7 +75,7 @@ describe("enlacesBalanceDeGasto", () => {
         href: `${RUTA_VISTA_BALANCE}?avion=${N4142R}&desde=2026-10-01&hasta=2026-10-31&gasto=${G_430}`,
         etiqueta: "Ver en balance del avión N4142R",
         title:
-          "Abre en una pestaña nueva el balance de N4142R (del 01 oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto, hoja «reporte horas N4142R»",
+          "Abre en una pestaña nueva el balance de N4142R (del 01/10/2026 al 31/10/2026, mes del vuelo) en la celda de este gasto, hoja «reporte horas N4142R»",
       },
     ]);
     expect(e.general).toEqual({
@@ -83,7 +83,7 @@ describe("enlacesBalanceDeGasto", () => {
       href: `${RUTA_VISTA_BALANCE}?modo=mensual&desde=2026-10-01&hasta=2026-10-31&gasto=${G_430}`,
       etiqueta: "Ver en balance general",
       title:
-        "Abre en una pestaña nueva el Balance mensual de la flota (del 01 oct 2026 al 31 oct 2026, mes del vuelo) en la celda de este gasto, hoja «reporte horas FLOTA»",
+        "Abre en una pestaña nueva el Balance mensual de la flota (del 01/10/2026 al 31/10/2026, mes del vuelo) en la celda de este gasto, hoja «reporte horas FLOTA»",
     });
     expect(e.masAviones).toBeNull();
     expect(hayEnlacesBalance(e)).toBe(true);
@@ -111,7 +111,7 @@ describe("enlacesBalanceDeGasto", () => {
       "Ver en balance del avión XA-VGV",
       "Ver en balance del avión XB-PEV",
     ]);
-    expect(e.aviones[1].title).toContain("(del 01 oct 2026 al 31 oct 2026, mes de la fecha del gasto)");
+    expect(e.aviones[1].title).toContain("(del 01/10/2026 al 31/10/2026, mes de la fecha del gasto)");
     expect(e.general).toBeNull();
     expect(e.masAviones).toBeNull();
   });
@@ -143,7 +143,7 @@ describe("enlacesBalanceDeGasto", () => {
     expect(e.masAviones).toEqual({
       texto: "y 3 aviones más",
       title:
-        "También está repartido a N990GG, XA-VGV y XB-PEV: ábrelo desde Reportes → Balance por avión (del 01 sep 2026 al 30 sep 2026).",
+        "También está repartido a N990GG, XA-VGV y XB-PEV: ábrelo desde Reportes → Balance por avión (del 01/09/2026 al 30/09/2026).",
     });
     expect(e.general?.href).toBe(`${RUTA_VISTA_BALANCE}?modo=mensual&desde=2026-09-01&hasta=2026-09-30&gasto=${G_430}`);
     // Uno solo de más: singular.

@@ -191,10 +191,10 @@ describe.each([
     // «Conciliación con el banco» (15-oct-2026); para COORDINADOR, el <span> de siempre.
     const html = render([PARCIAL], "ADMIN");
     expect(html).toMatch(
-      /<button[^>]*class="[^"]*border-amber-500\/50 bg-amber-500\/10 text-amber-700 dark:text-amber-300[^"]*"[^>]*title="El banco respalda \$1,700 MXN de \$3,400 MXN \(1 abono: 15 sep 2026 · EJE SCOTIA\)\. Faltan \$1,700 MXN[^"]*"[^>]*>Conciliado parcial · faltan \$1,700 MXN<\/button>/,
+      /<button[^>]*class="[^"]*border-amber-500\/50 bg-amber-500\/10 text-amber-700 dark:text-amber-300[^"]*"[^>]*title="El banco respalda \$1,700 MXN de \$3,400 MXN \(1 abono: 15\/09\/2026 · EJE SCOTIA\)\. Faltan \$1,700 MXN[^"]*"[^>]*>Conciliado parcial · faltan \$1,700 MXN<\/button>/,
     );
     expect(render([PARCIAL], "COORDINADOR")).toMatch(
-      /<span[^>]*class="[^"]*border-amber-500\/50 bg-amber-500\/10 text-amber-700 dark:text-amber-300[^"]*"[^>]*title="El banco respalda \$1,700 MXN de \$3,400 MXN \(1 abono: 15 sep 2026 · EJE SCOTIA\)\. Faltan \$1,700 MXN[^"]*"[^>]*>Conciliado parcial · faltan \$1,700 MXN<\/span>/,
+      /<span[^>]*class="[^"]*border-amber-500\/50 bg-amber-500\/10 text-amber-700 dark:text-amber-300[^"]*"[^>]*title="El banco respalda \$1,700 MXN de \$3,400 MXN \(1 abono: 15\/09\/2026 · EJE SCOTIA\)\. Faltan \$1,700 MXN[^"]*"[^>]*>Conciliado parcial · faltan \$1,700 MXN<\/span>/,
     );
     expect(html).not.toContain(">Conciliado<");
     // Largo: envuelve en un celular en vez de encimarse con los botones.
@@ -204,7 +204,7 @@ describe.each([
   it("renglón «Banco» con «ver» y «Buscar el abono que falta» (pestaña nueva) para quien concilia", () => {
     const html = render([PARCIAL], "FACTURACION");
     expect(html).toContain('data-cobro-banco="aviso"');
-    expect(html).toContain("Banco: $1,700 de $3,400 · abono del 15 sep 2026 (");
+    expect(html).toContain("Banco: $1,700 de $3,400 · abono del 15/09/2026 (");
     const ver = anclaCon(html, "ver");
     expect(ver).toContain(`href="${HREF_VER}"`);
     expect(ver).toContain('target="_blank"');
@@ -217,7 +217,7 @@ describe.each([
 
   it("sin permiso de conciliar (COORDINADOR): el mismo texto, sin ligas a Conciliación", () => {
     const html = render([PARCIAL], "COORDINADOR");
-    expect(html).toContain("Banco: $1,700 de $3,400 · abono del 15 sep 2026 · faltan $1,700 MXN");
+    expect(html).toContain("Banco: $1,700 de $3,400 · abono del 15/09/2026 · faltan $1,700 MXN");
     expect(html).not.toContain("Buscar el abono que falta");
     expect(html).not.toContain("/admin/conciliacion?");
   });

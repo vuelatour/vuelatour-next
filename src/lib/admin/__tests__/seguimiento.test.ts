@@ -192,7 +192,7 @@ describe("textos y colores", () => {
     // 19:05 UTC = 14:05 en Cancún (UTC−5).
     const t = textoAutoria({ id: "u", nombre: "Itzi" }, "2026-09-29T19:05:00Z");
     expect(t.startsWith("Itzi · ")).toBe(true);
-    expect(t).toMatch(/29 sept?\.? 2026/);
+    expect(t).toContain("29/09/2026");
     expect(t).toMatch(/2:05/);
     expect(textoAutoria({ id: null, nombre: null }, "2026-09-29T19:05:00Z")).toMatch(/^Alguien · /);
     expect(textoAutoria("Mari", "2026-09-29T19:05:00Z")).toMatch(/^Mari · /);

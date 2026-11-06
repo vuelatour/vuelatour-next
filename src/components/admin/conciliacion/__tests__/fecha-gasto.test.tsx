@@ -146,8 +146,8 @@ describe("el diálogo con el caso Winjet (tarjeta con 2 días de desfase)", () =
       "Taxi / estacionamiento · $321.54 MXN · Winjet · Boleto Adulto ferry CZM-PDC. La fecha del gasto es la del PAGO, no la de la factura.",
     );
     expect(html).not.toContain("(la del cargo del banco)");
-    expect(html).toContain("Fecha actual del gasto: 10 oct 2026");
-    expect(html).toContain("Cargo de $345 MXN del 12 oct 2026 · WINJET PLAYA DEL CARME");
+    expect(html).toContain("Fecha actual del gasto: 10/10/2026");
+    expect(html).toContain("Cargo de $345 MXN del 12/10/2026 · WINJET PLAYA DEL CARME");
   });
 
   it("el campo nace con la fecha del TICKET (no se mueve en dos clics), de hace 365 días a hoy, con el atajo al cargo", () => {
@@ -161,9 +161,10 @@ describe("el diálogo con el caso Winjet (tarjeta con 2 días de desfase)", () =
     expect(html).toMatch(/<p data-sin-cambio-fecha="" class="[^"]*text-muted-foreground[^"]*">Es la misma fecha que ya tiene el gasto\.<\/p>/);
     expect(html).not.toMatch(/role="alert"[^>]*>Es la misma fecha/);
     expect(html).toContain("Fecha del pago");
-    expect(html).toContain("Usar la fecha del cargo (12 oct 2026)");
-    // El campo describe con la nota fija (la misma id).
-    const describe = /aria-describedby="([^"]+)"/.exec(campo)?.[1];
+    expect(html).toContain("Usar la fecha del cargo (12/10/2026)");
+    // El campo VISIBLE (DD/MM/AAAA) describe con la nota fija (la misma id); `campo` es el nativo de atrás.
+    const visible = html.match(/<input[^>]*data-fecha-texto="date"[^>]*>/)?.[0] ?? "";
+    const describe = /aria-describedby="([^"]+)"/.exec(visible)?.[1];
     expect(describe).toBeTruthy();
     expect(html).toContain(`id="${describe}"`);
   });
@@ -197,7 +198,7 @@ describe("el diálogo con una transferencia (sin desfase de tarjeta)", () => {
 describe("estados del cuerpo", () => {
   it("con otra fecha, el atajo «Usar la fecha del cargo» es un botón type=button con cursor-pointer", () => {
     const html = cuerpo({ fecha: "2026-10-11" });
-    const atajo = botones(html).find((b, i, arr) => html.includes(`${arr[i]}Usar la fecha del cargo (12 oct 2026)</button>`));
+    const atajo = botones(html).find((b, i, arr) => html.includes(`${arr[i]}Usar la fecha del cargo (12/10/2026)</button>`));
     expect(atajo).toBeDefined();
     expect(atajo).toContain('type="button"');
     expect(atajo).toContain("cursor-pointer");
@@ -221,7 +222,7 @@ describe("estados del cuerpo", () => {
     };
     const html = cuerpo({ candidato: tren, fechaActual: "2026-07-31", fecha: "2026-08-10" });
     expect(html).toMatch(
-      /<p role="alert"[^>]*>No se puede: este gasto es del vuelo #109 \(31 jul 2026\)\. Con fecha de agosto 2026 quedaría en otro mes que su vuelo/,
+      /<p role="alert"[^>]*>No se puede: este gasto es del vuelo #109 \(31\/07\/2026\)\. Con fecha de agosto 2026 quedaría en otro mes que su vuelo/,
     );
     expect(html).toContain("para vincularlo no hace falta cambiarla.");
     expect(html).toMatch(/<input[^>]*aria-invalid="true"/);

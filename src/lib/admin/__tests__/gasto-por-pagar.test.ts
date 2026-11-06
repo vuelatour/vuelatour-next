@@ -101,9 +101,9 @@ describe("fechas puras", () => {
   });
 
   it("«20 oct» del chip", () => {
-    expect(diaMesCorto("2026-10-20")).toBe("20 oct");
-    expect(diaMesCorto("2026-01-05")).toBe("5 ene");
-    expect(diaMesCorto("2026-10-20T05:00:00Z")).toBe("20 oct");
+    expect(diaMesCorto("2026-10-20")).toBe("20/10/2026");
+    expect(diaMesCorto("2026-01-05")).toBe("05/01/2026");
+    expect(diaMesCorto("2026-10-20T05:00:00Z")).toBe("20/10/2026");
     expect(diaMesCorto(null)).toBeNull();
     expect(diaMesCorto("2026-13-01")).toBeNull();
   });
@@ -182,20 +182,20 @@ describe("estado de pago y chip", () => {
     expect(porPagarVigente({})).toBe(false);
   });
 
-  it("«Por pagar · 20 oct» ámbar / «Vencido · 20 oct» rojo; PAGADO o sin la llave ⇒ nada", () => {
+  it("«Por pagar · 20/10/2026» ámbar / «Vencido · 15/10/2026» rojo; PAGADO o sin la llave ⇒ nada", () => {
     expect(chipEstadoPago({ estado_pago: "POR_PAGAR", fecha_gasto: "2026-10-20" })).toEqual({
       estado: "POR_PAGAR",
-      texto: "Por pagar · 20 oct",
+      texto: "Por pagar · 20/10/2026",
       tono: "ambar",
       titulo:
-        "Por pagar: se pagará el 20 oct 2026. Cuando se pague, márcalo pagado con la fecha real del pago (la fecha del gasto es la del pago).",
+        "Por pagar: se pagará el 20/10/2026. Cuando se pague, márcalo pagado con la fecha real del pago (la fecha del gasto es la del pago).",
     });
     expect(chipEstadoPago({ estado_pago: "VENCIDO", fecha_gasto: "2026-10-15" })).toEqual({
       estado: "VENCIDO",
-      texto: "Vencido · 15 oct",
+      texto: "Vencido · 15/10/2026",
       tono: "rojo",
       titulo:
-        "Vencido: debía pagarse el 15 oct 2026 y nadie lo ha marcado pagado. Márcalo pagado con la fecha real del pago, o elimínalo si no se pagó.",
+        "Vencido: debía pagarse el 15/10/2026 y nadie lo ha marcado pagado. Márcalo pagado con la fecha real del pago, o elimínalo si no se pagó.",
     });
     expect(chipEstadoPago({ estado_pago: "PAGADO", fecha_gasto: "2026-10-20" })).toBeNull();
     expect(chipEstadoPago({ fecha_gasto: "2026-10-20" })).toBeNull();
@@ -236,11 +236,11 @@ describe("«Marcar pagado»", () => {
   it("resumen y toast", () => {
     expect(
       resumenGastoPorPagar({ id: G, categoria: "TAXI", monto: "500", moneda: "MXN", fecha_gasto: "2026-10-20", estado_pago: "POR_PAGAR" }),
-    ).toBe("Taxi / estacionamiento · $500 MXN · por pagar el 20 oct 2026");
+    ).toBe("Taxi / estacionamiento · $500 MXN · por pagar el 20/10/2026");
     expect(
       resumenGastoPorPagar({ id: G, categoria: "COMIDA", monto: 350.5, moneda: "MXN", fecha_gasto: "2026-10-15", estado_pago: "VENCIDO" }),
-    ).toBe("Comida · $350.50 MXN · vencido desde el 15 oct 2026");
-    expect(toastMarcadoPagado("2026-10-19")).toBe("Gasto marcado pagado · 19 oct 2026");
+    ).toBe("Comida · $350.50 MXN · vencido desde el 15/10/2026");
+    expect(toastMarcadoPagado("2026-10-19")).toBe("Gasto marcado pagado · 19/10/2026");
   });
 
   it("errores: el API tal cual; CONFLICTO_VERSION, 404 y sin respuesta recargan", () => {

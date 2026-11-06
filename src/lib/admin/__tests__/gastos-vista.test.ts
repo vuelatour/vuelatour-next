@@ -735,11 +735,11 @@ describe("fecha del vuelo del gasto (API 0.0.96)", async () => {
   it("el día Cancún de la salida, con el formato de la columna Fecha", () => {
     expect(
       textoFechaVueloGasto({ vuelo_id: "v-375", vuelo: { folio: "375", fecha_vuelo: "2026-10-14T15:00:00+00:00" } }),
-    ).toBe("14 oct 2026");
+    ).toBe("14/10/2026");
     // 21:30 del 14-oct en Cancún = 02:30 UTC del 15-oct: manda el día Cancún.
     expect(
       textoFechaVueloGasto({ vuelo_id: "v-375", vuelo: { folio: "375", fecha_vuelo: "2026-10-15T02:30:00Z" } }),
-    ).toBe("14 oct 2026");
+    ).toBe("14/10/2026");
   });
 
   it("sin vuelo, sin la llave (API previo), con null o ilegible ⇒ null (no se pinta nada)", () => {

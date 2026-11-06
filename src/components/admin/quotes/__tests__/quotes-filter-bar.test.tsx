@@ -77,7 +77,10 @@ describe("QuotesFilterBar · marcado", () => {
     expect(html).toMatch(/<div[^>]*role="group"[^>]*aria-label="Periodo del vuelo"[^>]*data-rango="cotizaciones"/);
     for (const id of ["cot-desde", "cot-hasta"]) {
       const inp = input(id);
-      expect(inp).toContain('type="date"');
+      // Se ve y se teclea en DD/MM/AAAA (6-nov-2026); el nativo `type="date"` queda detrás del icono.
+      expect(inp).toContain('type="text"');
+      expect(inp).toContain('placeholder="DD/MM/AAAA"');
+      expect(render.ultimo).toContain('type="date"');
       expect(inp).toContain("cursor-pointer");
       expect(inp).not.toContain("max=");
       expect(inp).not.toContain("min=");
@@ -104,8 +107,8 @@ describe("QuotesFilterBar · marcado", () => {
 
   it("(c) URL con rango: inputs con valor, «Este mes» pulsado, «Limpiar» con cursor-pointer y la nota del periodo", () => {
     const html = pintar("desde=2026-10-01&hasta=2026-10-31&estado=COTIZADO", { hoy: HOY });
-    expect(input("cot-desde")).toContain('value="2026-10-01"');
-    expect(input("cot-hasta")).toContain('value="2026-10-31"');
+    expect(input("cot-desde")).toContain('value="01/10/2026"');
+    expect(input("cot-hasta")).toContain('value="31/10/2026"');
     expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*data-periodo="mes"/);
     expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*data-periodo="anterior"/);
     expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*data-periodo="30"/);
@@ -127,14 +130,14 @@ describe("QuotesFilterBar · marcado", () => {
 
   it("(d) URL invertida: los inputs muestran el rango corregido (la MISMA función que el servidor)", () => {
     pintar("desde=2026-10-31&hasta=2026-10-01", { hoy: HOY });
-    expect(input("cot-desde")).toContain('value="2026-10-01"');
-    expect(input("cot-hasta")).toContain('value="2026-10-31"');
+    expect(input("cot-desde")).toContain('value="01/10/2026"');
+    expect(input("cot-hasta")).toContain('value="31/10/2026"');
   });
 
   it("(d bis) un día inválido en la URL se ignora, no tumba la barra", () => {
     const html = pintar("desde=2026-13-45&hasta=2026-10-31", { hoy: HOY });
     expect(input("cot-desde")).toMatch(/value=""/);
-    expect(input("cot-hasta")).toContain('value="2026-10-31"');
+    expect(input("cot-hasta")).toContain('value="31/10/2026"');
     expect(html).toContain(`hasta el ${d("2026-10-31")}`);
   });
 
@@ -142,8 +145,8 @@ describe("QuotesFilterBar · marcado", () => {
     const html = pintar("desde=2026-10-01&hasta=2026-10-31", { hoy: HOY, rangoIgnorado: true });
     expect(html).toMatch(/<p[^>]*data-nota-rango[^>]*>Sin periodo: /);
     expect(html).not.toContain("Mostrando cotizaciones");
-    expect(input("cot-desde")).toContain('value="2026-10-01"');
-    expect(input("cot-hasta")).toContain('value="2026-10-31"');
+    expect(input("cot-desde")).toContain('value="01/10/2026"');
+    expect(input("cot-hasta")).toContain('value="31/10/2026"');
   });
 });
 
