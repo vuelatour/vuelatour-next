@@ -29,6 +29,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Field } from "@/components/admin/form-field";
 import { ProveedorSelector } from "@/components/admin/expenses/proveedor-selector";
 import {
+  agregarGastoCompraAction,
   createCompraAction,
   recibirCompraAction,
   registrarGastoCompraAction,
@@ -36,43 +37,55 @@ import {
 import { uploadGastoComprobante } from "@/lib/storage/gasto-fotos";
 import { todayCancun } from "@/lib/datetime";
 import {
+  BOTON_AGREGAR_OTRO_GASTO,
   ETIQUETA_COMO_SE_PAGO,
+  ETIQUETA_QUITAR_OTRO_GASTO,
   ETIQUETA_RECIBIR_AHORA,
   ETIQUETA_Y_EL_PAGO,
+  HINT_OTROS_GASTOS_DIRECTA,
   HINT_RECIBIR_AHORA,
   HINT_LINEAS_COMPRA,
   HINT_TC_COMPRA_OPCIONAL,
   MSG_LINEAS_SIN_COSTO_PARA_GASTO,
   OPCIONES_PAGO_COMPRA,
   PAGO_COMPRA_DEFAULT,
+  ROL_OTRO_GASTO_OPTIONS,
   TITULO_BOTON_COMPRA_DIRECTA,
+  TITULO_OTROS_GASTOS_DIRECTA,
   TITULO_REGISTRAR_COMPRA,
   avisoCompraSinGasto,
   avisoCompraSinRecepcion,
+  avisoOtroGastoNoRegistrado,
   cuerpoRegistrarCompra,
+  cuerpoOtroGastoDirecta,
   cuerpoRegistrarGastoCompra,
   descripcionRegistrarCompra,
+  errorOtrosGastos,
   etiquetaBotonRegistrarCompra,
+  filaOtroGastoVacia,
   formGastoCompraVacio,
   formRegistrarCompraVacio,
   lineaCompraVacia,
   lineasConCosto,
   recibirAhoraDefault,
+  sufijoOtrosGastosToast,
   tcInicialCompra,
   textoConfirmarCompraConGasto,
+  textoOtrosGastosConfirmar,
   tituloRegistrarCompra,
   toastCompraConGasto,
   toastCompraDirecta,
   toastCompraRecibida,
   toastCompraRegistrada,
+  type FilaOtroGastoDirecta,
   type FormGastoCompra,
   type FormRegistrarCompra,
   type LineaCompraForm,
   type ModoRegistrarCompra,
   type OpcionPagoCompra,
 } from "@/lib/admin/compras-estado";
-import type { CompraMoneda, GastoCandidatoCompra } from "@/types/compras";
-import { CompraGastoCampos } from "./compra-gasto-campos";
+import type { CompraMoneda, CompraRolOtro, GastoCandidatoCompra } from "@/types/compras";
+import { CompraGastoCampos, ComprobanteArchivo } from "./compra-gasto-campos";
 import { GastoCandidatoSelector } from "./gasto-candidato-selector";
 
 const MONEDAS: Array<{ value: CompraMoneda; label: string }> = [
@@ -125,6 +138,10 @@ export function CompraRegistrarDialog({
   const [form, setForm] = useState<FormRegistrarCompra>(() => formRegistrarCompraVacio(todayCancun()));
   const [pago, setPago] = useState<OpcionPagoCompra>(PAGO_COMPRA_DEFAULT);
   const [recibirAhora, setRecibirAhora] = useState(() => recibirAhoraDefault(modo));
+  // Gastos aparte (envío, aduana, otro cargo) de la misma captura (6-nov-2026).
+  const [otros, setOtros] = useState<FilaOtroGastoDirecta[]>([]);
+  const [otrosArchivos, setOtrosArchivos] = useState<Record<string, File | null>>({});
+  const [contadorOtros, setContadorOtros] = useState(0);
   const [gastoForm, setGastoForm] = useState<FormGastoCompra>(() =>
     formGastoCompraVacio({ tc: tcInicialCompra(null, tcOficialHoy), fecha: todayCancun() }),
   );
@@ -145,6 +162,9 @@ export function CompraRegistrarDialog({
       // Compra directa: siempre pagada («ahora»).
       setPago(modo === "directa" ? "ahora" : PAGO_COMPRA_DEFAULT);
       setRecibirAhora(recibirAhoraDefault(modo));
+      setOtros([]);
+      setOtrosArchivos({});
+      setContadorOtros(0);
       setGastoForm(formGastoCompraVacio({ tc: tcInicialCompra(null, tcOficialHoy), fecha: hoy }));
       setArchivo(null);
       setGasto(null);
@@ -177,6 +197,18 @@ export function CompraRegistrarDialog({
   const quitarLinea = (key: string) =>
     setForm((f) => ({ ...f, lineas: f.lineas.length > 1 ? f.lineas.filter((l) => l.key !== key) : f.lineas }));
 
+  const agregarOtro = () => {
+    const n = contadorOtros + 1;
+    setContadorOtros(n);
+    setOtros((xs) => [...xs, filaOtroGastoVacia(`o-${n}`)]);
+  };
+  const setOtro = (key: string, patch: Partial<FilaOtroGastoDirecta>) =>
+    setOtros((xs) => xs.map((o) => (o.key === key ? { ...o, ...patch } : o)));
+  const quitarOtro = (key: string) => {
+    setOtros((xs) => xs.filter((o) => o.key !== key));
+    setOtrosArchivos((a) => ({ ...a, [key]: null }));
+  };
+
   const directa = modo === "directa";
   const conGasto = pago === "ahora";
   // Con «Ya la pagué» el T.C. del gasto es también el de la compra (un solo campo).
@@ -194,6 +226,8 @@ export function CompraRegistrarDialog({
     if (conGasto) {
       if (!lineasConCosto(form)) return MSG_LINEAS_SIN_COSTO_PARA_GASTO;
       if (veredictoGasto && !veredictoGasto.ok) return veredictoGasto.error;
+      const eOtros = errorOtrosGastos(otros);
+      if (eOtros) return eOtros;
     }
     return null;
   };
@@ -214,16 +248,21 @@ export function CompraRegistrarDialog({
     const cuerpoCompra = veredictoCompra.cuerpo;
     const cuerpoGasto = veredictoGasto && veredictoGasto.ok ? veredictoGasto.cuerpo : null;
     startTransition(async () => {
-      // El comprobante ANTES de crear nada: si falla la subida, no nace la compra a medias.
+      // Los comprobantes ANTES de crear nada: si falla una subida, no nace la compra a medias.
       let fotoPath: string | null = null;
-      if (conGasto && archivo) {
-        try {
-          fotoPath = await uploadGastoComprobante(archivo);
-        } catch (err) {
-          setConfirmar(false);
-          toast.error(err instanceof Error ? err.message : "No se pudo subir el comprobante");
-          return;
+      const fotosOtros: Record<string, string | null> = {};
+      try {
+        if (conGasto && archivo) fotoPath = await uploadGastoComprobante(archivo);
+        if (conGasto) {
+          for (const o of otros) {
+            const f = otrosArchivos[o.key];
+            fotosOtros[o.key] = f ? await uploadGastoComprobante(f) : null;
+          }
         }
+      } catch (err) {
+        setConfirmar(false);
+        toast.error(err instanceof Error ? err.message : "No se pudo subir el comprobante");
+        return;
       }
       const r = await createCompraAction(cuerpoCompra);
       if (!r.ok || !r.data) {
@@ -234,6 +273,7 @@ export function CompraRegistrarDialog({
       const compra = r.data;
       const lineas = cuerpoCompra.lineas.length;
       let gastoOk: Parameters<typeof toastCompraConGasto>[0] | null = null;
+      let otrosOk = 0;
       let todoBien = true;
       if (conGasto && cuerpoGasto) {
         const g = await registrarGastoCompraAction(compra.id, {
@@ -250,6 +290,22 @@ export function CompraRegistrarDialog({
           todoBien = false;
           toast.warning(avisoCompraSinGasto(compra.folio, g.error), { duration: 15000 });
         }
+        // Gastos aparte (envío, aduana, otro cargo): uno por uno, ligados a la compra.
+        for (const o of otros) {
+          const cuerpo = cuerpoOtroGastoDirecta(o, gastoForm, fotosOtros[o.key]);
+          if (!cuerpo.ok) {
+            todoBien = false;
+            toast.warning(avisoOtroGastoNoRegistrado(compra.folio, o, cuerpo.error), { duration: 15000 });
+            continue;
+          }
+          const r2 = await agregarGastoCompraAction(compra.id, cuerpo.cuerpo);
+          if (r2.ok) {
+            otrosOk += 1;
+          } else {
+            todoBien = false;
+            toast.warning(avisoOtroGastoNoRegistrado(compra.folio, o, r2.error), { duration: 15000 });
+          }
+        }
       }
       // «Ya está en bodega»: la entrada al inventario en el mismo paso.
       let recibida = false;
@@ -264,9 +320,9 @@ export function CompraRegistrarDialog({
       }
       setConfirmar(false);
       if (gastoOk && recibida) {
-        toast.success(toastCompraDirecta(gastoOk, lineas), { duration: 8000 });
+        toast.success(toastCompraDirecta(gastoOk, lineas) + sufijoOtrosGastosToast(otrosOk), { duration: 8000 });
       } else if (gastoOk) {
-        toast.success(toastCompraConGasto(gastoOk), { duration: 8000 });
+        toast.success(toastCompraConGasto(gastoOk) + sufijoOtrosGastosToast(otrosOk), { duration: 8000 });
       } else if (recibida) {
         toast.success(toastCompraRecibida(compra.folio, lineas), { duration: 8000 });
       } else if (!conGasto && !recibirAhora) {
@@ -437,6 +493,68 @@ export function CompraRegistrarDialog({
                   />
                 </div>
               )}
+              {conGasto && (
+                <div className="space-y-2 rounded-lg border border-dashed border-border p-3" data-otros-gastos={otros.length}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">{TITULO_OTROS_GASTOS_DIRECTA}</p>
+                      <p className="text-xs text-muted-foreground">{HINT_OTROS_GASTOS_DIRECTA}</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" className="gap-1" onClick={agregarOtro} data-accion="agregar-otro-gasto">
+                      <PlusIcon className="h-4 w-4" />
+                      {BOTON_AGREGAR_OTRO_GASTO}
+                    </Button>
+                  </div>
+                  {otros.map((o, i) => (
+                    <div key={o.key} className="space-y-2 rounded-md border border-border p-2" data-otro-gasto={i + 1}>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1.3fr_0.8fr_0.7fr_auto] [&>*]:min-w-0">
+                        <SearchableSelect
+                          options={[...ROL_OTRO_GASTO_OPTIONS]}
+                          value={o.rol}
+                          onChange={(v) => setOtro(o.key, { rol: v as CompraRolOtro })}
+                          aria-label={`Qué pagó el gasto aparte ${i + 1}`}
+                        />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          inputMode="decimal"
+                          value={o.monto}
+                          onChange={(e) => setOtro(o.key, { monto: e.target.value })}
+                          placeholder="Monto"
+                          aria-label={`Monto del gasto aparte ${i + 1}`}
+                          data-monto-otro-gasto={i + 1}
+                        />
+                        <SearchableSelect
+                          options={MONEDAS}
+                          value={o.moneda}
+                          onChange={(v) => setOtro(o.key, { moneda: v === "USD" ? "USD" : "MXN" })}
+                          aria-label={`Moneda del gasto aparte ${i + 1}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => quitarOtro(o.key)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-destructive hover:bg-muted"
+                          title={ETIQUETA_QUITAR_OTRO_GASTO}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>*]:min-w-0">
+                        <ProveedorSelector
+                          providers={providers}
+                          value={o.proveedor}
+                          onChange={(v) => setOtro(o.key, { proveedor: v })}
+                        />
+                        <ComprobanteArchivo
+                          archivo={otrosArchivos[o.key] ?? null}
+                          onArchivo={(f) => setOtrosArchivos((a) => ({ ...a, [o.key]: f }))}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {pago === "vincular" && <GastoCandidatoSelector value={gasto?.id ?? ""} onChange={elegirGasto} soloMercancia />}
               {pago === "vincular" && gasto && (
                 <p className="text-xs text-muted-foreground">
@@ -491,7 +609,7 @@ export function CompraRegistrarDialog({
                         fecha: veredictoGasto.cuerpo.fecha_gasto,
                         medio: veredictoGasto.cuerpo.medio_pago,
                         recibir: recibirAhora,
-                      })
+                      }) + textoOtrosGastosConfirmar(otros)
                     : veredictoCompra.ok
                       ? `Se registra la compra con ${veredictoCompra.cuerpo.lineas.length} ${veredictoCompra.cuerpo.lineas.length === 1 ? "línea" : "líneas"} y sus unidades entran a bodega de inmediato (sin gasto todavía).`
                       : ""}

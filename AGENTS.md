@@ -13251,3 +13251,33 @@ nuevo: el mismo `CompraRegistrarDialog` con `modo="directa"` encadena
   compras»», «Nace como gasto de Paquetería», etc.
 - Tests: `compras-estado.test.ts` («Compra directa») y `compras-ui.test.tsx`
   (botón por modo, cableado de la página y orden compra → gasto → recibir).
+
+### Compra directa v2 (6-nov-2026, misma tarde)
+
+Pedido del dueño tras probarla: «quitar el botón de Compras para no
+confundirnos porque vamos a usar más el de compra directa; que en compra
+directa también podamos registrar los gastos de UPS y eso; y que por defecto
+no aparezca marcada la opción de agregar al inventario».
+
+- **Cabecera de Inventario/Tienda**: sin el botón «Compras». Los pedidos que
+  aún no llegan siguen en `/admin/inventory/compras`, con un enlace discreto
+  bajo el título («Compras pedidas (pendientes de recibir)»,
+  `data-enlace-compras-pedidas`) y desde la nota de Gastos.
+- **«Ya está en bodega» nace SIEMPRE sin marcar** (`recibirAhoraDefault`
+  devuelve false en los dos modos); la descripción de Compra directa lo dice.
+- **Gastos aparte en la misma captura** (`data-otros-gastos`): con el pago
+  «ahora» (siempre en directa), el bloque «Gastos aparte de esta compra
+  (envío, aduana, otro cargo)» con «Agregar gasto aparte»: por fila qué pagó
+  (`ROL_OTRO_GASTO_OPTIONS`), monto, moneda, proveedor y comprobante
+  (`ComprobanteArchivo`). Fuente única PURA en `compras-estado.ts`:
+  `FilaOtroGastoDirecta`, `filaOtroGastoVacia`, `errorFilaOtroGasto` /
+  `errorOtrosGastos` (se validan ANTES de crear nada), `cuerpoOtroGastoDirecta`
+  (hereda fecha, medio, tarjeta/cuenta y T.C. del pago principal; sin folio ni
+  notas) ⇒ `agregarGastoCompraAction` uno por uno DESPUÉS del gasto de
+  mercancía y ANTES de `recibir`; `textoOtrosGastosConfirmar` en la
+  confirmación, `sufijoOtrosGastosToast` en el toast y
+  `avisoOtroGastoNoRegistrado` (abre la compra) si uno falla. Los
+  comprobantes de todas las filas se suben antes de crear la compra.
+- Tests: `compras-estado.test.ts` («gastos aparte…», default sin marcar) y
+  `compras-ui.test.tsx` (orden compra → gasto → gastos aparte → recibir, sin
+  botón «Compras»).

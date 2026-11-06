@@ -475,12 +475,14 @@ describe("«Registrar compra»: ¿Y el pago?", () => {
 describe("«Compra directa»: textos y decisiones puras", async () => {
   const m = await import("@/lib/admin/compras-estado");
 
-  it("nace con «Ya está en bodega» marcado solo en modo directa; título y descripción por modo", () => {
-    expect(m.recibirAhoraDefault("directa")).toBe(true);
+  it("«Ya está en bodega» nace SIEMPRE sin marcar (6-nov-2026); título y descripción por modo", () => {
+    expect(m.recibirAhoraDefault("directa")).toBe(false);
     expect(m.recibirAhoraDefault("compras")).toBe(false);
+    expect(m.HINT_RECIBIR_AHORA).toContain("Nace sin marcar");
     expect(m.tituloRegistrarCompra("directa")).toBe("Compra directa");
     expect(m.tituloRegistrarCompra("compras")).toBe("Registrar compra");
     expect(m.descripcionRegistrarCompra("directa")).toContain("sin pasar por Compras");
+    expect(m.descripcionRegistrarCompra("directa")).toContain("marca «Ya está en bodega»");
     expect(m.descripcionRegistrarCompra("compras")).toBe(m.DESCRIPCION_REGISTRAR_COMPRA);
     expect(m.ETIQUETA_RECIBIR_AHORA).toBe("Ya está en bodega: dar entrada al inventario ahora");
     expect(m.ETIQUETA_COMO_SE_PAGO).toBe("¿Cómo se pagó?");
@@ -515,5 +517,73 @@ describe("«Compra directa»: textos y decisiones puras", async () => {
     expect(m.DESCRIPCION_GASTOS_COMPRA).not.toContain("en Gastos");
     expect(m.TITULO_BOTON_AGREGAR_GASTO).not.toContain("en Gastos");
     expect(m.HINT_COMPROBANTE).toContain("«Ver / editar»");
+  });
+});
+
+describe("gastos aparte en la misma captura (envío, aduana, otro cargo)", async () => {
+  const m = await import("@/lib/admin/compras-estado");
+  const base = {
+    tc: "18.8052",
+    fecha: "2026-11-06",
+    medio: "TARJETA_CORP",
+    tarjeta: "6256",
+    cuenta: "",
+    proveedor: "prov-compra",
+    folio: "AS-1",
+    notas: "nota de la compra",
+  };
+
+  it("una fila nace como envío en pesos; sin monto se dice qué falta; vacío ⇒ sin error", () => {
+    const f = m.filaOtroGastoVacia("o-1");
+    expect(f).toEqual({ key: "o-1", rol: "ENVIO", monto: "", moneda: "MXN", proveedor: "" });
+    expect(m.errorFilaOtroGasto(f)).toBe("Captura el monto del gasto aparte (envío) o quítalo.");
+    expect(m.errorFilaOtroGasto({ ...f, rol: "IMPUESTOS", monto: "0" })).toBe(
+      "Captura el monto del gasto aparte (impuestos / aduana) o quítalo.",
+    );
+    expect(m.errorFilaOtroGasto({ ...f, monto: "3,800.50" })).toBeNull();
+    expect(m.errorOtrosGastos([])).toBeNull();
+    expect(m.errorOtrosGastos([{ ...f, monto: "10" }, { ...f, key: "o-2", rol: "OTRO" }])).toBe(
+      "Captura el monto del gasto aparte (otro cargo) o quítalo.",
+    );
+  });
+
+  it("el cuerpo hereda fecha, medio, tarjeta y T.C. del pago principal; la fila pone rol, monto, moneda, proveedor y foto; sin folio ni notas", () => {
+    const fila = { key: "o-1", rol: "ENVIO" as const, monto: "3800", moneda: "MXN" as const, proveedor: "prov-ups" };
+    const v = m.cuerpoOtroGastoDirecta(fila, base, "oficina/ups.pdf");
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    expect(v.cuerpo).toMatchObject({
+      rol: "ENVIO",
+      monto: 3800,
+      moneda: "MXN",
+      tc_usd_mxn: 18.8052,
+      fecha_gasto: "2026-11-06",
+      medio_pago: "TARJETA_CORP",
+      tarjeta_terminacion: "6256",
+      proveedor_id: "prov-ups",
+      foto_url: "oficina/ups.pdf",
+    });
+    expect(v.cuerpo).not.toHaveProperty("folio_ticket");
+    expect(v.cuerpo).not.toHaveProperty("notas");
+    const sinMonto = m.cuerpoOtroGastoDirecta({ ...fila, monto: "" }, base, null);
+    expect(sinMonto).toEqual({ ok: false, error: m.MSG_MONTO_REQUERIDO });
+  });
+
+  it("textos: confirmación, sufijo del toast y aviso de uno que no se registró", () => {
+    const ups = { key: "o-1", rol: "ENVIO" as const, monto: "3800", moneda: "MXN" as const, proveedor: "" };
+    const aduana = { key: "o-2", rol: "IMPUESTOS" as const, monto: "120", moneda: "USD" as const, proveedor: "" };
+    expect(m.textoOtrosGastosConfirmar([])).toBe("");
+    expect(m.textoOtrosGastosConfirmar([ups, { ...aduana, monto: "" }])).toBe(
+      ` Además, 1 gasto aparte: envío ${fmtMontoMoneda(3800, "MXN")}.`,
+    );
+    expect(m.textoOtrosGastosConfirmar([ups, aduana])).toBe(
+      ` Además, 2 gastos aparte: envío ${fmtMontoMoneda(3800, "MXN")}, impuestos / aduana ${fmtMontoMoneda(120, "USD")}.`,
+    );
+    expect(m.sufijoOtrosGastosToast(0)).toBe("");
+    expect(m.sufijoOtrosGastosToast(1)).toBe(" y 1 gasto aparte (envío, aduana u otro)");
+    expect(m.sufijoOtrosGastosToast(2)).toBe(" y 2 gastos aparte (envío, aduana u otros)");
+    expect(m.avisoOtroGastoNoRegistrado(15, ups, "Sin saldo.")).toBe(
+      `La compra #15 quedó registrada, pero el gasto aparte de envío (${fmtMontoMoneda(3800, "MXN")}) NO: Sin saldo. Agrégalo desde la compra con «Agregar gasto».`,
+    );
   });
 });

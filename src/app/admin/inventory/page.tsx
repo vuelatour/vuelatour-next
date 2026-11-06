@@ -4,9 +4,7 @@ import Link from "next/link";
 import {
   ArchiveBoxIcon,
   ExclamationTriangleIcon,
-  ShoppingCartIcon,
 } from "@heroicons/react/24/outline";
-import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -212,7 +210,18 @@ export default async function InventoryPage({
             </p>
           )}
           <p className="text-xs text-muted-foreground/80 mt-1">
-            Toca un producto para ver sus compras, sus ventas y el resumen por día.
+            Toca un producto para ver sus compras, sus ventas y el resumen por día.{" "}
+            {/* El botón «Compras» se retiró de la cabecera (6-nov-2026, pedido del
+                dueño: «vamos a usar más el de compra directa»); los pedidos que
+                aún no llegan siguen en su pantalla, con este enlace discreto. */}
+            <Link
+              href="/admin/inventory/compras"
+              prefetch={false}
+              className="underline underline-offset-2 hover:text-foreground"
+              data-enlace-compras-pedidas
+            >
+              Compras pedidas (pendientes de recibir)
+            </Link>
           </p>
           {/* Por qué el valorizado en pesos puede verse en cero: casi toda la
               bodega se capturó en dólares sin tipo de cambio. */}
@@ -227,15 +236,6 @@ export default async function InventoryPage({
           {puedeAltaMasiva && (
             <CompraRegistrarDialog modo="directa" providers={providers} items={itemsCompra} tcOficialHoy={tcOficialHoy} />
           )}
-          {/* Compras de refacciones: factura + envío + impuestos → costo real
-              en bodega. Sin submenú en el sidebar; la entrada es este botón. */}
-          <Link
-            href="/admin/inventory/compras"
-            className={buttonVariants({ variant: "outline", className: "gap-2" })}
-          >
-            <ShoppingCartIcon className="h-4 w-4" />
-            Compras
-          </Link>
           {/* Los exports Valorizado/Cardex se retiraron de aquí: el reporte
               de inventario vive en el Balance general VuelaTour (hoja Inventario). El
               cardex por ítem sigue en el detalle ("Cardex (Excel)"). */}

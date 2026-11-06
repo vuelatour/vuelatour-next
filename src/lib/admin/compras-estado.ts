@@ -879,17 +879,23 @@ export type ModoRegistrarCompra = "compras" | "directa";
 
 export const TITULO_COMPRA_DIRECTA = "Compra directa";
 export const TITULO_BOTON_COMPRA_DIRECTA =
-  "Compraste refacciones y ya las tienes: en un paso quedan la compra, su gasto y la entrada a bodega (sin entrar a Compras)";
+  "Compraste refacciones directo: en un paso quedan la compra y su gasto (y el envío o la aduana, si los hubo), sin entrar a Compras";
 export const DESCRIPCION_COMPRA_DIRECTA =
-  "Para lo que se compró directo y ya está aquí: captura qué compraste y cómo lo pagaste. Quedan registrados la compra, su gasto (en «Gastos de compras») y la entrada al inventario, sin pasar por Compras.";
+  "Para lo que se compró directo: captura qué compraste y cómo lo pagaste. Quedan registrados la compra y su gasto (en «Gastos de compras»), sin pasar por Compras. Si ya lo tienes en bodega, marca «Ya está en bodega» para darle entrada al inventario.";
 export const ETIQUETA_COMO_SE_PAGO = "¿Cómo se pagó?";
 export const ETIQUETA_RECIBIR_AHORA = "Ya está en bodega: dar entrada al inventario ahora";
 export const HINT_RECIBIR_AHORA =
-  "Las unidades de cada línea entran al stock con su costo. Si todavía no llega, déjalo sin marcar y recíbela desde Compras cuando llegue.";
+  "Las unidades de cada línea entran al stock con su costo. Nace sin marcar: márcalo solo si la mercancía ya está en bodega; si no, recíbela desde Compras cuando llegue.";
 export const BOTON_COMPRA_DIRECTA = "Registrar compra directa";
 
+/**
+ * «Ya está en bodega» nace SIEMPRE sin marcar (6-nov-2026, pedido del dueño:
+ * «si le damos guardar sin quitarlo por error los agrega y se vuelve un
+ * caos»); el parámetro se conserva por si algún modo lo cambia después.
+ */
 export function recibirAhoraDefault(modo: ModoRegistrarCompra): boolean {
-  return modo === "directa";
+  const porModo: Record<ModoRegistrarCompra, boolean> = { compras: false, directa: false };
+  return porModo[modo];
 }
 
 export function tituloRegistrarCompra(modo: ModoRegistrarCompra): string {
@@ -924,4 +930,84 @@ export function avisoCompraSinRecepcion(folio: number, error: string | null | un
 /** Compra recibida en el mismo paso (sin gasto: «Todavía no la pago»). */
 export function toastCompraRecibida(folio: number, lineas: number): string {
   return `Compra #${folio} registrada y recibida: ${lineas} ${lineas === 1 ? "línea ya está" : "líneas ya están"} en el inventario.`;
+}
+
+// ===== Gastos aparte en la misma captura (envío, aduana, otro cargo) =====
+// 6-nov-2026, pedido del dueño: «en compra directa que también podamos
+// registrar los gastos de UPS y eso». Cada fila nace como un gasto más de la
+// compra (`POST /compras/:id/gastos`, invariante 116) con la MISMA fecha,
+// medio, tarjeta/cuenta y T.C. de «¿Cómo se pagó?»; cambia qué pagó, cuánto,
+// en qué moneda, a quién y su comprobante. Opcional: sin filas no pasa nada.
+
+export interface FilaOtroGastoDirecta {
+  key: string;
+  rol: CompraRolOtro;
+  monto: string;
+  moneda: "MXN" | "USD";
+  proveedor: string;
+}
+
+export const TITULO_OTROS_GASTOS_DIRECTA = "Gastos aparte de esta compra (envío, aduana, otro cargo)";
+export const HINT_OTROS_GASTOS_DIRECTA =
+  "Opcional. Cada uno queda como un gasto más de la compra, con la misma fecha, medio y T.C. de arriba; cambia qué pagó, cuánto y en qué moneda.";
+export const BOTON_AGREGAR_OTRO_GASTO = "Agregar gasto aparte";
+export const ETIQUETA_QUITAR_OTRO_GASTO = "Quitar este gasto";
+
+export function filaOtroGastoVacia(key: string): FilaOtroGastoDirecta {
+  return { key, rol: "ENVIO", monto: "", moneda: "MXN", proveedor: "" };
+}
+
+/** Qué le falta a una fila; null = completa. */
+export function errorFilaOtroGasto(f: FilaOtroGastoDirecta): string | null {
+  if (montoDeTexto(f.monto) == null) {
+    return `Captura el monto del gasto aparte (${ETIQUETA_ROL_OTRO_GASTO[f.rol].toLowerCase()}) o quítalo.`;
+  }
+  return null;
+}
+
+/** El primer error de las filas; null = todas completas (o ninguna). */
+export function errorOtrosGastos(filas: readonly FilaOtroGastoDirecta[]): string | null {
+  for (const f of filas) {
+    const e = errorFilaOtroGasto(f);
+    if (e) return e;
+  }
+  return null;
+}
+
+/**
+ * El cuerpo de `agregarGastoCompraAction` para una fila: lo común (fecha,
+ * medio, tarjeta/cuenta, T.C.) viene del pago principal; la fila pone qué
+ * pagó, cuánto, moneda, proveedor y comprobante. Sin folio ni notas.
+ */
+export function cuerpoOtroGastoDirecta(
+  f: FilaOtroGastoDirecta,
+  base: FormGastoCompra,
+  fotoPath?: string | null,
+): VeredictoCuerpo<AgregarGastoCompraInput> {
+  return cuerpoAgregarGastoCompra(
+    { ...base, proveedor: f.proveedor, folio: "", notas: "", rol: f.rol, monto: f.monto, moneda: f.moneda },
+    fotoPath,
+  );
+}
+
+/** «Además, 2 gastos aparte: envío $3,800.00 MXN, impuestos / aduana $120.00 USD.» (vacío sin filas) */
+export function textoOtrosGastosConfirmar(filas: readonly FilaOtroGastoDirecta[]): string {
+  const completas = filas.filter((f) => montoDeTexto(f.monto) != null);
+  if (completas.length === 0) return "";
+  const lista = completas
+    .map((f) => `${ETIQUETA_ROL_OTRO_GASTO[f.rol].toLowerCase()} ${fmtMontoMoneda(montoDeTexto(f.monto), f.moneda)}`)
+    .join(", ");
+  return ` Además, ${completas.length} ${completas.length === 1 ? "gasto aparte" : "gastos aparte"}: ${lista}.`;
+}
+
+/** Sufijo del toast: « y 2 gastos aparte (envío, aduana)». */
+export function sufijoOtrosGastosToast(n: number): string {
+  if (n <= 0) return "";
+  return n === 1 ? " y 1 gasto aparte (envío, aduana u otro)" : ` y ${n} gastos aparte (envío, aduana u otros)`;
+}
+
+/** Un gasto aparte no se pudo registrar: se dice completo y se abre la compra. */
+export function avisoOtroGastoNoRegistrado(folio: number, f: FilaOtroGastoDirecta, error: string | null | undefined): string {
+  const motivo = (error ?? "").trim();
+  return `La compra #${folio} quedó registrada, pero el gasto aparte de ${ETIQUETA_ROL_OTRO_GASTO[f.rol].toLowerCase()} (${fmtMontoMoneda(montoDeTexto(f.monto), f.moneda)}) NO: ${motivo ? `${motivo} ` : ""}Agrégalo desde la compra con «Agregar gasto».`;
 }
