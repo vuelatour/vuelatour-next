@@ -21,6 +21,16 @@ import { esDiaValido, uuidFiltro } from "./url-params";
 
 export const PARAM_GASTO_ENFOCADO = "gasto";
 export const RUTA_GASTOS = "/admin/expenses";
+export const RUTA_COMPRAS = "/admin/inventory/compras";
+
+/**
+ * El detalle de la compra de la que un gasto es pago (COMPRAS FUERA DE GASTOS,
+ * 6-nov-2026, invariante 118 del API): desde Conciliación, un gasto con
+ * `compra_id` se abre en su compra, no en Gastos (donde ya no está).
+ */
+export function hrefCompraDeGasto(compraId: string): string {
+  return `${RUTA_COMPRAS}/${compraId}`;
+}
 /** La MISMA marca ámbar de la fila enfocada (Conciliación `?mov=`, pre-cierre `ids`). */
 export const CLASE_FILA_GASTO_ENFOCADO = CLASE_FILA_ENFOCADA;
 export const TITULO_FRANJA_GASTO_ENFOCADO = "Gasto que abriste desde Conciliación";

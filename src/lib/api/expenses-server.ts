@@ -50,6 +50,16 @@ export interface ListGastosQuery {
   medio_pago?: string;
   /** Pagos de una compra de refacciones concreta. */
   compra_id?: string;
+  /** COMPRAS FUERA DE GASTOS (6-nov-2026, API 0.0.122, invariante 118 del
+   *  API): true = SIN los gastos ligados a una compra (Gastos lo manda
+   *  siempre, salvo en una vista enfocada). Un API previo responde 400
+   *  «property sin_compras should not exist» y `listGastos` relee SIN el
+   *  campo (la lista de siempre, con compras). */
+  sin_compras?: boolean;
+  /** SOLO los gastos ligados a una compra («Gastos de compras» de
+   *  Inventario/Tienda). NO se tolera en un API previo: releer sin él
+   *  traería TODOS los gastos como si fueran de compras. */
+  solo_compras?: boolean;
   pendientes?: boolean;
   duplicados?: boolean;
   /** Conciliación con el banco: true = cubiertos por cargos, false = sin
@@ -77,29 +87,40 @@ function pedirGastos(query: ListGastosQuery) {
   });
 }
 
-const CAMPO_EXCLUIR = "excluir_categoria" satisfies keyof ListGastosQuery;
+/**
+ * Campos que un API previo puede no conocer y cuya ausencia deja una lista
+ * VÁLIDA (solo más amplia): `excluir_categoria` (API ≤ 0.0.89) y
+ * `sin_compras` (API ≤ 0.0.121). `solo_compras` NO está aquí a propósito.
+ */
+const CAMPOS_TOLERADOS = ["excluir_categoria", "sin_compras"] as const satisfies readonly (keyof ListGastosQuery)[];
 
 /**
- * Pide una página tolerando un API ≤ 0.0.89 (skew de deploy, 16-oct-2026): si
- * la consulta trae `excluir_categoria` y el API responde el 400 «property
- * excluir_categoria should not exist», RELEE sin el campo (patrón
- * `esApiSinRangoFechas`). Es un GET deliberado con OTROS parámetros, no el
- * reintento automático de `apiFetch` (prohibido en 4xx). Un 400 de otro campo
- * o un 5xx suben como siempre. Devuelve también la consulta que funcionó, para
- * que las páginas siguientes no repitan el 400.
+ * Pide una página tolerando un API previo (skew de deploy, 16-oct-2026): si
+ * la consulta trae uno de `CAMPOS_TOLERADOS` y el API responde el 400
+ * «property <campo> should not exist», RELEE sin ese campo (patrón
+ * `esApiSinRangoFechas`), tantas veces como campos tolerados haya. Es un GET
+ * deliberado con OTROS parámetros, no el reintento automático de `apiFetch`
+ * (prohibido en 4xx). Un 400 de otro campo o un 5xx suben como siempre.
+ * Devuelve también la consulta que funcionó, para que las páginas siguientes
+ * no repitan el 400.
  */
 async function pedirGastosTolerante(
   query: ListGastosQuery,
 ): Promise<{ res: GastoListResponse; query: ListGastosQuery }> {
-  try {
-    return { res: await pedirGastos(query), query };
-  } catch (err) {
-    if (query.excluir_categoria == null) throw err;
-    const { status, message } = (err ?? {}) as { status?: unknown; message?: unknown };
-    if (!esCampoDesconocidoParaApi(status, message, CAMPO_EXCLUIR)) throw err;
-    const sin = sinCampos(query as Record<string, unknown>, [CAMPO_EXCLUIR]) as ListGastosQuery;
-    return { res: await pedirGastos(sin), query: sin };
+  let actual = query;
+  for (let intento = 0; intento <= CAMPOS_TOLERADOS.length; intento++) {
+    try {
+      return { res: await pedirGastos(actual), query: actual };
+    } catch (err) {
+      const { status, message } = (err ?? {}) as { status?: unknown; message?: unknown };
+      const campo = CAMPOS_TOLERADOS.find(
+        (c) => actual[c] != null && esCampoDesconocidoParaApi(status, message, c),
+      );
+      if (!campo) throw err;
+      actual = sinCampos(actual as Record<string, unknown>, [campo]) as ListGastosQuery;
+    }
   }
+  return { res: await pedirGastos(actual), query: actual };
 }
 
 /** Bandeja de gastos para verificación en oficina. */

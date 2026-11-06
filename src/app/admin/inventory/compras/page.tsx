@@ -2,20 +2,28 @@ import type { Metadata } from "next";
 import { tituloCompras } from "@/lib/admin/titulos-pestana";
 import Link from "next/link";
 import { ShoppingCartIcon } from "@heroicons/react/24/outline";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { BackLink } from "@/components/admin/back-link";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ComprasTable } from "@/components/admin/inventory/compras/compras-table";
+import { ComprasGastosTable } from "@/components/admin/inventory/compras/compras-gastos-table";
 import { CompraRegistrarDialog } from "@/components/admin/inventory/compras/compra-registrar-dialog";
 import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
 import { listComprasTodas } from "@/lib/api/compras-server";
+import { listGastos } from "@/lib/api/expenses-server";
+import type { Gasto } from "@/types/expenses";
 import { listInventario } from "@/lib/api/inventory-server";
 import { listProviders } from "@/lib/api/providers-server";
 import { getTipoCambioOficial } from "@/lib/api/tipo-cambio-server";
 import {
   AYUDA_FLUJO_COMPRAS,
   AYUDA_PESTANA_COMPRAS,
+  DESCRIPCION_GASTOS_DE_COMPRAS,
+  TITULO_GASTOS_DE_COMPRAS,
+  TOPE_GASTOS_DE_COMPRAS,
+  VACIO_GASTOS_DE_COMPRAS,
+  avisoTopeGastosDeCompras,
   ORDEN_PESTANAS_COMPRAS,
   PESTANAS_COMPRAS,
   VACIO_PESTANA_COMPRAS,
@@ -51,8 +59,11 @@ export default async function ComprasPage({
   // los estados que manda el API); proveedores y artículos solo llenan los
   // selectores de «Registrar compra» y degradan con aviso.
   // El T.C. oficial de hoy es solo la SUGERENCIA de «Ya la pagué» (best-effort).
+  // «Gastos de compras» (6-nov-2026, invariante 118 del API): los pagos
+  // ligados a una compra, apartados de Gastos; degrada con aviso (un API
+  // previo no conoce `solo_compras` y NO se relee sin él: traería todo).
   const degradado = new Degradaciones();
-  const [comprasRes, providersRes, itemsRes, tcOficialHoy] = await Promise.all([
+  const [comprasRes, providersRes, itemsRes, tcOficialHoy, gastosComprasRes] = await Promise.all([
     listComprasTodas(),
     degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
       data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
@@ -61,7 +72,14 @@ export default async function ComprasPage({
       data: [] as Awaited<ReturnType<typeof listInventario>>["data"],
     }),
     getTipoCambioOficial().catch(() => null),
+    degradado.opcional(
+      "los gastos de compras",
+      listGastos({ solo_compras: true, limit: TOPE_GASTOS_DE_COMPRAS, offset: 0 }),
+      { data: [] as Gasto[], count: 0 },
+    ),
   ]);
+  const gastosCompras = gastosComprasRes.data;
+  const avisoTope = avisoTopeGastosDeCompras(gastosCompras.length, gastosComprasRes.count);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const items = itemsRes.data.map((i) => ({ id: i.id, nombre: i.nombre, numero_parte: i.numero_parte ?? null }));
   const conteos = contarPestanasCompras(comprasRes.data);
@@ -139,6 +157,24 @@ export default async function ComprasPage({
           </CardContent>
         </Card>
       )}
+
+      {/* COMPRAS FUERA DE GASTOS (6-nov-2026): los pagos de las compras, aquí. */}
+      <Card id="gastos-de-compras" data-gastos-de-compras>
+        <CardHeader>
+          <CardTitle>{TITULO_GASTOS_DE_COMPRAS}</CardTitle>
+          <CardDescription>{DESCRIPCION_GASTOS_DE_COMPRAS}</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {gastosCompras.length === 0 ? (
+            <p className="px-6 pb-6 text-sm text-muted-foreground">{VACIO_GASTOS_DE_COMPRAS}</p>
+          ) : (
+            <>
+              <ComprasGastosTable gastos={gastosCompras} />
+              {avisoTope && <p className="px-6 py-3 text-xs text-muted-foreground">{avisoTope}</p>}
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -48,12 +48,15 @@ import {
   CAMPOS_OPCIONALES_GASTOS,
   DESCRIPCION_ERROR_LISTA_GASTOS,
   DESCRIPCION_NOMINA_FUERA_DE_GASTOS,
+  ETIQUETA_IR_A_COMPRAS,
   ETIQUETA_IR_A_NOMINA,
+  HREF_GASTOS_DE_COMPRAS,
   ETIQUETA_CHIP_AVION,
   ETIQUETA_FOTOS_COMPROBANTES,
   ETIQUETA_LISTA_GASTOS,
   ETIQUETA_TOTAL_PENDIENTES,
   TEXTO_QUITAR_FILTROS_GASTOS,
+  TITULO_COMPRAS_FUERA_DE_GASTOS,
   TITULO_ERROR_LISTA_GASTOS,
   TITULO_NOMINA_FUERA_DE_GASTOS,
   TITULO_QUITAR_FILTRO_AVION,
@@ -66,6 +69,7 @@ import {
   queryExcelGastos,
   queryListaGastos,
   textoCorteGastos,
+  textoNotaComprasFueraDeGastos,
   tituloVistaGastos,
   vacioGastos,
   type FiltrosGastos,
@@ -183,7 +187,15 @@ export default async function ExpensesPage({
   // Filtro por avión (link desde el expediente del avión); lo respetan las
   // pestañas, el Excel y la barra.
   const aeronaveId = filtros.aeronave_id;
-  const base = queryBaseGastos(filtros, hoy);
+  // «Resolver →» del pre-cierre (15-oct-2026) y «ver el gasto conciliado»
+  // (27-oct-2026, `?gasto=`): si vienen los dos manda el foco del pre-cierre.
+  // COMPRAS FUERA DE GASTOS (6-nov-2026, invariante 118 del API): la lista
+  // excluye los gastos de compras SALVO en una vista enfocada, para que el
+  // gasto buscado (que puede ser el pago de una compra) sí aparezca.
+  const foco = leerFocoPreCierre(sp);
+  const gastoEnfocado = foco ? null : leerGastoEnfocado(sp);
+  const conCompras = !!foco || !!gastoEnfocado;
+  const base = queryBaseGastos(filtros, hoy, { conCompras });
 
   // Los GASTOS son la llamada principal (no se degrada: una lista de dinero
   // vacía por un 502 llevaría a recapturar; si falla se dice con
@@ -195,7 +207,7 @@ export default async function ExpensesPage({
     await Promise.all([
       // SIN cap (anti-cap-200): prod ya rebasó los 1,000 gastos y el corte
       // silencioso hacía parecer "no guardado" un gasto que sí existía.
-      principal(listGastosAll(queryListaGastos(filtros, hoy))),
+      principal(listGastosAll(queryListaGastos(filtros, hoy, { conCompras }))),
       degradado.opcional(
         "el contador de pendientes",
         listGastos({ ...base, pendientes: true, limit: 1 }),
@@ -306,12 +318,9 @@ export default async function ExpensesPage({
   const gastosLista = lista.ok ? lista.datos.data : [];
   // «Resolver →» del pre-cierre (15-oct-2026): los gastos que manda resolver
   // van PRIMERO (ANTES de la tabla: la compra de un pago resaltado sube con
-  // él, porque la tabla agrupa por la primera aparición) y en ámbar.
-  const foco = leerFocoPreCierre(sp);
-  // «Ver el gasto con el que se concilió» (27-oct-2026): `?gasto=` trae ESE
-  // gasto PRIMERO y en ámbar con la MISMA mecánica; si vienen los dos manda
-  // el foco del pre-cierre (no se mezclan dos resaltados).
-  const gastoEnfocado = foco ? null : leerGastoEnfocado(sp);
+  // él, porque la tabla agrupa por la primera aparición) y en ámbar. `?gasto=`
+  // (27-oct-2026) trae ESE gasto PRIMERO con la MISMA mecánica (`foco` y
+  // `gastoEnfocado` se leyeron arriba, antes de armar la consulta).
   const idsResaltados = foco ? foco.ids : gastoEnfocado ? [gastoEnfocado] : [];
   const conFoco =
     idsResaltados.length > 0
@@ -446,6 +455,22 @@ export default async function ExpensesPage({
             aviones={aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula, activa: a.activa }))}
           />
           <AvisoPeriodoAjustado inicio={inicio} ajustado={!!filtros.ajustado} />
+          {/* COMPRAS FUERA DE GASTOS (6-nov-2026): la nota permanente, discreta. */}
+          <p
+            data-nota="compras-fuera-de-gastos"
+            data-con-compras={conCompras ? "1" : "0"}
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+          >
+            <span className="font-medium text-foreground/80">{TITULO_COMPRAS_FUERA_DE_GASTOS}.</span>
+            <span>{textoNotaComprasFueraDeGastos(conCompras)}</span>
+            <Link
+              href={HREF_GASTOS_DE_COMPRAS}
+              prefetch={false}
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              {ETIQUETA_IR_A_COMPRAS}
+            </Link>
+          </p>
           {filtros.nominaIgnorada && (
             <div
               role="status"

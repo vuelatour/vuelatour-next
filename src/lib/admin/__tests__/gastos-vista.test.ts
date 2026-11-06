@@ -187,6 +187,7 @@ describe("consultas: lista, contadores y Excel", () => {
     );
     expect(queryBaseGastos(f, HOY)).toEqual({
       excluir_categoria: "NOMINA",
+      sin_compras: true,
       aeronave_id: UUID,
       categoria: "REFACCION",
       medio_pago: "EFECTIVO",

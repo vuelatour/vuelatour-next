@@ -66,6 +66,41 @@ describe("listGastos · excluir_categoria", () => {
   });
 });
 
+describe("listGastos · sin_compras / solo_compras (6-nov-2026, API 0.0.122)", () => {
+  it("`sin_compras` viaja y, con un API previo, se relee SIN él (los demás filtros intactos)", async () => {
+    apiServer.mockResolvedValueOnce({ data: [fila(1)], count: 1 });
+    await listGastos({ sin_compras: true, excluir_categoria: "NOMINA" });
+    expect(apiServer.mock.calls[0][1].searchParams).toMatchObject({ sin_compras: true, excluir_categoria: "NOMINA" });
+    apiServer.mockReset();
+    apiServer.mockRejectedValueOnce(sinCampoEnApi("sin_compras"));
+    apiServer.mockResolvedValueOnce({ data: [fila(1)], count: 1 });
+    await listGastos({ sin_compras: true, excluir_categoria: "NOMINA", desde: "2026-11-01" });
+    expect(apiServer).toHaveBeenCalledTimes(2);
+    const segunda = apiServer.mock.calls[1][1].searchParams;
+    expect(segunda).not.toHaveProperty("sin_compras");
+    expect(segunda).toMatchObject({ excluir_categoria: "NOMINA", desde: "2026-11-01" });
+  });
+
+  it("un API ≤ 0.0.89 rechaza los dos campos, uno por uno: se relee dos veces y la tercera consulta va limpia", async () => {
+    apiServer.mockRejectedValueOnce(sinCampoEnApi("excluir_categoria"));
+    apiServer.mockRejectedValueOnce(sinCampoEnApi("sin_compras"));
+    apiServer.mockResolvedValueOnce({ data: [fila(1)], count: 1 });
+    const r = await listGastos({ sin_compras: true, excluir_categoria: "NOMINA", medio_pago: "EFECTIVO" });
+    expect(apiServer).toHaveBeenCalledTimes(3);
+    const tercera = apiServer.mock.calls[2][1].searchParams;
+    expect(tercera).not.toHaveProperty("sin_compras");
+    expect(tercera).not.toHaveProperty("excluir_categoria");
+    expect(tercera).toMatchObject({ medio_pago: "EFECTIVO" });
+    expect(r.data).toEqual([fila(1)]);
+  });
+
+  it("`solo_compras` NO se tolera: el 400 de un API previo sube con UNA llamada (releer traería todo)", async () => {
+    apiServer.mockRejectedValueOnce(sinCampoEnApi("solo_compras"));
+    await expect(listGastos({ solo_compras: true })).rejects.toBeInstanceOf(ApiError);
+    expect(apiServer).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("listGastosAll · anti-cap con API previo", () => {
   it("las páginas siguientes repiten la consulta que FUNCIONÓ (sin el campo)", async () => {
     apiServer.mockRejectedValueOnce(sinCampoEnApi());

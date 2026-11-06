@@ -17,6 +17,10 @@ export interface MovimientoGasto {
   /** Vuelo al que pertenece el gasto conciliado (para verificar de un clic). */
   vuelo_id?: string | null;
   vuelo?: { folio: number | null } | null;
+  /** COMPRAS FUERA DE GASTOS (6-nov-2026, ADITIVO del API 0.0.122): la
+      compra de la que este gasto es un pago; «abrir el gasto» va a la
+      compra, no a Gastos (donde ya no está). Ausente = API previo. */
+  compra_id?: string | null;
   /** PAGOS PARCIALES (14-sep-2026, ADITIVOS): suma de los cargos ligados al
       gasto y lo que falta para cubrirlo. Sin ellos (API sin desplegar) la UI
       se comporta como hoy — leerlos SIEMPRE por `estadoParcialDeGasto`. */

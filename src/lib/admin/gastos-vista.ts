@@ -158,9 +158,13 @@ export function leerFiltrosGastos(
 export function queryBaseGastos(
   f: FiltrosGastos,
   hoy: string,
+  opts: OpcionesQueryGastos = {},
 ): Omit<ListGastosQuery, "limit" | "offset" | "pendientes" | "duplicados"> {
   return {
     excluir_categoria: CATEGORIA_FUERA_DE_GASTOS,
+    // COMPRAS FUERA DE GASTOS (6-nov-2026, API 0.0.122): siempre, salvo en
+    // una vista enfocada (el gasto buscado puede ser de una compra).
+    ...(opts.conCompras ? {} : { sin_compras: true }),
     aeronave_id: f.aeronave_id,
     categoria: f.categoria,
     medio_pago: f.medio,
@@ -182,8 +186,9 @@ export function queryBaseGastos(
 export function queryListaGastos(
   f: FiltrosGastos,
   hoy: string,
+  opts: OpcionesQueryGastos = {},
 ): Omit<ListGastosQuery, "limit" | "offset"> {
-  const base = queryBaseGastos(f, hoy);
+  const base = queryBaseGastos(f, hoy, opts);
   if (f.vista === "pendientes") return { ...base, pendientes: true };
   if (f.vista === "duplicados") return { ...base, duplicados: true };
   return base;
@@ -200,6 +205,8 @@ export function queryExcelGastos(f: FiltrosGastos, hoy: string): Record<string, 
   const b = queryBaseGastos(f, hoy);
   const q: Record<string, string | undefined> = {
     excluir_categoria: b.excluir_categoria,
+    // El Excel es el reporte del periodo: nunca enfocado ⇒ siempre sin compras.
+    sin_compras: b.sin_compras ? "true" : undefined,
     aeronave_id: b.aeronave_id,
     categoria: b.categoria,
     medio_pago: b.medio_pago,
@@ -227,8 +234,42 @@ export function queryExcelGastos(f: FiltrosGastos, hoy: string): Record<string, 
 export const CATEGORIA_FUERA_DE_GASTOS = CATEGORIA_NOMINA;
 /** Nombre EXACTO del campo del DTO del API (`ListGastosQuery.excluir_categoria`). */
 export const CAMPO_EXCLUIR_CATEGORIA = "excluir_categoria";
+/** Nombre EXACTO del campo del DTO del API (`ListGastosQuery.sin_compras`, API 0.0.122). */
+export const CAMPO_SIN_COMPRAS = "sin_compras";
 /** Los campos que un API previo no conoce (la descarga del Excel los suelta en el 400). */
-export const CAMPOS_OPCIONALES_GASTOS: readonly string[] = [CAMPO_EXCLUIR_CATEGORIA];
+export const CAMPOS_OPCIONALES_GASTOS: readonly string[] = [CAMPO_EXCLUIR_CATEGORIA, CAMPO_SIN_COMPRAS];
+
+// =============================================================================
+// Compras fuera de Gastos (6-nov-2026, API 0.0.122, invariante 118 del API)
+// =============================================================================
+
+/**
+ * Pedido del dueño (captura de la compra #14): «los gastos que se hacen de las
+ * compras siempre los vamos a mantener independientes, no en Gastos, para no
+ * revolver con los gastos de la empresa; para la conciliación sí debemos ver
+ * los gastos de las compras… como lo hicimos con la nómina». Gastos manda
+ * `sin_compras=true` SIEMPRE (lista, contadores y Excel), salvo en una vista
+ * ENFOCADA (`?gasto=` de Conciliación o `ids` del pre-cierre): ahí se
+ * incluyen para que el gasto buscado aparezca. Los pagos de compras viven en
+ * Inventario/Tienda → Compras («Gastos de compras» y cada compra).
+ */
+export interface OpcionesQueryGastos {
+  /** Vista enfocada: incluir los gastos de compras. */
+  conCompras?: boolean;
+}
+
+export const TITULO_COMPRAS_FUERA_DE_GASTOS = "Los gastos de las compras de refacciones se llevan en Inventario/Tienda";
+export const DESCRIPCION_COMPRAS_FUERA_DE_GASTOS =
+  "Lo pagado por una compra (la factura de la mercancía, el envío, la aduana) no sale aquí: vive en cada compra y en «Gastos de compras». Sí cuenta en conciliación, balance y reportes.";
+export const DESCRIPCION_COMPRAS_EN_VISTA_ENFOCADA =
+  "En esta vista enfocada sí se incluyen los gastos de compras, para que el que buscas aparezca.";
+export const ETIQUETA_IR_A_COMPRAS = "Ir a Compras";
+export const HREF_GASTOS_DE_COMPRAS = "/admin/inventory/compras#gastos-de-compras";
+
+/** La nota permanente bajo los filtros de Gastos. */
+export function textoNotaComprasFueraDeGastos(conCompras: boolean): string {
+  return conCompras ? DESCRIPCION_COMPRAS_EN_VISTA_ENFOCADA : DESCRIPCION_COMPRAS_FUERA_DE_GASTOS;
+}
 
 /** Las categorías del filtro de Gastos: las 24 sin «Nómina». */
 export const CATEGORIAS_FILTRO_GASTOS_VISTA: readonly string[] = CATEGORIAS_FILTRO_GASTO.filter(

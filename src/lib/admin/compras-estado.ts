@@ -29,6 +29,7 @@ import {
   type CompraDetalle,
   type CompraGastoEstado,
   type CompraListItem,
+  type CompraRol,
   type CompraRolOtro,
   type EntradaDesdeGastoResultado,
   type GastoCandidatoCompra,
@@ -814,4 +815,41 @@ export function toastCompraConGasto(c: Pick<CompraConGastoRegistrado, "folio" | 
 export function avisoCompraSinGasto(folio: number, error: string | null | undefined): string {
   const motivo = (error ?? "").trim();
   return `La compra #${folio} quedó registrada, pero su gasto NO: ${motivo ? `${motivo} ` : ""}Regístralo desde la compra con «Registrar gasto».`;
+}
+
+// =============================================================================
+// Gastos de compras: apartados de Gastos (6-nov-2026, API 0.0.122, invariante
+// 118 del API). Pedido del dueño: «los gastos que se hacen de las compras
+// siempre los vamos a mantener independientes, no en Gastos… para la
+// conciliación sí debemos ver los gastos de las compras… como lo hicimos con
+// la nómina». La lista de Compras enseña TODOS los pagos ligados a una compra
+// (`GET /v1/expenses?solo_compras=true`), con enlace a su compra y a «Ver /
+// editar» (Gastos enfocado, que en esa vista sí los incluye).
+// =============================================================================
+
+export const TITULO_GASTOS_DE_COMPRAS = "Gastos de compras";
+export const DESCRIPCION_GASTOS_DE_COMPRAS =
+  "Todo lo pagado por las compras de refacciones: la factura de la mercancía, el envío, la aduana. No salen en Gastos (se llevan aquí, como la nómina en su módulo), pero sí cuentan en conciliación, balance y reportes.";
+export const VACIO_GASTOS_DE_COMPRAS = "Todavía no hay gastos ligados a una compra.";
+export const ETIQUETA_VER_EDITAR_GASTO = "Ver / editar";
+export const TITULO_VER_EDITAR_GASTO = "Abre el gasto en Gastos (enfocado) para verificarlo o corregirlo";
+export const TEXTO_GASTO_CONCILIADO = "Conciliado";
+export const TEXTO_GASTO_SIN_CONCILIAR = "Sin conciliar";
+/** Tope de la lista (los más recientes); el API ordena por fecha del gasto. */
+export const TOPE_GASTOS_DE_COMPRAS = 100;
+
+/** «Se muestran los 100 más recientes de 123.» (null si caben todos). */
+export function avisoTopeGastosDeCompras(mostrados: number, total: number): string | null {
+  return total > mostrados ? `Se muestran los ${mostrados} más recientes de ${total}.` : null;
+}
+
+/** Qué pagó este gasto dentro de la compra (todos los roles, también la mercancía). */
+export const ETIQUETA_ROL_COMPRA: Readonly<Record<CompraRol, string>> = {
+  MERCANCIA: "Factura de mercancía",
+  ...ETIQUETA_ROL_OTRO_GASTO,
+};
+
+export function etiquetaRolCompra(rol: CompraRol | string | null | undefined): string {
+  if (!rol) return "—";
+  return (ETIQUETA_ROL_COMPRA as Record<string, string>)[rol] ?? rol;
 }

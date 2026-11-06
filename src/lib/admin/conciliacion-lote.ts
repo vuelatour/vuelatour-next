@@ -51,7 +51,7 @@ import {
 import { enlacesBalanceDeGasto, type EnlacesBalanceDeGasto } from "@/lib/admin/conciliacion-balance";
 import { etiquetaFolioComprobante, tituloFolioComprobante } from "@/lib/admin/conciliacion-folio";
 import { NOTA_COMPRAS_USD } from "@/lib/admin/conciliacion-tc";
-import { hrefGastoEnfocado } from "@/lib/admin/gasto-enfocado";
+import { hrefCompraDeGasto, hrefGastoEnfocado } from "@/lib/admin/gasto-enfocado";
 import { MSG_SERVIDOR_NO_RESPONDIO, esErrorTecnico } from "@/lib/admin/errores-tecnicos";
 import { MEDIO_PAGO_LABELS, medioPagoLabel } from "@/lib/admin/medios-pago";
 import {
@@ -1551,12 +1551,16 @@ export interface ResumenLoteFila {
 }
 
 /**
- * Al vuelo del gasto (donde se ve su desglose) o, sin vuelo, a Gastos CON ESE
- * GASTO enfocado (27-oct-2026, pedido del cliente: «no me manda al gasto
- * conciliado, solo me manda al apartado de gastos»): su día + `?gasto=` ⇒ va
- * primero y en ámbar (`lib/admin/gasto-enfocado.ts`).
+ * A la compra de la que el gasto es pago (COMPRAS FUERA DE GASTOS, 6-nov-2026:
+ * ya no está en Gastos), al vuelo del gasto (donde se ve su desglose) o, sin
+ * ninguno, a Gastos CON ESE GASTO enfocado (27-oct-2026, pedido del cliente:
+ * «no me manda al gasto conciliado, solo me manda al apartado de gastos»): su
+ * día + `?gasto=` ⇒ va primero y en ámbar (`lib/admin/gasto-enfocado.ts`).
  */
-export function hrefGastoConciliado(g: Pick<MovimientoGasto, "id" | "vuelo_id" | "fecha_gasto">): string {
+export function hrefGastoConciliado(
+  g: Pick<MovimientoGasto, "id" | "vuelo_id" | "fecha_gasto" | "compra_id">,
+): string {
+  if (g.compra_id) return hrefCompraDeGasto(g.compra_id);
   return g.vuelo_id ? `/admin/flights/${g.vuelo_id}` : hrefGastoEnfocado(g);
 }
 

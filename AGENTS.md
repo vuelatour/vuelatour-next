@@ -13171,3 +13171,49 @@ total sea solo informativo».
 - Pruebas: `lib/admin/__tests__/compras-estado.test.ts` (cuerpos, montos,
   textos, ¿Y el pago?) y `compras/__tests__/compras-ui.test.tsx` (diálogo,
   tarjeta, cargos, alta, cableado).
+
+## Compras fuera de Gastos: los gastos de las compras viven en Inventario/Tienda (6-nov-2026, API 0.0.122, invariante 118 del API)
+
+Pedido del dueño (captura de la compra #14): «los gastos que se hacen de las
+compras siempre los vamos a mantener independientes, no en Gastos, para no
+revolver con los gastos de la empresa; para la conciliación sí debemos ver los
+gastos de las compras… la tiendita/inventario mantendrá apartados sus gastos,
+como lo hicimos con la nómina». El DATO no cambia (cada pago sigue siendo un
+gasto con `compra_id` + `compra_rol`) y el dinero tampoco: conciliación,
+balance, reparto, pre-cierre y dashboards los siguen contando. Solo cambia
+DÓNDE se ven.
+
+- **Gastos** (`lib/admin/gastos-vista.ts`): `queryBaseGastos` / `queryListaGastos`
+  mandan SIEMPRE `sin_compras: true` (lista, contadores de pestaña) y el Excel
+  `sin_compras: "true"`, salvo en una vista ENFOCADA —`?gasto=` de Conciliación
+  o `ids` del pre-cierre— donde `queryBaseGastos(f, hoy, { conCompras: true })`
+  los incluye para que el gasto buscado aparezca (la página lee `foco` y
+  `gastoEnfocado` ANTES de armar la consulta). Nota permanente bajo los filtros
+  (`data-nota="compras-fuera-de-gastos"`, `data-con-compras`) con el título, el
+  texto según la vista (`textoNotaComprasFueraDeGastos`) y «Ir a Compras»
+  (`HREF_GASTOS_DE_COMPRAS` = `/admin/inventory/compras#gastos-de-compras`).
+  `CAMPOS_OPCIONALES_GASTOS` = `[excluir_categoria, sin_compras]`: la descarga
+  del Excel los suelta ante el 400 de un API previo.
+- **Lector** (`lib/api/expenses-server.ts`): `CAMPOS_TOLERADOS` =
+  `[excluir_categoria, sin_compras]`; ante el 400 «property X should not exist»
+  se relee sin ESE campo, tantas veces como haga falta (un API ≤ 0.0.89 rechaza
+  los dos, uno por uno). `solo_compras` NO se tolera a propósito: releer sin él
+  traería todos los gastos como si fueran de compras (la página de Compras
+  degrada con aviso).
+- **Inventario/Tienda → Compras** (`app/admin/inventory/compras/page.tsx`):
+  tarjeta «Gastos de compras» (`id="gastos-de-compras"`,
+  `components/admin/inventory/compras/compras-gastos-table.tsx`) con
+  `listGastos({ solo_compras: true, limit: TOPE_GASTOS_DE_COMPRAS })`: fecha,
+  compra (#folio → su detalle, `hrefCompraDeGasto`), qué pagó
+  (`etiquetaRolCompra`: «Factura de mercancía» / «Envío» / «Impuestos / aduana»
+  / «Otro cargo»), categoría, proveedor, monto, medio, banco (Conciliado / Sin
+  conciliar), comprobante y «Ver / editar» (`hrefGastoEnfocado`: Gastos
+  enfocado, que en esa vista sí incluye compras); aviso del tope
+  (`avisoTopeGastosDeCompras`). Textos en `lib/admin/compras-estado.ts`.
+- **Conciliación**: `hrefGastoConciliado` manda un gasto con `compra_id`
+  (ADITIVO del API 0.0.122 en `MovimientoGasto`) a su compra; con vuelo, al
+  vuelo; si no, a Gastos enfocado (como antes).
+- Tests: `gastos-vista-compras.test.ts`, `expenses-server-excluir.test.ts`
+  (tolerancia por campo y `solo_compras` sin tolerar),
+  `compras-gastos-table.test.tsx`; `gastos-vista.test.ts` y
+  `gastos-vista-nomina.test.ts` actualizados (`sin_compras` en la base).
