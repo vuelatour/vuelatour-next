@@ -3,14 +3,14 @@ import { NOTA_PAGO_VENDEDOR_REPARTO } from "@/lib/admin/categorias-gasto";
 import { tituloOtrosIngresosAvion } from "@/lib/admin/otros-ingresos-avion";
 import {
   ETIQUETAS_CASCADA,
-  ETIQUETA_RESERVA_INFORMATIVA,
   ETIQUETA_RESERVA_RETENIDA,
-  TEXTO_RESERVA_NO_RESTA,
-  TITULO_RESERVA_RETENIDA,
+  etiquetaReservaCascada,
   etiquetaSaldoCascada,
   filasCascadaAvion,
   reservaInformativa,
   saldoCascada,
+  textoReservaCascada,
+  tituloReservaRetenida,
   type FilaCascada,
 } from "@/lib/admin/reparto-avion";
 import {
@@ -102,27 +102,41 @@ export function CascadaAvion({
           {avisoPesosSinTc(avion.pesos_sin_tc_usd ?? 0)}
         </p>
       )}
-      {/* Reserva de overhaul (cascada del balance): INFORMATIVA, debajo del
-          saldo y marcada «no se resta». */}
+      {/* Reserva de overhaul (cascada del balance): debajo del saldo, no resta
+          del avión; la marca dice «se descuenta a los socios» cuando a TODOS
+          se les descuenta (invariante 121) o «no se resta» en un cierre viejo
+          con socios que solo recibían el dato. */}
       {reserva && (
         <div
           data-reserva-informativa=""
-          title={TEXTO_RESERVA_NO_RESTA}
+          data-reserva-todos={reserva.todosDescuentan ? "true" : "false"}
+          title={textoReservaCascada(reserva.todosDescuentan)}
           className="mt-2 flex items-start justify-between gap-3 rounded-md border border-dashed border-border bg-muted/30 px-2 py-1.5"
         >
           <span className="min-w-0 text-muted-foreground">
             <span className="font-medium text-foreground">{ETIQUETAS_CASCADA.reserva}</span>
-            <span className="ml-1.5 inline-block rounded border border-sky-500/30 bg-sky-500/10 px-1.5 text-[10px] font-medium text-sky-700 dark:text-sky-300">
-              {ETIQUETA_RESERVA_INFORMATIVA}
+            <span
+              className={
+                reserva.todosDescuentan
+                  ? "ml-1.5 inline-block rounded border border-brand-600/30 bg-brand-600/10 px-1.5 text-[10px] font-medium text-brand-600 dark:text-brand-400"
+                  : "ml-1.5 inline-block rounded border border-sky-500/30 bg-sky-500/10 px-1.5 text-[10px] font-medium text-sky-700 dark:text-sky-300"
+              }
+            >
+              {etiquetaReservaCascada(reserva.todosDescuentan)}
             </span>
             {reserva.sublabel && (
               <span className="ml-1.5 text-[11px] text-muted-foreground/70">{reserva.sublabel}</span>
             )}
             {!compacta && (
-              <span className="mt-0.5 block text-[11px] text-muted-foreground/80">{TEXTO_RESERVA_NO_RESTA}</span>
+              <span className="mt-0.5 block text-[11px] text-muted-foreground/80">
+                {textoReservaCascada(reserva.todosDescuentan)}
+              </span>
             )}
             {reserva.retenida && (
-              <span className="mt-0.5 block text-[11px] text-muted-foreground" title={TITULO_RESERVA_RETENIDA}>
+              <span
+                className="mt-0.5 block text-[11px] text-muted-foreground"
+                title={tituloReservaRetenida(reserva.todosDescuentan)}
+              >
                 {ETIQUETA_RESERVA_RETENIDA} {reserva.retenida.principal}
                 {reserva.retenida.informativo ? ` (${reserva.retenida.informativo})` : ""}
               </span>

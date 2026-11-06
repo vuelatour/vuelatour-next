@@ -41,7 +41,6 @@ vi.mock("@/app/admin/profit-sharing/actions", () => ({
   editarPagoSocioAction: async () => ({ ok: true }),
   eliminarPagoSocioAction: async () => ({ ok: true }),
   configurarCuentaSocioAction: async () => ({ ok: true }),
-  cambiarDescuentoReservaAction: async () => ({ ok: true }),
 }));
 vi.mock("@/lib/api/reparto-pagos-browser", () => ({
   adjuntarComprobantePagoSocio: async () => ({ ok: true }),

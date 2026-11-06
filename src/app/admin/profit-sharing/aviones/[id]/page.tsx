@@ -40,7 +40,6 @@ import {
 import { getMe } from "@/lib/api/me";
 import { Degradaciones } from "@/lib/api/degradar";
 import { getInicioOficial } from "@/lib/api/inicio-oficial";
-import { listAircraftOwners } from "@/lib/api/aircraft";
 import {
   getAvionDetalle,
   getContextoRegistro,
@@ -83,12 +82,10 @@ import {
   TITULO_CASCADA,
   conteosPantallaAvion,
   contextoEntregaDesdeAvion,
-  filasPropietarioDeSocio,
   hrefHistoricoAvion,
   hrefRepartoConPeriodo,
   periodoRepartoDeUrl,
   pestanasPantallaAvion,
-  puedeCambiarDescuentoReserva,
   puedeDescargarBalanceAvion,
   puedeVerRepartoAvion,
   saldoCascada,
@@ -165,19 +162,16 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
   const hoy = todayCancun();
   const { desde, hasta, ajustado } = periodoRepartoDeUrl(sp, inicio, hoy);
   const puedeRegistrar = puedeRegistrarEntregas(me.rol);
-  const puedeCambiarReserva = puedeCambiarDescuentoReserva(me.rol);
   const degradado = new Degradaciones();
   // La lectura PRINCIPAL nunca lanza; las cuentas de los socios (lo por
-  // entregar de TODA su cuenta, para «Registrar entrega»), el contexto de
-  // registro y los propietarios (los renglones de `aeronave_socio` para el
-  // descuento de la reserva, solo ADMIN) son ACCESORIOS.
-  const [carga, cargaSocios, registro, propietarios] = await Promise.all([
+  // entregar de TODA su cuenta, para «Registrar entrega») y el contexto de
+  // registro son ACCESORIOS. (Los renglones de `aeronave_socio` ya no se
+  // leen: desde el 6-nov-2026, invariante 121, la reserva se descuenta a
+  // todos y no hay interruptor por socio.)
+  const [carga, cargaSocios, registro] = await Promise.all([
     getAvionDetalle(id, { desde, hasta }),
     puedeVerCuentasSocios(me.rol) ? getSociosCuenta() : Promise.resolve(null),
     getContextoRegistro(me, degradado),
-    puedeCambiarReserva
-      ? degradado.opcional("los propietarios del avión", listAircraftOwners(id, { history: true }), null)
-      : Promise.resolve(null),
   ]);
 
   if (carga.estado === "no-existe") notFound();
@@ -240,7 +234,6 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
   const mesSugerido = mesDePeriodo(periodo.desde, periodo.hasta);
   const filasSocios: FilaSocioAvion[] = datos.socios.map((s) => ({
     socio: s,
-    ownerIds: filasPropietarioDeSocio(propietarios, s.socio_id, periodo).map((o) => o.id),
     contexto: puedeRegistrar
       ? contextoEntregaDesdeAvion(s, avion.aeronave, resumenPorSocio.get(s.socio_id) ?? null, {
           mesEnCurso,
@@ -405,10 +398,7 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
               </CardHeader>
               <CardContent className="p-0 sm:p-2">
                 <SociosAvionTable
-                  aeronaveId={avion.aeronave.id}
-                  matricula={avion.aeronave.matricula}
                   filas={filasSocios}
-                  puedeCambiarReserva={puedeCambiarReserva}
                   puedeRegistrar={puedeRegistrar}
                   registro={registro}
                   rol={me.rol}

@@ -13282,6 +13282,26 @@ no aparezca marcada la opción de agregar al inventario».
   `compras-ui.test.tsx` (orden compra → gasto → gastos aparte → recibir, sin
   botón «Compras»).
 
+## La reserva de overhaul se descuenta a TODOS los socios (6-nov-2026, API 0.0.125)
+
+Decisión del cliente: «lo de overhaul ya se les va a apartar en las utilidades a
+todos los socios… ya decidieron que a todos se les va a reservar» (supersede la
+opción por socio del 20-oct-2026, invariante 99 del API; ahora invariante 121).
+
+- El API manda `reparto[].descuenta_reserva: true` para todos y `monto_*` =
+  utilidad − su reserva. El panel NO decide nada: se quitó el interruptor por
+  socio (`ReservaSocioControl`, `cambiarDescuentoReservaAction`,
+  `puedeCambiarDescuentoReserva`, `filasPropietarioDeSocio`, la lectura de
+  `listAircraftOwners` en la pantalla del avión). Queda `BadgeReservaSocio`
+  («se le descuenta» / «solo informativa»), que lee el dato: un cierre cerrado
+  antes conserva en su snapshot quién solo recibía el dato.
+- El bloque de la reserva en la cascada (`cascada-avion.tsx`) elige sus textos
+  por los datos: `todosDescuentanReserva(reparto)` ⇒ «se descuenta a los
+  socios» / `TEXTO_RESERVA_DESCONTADA` / `TITULO_RESERVA_RETENIDA_TODOS`; si
+  alguno no descuenta, «no se resta» y los textos de antes. Nunca por la fecha.
+- Tests: `lib/admin/__tests__/reparto-avion.test.ts` («a TODOS se les
+  descuenta»), `reparto-avion-pantalla.test.tsx`.
+
 ## Fechas en DD/MM/AAAA en todos lados (6-nov-2026)
 
 Pedido del dueño (capturas de «Fecha del gasto» y «Periodo desde/hasta» con

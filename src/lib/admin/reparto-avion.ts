@@ -118,13 +118,6 @@ export function puedeVerRepartoAvion(rol: string | null | undefined): boolean {
   return (ROLES_VEN_REPARTO_AVION as readonly string[]).includes(rol ?? "");
 }
 
-/** Espejo del `@Roles(ADMIN)` de `PATCH /v1/aircraft/owners/:id`. */
-export const ROLES_CAMBIAN_RESERVA = ["ADMIN"] as const;
-
-export function puedeCambiarDescuentoReserva(rol: string | null | undefined): boolean {
-  return (ROLES_CAMBIAN_RESERVA as readonly string[]).includes(rol ?? "");
-}
-
 /** El balance en Excel del avión es ADMIN/ANALISTA (como en la card). */
 export function puedeDescargarBalanceAvion(rol: string | null | undefined): boolean {
   return rol === "ADMIN" || rol === "ANALISTA";
@@ -337,13 +330,43 @@ export const SUBLABEL_FIJOS = "sueldos y seguros de la empresa, prorrateados ent
 export const TITULO_FILA_AFAC =
   "Aportación AFAC de la ficha del avión × horas cobradas del periodo: la misma columna «PERMISO AFAC (PROVISIÓN)» del balance. Resta del saldo; lo que AFAC cobre de verdad se captura en el Balance general y lo paga VuelaTour.";
 
-/** Marca junto a la reserva: no entra a la cascada. */
+/**
+ * Marca junto a la reserva: no entra a la cascada del avión. Los textos se
+ * eligen por los DATOS (`reparto[].descuenta_reserva`): desde el 6-nov-2026
+ * (API 0.0.125, invariante 121) a TODOS los socios se les descuenta y el
+ * bloque lo dice así; un cierre cerrado antes, con socios que solo recibían
+ * el dato, sigue diciendo «no se resta» como entonces.
+ */
 export const ETIQUETA_RESERVA_INFORMATIVA = "no se resta";
+export const ETIQUETA_RESERVA_DESCONTADA = "se descuenta a los socios";
 export const TEXTO_RESERVA_NO_RESTA =
   "No se resta del saldo: es lo que el avión debe guardar para su overhaul (horas voladas × tarifa de la ficha). A cada socio se le informa su parte y solo se le descuenta de lo que recibe si así se configuró.";
+export const TEXTO_RESERVA_DESCONTADA =
+  "No se resta del saldo del avión: es lo que el avión debe guardar para su overhaul (horas voladas × tarifa de la ficha). A cada socio se le descuenta su parte de lo que recibe y VuelaTour la retiene.";
 export const ETIQUETA_RESERVA_RETENIDA = "VuelaTour retiene";
 export const TITULO_RESERVA_RETENIDA =
   "Parte de la reserva que se descuenta a los socios que así lo pidieron: no se les entrega, la guarda VuelaTour para el overhaul.";
+export const TITULO_RESERVA_RETENIDA_TODOS =
+  "La reserva completa se descuenta a los socios: no se les entrega, la guarda VuelaTour para el overhaul.";
+
+/** ¿A TODOS los socios se les descuenta la reserva? (invariante 121 del API). Sin socios ⇒ false. */
+export function todosDescuentanReserva(
+  reparto: readonly Pick<RepartoSocio, "descuenta_reserva">[] | null | undefined,
+): boolean {
+  return !!reparto && reparto.length > 0 && reparto.every((s) => s.descuenta_reserva === true);
+}
+
+export function etiquetaReservaCascada(todos: boolean): string {
+  return todos ? ETIQUETA_RESERVA_DESCONTADA : ETIQUETA_RESERVA_INFORMATIVA;
+}
+
+export function textoReservaCascada(todos: boolean): string {
+  return todos ? TEXTO_RESERVA_DESCONTADA : TEXTO_RESERVA_NO_RESTA;
+}
+
+export function tituloReservaRetenida(todos: boolean): string {
+  return todos ? TITULO_RESERVA_RETENIDA_TODOS : TITULO_RESERVA_RETENIDA;
+}
 
 /** «$40 USD/hr × 12.5 hr cobradas»; sin detalle, undefined. */
 export function sublabelAfac(
@@ -608,6 +631,8 @@ export interface ReservaInformativa {
   retenida: MontoDoble | null;
   /** Hay horas voladas pero el avión no tiene tarifa de reserva. */
   incompleta: boolean;
+  /** A TODOS los socios se les descuenta (invariante 121): los textos lo dicen. */
+  todosDescuentan: boolean;
 }
 
 /** La reserva de overhaul que se INFORMA debajo del saldo (cascada del balance). */
@@ -626,6 +651,7 @@ export function reservaInformativa(avion: AvionReparto, enPesos: boolean): Reser
         ? montoPrincipal({ mxn: avion.reserva_retenida_mxn, usd: retenidaUsd }, enPesos)
         : null,
     incompleta: avion.reserva_overhaul_incompleta === true,
+    todosDescuentan: todosDescuentanReserva(avion.reparto),
   };
 }
 
@@ -642,10 +668,6 @@ export const TITULO_SE_DESCUENTA =
   "VuelaTour le retiene su parte de la reserva de overhaul: no se le entrega, se guarda para el overhaul del avión.";
 export const TITULO_SOLO_INFORMATIVA =
   "Recibe su utilidad completa; solo se le informa cuánto debería guardar para el overhaul.";
-export const ETIQUETA_CAMBIAR_RESERVA = "Cambiar";
-export const TITULO_CAMBIAR_RESERVA = "Elegir si a este socio se le descuenta la reserva o solo se le informa";
-export const TEXTO_SIN_RENGLON_PROPIETARIO =
-  "No se encontró el renglón de propietario de este socio en el periodo: cámbialo desde «Editar propietarios» en la ficha del avión.";
 
 export interface FilaSocioReparto {
   socio_id: string;
@@ -691,79 +713,6 @@ export function textoReservaSocio(f: Pick<FilaSocioReparto, "reserva" | "descuen
   return f.descuenta
     ? `reserva ${f.reserva.principal} · ${ETIQUETA_SE_DESCUENTA}`
     : `guardar ${f.reserva.principal} · ${ETIQUETA_SOLO_INFORMATIVA}`;
-}
-
-/** Confirmación del cambio «¿se le descuenta la reserva?» (dinero: siempre confirma). */
-export function confirmacionDescuentoReserva(p: {
-  socio: string;
-  matricula: string;
-  descontar: boolean;
-}): { titulo: string; descripcion: string; boton: string } {
-  if (p.descontar) {
-    return {
-      titulo: `¿Descontar la reserva a ${p.socio}?`,
-      descripcion: `En ${p.matricula}, la parte de ${p.socio} de la reserva de overhaul se RESTARÁ de lo que se le entrega: VuelaTour la retiene para el overhaul. Cambia los repartos que se calculan hoy (este periodo, el histórico y la cuenta del socio en los meses abiertos); las utilidades ya congeladas en un cierre de mes no cambian.`,
-      boton: "Sí, descontársela",
-    };
-  }
-  return {
-    titulo: `¿Dejar la reserva solo como dato para ${p.socio}?`,
-    descripcion: `En ${p.matricula}, la parte de ${p.socio} de la reserva de overhaul ya NO se le descontará: recibe su utilidad completa y solo se le informa cuánto debería guardar. Cambia los repartos que se calculan hoy (este periodo, el histórico y la cuenta del socio en los meses abiertos); las utilidades ya congeladas en un cierre de mes no cambian.`,
-    boton: "Sí, solo informarle",
-  };
-}
-
-export function toastDescuentoReserva(socio: string, descontar: boolean): string {
-  return descontar
-    ? `A ${socio} se le descuenta la reserva de overhaul desde ahora.`
-    : `A ${socio} ya no se le descuenta la reserva: solo se le informa.`;
-}
-
-const TECNICO =
-  /^(Internal server error|Request failed|Bad Request|Not Found|Unauthorized|Forbidden|Conflict|Service Unavailable)$/i;
-const EN_INGLES = /\b(should|must|property|is not|not allowed|not found)\b/i;
-
-/** Mensaje es-MX de un fallo de `PATCH /v1/aircraft/owners/:id`. */
-export function mensajeErrorDescuentoReserva(
-  code: string | null | undefined,
-  message: string | null | undefined,
-  status?: number | null,
-): string {
-  const msg = (message ?? "").trim();
-  if (status === 403) return "Solo administración puede cambiar si se descuenta la reserva.";
-  if (status === 404 && /^Cannot PATCH\b/.test(msg)) {
-    return "El servidor todavía no tiene esta función (falta actualizarlo). Avisa a sistemas.";
-  }
-  if (code === "PROPIETARIO_NO_EXISTE" || status === 404) {
-    return "Ese propietario ya no existe: recarga la página.";
-  }
-  if (code === "SIN_CONEXION" || !msg) {
-    return "No se pudo confirmar el cambio con el servidor. Recarga la página para ver si se guardó.";
-  }
-  if (TECNICO.test(msg) || EN_INGLES.test(msg)) {
-    return `El servidor respondió con error${status ? ` ${status}` : ""}. Vuelve a intentarlo; si sigue igual, avisa a sistemas.`;
-  }
-  return msg;
-}
-
-/**
- * Renglones de `aeronave_socio` de un socio que CUENTAN en el periodo: la
- * MISMA regla con la que el API elige los socios vigentes del reparto
- * (`vigente_desde ≤ hasta` y `vigente_hasta` nulo o `≥ desde`). Sobre ellos
- * se hace el PATCH del descuento de la reserva.
- */
-export function filasPropietarioDeSocio(
-  owners: readonly AircraftOwner[] | null | undefined,
-  socioId: string,
-  periodo: { desde: string; hasta: string },
-): AircraftOwner[] {
-  if (!owners) return [];
-  return owners.filter(
-    (o) =>
-      o.socio_id === socioId &&
-      o.vigente_desde <= periodo.hasta &&
-      (o.vigente_hasta === null || o.vigente_hasta >= periodo.desde),
-  );
 }
 
 /**

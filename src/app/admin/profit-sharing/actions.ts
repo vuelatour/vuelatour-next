@@ -13,7 +13,7 @@ import {
   normalizarResumen,
   validarMotivoBaja,
 } from "@/lib/admin/reparto-pagos";
-import { RUTA_REPARTO_AVIONES, mensajeErrorDescuentoReserva } from "@/lib/admin/reparto-avion";
+import { RUTA_REPARTO_AVIONES } from "@/lib/admin/reparto-avion";
 import type {
   ConfigurarCuentaPayload,
   CrearPagoSocioPayload,
@@ -192,54 +192,3 @@ export async function configurarCuentaSocioAction(
   }
 }
 
-/**
- * RESERVA DE OVERHAUL POR SOCIO (20-oct-2026, API 0.0.101, invariante 99):
- * «¿se le descuenta la reserva o solo se le informa?» de UN socio en UN
- * avión. `PATCH /v1/aircraft/owners/:id { descontar_reserva_overhaul }` por
- * cada renglón de `aeronave_socio` del socio que cuenta en el periodo (casi
- * siempre uno; dos si tiene dos vigencias). La confirmación la pide la UI
- * (es dinero). Revalida el reparto, la pantalla del avión, el histórico, la
- * cuenta del socio y la ficha del avión. Un fallo a medias se DICE (cuántos
- * se aplicaron).
- */
-export async function cambiarDescuentoReservaAction(
-  aeronaveId: string,
-  ownerIds: string[],
-  descontar: boolean,
-): Promise<ActionResult<{ aplicados: number }>> {
-  if (!esUuid(aeronaveId)) return { ok: false, error: "No se reconoce el avión. Recarga la página." };
-  const ids = [...new Set(ownerIds)];
-  if (ids.length === 0 || ids.some((id) => !esUuid(id))) {
-    return { ok: false, error: "No se reconoce el renglón de propietario del socio. Recarga la página." };
-  }
-  if (typeof descontar !== "boolean") return { ok: false, error: "Elige si se le descuenta o solo se le informa." };
-  let aplicados = 0;
-  try {
-    for (const id of ids) {
-      await apiServer<unknown>(`/v1/aircraft/owners/${id}`, {
-        method: "PATCH",
-        body: { descontar_reserva_overhaul: descontar },
-      });
-      aplicados += 1;
-    }
-  } catch (err) {
-    const base = isApiError(err)
-      ? mensajeErrorDescuentoReserva(err.code, err.message, err.status)
-      : mensajeErrorDescuentoReserva("SIN_CONEXION", null);
-    const parcial =
-      aplicados > 0 ? ` Se aplicó en ${aplicados} de ${ids.length} renglones: recarga la página.` : "";
-    if (aplicados > 0) revalidarReservaAvion(aeronaveId);
-    return {
-      ok: false,
-      error: `${base}${parcial}`,
-      ...(isApiError(err) ? { code: err.code, status: err.status, details: err.details } : { code: "SIN_CONEXION" }),
-    };
-  }
-  revalidarReservaAvion(aeronaveId);
-  return { ok: true, data: { aplicados } };
-}
-
-function revalidarReservaAvion(aeronaveId: string) {
-  revalidarCuentas();
-  revalidatePath(`/admin/aircraft/${aeronaveId}`);
-}

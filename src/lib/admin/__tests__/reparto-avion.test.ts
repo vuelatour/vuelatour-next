@@ -27,12 +27,14 @@ import {
   ETIQUETAS_CASCADA_EXCEL,
   ETIQUETA_CORTA_GRUPO_GASTO,
   ETIQUETA_GRUPO_GASTO,
+  ETIQUETA_RESERVA_DESCONTADA,
   ETIQUETA_RESERVA_INFORMATIVA,
   MESES_HISTORICO_MAX,
   ORDEN_GRUPOS_GASTO,
   PARAMETRO_SECCION_AVION,
   RUTA_REPARTO_AVIONES,
   SECCIONES_PANTALLA_AVION,
+  TEXTO_RESERVA_DESCONTADA,
   TEXTO_RESERVA_NO_RESTA,
   TITULO_FILA_COMBUSTIBLE,
   agruparGastosDetalle,
@@ -41,7 +43,6 @@ import {
   cascadaDelGrupo,
   celdasTotalesHistorico,
   columnasHistorico,
-  confirmacionDescuentoReserva,
   conteosPantallaAvion,
   contextoEntregaDesdeAvion,
   descripcionGrupoGasto,
@@ -50,7 +51,6 @@ import {
   etiquetaSaldoCascada,
   filasCascadaAvion,
   filasHistorico,
-  filasPropietarioDeSocio,
   filasSociosReparto,
   filtroMesesHistorico,
   historicoConCombustible,
@@ -58,7 +58,6 @@ import {
   hrefRepartoAvion,
   hrefRepartoConPeriodo,
   hrefVueloGasto,
-  mensajeErrorDescuentoReserva,
   mesesFuturosDelRango,
   nombreSocioDeEntrega,
   normalizarAvionDetalle,
@@ -66,9 +65,12 @@ import {
   periodoRepartoDeUrl,
   pestanasGruposGasto,
   pestanasPantallaAvion,
-  puedeCambiarDescuentoReserva,
   puedeVerRepartoAvion,
+  etiquetaReservaCascada,
   reservaInformativa,
+  textoReservaCascada,
+  tituloReservaRetenida,
+  todosDescuentanReserva,
   saldoCascada,
   seccionPantallaAvionDeUrl,
   sublabelAfac,
@@ -83,7 +85,6 @@ import {
   textoReservaSocio,
   textoTcGasto,
   textoVueloGasto,
-  toastDescuentoReserva,
   utilidadAntesGastos,
 } from "../reparto-avion";
 import { combustibleSeparado } from "../reparto-pesos";
@@ -94,7 +95,6 @@ import {
   sinCombustible,
 } from "@/components/admin/profit-sharing/__tests__/reparto-pesos.fixtures";
 import type { AvionReparto, FilaGastoDetalle, MesHistoricoAvion } from "@/types/profit-sharing";
-import type { AircraftOwner } from "@/types/aircraft";
 
 const AV = "a1a1a1a1-0000-4000-8000-000000000621";
 const SOCIO = "50c10000-0000-4000-8000-000000000001";
@@ -183,11 +183,9 @@ describe("rutas y roles", () => {
     expect(hrefRepartoConPeriodo({})).toBe("/admin/profit-sharing");
   });
 
-  it("roles: espejo del API (ver: ADMIN/ANALISTA/FACTURACION/SOCIO; cambiar la reserva: solo ADMIN)", () => {
+  it("roles: espejo del API (ver: ADMIN/ANALISTA/FACTURACION/SOCIO)", () => {
     for (const r of ["ADMIN", "ANALISTA", "FACTURACION", "SOCIO"]) expect(puedeVerRepartoAvion(r)).toBe(true);
     for (const r of ["COORDINADOR", "PILOTO", null, undefined, ""]) expect(puedeVerRepartoAvion(r)).toBe(false);
-    expect(puedeCambiarDescuentoReserva("ADMIN")).toBe(true);
-    for (const r of ["FACTURACION", "ANALISTA", "SOCIO", null]) expect(puedeCambiarDescuentoReserva(r)).toBe(false);
   });
 
   it("periodo de la URL: la MISMA regla del reparto (inválido ⇒ mes corriente; invertido se endereza; piso del inicio con aviso)", () => {
@@ -279,9 +277,29 @@ describe("cascada del avión", () => {
     expect(r.retenida?.principal).toBe("$3,529.35 MXN");
     expect(r.incompleta).toBe(false);
     expect(reservaInformativa({ ...a, reserva_retenida_usd: 0 }, true).retenida).toBeNull();
+    // En este mundo Victoria no descuenta: textos de antes («no se resta»).
+    expect(r.todosDescuentan).toBe(false);
     expect(ETIQUETA_RESERVA_INFORMATIVA).toBe("no se resta");
     expect(TEXTO_RESERVA_NO_RESTA).toContain("No se resta del saldo");
     expect(ETIQUETAS_CASCADA.afac).toBe("Provisión AFAC");
+  });
+
+  it("a TODOS se les descuenta (6-nov-2026, invariante 121): los textos del bloque lo dicen; se decide por los datos", () => {
+    const a = avionBalance();
+    const todos = { ...a, reparto: a.reparto.map((s) => ({ ...s, descuenta_reserva: true })) };
+    expect(todosDescuentanReserva(todos.reparto)).toBe(true);
+    expect(todosDescuentanReserva(a.reparto)).toBe(false);
+    expect(todosDescuentanReserva([])).toBe(false);
+    expect(todosDescuentanReserva(null)).toBe(false);
+    expect(reservaInformativa(todos, true).todosDescuentan).toBe(true);
+    expect(etiquetaReservaCascada(true)).toBe(ETIQUETA_RESERVA_DESCONTADA);
+    expect(ETIQUETA_RESERVA_DESCONTADA).toBe("se descuenta a los socios");
+    expect(etiquetaReservaCascada(false)).toBe("no se resta");
+    expect(textoReservaCascada(true)).toBe(TEXTO_RESERVA_DESCONTADA);
+    expect(TEXTO_RESERVA_DESCONTADA).toContain("A cada socio se le descuenta su parte de lo que recibe");
+    expect(textoReservaCascada(false)).toBe(TEXTO_RESERVA_NO_RESTA);
+    expect(tituloReservaRetenida(true)).toContain("La reserva completa se descuenta a los socios");
+    expect(tituloReservaRetenida(false)).toContain("que así lo pidieron");
   });
 
   it("sublabels: AFAC «$X USD/hr × Y hr cobradas»; reserva con detalle o solo horas", () => {
@@ -316,55 +334,6 @@ describe("socios: utilidad, reserva, se descuenta / solo informativa, a recibir"
     expect(textoReservaSocio(s)).toBeNull();
     // Reserva en 0: tampoco se dice nada.
     expect(textoReservaSocio({ reserva: { principal: "$0.00 MXN", informativo: null, sinPesos: false, valor: 0 }, descuenta: false })).toBeNull();
-  });
-
-  it("la confirmación explica la consecuencia en las dos direcciones (es dinero: siempre se confirma)", () => {
-    const si = confirmacionDescuentoReserva({ socio: "Hernán Pérez", matricula: "N621TX", descontar: true });
-    expect(si.titulo).toBe("¿Descontar la reserva a Hernán Pérez?");
-    expect(si.descripcion).toContain("se RESTARÁ de lo que se le entrega: VuelaTour la retiene");
-    expect(si.descripcion).toContain("las utilidades ya congeladas en un cierre de mes no cambian");
-    expect(si.boton).toBe("Sí, descontársela");
-    const no = confirmacionDescuentoReserva({ socio: "Hernán Pérez", matricula: "N621TX", descontar: false });
-    expect(no.titulo).toBe("¿Dejar la reserva solo como dato para Hernán Pérez?");
-    expect(no.descripcion).toContain("ya NO se le descontará: recibe su utilidad completa");
-    expect(no.boton).toBe("Sí, solo informarle");
-    expect(toastDescuentoReserva("Hernán Pérez", true)).toBe("A Hernán Pérez se le descuenta la reserva de overhaul desde ahora.");
-    expect(toastDescuentoReserva("Hernán Pérez", false)).toBe("A Hernán Pérez ya no se le descuenta la reserva: solo se le informa.");
-  });
-
-  it("errores del PATCH en es-MX", () => {
-    expect(mensajeErrorDescuentoReserva("FORBIDDEN", "Forbidden", 403)).toBe("Solo administración puede cambiar si se descuenta la reserva.");
-    expect(mensajeErrorDescuentoReserva("NOT_FOUND", "Cannot PATCH /v1/aircraft/owners/x", 404)).toContain("falta actualizarlo");
-    expect(mensajeErrorDescuentoReserva("PROPIETARIO_NO_EXISTE", "Ese propietario ya no existe: recarga la página.", 404)).toBe(
-      "Ese propietario ya no existe: recarga la página.",
-    );
-    expect(mensajeErrorDescuentoReserva("SIN_CONEXION", null)).toContain("Recarga la página");
-    expect(mensajeErrorDescuentoReserva("X", "Internal server error", 500)).toContain("error 500");
-    expect(mensajeErrorDescuentoReserva("PROPIETARIO_VIGENCIA_INVALIDA", "El socio empezó el 01/09/2026.", 400)).toBe(
-      "El socio empezó el 01/09/2026.",
-    );
-  });
-
-  it("renglones de `aeronave_socio` que CUENTAN en el periodo (la regla del compute), para el PATCH", () => {
-    const fila = (id: string, socio: string, desde: string, hasta: string | null): AircraftOwner => ({
-      id,
-      socio_id: socio,
-      porcentaje: "50",
-      vigente_desde: desde,
-      vigente_hasta: hasta,
-      notas: null,
-      usuario: null,
-    });
-    const owners = [
-      fila("o1", SOCIO, "2026-01-01", "2026-09-15"),
-      fila("o2", SOCIO, "2026-09-16", null),
-      fila("o3", SOCIO, "2025-01-01", "2025-12-31"),
-      fila("o4", OTRO, "2026-01-01", null),
-    ];
-    const periodo = { desde: "2026-09-01", hasta: "2026-09-30" };
-    expect(filasPropietarioDeSocio(owners, SOCIO, periodo).map((o) => o.id)).toEqual(["o1", "o2"]);
-    expect(filasPropietarioDeSocio(owners, SOCIO, { desde: "2026-10-01", hasta: "2026-10-31" }).map((o) => o.id)).toEqual(["o2"]);
-    expect(filasPropietarioDeSocio(null, SOCIO, periodo)).toEqual([]);
   });
 
   it("contexto de «Registrar entrega» desde el avión: con el renglón de la cuenta (y el avión preseleccionado) o lo mínimo", () => {

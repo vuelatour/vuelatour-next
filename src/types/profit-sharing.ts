@@ -13,9 +13,10 @@ export interface RepartoSocio {
   monto_mxn?: number | null;
   /** ADITIVOS (cascada del balance, 20-oct-2026, API 0.0.101, invariante
       99): su parte del saldo ANTES de la reserva, su parte de la reserva de
-      overhaul («lo que debe guardar») y si VuelaTour se la DESCUENTA
-      (`aeronave_socio.descontar_reserva_overhaul`) o solo se le informa.
-      Ausentes con un API previo. */
+      overhaul («lo que debe guardar») y si VuelaTour se la DESCUENTA. Desde
+      el 6-nov-2026 (API 0.0.125, invariante 121) a TODOS se les descuenta
+      (`descuenta_reserva: true`); un cierre cerrado antes conserva en su
+      snapshot quién solo recibía el dato. Ausentes con un API previo. */
   utilidad_usd?: number | null;
   utilidad_mxn?: number | null;
   reserva_usd?: number | null;

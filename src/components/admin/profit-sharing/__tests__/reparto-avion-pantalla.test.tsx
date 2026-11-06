@@ -39,7 +39,6 @@ vi.mock("@/app/admin/profit-sharing/actions", () => ({
   editarPagoSocioAction: async () => ({ ok: true }),
   eliminarPagoSocioAction: async () => ({ ok: true }),
   configurarCuentaSocioAction: async () => ({ ok: true }),
-  cambiarDescuentoReservaAction: async () => ({ ok: true }),
 }));
 vi.mock("@/lib/api/reparto-pagos-browser", () => ({
   adjuntarComprobantePagoSocio: async () => ({ ok: true }),
@@ -278,9 +277,9 @@ describe("socios de este avión (SociosAvionTable)", () => {
     mesSugerido: "2026-09",
     avionSugerido: AV,
   });
-  const filas = socios.map((s) => ({ socio: s, ownerIds: [OWNER], contexto: contexto(s) }));
+  const filas = socios.map((s) => ({ socio: s, contexto: contexto(s) }));
   const html = renderToStaticMarkup(
-    <SociosAvionTable aeronaveId={AV} matricula="N621TX" filas={filas} puedeCambiarReserva puedeRegistrar registro={REGISTRO} rol="ADMIN" usuarioId={ALE.id} />,
+    <SociosAvionTable filas={filas} puedeRegistrar registro={REGISTRO} rol="ADMIN" usuarioId={ALE.id} />,
   );
 
   it("columnas en pesos: utilidad, reserva a guardar, a recibir, entregado y por entregar DE ESTE AVIÓN", () => {
@@ -295,24 +294,20 @@ describe("socios de este avión (SociosAvionTable)", () => {
     expect(html).toContain("≈ $3,263.84 USD");
   });
 
-  it("reserva: «se le descuenta» / «solo informativa» con el control de ADMIN («Cambiar»), «Registrar entrega» y «Ver cuenta»", () => {
+  it("reserva: el badge «se le descuenta» / «solo informativa» del dato del API (sin interruptor: a todos se les descuenta desde el 6-nov-2026), «Registrar entrega» y «Ver cuenta»", () => {
     expect(html).toMatch(/data-reserva-socio="descuenta"[^>]*>se le descuenta</);
     expect(html).toMatch(/data-reserva-socio="informativa"[^>]*>solo informativa</);
-    expect((html.match(/data-accion="cambiar-reserva-socio"/g) ?? []).length).toBe(2);
+    expect(html).not.toContain('data-accion="cambiar-reserva-socio"');
+    expect(html).not.toContain(">Cambiar<");
     expect((html.match(/data-accion="registrar-entrega-socio"/g) ?? []).length).toBe(2);
     expect((html.match(/data-accion="ver-cuenta-socio"/g) ?? []).length).toBe(2);
     expect(html).toContain(`href="/admin/profit-sharing/socios/${SOCIO}"`);
     for (const b of botones(html)) expect(b, b).toContain("cursor-pointer");
   });
 
-  it("sin renglón de propietario: el badge y dónde cambiarlo; SOCIO: su renglón, sin control ni «Registrar entrega»", () => {
-    const sinRenglon = renderToStaticMarkup(
-      <SociosAvionTable aeronaveId={AV} matricula="N621TX" filas={[{ ...filas[0], ownerIds: [] }]} puedeCambiarReserva puedeRegistrar={false} registro={REGISTRO} rol="ADMIN" usuarioId={ALE.id} />,
-    );
-    expect(sinRenglon).not.toContain('data-accion="cambiar-reserva-socio"');
-    expect(sinRenglon).toContain("(se cambia en la ficha del avión)");
+  it("SOCIO: su renglón con el badge, sin «Registrar entrega»", () => {
     const socio = renderToStaticMarkup(
-      <SociosAvionTable aeronaveId={AV} matricula="N621TX" filas={[{ ...filas[0], contexto: null }]} puedeCambiarReserva={false} puedeRegistrar={false} registro={REGISTRO} rol="SOCIO" usuarioId={SOCIO} />,
+      <SociosAvionTable filas={[{ ...filas[0], contexto: null }]} puedeRegistrar={false} registro={REGISTRO} rol="SOCIO" usuarioId={SOCIO} />,
     );
     expect(socio).not.toContain('data-accion="cambiar-reserva-socio"');
     expect(socio).not.toContain('data-accion="registrar-entrega-socio"');
@@ -454,9 +449,9 @@ describe("cableado de las páginas", () => {
     expect(detalle).toContain("<DesgloseSection detalle={detalle} enPesos={enPesos} />");
     expect(detalle).toContain("<SociosAvionTable");
     expect(detalle).toContain("<EntregasAvionTable");
-    // Los renglones de `aeronave_socio` (solo ADMIN) y la cuenta del socio son ACCESORIOS.
-    expect(detalle).toContain('degradado.opcional("los propietarios del avión", listAircraftOwners(id, { history: true }), null)');
-    expect(detalle).toContain("filasPropietarioDeSocio(propietarios, s.socio_id, periodo)");
+    // Ya no se leen los renglones de `aeronave_socio` (sin interruptor por socio, invariante 121).
+    expect(detalle).not.toContain("listAircraftOwners(");
+    expect(detalle).not.toContain("filasPropietarioDeSocio(");
     expect(detalle).toContain("contextoEntregaDesdeAvion(s, avion.aeronave, resumenPorSocio.get(s.socio_id) ?? null, {");
     expect(detalle).toContain("<TarjetaErrorCarga");
   });

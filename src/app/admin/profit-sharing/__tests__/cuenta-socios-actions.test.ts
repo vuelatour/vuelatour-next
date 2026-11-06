@@ -26,7 +26,6 @@ vi.mock("@/lib/api/server", () => ({ apiServer: (...a: unknown[]) => apiServer(.
 vi.mock("next/cache", () => ({ revalidatePath: (...a: unknown[]) => revalidatePath(...a) }));
 
 const {
-  cambiarDescuentoReservaAction,
   configurarCuentaSocioAction,
   crearPagoSocioAction,
   editarPagoSocioAction,
@@ -453,47 +452,6 @@ const AVION_API = {
   tc_oficial: { vuelos: 0, gastos: { count: 0, monto_mxn: 0 }, fuentes: [], leyenda: "x" },
   gastos_sin_tc: { count: 0, monto_mxn: 0 },
 };
-
-describe("cambiarDescuentoReservaAction (si se le descuenta la reserva, solo ADMIN)", () => {
-  it("PATCH /v1/aircraft/owners/:id con { descontar_reserva_overhaul } por cada renglón y revalida reparto, avión, cuentas y ficha", async () => {
-    apiServer.mockResolvedValue({ id: OWNER_1 });
-    const r = await cambiarDescuentoReservaAction(N621TX, [OWNER_1, OWNER_2, OWNER_1], true);
-    expect(r).toEqual({ ok: true, data: { aplicados: 2 } });
-    expect(apiServer).toHaveBeenCalledTimes(2);
-    expect(apiServer).toHaveBeenNthCalledWith(1, `/v1/aircraft/owners/${OWNER_1}`, {
-      method: "PATCH",
-      body: { descontar_reserva_overhaul: true },
-    });
-    expect(apiServer).toHaveBeenNthCalledWith(2, `/v1/aircraft/owners/${OWNER_2}`, {
-      method: "PATCH",
-      body: { descontar_reserva_overhaul: true },
-    });
-    expect(revalidatePath.mock.calls).toEqual([...RUTAS_REVALIDADAS, [`/admin/aircraft/${N621TX}`]]);
-  });
-
-  it("ids inválidos o sin renglón no llegan al API", async () => {
-    expect((await cambiarDescuentoReservaAction("x", [OWNER_1], false)).ok).toBe(false);
-    expect((await cambiarDescuentoReservaAction(N621TX, [], false)).ok).toBe(false);
-    expect((await cambiarDescuentoReservaAction(N621TX, ["nada"], false)).ok).toBe(false);
-    expect(apiServer).not.toHaveBeenCalled();
-    expect(revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it("403 en es-MX; un fallo a medias dice cuántos renglones sí se aplicaron (y revalida)", async () => {
-    apiServer.mockRejectedValueOnce(new ApiError({ statusCode: 403, code: "FORBIDDEN", message: "Forbidden" }));
-    const r = await cambiarDescuentoReservaAction(N621TX, [OWNER_1], true);
-    expect(r).toMatchObject({ ok: false, status: 403 });
-    expect(r.error).toBe("Solo administración puede cambiar si se descuenta la reserva.");
-    expect(revalidatePath).not.toHaveBeenCalled();
-
-    apiServer.mockReset();
-    apiServer.mockResolvedValueOnce({ id: OWNER_1 }).mockRejectedValueOnce(new TypeError("fetch failed"));
-    const parcial = await cambiarDescuentoReservaAction(N621TX, [OWNER_1, OWNER_2], false);
-    expect(parcial.ok).toBe(false);
-    expect(parcial.error).toContain("Se aplicó en 1 de 2 renglones: recarga la página.");
-    expect(revalidatePath).toHaveBeenCalled();
-  });
-});
 
 describe("getAvionDetalle (nunca lanza)", () => {
   it("GET /v1/profit-sharing/aviones/:id?desde&hasta con forma sana (socios y entregas normalizados)", async () => {

@@ -32,38 +32,31 @@ import {
 } from "@/lib/admin/reparto-avion";
 import type { SocioAvionDetalle } from "@/types/profit-sharing";
 import { BotonRegistrarEntrega } from "./entrega-socio-dialog";
-import { ReservaSocioControl } from "./reserva-socio-control";
+import { BadgeReservaSocio } from "./reserva-socio-control";
 
 export interface FilaSocioAvion {
   socio: SocioAvionDetalle;
-  /** Renglones de `aeronave_socio` del socio en el periodo (el PATCH del descuento). */
-  ownerIds: string[];
   /** Contexto de «Registrar entrega» (null = no se puede registrar). */
   contexto: ContextoEntrega | null;
 }
 
 /**
  * «Socios de este avión» (20-oct-2026, API 0.0.101): socio, %, utilidad
- * MXN, reserva a guardar con «se le descuenta» / «solo informativa» (y el
- * control para cambiarlo, solo ADMIN), a recibir, entregado por ESTE avión
- * en el periodo, por entregar, «Registrar entrega» (avión y socio
+ * MXN, reserva a guardar con «se le descuenta» / «solo informativa» (el
+ * dato del API: desde el 6-nov-2026, invariante 121, a todos se les
+ * descuenta y ya no hay interruptor), a recibir, entregado por ESTE avión en
+ * el periodo, por entregar, «Registrar entrega» (avión y socio
  * preseleccionados) y el atajo a su cuenta. Todo lo manda el API; la tabla
  * solo pinta (tabla de RESUMEN ⇒ primitivos de `ui/table`).
  */
 export function SociosAvionTable({
-  aeronaveId,
-  matricula,
   filas,
-  puedeCambiarReserva,
   puedeRegistrar,
   registro,
   rol,
   usuarioId,
 }: {
-  aeronaveId: string;
-  matricula: string;
   filas: FilaSocioAvion[];
-  puedeCambiarReserva: boolean;
   puedeRegistrar: boolean;
   registro: ContextoRegistro;
   rol: string | null;
@@ -87,7 +80,7 @@ export function SociosAvionTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {filas.map(({ socio: s, ownerIds, contexto }) => {
+        {filas.map(({ socio: s, contexto }) => {
           const hrefCuenta = hrefCuentaSocioDesdeReparto({ rol, usuarioId }, s.socio_id);
           const porEntregar = textoPorEntregarAvion(s.por_entregar_mxn);
           return (
@@ -114,14 +107,7 @@ export function SociosAvionTable({
                   ≈ {fmtUsd(s.reserva_usd)} USD
                 </span>
                 <span className="mt-1 block font-sans">
-                  <ReservaSocioControl
-                    aeronaveId={aeronaveId}
-                    matricula={matricula}
-                    socio={{ id: s.socio_id, nombre: s.socio_nombre }}
-                    ownerIds={ownerIds}
-                    descuenta={s.descuenta_reserva}
-                    puedeCambiar={puedeCambiarReserva}
-                  />
+                  <BadgeReservaSocio descuenta={s.descuenta_reserva} />
                 </span>
               </TableCell>
               <TableCell className="text-right align-top font-mono text-sm font-semibold" data-a-recibir={s.socio_id}>
