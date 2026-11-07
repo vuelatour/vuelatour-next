@@ -164,7 +164,10 @@ export function queryBaseGastos(
     excluir_categoria: CATEGORIA_FUERA_DE_GASTOS,
     // COMPRAS FUERA DE GASTOS (6-nov-2026, API 0.0.122): siempre, salvo en
     // una vista enfocada (el gasto buscado puede ser de una compra).
-    ...(opts.conCompras ? {} : { sin_compras: true }),
+    // LAS REFACCIONES VIVEN EN COMPRAS DE LA TIENDA (6-nov-2026, API 0.0.127,
+    // invariante 123): también `sin_refacciones` (toda la categoría REFACCION
+    // fuera de Gastos; en la vista enfocada se incluye, como las compras).
+    ...(opts.conCompras ? {} : { sin_compras: true, sin_refacciones: true }),
     aeronave_id: f.aeronave_id,
     categoria: f.categoria,
     medio_pago: f.medio,
@@ -207,6 +210,7 @@ export function queryExcelGastos(f: FiltrosGastos, hoy: string): Record<string, 
     excluir_categoria: b.excluir_categoria,
     // El Excel es el reporte del periodo: nunca enfocado ⇒ siempre sin compras.
     sin_compras: b.sin_compras ? "true" : undefined,
+    sin_refacciones: b.sin_refacciones ? "true" : undefined,
     aeronave_id: b.aeronave_id,
     categoria: b.categoria,
     medio_pago: b.medio_pago,
@@ -236,8 +240,14 @@ export const CATEGORIA_FUERA_DE_GASTOS = CATEGORIA_NOMINA;
 export const CAMPO_EXCLUIR_CATEGORIA = "excluir_categoria";
 /** Nombre EXACTO del campo del DTO del API (`ListGastosQuery.sin_compras`, API 0.0.122). */
 export const CAMPO_SIN_COMPRAS = "sin_compras";
+/** Nombre EXACTO del campo del DTO del API (`ListGastosQuery.sin_refacciones`, API 0.0.127). */
+export const CAMPO_SIN_REFACCIONES = "sin_refacciones";
 /** Los campos que un API previo no conoce (la descarga del Excel los suelta en el 400). */
-export const CAMPOS_OPCIONALES_GASTOS: readonly string[] = [CAMPO_EXCLUIR_CATEGORIA, CAMPO_SIN_COMPRAS];
+export const CAMPOS_OPCIONALES_GASTOS: readonly string[] = [
+  CAMPO_EXCLUIR_CATEGORIA,
+  CAMPO_SIN_COMPRAS,
+  CAMPO_SIN_REFACCIONES,
+];
 
 // =============================================================================
 // Compras fuera de Gastos (6-nov-2026, API 0.0.122, invariante 118 del API)
@@ -254,15 +264,18 @@ export const CAMPOS_OPCIONALES_GASTOS: readonly string[] = [CAMPO_EXCLUIR_CATEGO
  * «Compras de la tienda» («Gastos de compras» y cada compra).
  */
 export interface OpcionesQueryGastos {
-  /** Vista enfocada: incluir los gastos de compras. */
+  /** Vista enfocada: incluir los gastos de compras y las refacciones (lo de la tienda). */
   conCompras?: boolean;
 }
 
-export const TITULO_COMPRAS_FUERA_DE_GASTOS = "Los gastos de las compras de refacciones se llevan en Compras de la tienda";
+// LAS REFACCIONES VIVEN EN COMPRAS DE LA TIENDA (6-nov-2026, API 0.0.127):
+// la nota cubre las compras, sus gastos y las refacciones capturadas como
+// gasto (que ahora se convierten en compra desde la tienda).
+export const TITULO_COMPRAS_FUERA_DE_GASTOS = "Las refacciones se llevan en Compras de la tienda";
 export const DESCRIPCION_COMPRAS_FUERA_DE_GASTOS =
-  "Lo pagado por una compra (la factura de la mercancía, el envío, la aduana) no sale aquí: vive en cada compra y en «Gastos de compras». Sí cuenta en conciliación, balance y reportes.";
+  "Las compras de refacciones (mercancía, envío, aduana), sus gastos y las refacciones que se capturaron como gasto no salen aquí: viven en Compras de la tienda, y desde ahí se le cargan al avión. Sí cuentan en conciliación, balance y reportes.";
 export const DESCRIPCION_COMPRAS_EN_VISTA_ENFOCADA =
-  "En esta vista enfocada sí se incluyen los gastos de compras, para que el que buscas aparezca.";
+  "En esta vista enfocada sí se incluyen los gastos de compras y las refacciones, para que el que buscas aparezca.";
 export const ETIQUETA_IR_A_COMPRAS = "Ir a Compras";
 export const HREF_GASTOS_DE_COMPRAS = "/admin/inventory/compras#gastos-de-compras";
 

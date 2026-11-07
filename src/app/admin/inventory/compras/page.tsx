@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ComprasTable } from "@/components/admin/inventory/compras/compras-table";
 import { ComprasGastosTable } from "@/components/admin/inventory/compras/compras-gastos-table";
+import { RefaccionesPorConvertirTable } from "@/components/admin/inventory/compras/refacciones-por-convertir";
 import { CompraRegistrarDialog } from "@/components/admin/inventory/compras/compra-registrar-dialog";
 import { ImportCompraButton } from "@/components/admin/inventory/import-compra-button";
 import { listComprasTodas } from "@/lib/api/compras-server";
@@ -24,6 +25,11 @@ import {
   TOPE_GASTOS_DE_COMPRAS,
   VACIO_GASTOS_DE_COMPRAS,
   avisoTopeGastosDeCompras,
+  DESCRIPCION_REFACCIONES_POR_CONVERTIR,
+  TITULO_REFACCIONES_POR_CONVERTIR,
+  TOPE_REFACCIONES_POR_CONVERTIR,
+  VACIO_REFACCIONES_POR_CONVERTIR,
+  esRefaccionPorConvertir,
   ORDEN_PESTANAS_COMPRAS,
   PESTANAS_COMPRAS,
   VACIO_PESTANA_COMPRAS,
@@ -63,7 +69,7 @@ export default async function ComprasPage({
   // ligados a una compra, apartados de Gastos; degrada con aviso (un API
   // previo no conoce `solo_compras` y NO se relee sin él: traería todo).
   const degradado = new Degradaciones();
-  const [comprasRes, providersRes, itemsRes, tcOficialHoy, gastosComprasRes] = await Promise.all([
+  const [comprasRes, providersRes, itemsRes, tcOficialHoy, gastosComprasRes, refaccionesRes] = await Promise.all([
     listComprasTodas(),
     degradado.opcional("los proveedores", listProviders({ limit: 200 }), {
       data: [] as Awaited<ReturnType<typeof listProviders>>["data"],
@@ -77,8 +83,22 @@ export default async function ComprasPage({
       listGastos({ solo_compras: true, limit: TOPE_GASTOS_DE_COMPRAS, offset: 0 }),
       { data: [] as Gasto[], count: 0 },
     ),
+    // REFACCIONES FUERA DE GASTOS (6-nov-2026, invariante 123 del API): las
+    // capturadas como gasto sin compra, para convertirlas aquí. Degrada con
+    // aviso; las salidas de bodega se descartan en el panel.
+    degradado.opcional(
+      "las refacciones por convertir",
+      listGastos({
+        categoria: "REFACCION",
+        sin_compras: true,
+        limit: TOPE_REFACCIONES_POR_CONVERTIR,
+        offset: 0,
+      }),
+      { data: [] as Gasto[], count: 0 },
+    ),
   ]);
   const gastosCompras = gastosComprasRes.data;
+  const refaccionesSueltas = refaccionesRes.data.filter(esRefaccionPorConvertir);
   const avisoTope = avisoTopeGastosDeCompras(gastosCompras.length, gastosComprasRes.count);
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
   const items = itemsRes.data.map((i) => ({ id: i.id, nombre: i.nombre, numero_parte: i.numero_parte ?? null }));
@@ -167,6 +187,22 @@ export default async function ComprasPage({
           </CardContent>
         </Card>
       )}
+
+      {/* REFACCIONES FUERA DE GASTOS (6-nov-2026, pedido de Pablo): las que se
+          capturaron como gasto antes de la tienda, con «Convertir en compra». */}
+      <Card id="refacciones-por-convertir" data-refacciones-por-convertir={refaccionesSueltas.length}>
+        <CardHeader>
+          <CardTitle>{TITULO_REFACCIONES_POR_CONVERTIR}</CardTitle>
+          <CardDescription>{DESCRIPCION_REFACCIONES_POR_CONVERTIR}</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {refaccionesSueltas.length === 0 ? (
+            <p className="px-6 pb-6 text-sm text-muted-foreground">{VACIO_REFACCIONES_POR_CONVERTIR}</p>
+          ) : (
+            <RefaccionesPorConvertirTable gastos={refaccionesSueltas} />
+          )}
+        </CardContent>
+      </Card>
 
       {/* COMPRAS FUERA DE GASTOS (6-nov-2026): los pagos de las compras, aquí. */}
       <Card id="gastos-de-compras" data-gastos-de-compras>

@@ -215,6 +215,24 @@ export const CATEGORIAS_FILTRO_GASTO: readonly string[] = [
 ];
 
 /**
+ * LAS REFACCIONES VIVEN EN COMPRAS DE LA TIENDA (6-nov-2026, API 0.0.127,
+ * invariante 123 del API). Pedido de Pablo: «sacar de Gastos todo lo que tenga
+ * que ver con refacciones; todo se mete por la tienda y desde ahí se le carga
+ * al avión». El ALTA «Nuevo gasto (oficina)» ofrece `CATEGORIAS_CAPTURA` menos
+ * REFACCION (se registra en Compras de la tienda: «Compra directa» /
+ * «Registrar compra»). La EDICIÓN de un gasto histórico y el filtro de Gastos
+ * conservan la categoría.
+ */
+export const CATEGORIA_SOLO_TIENDA = "REFACCION";
+export const CATEGORIAS_CAPTURA_GASTO_NUEVO: readonly string[] = CATEGORIAS_CAPTURA.filter(
+  (c) => c !== CATEGORIA_SOLO_TIENDA,
+);
+export const TEXTO_REFACCION_EN_TIENDA =
+  "¿Es una refacción? Se registra en Compras de la tienda (Compra directa), no aquí.";
+export const ETIQUETA_IR_A_COMPRAS_TIENDA = "Ir a Compras de la tienda ›";
+export const HREF_COMPRAS_TIENDA = "/admin/inventory/compras";
+
+/**
  * Clases del texto verde "a dónde se va por default" dentro del selector
  * (descripción secundaria de la opción). `whitespace-normal` porque el
  * destino de REFACCION no cabe en una línea; el `!` (important de Tailwind

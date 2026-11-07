@@ -37,7 +37,7 @@ describe("la nómina se excluye SIEMPRE de Gastos", () => {
   it("lista, contadores y Excel llevan `excluir_categoria: NOMINA` (también con otra categoría)", () => {
     expect(CATEGORIA_FUERA_DE_GASTOS).toBe("NOMINA");
     expect(CAMPO_EXCLUIR_CATEGORIA).toBe("excluir_categoria");
-    expect(CAMPOS_OPCIONALES_GASTOS).toEqual(["excluir_categoria", "sin_compras"]);
+    expect(CAMPOS_OPCIONALES_GASTOS).toEqual(["excluir_categoria", "sin_compras", "sin_refacciones"]);
     const f = filtros("f=pendientes&categoria=OPERACIONES");
     expect(queryBaseGastos(f, HOY).excluir_categoria).toBe("NOMINA");
     expect(queryListaGastos(f, HOY)).toMatchObject({ excluir_categoria: "NOMINA", pendientes: true });

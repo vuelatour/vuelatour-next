@@ -36,6 +36,7 @@ import {
   type Numeric,
   type RegistrarGastoCompraInput,
 } from "@/types/compras";
+import type { Gasto } from "@/types/expenses";
 
 export { PESTANAS_COMPRAS, type FiltroCompras };
 
@@ -855,6 +856,49 @@ export const TOPE_GASTOS_DE_COMPRAS = 100;
 /** «Se muestran los 100 más recientes de 123.» (null si caben todos). */
 export function avisoTopeGastosDeCompras(mostrados: number, total: number): string | null {
   return total > mostrados ? `Se muestran los ${mostrados} más recientes de ${total}.` : null;
+}
+
+// =============================================================================
+// Refacciones registradas como gasto, POR CONVERTIR (6-nov-2026, API 0.0.127,
+// invariante 123 del API). Pedido de Pablo: «sacar de Gastos todo lo que tenga
+// que ver con refacciones… las balatas del 27 de octubre deberían aparecer en
+// Compras de la tienda». Los gastos REFACCION sin compra (y que no son
+// salidas de bodega) ya no salen en Gastos; aquí se listan y cada uno se
+// convierte en compra con `POST /v1/compras { gasto_mercancia_id }`.
+// =============================================================================
+
+export const TITULO_REFACCIONES_POR_CONVERTIR = "Refacciones registradas como gasto (por convertir)";
+export const DESCRIPCION_REFACCIONES_POR_CONVERTIR =
+  "Compras de refacciones que se capturaron en Gastos antes de que la tienda las llevara. Ya no salen en Gastos; conviértelas en compra para recibirlas en bodega y venderlas al avión desde aquí. Sus números no cambian hasta que las conviertas.";
+export const VACIO_REFACCIONES_POR_CONVERTIR = "No hay refacciones sueltas: todas las compras de refacciones ya están como compras.";
+export const BOTON_CONVERTIR_EN_COMPRA = "Convertir en compra";
+export const TITULO_CONVERTIR_EN_COMPRA =
+  "Crea la compra con este gasto como factura de mercancía (líneas desde la lectura de la IA, o una sola línea) y abre su detalle para recibirla en bodega.";
+export const TEXTO_CONVERTIR_FALLO = "No se pudo crear la compra. El gasto sigue aquí; intenta de nuevo.";
+/** Tope de la lista (los más recientes; el API ordena por fecha del gasto). */
+export const TOPE_REFACCIONES_POR_CONVERTIR = 100;
+
+/**
+ * ¿Es una refacción capturada como gasto, convertible en compra? REFACCION sin
+ * compra y que NO sea una salida de bodega (`medio_pago` BODEGA: el cargo
+ * contable del cardex al avión; el API tampoco la liga a una compra).
+ */
+export function esRefaccionPorConvertir(g: Pick<Gasto, "categoria" | "compra_id" | "medio_pago">): boolean {
+  return g.categoria === "REFACCION" && !g.compra_id && g.medio_pago !== "BODEGA";
+}
+
+/** Primera línea de las notas (lo que capturó la oficina), o el lugar, o «Refacción». */
+export function conceptoRefaccion(g: Pick<Gasto, "notas" | "lugar">): string {
+  const linea = (g.notas ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  return linea ?? (g.lugar?.trim() || "Refacción");
+}
+
+/** Toast del «Convertir en compra» (el detalle se abre enseguida). */
+export function textoCompraCreadaDesdeGasto(folio: number | null | undefined): string {
+  return `Compra #${folio ?? "?"} creada con este gasto como factura de mercancía. Revisa sus refacciones y recíbela en bodega.`;
 }
 
 /** Qué pagó este gasto dentro de la compra (todos los roles, también la mercancía). */

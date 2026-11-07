@@ -13428,3 +13428,29 @@ y API lo conservan); cambian su ETIQUETA («Administración») y su alcance.
   `"DIRECCION"` explícito donde se consultan con `.includes` o `===`
   (`ROLES_*` de `lib/admin/*`). Al agregar una comprobación por rol nueva:
   Dirección SIEMPRE puede lo que puede Administración.
+
+## Las refacciones viven en Compras de la tienda (6-nov-2026, API 0.0.127, invariante 123 del API)
+
+Pedido de Pablo (audios): «en Gastos habría que sacar todo lo que tenga que
+ver con refacciones: todo se metería a la tienda y desde ahí se le cargaría
+al avión… las balatas del 27 de octubre siguen apareciendo en Gastos y
+deberían aparecer en Compras de la tienda». Los números NO cambian (balance,
+reparto, conciliación, reportes): solo cambian de pantalla.
+
+- **Gastos** manda `sin_compras=true` + `sin_refacciones=true` (lista,
+  contadores, Excel) salvo en la vista enfocada (`queryBaseGastos`,
+  `CAMPO_SIN_REFACCIONES` tolerado contra un API previo). La nota bajo los
+  filtros dice «Las refacciones se llevan en Compras de la tienda».
+- **Alta «Nuevo gasto (oficina)»**: `CATEGORIAS_CAPTURA_GASTO_NUEVO` (sin
+  REFACCION) + nota con enlace «Ir a Compras de la tienda ›»
+  (`TEXTO_REFACCION_EN_TIENDA`). La edición de un gasto histórico
+  (`expense-verify-dialog`) y el filtro de Gastos conservan Refacción.
+- **Compras de la tienda**: tarjeta «Refacciones registradas como gasto (por
+  convertir)» (`listGastos({categoria: "REFACCION", sin_compras: true})`
+  filtrado con `esRefaccionPorConvertir`: fuera las salidas de bodega) y
+  `RefaccionesPorConvertirTable` con «Convertir en compra» =
+  `createCompraAction({ gasto_mercancia_id })` → toast + ir al detalle de la
+  compra (ahí se reciben las líneas en bodega y se venden al avión). Textos en
+  `compras-estado.ts`; pruebas en `__tests__/refacciones-tienda.test.ts`.
+- La app del piloto ya no ofrece Refacción en «Registrar gasto» (App
+  1.1.4+89); la captura de oficina del app sigue creando compra desde el gasto.

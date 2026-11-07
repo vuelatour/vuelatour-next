@@ -26,6 +26,7 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -122,7 +123,10 @@ import {
   AYUDA_OTROS_MOVIMIENTOS,
   CATEGORIA_COMISARIATO,
   CATEGORIA_OTROS_MOVIMIENTOS,
-  CATEGORIAS_CAPTURA,
+  CATEGORIAS_CAPTURA_GASTO_NUEVO,
+  ETIQUETA_IR_A_COMPRAS_TIENDA,
+  HREF_COMPRAS_TIENDA,
+  TEXTO_REFACCION_EN_TIENDA,
   CATEGORIAS_REPARTIBLES,
   HINT_VUELO_COMISION,
   VENTANA_VUELOS_COMISION,
@@ -159,10 +163,11 @@ import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-ini
 // (lib/admin/comprobante-hojas, espejo de los tipos del bucket).
 
 // Opciones desde la FUENTE ÚNICA (@/lib/admin/categorias-gasto): orden
-// (CATEGORIAS_CAPTURA), etiqueta y destino por default en verde. Semántica
-// de cada categoría: ver ese archivo. FIJO y VISITA son LEGADO: ya no se
-// capturan (la fuente única conserva sus etiquetas para gastos históricos).
-const CATEGORIAS = CATEGORIAS_CAPTURA.map(opcionCategoriaGasto);
+// (CATEGORIAS_CAPTURA sin REFACCION: las refacciones se registran en Compras
+// de la tienda, 6-nov-2026), etiqueta y destino por default en verde.
+// Semántica de cada categoría: ver ese archivo. FIJO y VISITA son LEGADO: ya
+// no se capturan (la fuente única conserva sus etiquetas para históricos).
+const CATEGORIAS = CATEGORIAS_CAPTURA_GASTO_NUEVO.map(opcionCategoriaGasto);
 
 // Medios de pago: FUENTE ÚNICA en @/lib/admin/medios-pago (orden, etiquetas
 // y el enum del schema salen de la misma lista).
@@ -1468,11 +1473,25 @@ export function ExpenseCreateDialog({
                 // Línea 1: destino POR DEFAULT de la categoría (verde);
                 // línea 2: a qué hoja cae con el vuelo/avión elegidos.
                 hint={
-                  <CategoriaDestinoHint
-                    categoria={watch("categoria")}
-                    tieneVuelo={!!watch("vuelo_id")}
-                    tieneAvion={!!watch("aeronave_id")}
-                  />
+                  <>
+                    <CategoriaDestinoHint
+                      categoria={watch("categoria")}
+                      tieneVuelo={!!watch("vuelo_id")}
+                      tieneAvion={!!watch("aeronave_id")}
+                    />
+                    {/* LAS REFACCIONES VIVEN EN COMPRAS DE LA TIENDA (6-nov-2026):
+                        aquí ya no se capturan; se dice y se enlaza. */}
+                    <span data-nota="refacciones-en-tienda" className="mt-1 block">
+                      {TEXTO_REFACCION_EN_TIENDA}{" "}
+                      <Link
+                        href={HREF_COMPRAS_TIENDA}
+                        prefetch={false}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        {ETIQUETA_IR_A_COMPRAS_TIENDA}
+                      </Link>
+                    </span>
+                  </>
                 }
               >
                 <SearchableSelect

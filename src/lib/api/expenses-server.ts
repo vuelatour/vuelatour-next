@@ -56,6 +56,11 @@ export interface ListGastosQuery {
    *  «property sin_compras should not exist» y `listGastos` relee SIN el
    *  campo (la lista de siempre, con compras). */
   sin_compras?: boolean;
+  /** LAS REFACCIONES VIVEN EN COMPRAS DE LA TIENDA (6-nov-2026, API 0.0.127,
+   *  invariante 123): true = SIN la categoría REFACCION (Gastos lo manda
+   *  junto con `sin_compras`). Un API previo responde 400 y se relee SIN el
+   *  campo (lista más amplia, válida). */
+  sin_refacciones?: boolean;
   /** SOLO los gastos ligados a una compra («Gastos de compras» de
    *  Inventario/Tienda). NO se tolera en un API previo: releer sin él
    *  traería TODOS los gastos como si fueran de compras. */
@@ -92,7 +97,7 @@ function pedirGastos(query: ListGastosQuery) {
  * VÁLIDA (solo más amplia): `excluir_categoria` (API ≤ 0.0.89) y
  * `sin_compras` (API ≤ 0.0.121). `solo_compras` NO está aquí a propósito.
  */
-const CAMPOS_TOLERADOS = ["excluir_categoria", "sin_compras"] as const satisfies readonly (keyof ListGastosQuery)[];
+const CAMPOS_TOLERADOS = ["excluir_categoria", "sin_compras", "sin_refacciones"] as const satisfies readonly (keyof ListGastosQuery)[];
 
 /**
  * Pide una página tolerando un API previo (skew de deploy, 16-oct-2026): si
