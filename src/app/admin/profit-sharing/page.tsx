@@ -30,9 +30,10 @@ import { puedeRegistrarEntregas, puedeVerCuentasSocios } from "@/lib/admin/repar
 import { fmtDecimal, fmtUsd } from "@/lib/format";
 import {
   NOTA_COMBUSTIBLE_SEPARADO,
-  NOTA_REPARTO_COMO_BALANCE,
   NOTA_REPARTO_EN_PESOS,
   combustibleSeparado,
+  flotaRetieneReserva,
+  notaRepartoComoBalance,
   repartoComoBalance,
   repartoEnPesos,
   textoUsd,
@@ -133,9 +134,14 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
   // Reparto EN PESOS (18-oct-2026, API 0.0.93): pesos primero, dólares
   // informativos. Sin la bandera (API ≤ 0.0.92), la pantalla de siempre.
   const enPesos = repartoEnPesos(result);
-  // Cascada del balance (20-oct-2026, API 0.0.101): la provisión AFAC resta
-  // y la reserva de overhaul solo se informa. Sin la bandera, lo de antes.
+  // Cascada del balance (20-oct-2026, API 0.0.101): la provisión AFAC resta.
+  // Sin la bandera, lo de antes.
   const comoBalance = repartoComoBalance(result);
+  // La reserva de overhaul se RETIENE (7-nov-2026, API 0.0.128): con
+  // `saldo_a_repartir_*` en toda la flota, la cascada de cada card termina en
+  // «Saldo a repartir» (saldo − reserva) y la leyenda lo dice. Sin la llave,
+  // la reserva va debajo del saldo como hasta el 6-nov-2026.
+  const retiene = comoBalance && flotaRetieneReserva(result.aviones);
   // Combustible separado de los directos (23-oct-2026, API 0.0.103): la
   // cascada de cada card sigue el orden del Excel del cliente. Sin las
   // llaves (API previo), lo de antes.
@@ -178,7 +184,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
             Excel con los botones de arriba y de cada avión.
           </p>
           {enPesos && <p>{NOTA_REPARTO_EN_PESOS}</p>}
-          {comoBalance && <p>{NOTA_REPARTO_COMO_BALANCE}</p>}
+          {comoBalance && <p>{notaRepartoComoBalance(retiene)}</p>}
           {conCombustible && <p>{NOTA_COMBUSTIBLE_SEPARADO}</p>}
           {(result.gastos_sin_tc?.count ?? 0) > 0 && (
             <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400">

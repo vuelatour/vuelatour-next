@@ -25,9 +25,9 @@ import {
   ETIQUETA_COLUMNA_A_RECIBIR,
   ETIQUETA_COLUMNA_ENTREGADO_AVION,
   ETIQUETA_COLUMNA_POR_ENTREGAR_AVION,
-  ETIQUETA_COLUMNA_RESERVA_A_GUARDAR,
   ETIQUETA_COLUMNA_UTILIDAD,
   TEXTO_SIN_SOCIOS_AVION,
+  etiquetaColumnaReserva,
   textoPorEntregarAvion,
 } from "@/lib/admin/reparto-avion";
 import type { SocioAvionDetalle } from "@/types/profit-sharing";
@@ -42,12 +42,14 @@ export interface FilaSocioAvion {
 
 /**
  * «Socios de este avión» (20-oct-2026, API 0.0.101): socio, %, utilidad
- * MXN, reserva a guardar con «se le descuenta» / «solo informativa» (el
- * dato del API: desde el 6-nov-2026, invariante 121, a todos se les
- * descuenta y ya no hay interruptor), a recibir, entregado por ESTE avión en
- * el periodo, por entregar, «Registrar entrega» (avión y socio
- * preseleccionados) y el atajo a su cuenta. Todo lo manda el API; la tabla
- * solo pinta (tabla de RESUMEN ⇒ primitivos de `ui/table`).
+ * MXN (su parte del saldo antes de la reserva), la reserva de overhaul con
+ * «se le retiene» / «solo informativa» (el dato del API: desde el
+ * 6-nov-2026, invariante 121, a todos se les descuenta y ya no hay
+ * interruptor; desde el 7-nov-2026, API 0.0.128, la columna se llama
+ * «Reserva retenida» cuando el avión trae `saldo_a_repartir_*`), a recibir,
+ * entregado por ESTE avión en el periodo, por entregar, «Registrar entrega»
+ * (avión y socio preseleccionados) y el atajo a su cuenta. Todo lo manda el
+ * API; la tabla solo pinta (tabla de RESUMEN ⇒ primitivos de `ui/table`).
  */
 export function SociosAvionTable({
   filas,
@@ -55,12 +57,15 @@ export function SociosAvionTable({
   registro,
   rol,
   usuarioId,
+  reservaRetenida = false,
 }: {
   filas: FilaSocioAvion[];
   puedeRegistrar: boolean;
   registro: ContextoRegistro;
   rol: string | null;
   usuarioId: string | null;
+  /** El avión trae el saldo a repartir (`reservaSeRetiene`, API 0.0.128). */
+  reservaRetenida?: boolean;
 }) {
   if (filas.length === 0) {
     return <p className="text-sm text-muted-foreground">{TEXTO_SIN_SOCIOS_AVION}</p>;
@@ -72,7 +77,7 @@ export function SociosAvionTable({
           <TableHead>Socio</TableHead>
           <TableHead className="text-right">%</TableHead>
           <TableHead className="text-right">{ETIQUETA_COLUMNA_UTILIDAD}</TableHead>
-          <TableHead className="text-right">{ETIQUETA_COLUMNA_RESERVA_A_GUARDAR}</TableHead>
+          <TableHead className="text-right">{etiquetaColumnaReserva(reservaRetenida)}</TableHead>
           <TableHead className="text-right">{ETIQUETA_COLUMNA_A_RECIBIR}</TableHead>
           <TableHead className="text-right">{ETIQUETA_COLUMNA_ENTREGADO_AVION}</TableHead>
           <TableHead className="text-right">{ETIQUETA_COLUMNA_POR_ENTREGAR_AVION}</TableHead>

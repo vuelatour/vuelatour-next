@@ -66,3 +66,15 @@ export function hintDashboardOtrosIngresosAviones(usd: number): string | undefin
 export function textoCeldaOtrosIngresosAvion(usd: number): string {
   return `+ ${fmtUsd(usd)} otros`;
 }
+
+// ===== El saldo del tablero ejecutivo = SALDO A REPARTIR (7-nov-2026, API 0.0.128) =====
+// `GET /v1/dashboards/overview` manda en `saldo_disponible_usd` (resumen) y
+// `saldo_usd` (por avión) el saldo YA con la reserva de overhaul retenida, así
+// Ingresos cobrados + otros ingresos − Gastos (que incluyen la reserva) =
+// Saldo vuelve a cuadrar. El contrato no trae discriminador: el rótulo lo dice.
+
+/** KPI del resumen y columna por avión. */
+export const ETIQUETA_TABLERO_SALDO_A_REPARTIR = "Saldo a repartir";
+export const HINT_TABLERO_SALDO_A_REPARTIR = "Ya con la reserva de overhaul retenida";
+export const TITULO_TABLERO_SALDO_A_REPARTIR =
+  "Ingresos cobrados + otros ingresos de los aviones − gastos del periodo (que ya incluyen la reserva de overhaul, retenida para cada avión). Es lo que se reparte a los socios.";

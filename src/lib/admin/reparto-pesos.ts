@@ -22,12 +22,16 @@
  *    `components/admin/profit-sharing/__tests__/reparto-pesos.test.tsx`).
  *  - La cuenta corriente de socios («Pagos a socios», «Socios · por
  *    entregar») sigue en dólares por decisión del usuario: aquí no se toca.
+ *  - La reserva de overhaul se RETIENE (7-nov-2026, API 0.0.128): cuando el
+ *    avión trae `saldo_a_repartir_*` (`reservaSeRetiene`), el saldo que se
+ *    reparte es ese y la reserva es una resta de la cascada. Sin la llave,
+ *    lo de hasta el 6-nov-2026.
  *
  * Ningún componente redacta estos textos a mano. Prueba:
  * `lib/admin/__tests__/reparto-pesos.test.ts`.
  */
 
-import { fmtMonto, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
+import { fmtDecimal, fmtMonto, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import type {
   AvionReparto,
   DetalleOtroIngresoAvion,
@@ -46,14 +50,45 @@ export function repartoEnPesos(
 
 /**
  * ¿El reparto es LA CASCADA DEL BALANCE (20-oct-2026, API 0.0.101,
- * invariante 99)? Solo `true` estricto. Con ella la provisión AFAC resta y la
- * reserva de overhaul SOLO se informa; sin ella (API previo) la reserva
- * resta como siempre y no hay fila de AFAC.
+ * invariante 99)? Solo `true` estricto. Con ella la provisión AFAC resta y
+ * `saldo_disponible_*` es el saldo ANTES de la reserva de overhaul (hasta el
+ * API 0.0.127 la reserva solo se informaba debajo; desde el 0.0.128 se resta
+ * y se retiene: `reservaSeRetiene`); sin ella (API previo) la reserva resta
+ * como siempre y no hay fila de AFAC.
  */
 export function repartoComoBalance(
   data: { reparto_como_balance?: boolean | null } | null | undefined,
 ): boolean {
   return data?.reparto_como_balance === true;
+}
+
+/**
+ * ¿El API ya manda el saldo A REPARTIR con la reserva de overhaul RETENIDA
+ * (7-nov-2026, API 0.0.128)? Decisión del cliente: «aún no se está
+ * reteniendo de las utilidades para cada socio en cada avión, aún dice
+ * informativa no se resta; debe verse bien y retenerse bien… y verse también
+ * en el reparto de utilidades». DISCRIMINADOR del contrato: `typeof
+ * saldo_a_repartir_usd === "number"`. Con él la cascada termina en «Saldo
+ * antes de la reserva de overhaul» − «Reserva de overhaul (se retiene)» =
+ * «Saldo a repartir», y cada socio recibe su % de ese saldo (`monto_*` del
+ * API, ya neto). Sin él (API previo / cierres viejos) la pantalla queda como
+ * hasta el 6-nov-2026: la reserva debajo del saldo con sus textos por datos.
+ */
+export function reservaSeRetiene(
+  a: { saldo_a_repartir_usd?: number | null } | null | undefined,
+): boolean {
+  return numero(a?.saldo_a_repartir_usd) !== null;
+}
+
+/**
+ * La flota entera trae el saldo a repartir (el KPI de saldo y la leyenda de
+ * la página no mezclan saldos antes/después de la reserva). Sin aviones ⇒
+ * false.
+ */
+export function flotaRetieneReserva(
+  aviones: ReadonlyArray<{ saldo_a_repartir_usd?: number | null }>,
+): boolean {
+  return aviones.length > 0 && aviones.every(reservaSeRetiene);
 }
 
 // =============================================================================
@@ -240,9 +275,38 @@ export const TITULO_SALDO_PESOS_INCOMPLETO =
 export const NOTA_REPARTO_EN_PESOS =
   "Montos en pesos (MXN), que es como se transfiere a los socios; los dólares van en gris solo como referencia. «Pagos a socios» también está en pesos.";
 
-/** Renglón del recuadro con la cascada del balance (API 0.0.101). */
+/** Renglón del recuadro con la cascada del balance (API 0.0.101 a 0.0.127: la reserva solo se informaba). */
 export const NOTA_REPARTO_COMO_BALANCE =
   "Mismas cuentas que el balance del avión: la provisión AFAC resta del saldo y la reserva de overhaul no se resta, solo se informa cuánto debe guardar cada socio (se le descuenta únicamente a quien así se configuró). Abre el detalle de cada avión para ver gasto por gasto.";
+
+/** Renglón del recuadro cuando la reserva se RETIENE (7-nov-2026, API 0.0.128). */
+export const NOTA_RESERVA_RETENIDA =
+  "Mismas cuentas que el balance del avión: la provisión AFAC resta del saldo y la reserva de overhaul (horas voladas × tarifa) se resta antes de repartir: a cada socio se le retiene su parte en proporción a su porcentaje y VuelaTour la guarda para el overhaul. Lo que se reparte es el saldo a repartir. Abre el detalle de cada avión para ver gasto por gasto.";
+
+/** La nota de la cascada del balance según lo que manda el API (`flotaRetieneReserva` / `reservaSeRetiene`). */
+export function notaRepartoComoBalance(reservaRetenida: boolean): string {
+  return reservaRetenida ? NOTA_RESERVA_RETENIDA : NOTA_REPARTO_COMO_BALANCE;
+}
+
+// ===== KPIs de la flota: saldo y reserva (7-nov-2026, API 0.0.128) =====
+
+/** KPI «Saldo disponible total» de siempre y su hint. */
+export const ETIQUETA_KPI_SALDO = "Saldo disponible total";
+export const HINT_KPI_SALDO = "A repartir entre socios";
+/** Con la reserva retenida el KPI es el saldo A REPARTIR (Σ `saldo_a_repartir_*`). */
+export const ETIQUETA_KPI_SALDO_A_REPARTIR = "Saldo a repartir";
+export const HINT_KPI_SALDO_A_REPARTIR = "Entre los socios · ya con la reserva de overhaul retenida";
+export const TITULO_KPI_SALDO_A_REPARTIR =
+  "Venta de aviones cobrada + otros ingresos de aviones − gastos del periodo − reserva retenida = saldo a repartir. Cada socio recibe su porcentaje de este saldo.";
+/** KPI de la reserva cuando se retiene: etiqueta, hint y tooltip. */
+export const ETIQUETA_KPI_RESERVA_RETENIDA = "Reserva retenida";
+export const TITULO_KPI_RESERVA_RETENIDA =
+  "Horas voladas × tarifa de overhaul de cada avión. Se resta del saldo antes de repartir: a cada socio se le retiene su parte en proporción a su porcentaje y VuelaTour la guarda para el overhaul.";
+
+/** «se retiene para el overhaul · 12.5 hr voladas». */
+export function hintKpiReservaRetenida(horas: number): string {
+  return `se retiene para el overhaul · ${fmtDecimal(horas, 1)} hr voladas`;
+}
 
 /** Renglón del recuadro con el combustible separado (23-oct-2026, API 0.0.103). */
 export const NOTA_COMBUSTIBLE_SEPARADO =

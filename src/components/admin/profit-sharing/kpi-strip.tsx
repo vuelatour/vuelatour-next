@@ -12,13 +12,22 @@ import { NOTA_PAGO_VENDEDOR_REPARTO } from "@/lib/admin/categorias-gasto";
 import { hintKpiOtrosIngresosAviones } from "@/lib/admin/otros-ingresos-avion";
 import { TEXTO_RESERVA_NO_RESTA } from "@/lib/admin/reparto-avion";
 import {
+  ETIQUETA_KPI_RESERVA_RETENIDA,
+  ETIQUETA_KPI_SALDO,
+  ETIQUETA_KPI_SALDO_A_REPARTIR,
+  HINT_KPI_SALDO,
+  HINT_KPI_SALDO_A_REPARTIR,
   HINT_SALDO_PESOS_INCOMPLETO,
+  TITULO_KPI_RESERVA_RETENIDA,
+  TITULO_KPI_SALDO_A_REPARTIR,
   TITULO_SALDO_PESOS_INCOMPLETO,
   combustibleSeparado,
+  flotaRetieneReserva,
   gastosMxnDeAvion,
   hintKpiGastosPeriodo,
   hintKpiOtrosIngresosAvionesPesos,
   hintKpiOtrosVuelatourPesos,
+  hintKpiReservaRetenida,
   montoPrincipal,
   pesosIncompletos,
   textoUsd,
@@ -43,6 +52,12 @@ import type {
  * los pesos (Σ en centavos de los `*_mxn` de las cards) y los dólares debajo
  * como dato informativo (`montoPrincipal`); sin la bandera, lo de siempre.
  * «Otros ingresos VuelaTour» sigue en dólares (no se reparte) con su sufijo.
+ *
+ * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128): cuando TODA la flota trae
+ * `saldo_a_repartir_*` (`flotaRetieneReserva`), el KPI de saldo es el SALDO
+ * A REPARTIR (Σ `saldo_a_repartir_*`, ya con la reserva retenida) y el de la
+ * reserva dice «Reserva retenida», así Venta + Otros − Gastos − Reserva =
+ * Saldo se lee en la tira. Sin la llave, los KPIs de hasta el 6-nov-2026.
  */
 export function KpiStrip({
   aviones,
@@ -55,11 +70,14 @@ export function KpiStrip({
   /** Bandera raíz `reparto_en_pesos` del API (`repartoEnPesos`). */
   enPesos?: boolean;
   /** Bandera raíz `reparto_como_balance` (API 0.0.101): la provisión AFAC
-   *  cuenta en «Gastos del periodo» y la reserva es solo informativa. */
+   *  cuenta en «Gastos del periodo»; la reserva va en su propio KPI. */
   comoBalance?: boolean;
 }) {
   const sum = (fn: (a: AvionReparto) => number) =>
     aviones.reduce((acc, a) => acc + fn(a), 0);
+  // La reserva se RETIENE (API 0.0.128): solo si TODA la flota manda el
+  // saldo a repartir (nunca se mezclan saldos antes y después de la reserva).
+  const retiene = comoBalance && flotaRetieneReserva(aviones);
 
   const ingresos = sum((a) => a.ingresos.cobrado_usd);
   // Otros ingresos ASIGNADOS a los aviones (13-oct-2026, API 0.0.75): ya
@@ -102,7 +120,9 @@ export function KpiStrip({
   const pendiente = sum((a) => a.ingresos.pendiente_cobro_usd);
   const vuelosPendientes = sum((a) => a.ingresos.vuelos_pendientes);
   const vuelosCobrados = sum((a) => a.ingresos.vuelos_cobrados);
-  const saldo = sum((a) => a.saldo_disponible_usd);
+  // Con la reserva retenida el saldo de la flota es el SALDO A REPARTIR que
+  // ya manda cada avión (saldo − reserva); si no, el saldo disponible.
+  const saldo = sum((a) => (retiene ? (a.saldo_a_repartir_usd ?? 0) : a.saldo_disponible_usd));
   const horas = sum((a) => a.horas_voladas_hr);
   // Pesos (API 0.0.93): solo SUMA lo que ya trae cada card, en centavos; si a
   // algún avión le falta la llave, el KPI cae a los dólares y lo dice.
@@ -118,7 +138,10 @@ export function KpiStrip({
     { mxn: mxn((a) => a.ingresos.pendiente_cobro_mxn), usd: pendiente },
     enPesos,
   );
-  const saldoKpi = montoPrincipal({ mxn: mxn((a) => a.saldo_disponible_mxn), usd: saldo }, enPesos);
+  const saldoKpi = montoPrincipal(
+    { mxn: mxn((a) => (retiene ? a.saldo_a_repartir_mxn : a.saldo_disponible_mxn)), usd: saldo },
+    enPesos,
+  );
   const saldoPositivo = (saldoKpi.valor ?? saldo) >= 0;
   const otrosAvionMxn = mxn((a) => a.ingresos.otros_ingresos_avion_mxn ?? 0);
   const hintVenta =
@@ -153,13 +176,22 @@ export function KpiStrip({
         informativo={gastosKpi.informativo}
         hint={hintKpiGastosPeriodo({ comoBalance, conCombustible })}
       />
+      {/* La reserva: «Reserva retenida» (se resta del saldo antes de
+          repartir, API 0.0.128) · «Reserva a guardar» (solo se informaba,
+          API 0.0.101 a 0.0.127) · «Reserva overhaul» (API previo: resta). */}
       <Kpi
         icon={WrenchScrewdriverIcon}
-        label={comoBalance ? "Reserva a guardar" : "Reserva overhaul"}
+        label={retiene ? ETIQUETA_KPI_RESERVA_RETENIDA : comoBalance ? "Reserva a guardar" : "Reserva overhaul"}
         value={reservaKpi.principal}
         informativo={reservaKpi.informativo}
-        hint={comoBalance ? `no se resta · ${fmtDecimal(horas, 1)} hr voladas` : `${fmtDecimal(horas, 1)} hr voladas`}
-        title={comoBalance ? TEXTO_RESERVA_NO_RESTA : undefined}
+        hint={
+          retiene
+            ? hintKpiReservaRetenida(horas)
+            : comoBalance
+              ? `no se resta · ${fmtDecimal(horas, 1)} hr voladas`
+              : `${fmtDecimal(horas, 1)} hr voladas`
+        }
+        title={retiene ? TITULO_KPI_RESERVA_RETENIDA : comoBalance ? TEXTO_RESERVA_NO_RESTA : undefined}
       />
       <Kpi
         icon={ClockIcon}
@@ -171,13 +203,17 @@ export function KpiStrip({
           pendiente > 0 ? "text-amber-600 dark:text-amber-400" : undefined
         }
       />
+      {/* El saldo: con la reserva retenida es el SALDO A REPARTIR (ya con la
+          reserva descontada); si no, el saldo disponible de siempre. */}
       <Kpi
         icon={ScaleIcon}
-        label="Saldo disponible total"
+        label={retiene ? ETIQUETA_KPI_SALDO_A_REPARTIR : ETIQUETA_KPI_SALDO}
         value={saldoKpi.principal}
         informativo={saldoKpi.informativo}
-        hint={saldoIncompleto ? HINT_SALDO_PESOS_INCOMPLETO : "A repartir entre socios"}
-        title={saldoIncompleto ? TITULO_SALDO_PESOS_INCOMPLETO : undefined}
+        hint={saldoIncompleto ? HINT_SALDO_PESOS_INCOMPLETO : retiene ? HINT_KPI_SALDO_A_REPARTIR : HINT_KPI_SALDO}
+        title={
+          saldoIncompleto ? TITULO_SALDO_PESOS_INCOMPLETO : retiene ? TITULO_KPI_SALDO_A_REPARTIR : undefined
+        }
         valueClass={
           saldoPositivo
             ? "text-emerald-600 dark:text-emerald-400"

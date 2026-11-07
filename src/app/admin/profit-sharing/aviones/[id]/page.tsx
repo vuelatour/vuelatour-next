@@ -58,18 +58,19 @@ import {
 } from "@/lib/admin/reparto-pagos";
 import {
   NOTA_COMBUSTIBLE_SEPARADO,
-  NOTA_REPARTO_COMO_BALANCE,
   NOTA_REPARTO_EN_PESOS,
   combustibleSeparado,
+  notaRepartoComoBalance,
   repartoComoBalance,
   repartoEnPesos,
+  reservaSeRetiene,
 } from "@/lib/admin/reparto-pesos";
 import {
   AYUDA_ENTREGAS_AVION,
-  AYUDA_SOCIOS_AVION,
   AYUDA_VUELOS_AVION,
   ayudaCascada,
   ayudaGastosAvion,
+  ayudaSociosAvion,
   ETIQUETA_FICHA_AVION,
   ETIQUETA_HISTORICO,
   ETIQUETA_LISTA_SECCIONES_AVION,
@@ -82,6 +83,7 @@ import {
   TITULO_CASCADA,
   conteosPantallaAvion,
   contextoEntregaDesdeAvion,
+  etiquetaSaldoEncabezado,
   hrefHistoricoAvion,
   hrefRepartoConPeriodo,
   periodoRepartoDeUrl,
@@ -126,11 +128,18 @@ function Volver({ periodo }: { periodo: { desde?: string; hasta?: string } }) {
  * debe venir… eso no se resta, y debe venir cuánto es lo que debe guardar
  * cada socio… seleccionar en cada avión en cada socio si se les restamos»,
  * «las cuentas de dispersión… en el detalle o pantalla del avión… todo en
- * Pesos». Secciones: encabezado con el saldo, la cascada (AFAC resta; la
- * reserva informativa debajo), los gastos del periodo gasto por gasto, los
- * vuelos, los socios (reserva a guardar, se descuenta / solo informativa,
- * entregado y por entregar DE ESTE AVIÓN, «Registrar entrega») y las
- * entregas del avión. Todo en pesos; el USD en gris. Todo lo manda el API.
+ * Pesos». Secciones: encabezado con el saldo, la cascada (AFAC resta), los
+ * gastos del periodo gasto por gasto, los vuelos, los socios (utilidad,
+ * reserva, a recibir, entregado y por entregar DE ESTE AVIÓN, «Registrar
+ * entrega») y las entregas del avión. Todo en pesos; el USD en gris. Todo lo
+ * manda el API.
+ *
+ * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128; «debe verse bien y
+ * retenerse bien»): con `saldo_a_repartir_*` (`reservaSeRetiene`) el saldo
+ * del encabezado es el SALDO A REPARTIR, la cascada termina en «Saldo antes
+ * de la reserva» − «Reserva de overhaul» = «Saldo a repartir» y la columna
+ * de los socios se llama «Reserva retenida». Sin la llave (API previo /
+ * cierres viejos) la reserva va debajo del saldo con los textos de entonces.
  *
  * EN PESTAÑAS (23-oct-2026; «las tablas acomódalas por pestañas, para que no
  * esté una tabla encima de otra y nos confundamos con el scroll»): el saldo
@@ -217,8 +226,11 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
   // Combustible separado de los directos (23-oct-2026, API 0.0.103): la
   // cascada y los gastos siguen las líneas del Excel. Sin las llaves, lo de antes.
   const conCombustible = combustibleSeparado(avion);
+  // La reserva se RETIENE (API 0.0.128): el saldo que se pinta arriba es el
+  // saldo a repartir (`saldoCascada` lo decide con la misma llave).
+  const retiene = comoBalance && reservaSeRetiene(avion);
   const saldo = saldoCascada(avion, enPesos);
-  const positivo = (saldo.valor ?? avion.saldo_disponible_usd) >= 0;
+  const positivo = (saldo.valor ?? avion.saldo_a_repartir_usd ?? avion.saldo_disponible_usd) >= 0;
   const detalle = avion.detalle ?? null;
   // CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): el chip «Mes:» es el de
   // ESTE avión (`cierre.cierre_avion` / `avion.cierre_avion`); con un API
@@ -291,7 +303,9 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
       <Card data-saldo-avion>
         <CardContent className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Saldo disponible del periodo</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {etiquetaSaldoEncabezado(avion)} del periodo
+            </p>
             <p
               className={`mt-1 text-3xl font-semibold tabular-nums ${
                 positivo ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
@@ -326,7 +340,7 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
         <InformationCircleIcon className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
         <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
           {enPesos && <p>{NOTA_REPARTO_EN_PESOS}</p>}
-          {comoBalance && <p>{NOTA_REPARTO_COMO_BALANCE}</p>}
+          {comoBalance && <p>{notaRepartoComoBalance(retiene)}</p>}
           {conCombustible && <p>{NOTA_COMBUSTIBLE_SEPARADO}</p>}
           {me.rol === "SOCIO" && <p>{TEXTO_SOCIO_SOLO_LO_SUYO}</p>}
           {(datos.gastos_sin_tc?.count ?? 0) > 0 && (
@@ -342,11 +356,12 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
 
       <CierreRepartoAvion cierre={datos.cierre} matricula={avion.aeronave.matricula} />
 
-      {/* 2. La cascada completa: las filas SUMAN el saldo; la reserva, aparte. */}
+      {/* 2. La cascada completa: las filas SUMAN el saldo; con la reserva
+          retenida termina en «Saldo a repartir», si no la reserva va aparte. */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{TITULO_CASCADA}</CardTitle>
-          <CardDescription>{ayudaCascada(conCombustible)}</CardDescription>
+          <CardDescription>{ayudaCascada(conCombustible, retiene)}</CardDescription>
         </CardHeader>
         <CardContent>
           <CascadaAvion avion={avion} enPesos={enPesos} comoBalance={comoBalance} />
@@ -394,7 +409,7 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
           socios: (
             <Card data-seccion-avion="socios">
               <CardHeader className="pb-3">
-                <CardDescription>{AYUDA_SOCIOS_AVION}</CardDescription>
+                <CardDescription>{ayudaSociosAvion(retiene)}</CardDescription>
               </CardHeader>
               <CardContent className="p-0 sm:p-2">
                 <SociosAvionTable
@@ -403,6 +418,7 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
                   registro={registro}
                   rol={me.rol}
                   usuarioId={me.id}
+                  reservaRetenida={retiene}
                 />
               </CardContent>
             </Card>

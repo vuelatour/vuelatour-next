@@ -9,7 +9,13 @@ export interface DashboardResumen {
   /** Otros ingresos VuelaTour cobrados en el periodo (TUAs/extras/pernocta
       + IVA): informativos, NO se reparten. Aditivo: puede faltar. */
   otros_ingresos_vuelatour_usd?: number;
+  /** Gastos del periodo; incluyen la reserva de overhaul (horas voladas ×
+      tarifa) de los aviones. */
   gastos_totales_usd: number;
+  /** Desde el 7-nov-2026 (API 0.0.128) es el SALDO A REPARTIR de la flota:
+      ya con la reserva de overhaul retenida, así la identidad de abajo
+      vuelve a cuadrar. El nombre de la llave no cambia (contrato aditivo
+      sin discriminador: el tablero lo rotula «Saldo a repartir»). */
   saldo_disponible_usd: number;
   /** ADITIVO (13-oct-2026, API 0.0.75): ingresos de Ingresos asignados a los
       aviones (netos, USD). Identidad: ingresos_cobrados_usd +
@@ -27,7 +33,10 @@ export interface DashboardAvion {
   modelo: string;
   vuelos: number;
   ingresos_cobrado_usd: number;
+  /** Gastos del avión, con su reserva de overhaul. */
   gastos_usd: number;
+  /** Desde el 7-nov-2026 (API 0.0.128) el SALDO A REPARTIR del avión (ya con
+      la reserva de overhaul retenida): ingresos + otros ingresos − gastos. */
   saldo_usd: number;
   /** ADITIVO (13-oct-2026, API 0.0.75): otros ingresos asignados a este
       avión (suman a su saldo). Un API previo no lo manda. */

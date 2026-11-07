@@ -393,3 +393,34 @@ export function sinCombustible(a: AvionReparto): AvionReparto {
   delete out.utilidad_antes_gastos_mxn;
   return out;
 }
+
+/**
+ * El mismo N621TX de septiembre con LA RESERVA RETENIDA (7-nov-2026, API
+ * 0.0.128, aditivo sobre el 0.0.103): `saldo_a_repartir_*` = saldo −
+ * reserva (574,632.22 − 8,625.00 = 566,007.22 MXN; 33,280.16 − 500 =
+ * 32,780.16 USD), la reserva retenida completa y `reparto[].monto_*` ya neto
+ * (Σ = saldo a repartir al centavo: 231,610.15 + 334,397.07 = 566,007.22;
+ * 13,413.64 + 19,366.52 = 32,780.16). `descuenta_reserva: true` para todos.
+ */
+export function avionReservaRetenida(): AvionReparto {
+  const a = avionCombustible();
+  return {
+    ...a,
+    reserva_retenida_usd: 500,
+    reserva_retenida_mxn: 8625,
+    saldo_a_repartir_usd: 32780.16,
+    saldo_a_repartir_mxn: 566007.22,
+    reparto: [
+      { ...a.reparto[0], descuenta_reserva: true, monto_usd: 13413.64, monto_mxn: 231610.15 },
+      { ...a.reparto[1], descuenta_reserva: true, monto_usd: 19366.52, monto_mxn: 334397.07 },
+    ],
+  };
+}
+
+/** El mismo avión como lo mandaría un API ≤ 0.0.127: sin el saldo a repartir. */
+export function sinReservaRetenida(a: AvionReparto): AvionReparto {
+  const out: AvionReparto = { ...a };
+  delete out.saldo_a_repartir_usd;
+  delete out.saldo_a_repartir_mxn;
+  return out;
+}

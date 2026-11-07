@@ -1,24 +1,26 @@
 import { cn } from "@/lib/utils";
 import {
-  ETIQUETA_SE_DESCUENTA,
+  ETIQUETA_SE_RETIENE,
   ETIQUETA_SOLO_INFORMATIVA,
-  TITULO_SE_DESCUENTA,
+  TITULO_SE_RETIENE,
   TITULO_SOLO_INFORMATIVA,
 } from "@/lib/admin/reparto-avion";
 
 /**
- * Badge «se le descuenta» / «solo informativa» de la reserva de overhaul de
+ * Badge «se le retiene» / «solo informativa» de la reserva de overhaul de
  * un socio (sin hooks: también en la card). Desde el 6-nov-2026 (API 0.0.125,
- * invariante 121) a TODOS los socios se les descuenta: el interruptor por
- * socio («Cambiar», `PATCH /v1/aircraft/owners/:id`) se quitó. El badge sigue
- * leyendo `descuenta_reserva` porque un cierre cerrado antes conserva en su
- * snapshot a quién se le descontaba y a quién solo se le informaba.
+ * invariante 121) a TODOS los socios se les descuenta —y desde el 7-nov-2026
+ * (API 0.0.128) la reserva se resta del saldo antes de repartir y VuelaTour
+ * la retiene—: el interruptor por socio («Cambiar», `PATCH
+ * /v1/aircraft/owners/:id`) se quitó. El badge sigue leyendo
+ * `descuenta_reserva` porque un cierre cerrado antes conserva en su snapshot
+ * a quién se le descontaba y a quién solo se le informaba.
  */
 export function BadgeReservaSocio({ descuenta, className }: { descuenta: boolean; className?: string }) {
   return (
     <span
       data-reserva-socio={descuenta ? "descuenta" : "informativa"}
-      title={descuenta ? TITULO_SE_DESCUENTA : TITULO_SOLO_INFORMATIVA}
+      title={descuenta ? TITULO_SE_RETIENE : TITULO_SOLO_INFORMATIVA}
       className={cn(
         "inline-flex items-center rounded border px-1.5 text-[10px] font-medium leading-tight",
         descuenta
@@ -27,7 +29,7 @@ export function BadgeReservaSocio({ descuenta, className }: { descuenta: boolean
         className,
       )}
     >
-      {descuenta ? ETIQUETA_SE_DESCUENTA : ETIQUETA_SOLO_INFORMATIVA}
+      {descuenta ? ETIQUETA_SE_RETIENE : ETIQUETA_SOLO_INFORMATIVA}
     </span>
   );
 }

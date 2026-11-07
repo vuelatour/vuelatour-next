@@ -808,6 +808,14 @@ export function resumenPrevia(previa: PreviaCierre): string {
   return partes.join(" · ");
 }
 
+/**
+ * Título del bloque antes/después de la previa. El `saldo_usd` de
+ * `previa.reparto` es el saldo del avión ANTES de la reserva de overhaul (el
+ * API de cierres no cambió con la reserva retenida del 7-nov-2026, API
+ * 0.0.128): se dice para que no se lea como el «Saldo a repartir» del reparto.
+ */
+export const TITULO_REPARTO_ANTES_DESPUES = "Saldo del reparto por avión (antes de la reserva de overhaul)";
+
 /** Antes/después del reparto por avión (solo los que cambian ±0.01). */
 export interface DeltaRepartoAvion {
   matricula: string;

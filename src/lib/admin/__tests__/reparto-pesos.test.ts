@@ -7,24 +7,36 @@
 import { describe, expect, it } from "vitest";
 import {
   ENCABEZADO_GASTOS_PESOS,
+  ETIQUETA_KPI_RESERVA_RETENIDA,
+  ETIQUETA_KPI_SALDO,
+  ETIQUETA_KPI_SALDO_A_REPARTIR,
+  HINT_KPI_SALDO,
+  HINT_KPI_SALDO_A_REPARTIR,
   HINT_SALDO_PESOS_INCOMPLETO,
   NOTA_COMBUSTIBLE_SEPARADO,
   NOTA_REPARTO_COMO_BALANCE,
   NOTA_REPARTO_EN_PESOS,
+  NOTA_RESERVA_RETENIDA,
   SUB_COLUMNA_USD,
   TEXTO_SIN_PESOS,
+  TITULO_KPI_RESERVA_RETENIDA,
+  TITULO_KPI_SALDO_A_REPARTIR,
   TITULO_OTROS_INGRESOS_SIN_TC_PESOS,
   avisoPesosSinTc,
   combustibleSeparado,
+  flotaRetieneReserva,
   gastosMxnDeAvion,
   hintKpiGastosPeriodo,
   hintKpiOtrosIngresosAvionesPesos,
   hintKpiOtrosVuelatourPesos,
+  hintKpiReservaRetenida,
   informativoUsd,
   montoPrincipal,
+  notaRepartoComoBalance,
   pesosIncompletos,
   repartoComoBalance,
   repartoEnPesos,
+  reservaSeRetiene,
   sumaCentavos,
   textoAlTc,
   textoBadgePendientePesos,
@@ -42,8 +54,10 @@ import {
   avionA,
   avionB,
   avionCombustible,
+  avionReservaRetenida,
   conPesos,
   sinCombustible,
+  sinReservaRetenida,
 } from "@/components/admin/profit-sharing/__tests__/reparto-pesos.fixtures";
 
 describe("bandera", () => {
@@ -242,5 +256,42 @@ describe("combustible separado de los directos (23-oct-2026, API 0.0.103)", () =
     expect(NOTA_COMBUSTIBLE_SEPARADO).toBe(
       "El combustible va en su propia fila, aparte de los gastos directos, con las mismas líneas y el mismo orden que el Excel del balance.",
     );
+  });
+});
+
+describe("la reserva de overhaul se RETIENE (7-nov-2026, API 0.0.128)", () => {
+  it("el discriminador por avión y por flota (`saldo_a_repartir_usd` numérico); sin la llave, nada", () => {
+    const a = avionReservaRetenida();
+    expect(reservaSeRetiene(a)).toBe(true);
+    expect(reservaSeRetiene(sinReservaRetenida(a))).toBe(false);
+    expect(reservaSeRetiene({ saldo_a_repartir_usd: 0 })).toBe(true);
+    expect(reservaSeRetiene({ saldo_a_repartir_usd: null })).toBe(false);
+    expect(reservaSeRetiene({ saldo_a_repartir_usd: Number.NaN })).toBe(false);
+    expect(reservaSeRetiene({})).toBe(false);
+    expect(reservaSeRetiene(undefined)).toBe(false);
+    // La flota entera o nada: nunca se mezclan saldos antes y después de la reserva.
+    expect(flotaRetieneReserva([a, { ...a, aeronave: { ...a.aeronave, id: "x" } }])).toBe(true);
+    expect(flotaRetieneReserva([a, sinReservaRetenida(a)])).toBe(false);
+    expect(flotaRetieneReserva([conPesos(avionA()), conPesos(avionB())])).toBe(false);
+    expect(flotaRetieneReserva([])).toBe(false);
+  });
+
+  it("la nota de la página y los textos de los KPIs; los de antes siguen para la rama sin la llave", () => {
+    expect(notaRepartoComoBalance(true)).toBe(NOTA_RESERVA_RETENIDA);
+    expect(notaRepartoComoBalance(false)).toBe(NOTA_REPARTO_COMO_BALANCE);
+    expect(NOTA_RESERVA_RETENIDA).toContain("se resta antes de repartir");
+    expect(NOTA_RESERVA_RETENIDA).toContain("a cada socio se le retiene su parte en proporción a su porcentaje y VuelaTour la guarda para el overhaul");
+    expect(NOTA_RESERVA_RETENIDA).not.toContain("no se resta");
+    expect(NOTA_RESERVA_RETENIDA).not.toContain("solo se informa");
+    expect(NOTA_REPARTO_COMO_BALANCE).toContain("no se resta");
+    expect(ETIQUETA_KPI_SALDO).toBe("Saldo disponible total");
+    expect(HINT_KPI_SALDO).toBe("A repartir entre socios");
+    expect(ETIQUETA_KPI_SALDO_A_REPARTIR).toBe("Saldo a repartir");
+    expect(HINT_KPI_SALDO_A_REPARTIR).toBe("Entre los socios · ya con la reserva de overhaul retenida");
+    expect(TITULO_KPI_SALDO_A_REPARTIR).toContain("− reserva retenida = saldo a repartir");
+    expect(ETIQUETA_KPI_RESERVA_RETENIDA).toBe("Reserva retenida");
+    expect(hintKpiReservaRetenida(12.5)).toBe("se retiene para el overhaul · 12.5 hr voladas");
+    expect(hintKpiReservaRetenida(0)).toBe("se retiene para el overhaul · 0.0 hr voladas");
+    expect(TITULO_KPI_RESERVA_RETENIDA).toContain("Se resta del saldo antes de repartir");
   });
 });

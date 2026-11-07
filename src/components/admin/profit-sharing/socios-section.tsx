@@ -16,7 +16,7 @@ import {
 } from "@/lib/admin/reparto-pagos";
 import {
   ETIQUETA_COLUMNA_A_RECIBIR,
-  TITULO_SE_DESCUENTA,
+  TITULO_SE_RETIENE,
   TITULO_SOLO_INFORMATIVA,
   filasSociosReparto,
   textoReservaSocio,
@@ -50,8 +50,10 @@ function iniciales(nombre: string): string {
  * Reparto EN PESOS (18-oct-2026, API 0.0.93): con `enPesos` lo que recibe
  * cada socio es el `monto_mxn` del API (lo que se le transfiere) y el
  * `monto_usd` va debajo, en gris. Cascada del balance (20-oct-2026, API
- * 0.0.101): bajo el monto, su reserva de overhaul «se le descuenta» / «solo
- * informativa» (`textoReservaSocio`).
+ * 0.0.101): bajo el monto, su reserva de overhaul «se le retiene» (VuelaTour
+ * la guarda para el overhaul; el monto ya viene neto) / «solo informativa»
+ * (un cierre viejo con socios que solo recibían el dato), por el DATO
+ * `descuenta_reserva` (`textoReservaSocio`).
  */
 export function SociosSection({
   socios,
@@ -192,7 +194,7 @@ export function SociosSection({
                   <span
                     className="mt-0.5 block font-sans text-[10px] font-normal text-muted-foreground"
                     data-reserva-socio={f.descuenta ? "descuenta" : "informativa"}
-                    title={f.descuenta ? TITULO_SE_DESCUENTA : TITULO_SOLO_INFORMATIVA}
+                    title={f.descuenta ? TITULO_SE_RETIENE : TITULO_SOLO_INFORMATIVA}
                   >
                     {reserva}
                   </span>

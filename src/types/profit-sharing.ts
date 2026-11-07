@@ -6,7 +6,9 @@ export interface RepartoSocio {
   socio_nombre: string;
   porcentaje: number;
   /** Lo que se le ENTREGA en dólares (= `utilidad_usd` − `reserva_usd` si
-      `descuenta_reserva`; si no, = `utilidad_usd`). */
+      `descuenta_reserva`; si no, = `utilidad_usd`). Desde el 7-nov-2026 (API
+      0.0.128) es su % del `saldo_a_repartir_*` del avión: Σ `monto_*` =
+      `saldo_a_repartir_*` al centavo. */
   monto_usd: number;
   /** ADITIVO (reparto en pesos, 18-oct-2026, API 0.0.93): lo que se le
       entrega EN PESOS (residuo mayor en centavos sobre el saldo en pesos). */
@@ -344,14 +346,26 @@ export interface AvionReparto {
   /** ADITIVOS (cascada del balance, 20-oct-2026, API 0.0.101, invariante
       99): la PROVISIÓN AFAC que resta del saldo (tarifa de la ficha × horas
       cobradas) y la reserva de overhaul que VuelaTour RETIENE a los socios
-      que la descuentan (Σ `reparto[].reserva_*` con `descuenta_reserva`).
-      Con la bandera raíz `reparto_como_balance` la reserva YA NO resta del
-      saldo: `saldo = cobrado − comisiones − directos − indirectos − permisos
-      − fijos − afac + otros ingresos`. Ausentes con un API previo. */
+      que la descuentan (Σ `reparto[].reserva_*` con `descuenta_reserva`;
+      desde el API 0.0.125 a todos ⇒ la reserva completa). Con la bandera
+      raíz `reparto_como_balance`, `saldo_disponible_* = cobrado − comisiones
+      − directos − indirectos − permisos − fijos − afac + otros ingresos` es
+      el saldo ANTES de la reserva. Ausentes con un API previo. */
   afac_reservado_usd?: number | null;
   afac_reservado_mxn?: number | null;
   reserva_retenida_usd?: number | null;
   reserva_retenida_mxn?: number | null;
+  /** ADITIVOS (la reserva se RETIENE, 7-nov-2026, API 0.0.128): el saldo A
+      REPARTIR entre los socios = `saldo_disponible_*` − `reserva_overhaul_*`.
+      La reserva de overhaul es una RESTA explícita de la cascada antes de
+      repartir (se retiene a cada socio en proporción a su % y VuelaTour la
+      guarda para el overhaul); `reparto[].monto_*` ya es neto y suma esto al
+      centavo. DISCRIMINADOR del contrato: `typeof saldo_a_repartir_usd ===
+      "number"` (`reservaSeRetiene` de `lib/admin/reparto-pesos.ts`); sin la
+      llave (API previo / cierres viejos) el panel pinta la reserva debajo del
+      saldo como hasta el 6-nov-2026. */
+  saldo_a_repartir_usd?: number | null;
+  saldo_a_repartir_mxn?: number | null;
   /** ADITIVOS (combustible separado, 23-oct-2026, API 0.0.103, invariante
       104): el subtotal «Utilidad antes de gastos» del Excel del cliente
       (= cobrado − comisiones − directos − afac_reservado). El saldo es
@@ -432,11 +446,14 @@ export interface ProfitSharingResult {
       `lib/admin/reparto-pesos.ts`. */
   reparto_en_pesos?: boolean;
   /** ADITIVO (20-oct-2026, API 0.0.101, invariante 99): el reparto es LA
-      CASCADA DEL BALANCE — INDIRECTO cuenta, la provisión AFAC resta y la
-      reserva de overhaul SOLO se informa (se descuenta por socio solo a
-      quien lo pidió). Sin ella (API previo) la reserva resta como siempre.
-      Fuente única de la lectura: `repartoComoBalance` de
-      `lib/admin/reparto-pesos.ts`. */
+      CASCADA DEL BALANCE — INDIRECTO cuenta, la provisión AFAC resta y
+      `saldo_disponible_*` es el saldo ANTES de la reserva de overhaul. Hasta
+      el API 0.0.127 la reserva solo se informaba debajo del saldo; desde el
+      7-nov-2026 (API 0.0.128) cada avión trae además `saldo_a_repartir_*`
+      (= saldo − reserva) y la reserva se RESTA en la cascada y se retiene a
+      todos los socios. Sin ella (API previo) la reserva resta como siempre.
+      Fuente única de la lectura: `repartoComoBalance` / `reservaSeRetiene`
+      de `lib/admin/reparto-pesos.ts`. */
   reparto_como_balance?: boolean;
   externos?: ExternosResumen;
   otros_ingresos_vuelatour?: OtrosIngresosVuelatour | null;
@@ -528,10 +545,19 @@ export interface MesHistoricoAvion {
   otros_mxn: number;
   afac_mxn: number;
   otros_ingresos_mxn: number;
+  /** Saldo del mes ANTES de la reserva de overhaul (la cascada del balance). */
   saldo_mxn: number;
-  /** Reserva de overhaul INFORMATIVA (no resta). */
+  /** Reserva de overhaul del mes (horas voladas × tarifa). Hasta el API
+      0.0.127 solo se informaba («no se resta»); desde el 7-nov-2026 (API
+      0.0.128) se resta del saldo y se retiene a los socios (llega
+      `saldo_a_repartir_mxn`). */
   reserva_mxn: number;
   reserva_retenida_mxn: number;
+  /** ADITIVO (la reserva se RETIENE, 7-nov-2026, API 0.0.128): saldo A
+      REPARTIR del mes = `saldo_mxn` − `reserva_mxn`. Ausente con un API
+      previo ⇒ la columna no se pinta (nunca un 0 inventado). Fuente única:
+      `historicoConSaldoARepartir` de `lib/admin/reparto-avion.ts`. */
+  saldo_a_repartir_mxn?: number;
   entregado_mxn: number;
   pesos_sin_tc_usd: number;
   saldo_usd: number;

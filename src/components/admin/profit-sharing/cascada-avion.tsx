@@ -4,6 +4,7 @@ import { tituloOtrosIngresosAvion } from "@/lib/admin/otros-ingresos-avion";
 import {
   ETIQUETAS_CASCADA,
   ETIQUETA_RESERVA_RETENIDA,
+  TITULO_FILA_SALDO_A_REPARTIR,
   etiquetaReservaCascada,
   etiquetaSaldoCascada,
   filasCascadaAvion,
@@ -16,6 +17,7 @@ import {
 import {
   avisoPesosSinTc,
   pesosIncompletos,
+  reservaSeRetiene,
   textoPorCobrarUsd,
   textoUsd,
   tituloOtrosIngresosAvionPesos,
@@ -26,16 +28,23 @@ import type { AvionReparto } from "@/types/profit-sharing";
 
 /**
  * La cascada del saldo de UN avión (20-oct-2026, API 0.0.101): las filas
- * SUMAN exacto el saldo disponible (cobrado, + otros ingresos del avión, −
- * comisiones, − directos, − indirectos, − permisos, − fijos, − provisión
- * AFAC) y, DEBAJO y aparte, la reserva de overhaul marcada «no se resta».
- * Sin la bandera `reparto_como_balance` (API previo) la reserva es la última
- * fila que resta y no hay AFAC. Con el COMBUSTIBLE SEPARADO (23-oct-2026,
- * API 0.0.103) las filas son las del Excel del cliente y en su orden, con el
- * subtotal «Utilidad antes de gastos» y la fila «Combustible»; sin esas
- * llaves, lo de siempre byte a byte. Sin hooks: la pintan la card (servidor)
- * y la pantalla del avión. Los números son del API; las etiquetas y el
- * orden, de `lib/admin/reparto-avion.ts`.
+ * SUMAN exacto el saldo (cobrado, + otros ingresos del avión, − comisiones,
+ * − directos, − indirectos, − permisos, − fijos, − provisión AFAC).
+ *
+ * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128): con `saldo_a_repartir_*`
+ * (`reservaSeRetiene`) la cascada sigue con «Saldo antes de la reserva de
+ * overhaul» (subtotal), «(−) Reserva de overhaul · se retiene para el
+ * overhaul» y termina en «Saldo a repartir» (negritas, con los dólares
+ * informativos): lo que cada socio recibe en proporción a su %. Sin la llave
+ * (API 0.0.101 a 0.0.127, cierres viejos) la reserva va DEBAJO y aparte del
+ * saldo, con los textos por datos de entonces («se descuenta a los socios» /
+ * «no se resta»). Sin la bandera `reparto_como_balance` (API previo) la
+ * reserva es la última fila que resta y no hay AFAC. Con el COMBUSTIBLE
+ * SEPARADO (23-oct-2026, API 0.0.103) las filas son las del Excel del
+ * cliente y en su orden, con el subtotal «Utilidad antes de gastos» y la
+ * fila «Combustible»; sin esas llaves, lo de siempre byte a byte. Sin hooks:
+ * la pintan la card (servidor) y la pantalla del avión. Los números son del
+ * API; las etiquetas y el orden, de `lib/admin/reparto-avion.ts`.
  */
 export function CascadaAvion({
   avion,
@@ -51,12 +60,19 @@ export function CascadaAvion({
 }) {
   const filas = filasCascadaAvion(avion, { enPesos, comoBalance });
   const saldo = saldoCascada(avion, enPesos);
-  const positivo = (saldo.valor ?? avion.saldo_disponible_usd) >= 0;
+  const positivo = (saldo.valor ?? avion.saldo_a_repartir_usd ?? avion.saldo_disponible_usd) >= 0;
   const detalle = avion.detalle ?? null;
-  const reserva = comoBalance ? reservaInformativa(avion, enPesos) : null;
+  // Con la reserva retenida (API 0.0.128) la reserva ya es una fila de la
+  // cascada: el bloque informativo debajo del saldo no se pinta.
+  const retiene = comoBalance && reservaSeRetiene(avion);
+  const reserva = comoBalance && !retiene ? reservaInformativa(avion, enPesos) : null;
 
   return (
-    <div className="space-y-1 text-sm" data-cascada-avion={avion.aeronave.id}>
+    <div
+      className="space-y-1 text-sm"
+      data-cascada-avion={avion.aeronave.id}
+      data-reserva-retenida={retiene ? "" : undefined}
+    >
       {filas.map((f) => (
         <FilaCascadaRow
           key={f.clave}
@@ -70,9 +86,12 @@ export function CascadaAvion({
           }
         />
       ))}
+      {/* La fila final: «Saldo a repartir» (= `saldo_a_repartir_*`, la
+          reserva ya retenida) con la llave; si no, el saldo disponible. */}
       <div
         className="flex items-start justify-between gap-3 border-t border-border pt-1.5 font-semibold"
         data-fila-cascada="saldo"
+        title={retiene ? TITULO_FILA_SALDO_A_REPARTIR : undefined}
       >
         <span>{etiquetaSaldoCascada(avion)}</span>
         <span className="text-right">
@@ -102,10 +121,12 @@ export function CascadaAvion({
           {avisoPesosSinTc(avion.pesos_sin_tc_usd ?? 0)}
         </p>
       )}
-      {/* Reserva de overhaul (cascada del balance): debajo del saldo, no resta
-          del avión; la marca dice «se descuenta a los socios» cuando a TODOS
-          se les descuenta (invariante 121) o «no se resta» en un cierre viejo
-          con socios que solo recibían el dato. */}
+      {/* Reserva de overhaul SIN `saldo_a_repartir_*` (API 0.0.101 a 0.0.127
+          y cierres viejos): debajo del saldo, no resta del avión; la marca
+          dice «se descuenta a los socios» cuando a TODOS se les descuenta
+          (invariante 121) o «no se resta» en un cierre viejo con socios que
+          solo recibían el dato. Con la reserva retenida (API 0.0.128) este
+          bloque no existe: la reserva es una fila de la cascada. */}
       {reserva && (
         <div
           data-reserva-informativa=""

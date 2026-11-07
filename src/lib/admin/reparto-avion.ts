@@ -21,14 +21,20 @@
  *    únicas sumas son en centavos sobre lo que ya viene (subtotal por grupo
  *    de gastos), y se comparan contra la fila de la cascada que el API ya
  *    mandó: si no cuadran se DICE, no se corrige.
- *  - Con `reparto_como_balance` la provisión AFAC RESTA y la reserva de
- *    overhaul SOLO se informa (va DESPUÉS del saldo, marcada «no se resta»).
- *    Sin la bandera (API previo) la cascada es la de siempre: la reserva
- *    resta y no hay fila de AFAC.
+ *  - Con `reparto_como_balance` la provisión AFAC RESTA y `saldo_disponible`
+ *    es el saldo ANTES de la reserva de overhaul. Sin la bandera (API previo)
+ *    la cascada es la de siempre: la reserva resta y no hay fila de AFAC.
+ *  - LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128; decisión del cliente:
+ *    «aún dice informativa no se resta; debe verse bien y retenerse bien… y
+ *    verse también en el reparto de utilidades»): cuando el avión trae
+ *    `saldo_a_repartir_*` (`reservaSeRetiene`) la cascada termina en «Saldo
+ *    antes de la reserva de overhaul» − «Reserva de overhaul · se retiene
+ *    para el overhaul» = «Saldo a repartir», y cada socio recibe su % de ese
+ *    saldo (el `monto_*` del API). Sin la llave (API previo / cierres
+ *    viejos) la reserva se pinta DEBAJO del saldo con los textos por datos de
+ *    hasta el 6-nov-2026 («se descuenta a los socios» / «no se resta»).
  *  - Pesos (MXN) como cifra principal; los dólares, informativos (reglas de
  *    `reparto-pesos.ts`).
- *  - El cambio «¿se le descuenta la reserva?» es dinero: se confirma con el
- *    texto que explica la consecuencia (regla permanente del cliente).
  */
 
 import { fmtDecimal, fmtMonto, fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
@@ -40,7 +46,13 @@ import {
   SUBLABEL_OTROS_INGRESOS_AVION,
 } from "@/lib/admin/otros-ingresos-avion";
 import { SUBLABEL_COMISIONES_REPARTO } from "@/lib/admin/categorias-gasto";
-import { combustibleSeparado, montoPrincipal, textoUsd, type MontoDoble } from "@/lib/admin/reparto-pesos";
+import {
+  combustibleSeparado,
+  montoPrincipal,
+  reservaSeRetiene,
+  textoUsd,
+  type MontoDoble,
+} from "@/lib/admin/reparto-pesos";
 import {
   MES_CUENTA_DEFAULT,
   contextoEntrega,
@@ -169,14 +181,24 @@ export const AYUDA_CASCADA =
 /** Con el combustible separado (API 0.0.103): las líneas del Excel, en su orden. */
 export const AYUDA_CASCADA_EXCEL =
   "Las mismas líneas del Excel del balance y en el mismo orden: venta cobrada, menos comisiones, gastos directos y provisión AFAC, da la utilidad antes de gastos; menos combustible, gastos indirectos, permisos y fijos prorrateados, más otros ingresos del avión, da el saldo a repartir. La reserva de overhaul va aparte: no se resta.";
+/** Con la reserva RETENIDA (7-nov-2026, API 0.0.128): la reserva es la última resta antes de repartir. */
+export const AYUDA_CASCADA_RESERVA_RETENIDA =
+  "Las filas suman exacto el saldo antes de la reserva: lo cobrado de la venta del avión (más otros ingresos del avión) menos comisiones, gastos y la provisión AFAC. Menos la reserva de overhaul, que se retiene a los socios y VuelaTour guarda para el overhaul, da el saldo a repartir.";
+export const AYUDA_CASCADA_EXCEL_RESERVA_RETENIDA =
+  "Las mismas líneas del Excel del balance y en el mismo orden: venta cobrada, menos comisiones, gastos directos y provisión AFAC, da la utilidad antes de gastos; menos combustible, gastos indirectos, permisos y fijos prorrateados, más otros ingresos del avión, da el saldo antes de la reserva; menos la reserva de overhaul, que se retiene a los socios y VuelaTour guarda para el overhaul, da el saldo a repartir.";
 export const TITULO_GASTOS_AVION = "Gastos del periodo";
 export const AYUDA_GASTOS_AVION =
   "Cada gasto tal cual se sumó en la cascada, agrupado como en el balance (directos, indirectos, permisos, fijos). Los que no restan al avión se listan al final con su motivo.";
 export const AYUDA_GASTOS_AVION_EXCEL =
   "Cada gasto tal cual se sumó en la cascada, agrupado como en el balance (directos, combustible, indirectos, permisos, fijos); el combustible va aparte de los gastos directos, como en el Excel. Los que no restan al avión se listan al final con su motivo.";
 
-/** Ayuda de «Cómo se llega al saldo»: la del Excel solo con el combustible separado. */
-export function ayudaCascada(conCombustible: boolean): string {
+/**
+ * Ayuda de «Cómo se llega al saldo»: la del Excel solo con el combustible
+ * separado; con la reserva retenida (`reservaSeRetiene`), la que dice que la
+ * reserva se resta antes de repartir.
+ */
+export function ayudaCascada(conCombustible: boolean, reservaRetenida = false): string {
+  if (reservaRetenida) return conCombustible ? AYUDA_CASCADA_EXCEL_RESERVA_RETENIDA : AYUDA_CASCADA_RESERVA_RETENIDA;
   return conCombustible ? AYUDA_CASCADA_EXCEL : AYUDA_CASCADA;
 }
 
@@ -190,6 +212,14 @@ export const AYUDA_VUELOS_AVION =
 export const TITULO_SOCIOS_AVION = "Socios de este avión";
 export const AYUDA_SOCIOS_AVION =
   "Lo que le toca a cada socio de ESTE avión en el periodo, en pesos: su parte del saldo, la reserva de overhaul que debe guardar (se le descuenta solo si así se configuró), lo que se le ha entregado por este avión y lo que falta.";
+/** Con la reserva RETENIDA (API 0.0.128). */
+export const AYUDA_SOCIOS_AVION_RESERVA_RETENIDA =
+  "Lo que le toca a cada socio de ESTE avión en el periodo, en pesos: su parte del saldo antes de la reserva, la reserva de overhaul que se le retiene (VuelaTour la guarda para el overhaul), lo que recibe, lo que se le ha entregado por este avión y lo que falta.";
+
+/** Ayuda de «Socios de este avión» según lo que manda el API (`reservaSeRetiene`). */
+export function ayudaSociosAvion(reservaRetenida: boolean): string {
+  return reservaRetenida ? AYUDA_SOCIOS_AVION_RESERVA_RETENIDA : AYUDA_SOCIOS_AVION;
+}
 export const TITULO_ENTREGAS_AVION = "Entregas de este avión";
 export const AYUDA_ENTREGAS_AVION =
   "Entregas a los socios registradas con «corresponde a» este avión en los meses del periodo. El saldo completo de cada socio (todos sus aviones) está en «Pagos a socios».";
@@ -322,9 +352,44 @@ export const TITULO_FILA_COMBUSTIBLE =
 export const TITULO_FILA_UTILIDAD_ANTES_GASTOS =
   "Venta cobrada menos comisiones, gastos directos y provisión AFAC: la línea «Utilidad antes de gastos» del Excel del balance.";
 
-/** La etiqueta de la última fila: «Saldo a repartir» (Excel) o «Saldo disponible». */
-export function etiquetaSaldoCascada(avion: Pick<AvionReparto, "gastos">): string {
+// ===== La reserva se RETIENE (7-nov-2026, API 0.0.128) =====
+// Con `saldo_a_repartir_*` (`reservaSeRetiene`) la cascada termina en TRES
+// filas: «Saldo antes de la reserva de overhaul» (= `saldo_disponible_*`),
+// «(−) Reserva de overhaul · se retiene para el overhaul» (= `reserva_overhaul_*`)
+// y «Saldo a repartir» (= `saldo_a_repartir_*`, la fila final en negritas).
+
+export const ETIQUETA_SALDO_ANTES_RESERVA = "Saldo antes de la reserva de overhaul";
+export const ETIQUETA_SALDO_A_REPARTIR = "Saldo a repartir";
+/** Sublabel de la fila de la reserva cuando se retiene. */
+export const SUBLABEL_RESERVA_SE_RETIENE = "se retiene para el overhaul";
+export const TITULO_FILA_SALDO_ANTES_RESERVA =
+  "Lo que queda del avión antes de retener la reserva de overhaul: la misma línea del balance.";
+export const TITULO_FILA_RESERVA_RETENIDA =
+  "Horas voladas × tarifa de overhaul de la ficha del avión. Se resta del saldo antes de repartir: a cada socio se le retiene su parte en proporción a su porcentaje y VuelaTour la guarda para el overhaul del avión.";
+export const TITULO_FILA_SALDO_A_REPARTIR =
+  "Saldo antes de la reserva menos la reserva de overhaul: lo que se reparte entre los socios según su porcentaje.";
+
+/** «se retiene para el overhaul · 12.5 hr × $40/hr» (o solo las horas voladas). */
+export function sublabelReservaRetenida(
+  reserva: { horas_hr: number; tarifa_hora_usd: number } | null | undefined,
+  horasVoladas: number,
+): string {
+  const formula = sublabelReservaOverhaul(reserva, horasVoladas);
+  return formula ? `${SUBLABEL_RESERVA_SE_RETIENE} · ${formula}` : SUBLABEL_RESERVA_SE_RETIENE;
+}
+
+/**
+ * La etiqueta de la última fila: «Saldo a repartir» con la reserva retenida
+ * (API 0.0.128) o con las líneas del Excel; «Saldo disponible» si no.
+ */
+export function etiquetaSaldoCascada(avion: Pick<AvionReparto, "gastos" | "saldo_a_repartir_usd">): string {
+  if (reservaSeRetiene(avion)) return ETIQUETA_SALDO_A_REPARTIR;
   return combustibleSeparado(avion) ? ETIQUETAS_CASCADA_EXCEL.saldo : ETIQUETAS_CASCADA.saldo;
+}
+
+/** El rótulo del saldo en el encabezado de la card y de la pantalla del avión. */
+export function etiquetaSaldoEncabezado(avion: Pick<AvionReparto, "saldo_a_repartir_usd">): string {
+  return reservaSeRetiene(avion) ? ETIQUETA_SALDO_A_REPARTIR : ETIQUETAS_CASCADA.saldo;
 }
 
 export const SUBLABEL_DIRECTOS = "combustible, aterrizajes, hotel, comida, piloto externo…";
@@ -336,11 +401,14 @@ export const TITULO_FILA_AFAC =
   "Aportación AFAC de la ficha del avión × horas cobradas del periodo: la misma columna «PERMISO AFAC (PROVISIÓN)» del balance. Resta del saldo; lo que AFAC cobre de verdad se captura en el Balance general y lo paga VuelaTour.";
 
 /**
- * Marca junto a la reserva: no entra a la cascada del avión. Los textos se
- * eligen por los DATOS (`reparto[].descuenta_reserva`): desde el 6-nov-2026
- * (API 0.0.125, invariante 121) a TODOS los socios se les descuenta y el
- * bloque lo dice así; un cierre cerrado antes, con socios que solo recibían
- * el dato, sigue diciendo «no se resta» como entonces.
+ * Marca junto a la reserva en el bloque DEBAJO del saldo (solo sin
+ * `saldo_a_repartir_*`: API 0.0.101 a 0.0.127 y cierres viejos). Los textos
+ * se eligen por los DATOS (`reparto[].descuenta_reserva`): desde el
+ * 6-nov-2026 (API 0.0.125, invariante 121) a TODOS los socios se les
+ * descuenta y el bloque lo dice así; un cierre cerrado antes, con socios que
+ * solo recibían el dato, sigue diciendo «no se resta» como entonces. Con la
+ * reserva retenida (API 0.0.128) este bloque no se pinta: la reserva es una
+ * fila de la cascada.
  */
 export const ETIQUETA_RESERVA_INFORMATIVA = "no se resta";
 export const ETIQUETA_RESERVA_DESCONTADA = "se descuenta a los socios";
@@ -403,7 +471,7 @@ export interface FilaCascada {
 export interface OpcionesCascada {
   /** Bandera raíz `reparto_en_pesos`. */
   enPesos: boolean;
-  /** Bandera raíz `reparto_como_balance` (AFAC resta; la reserva no). */
+  /** Bandera raíz `reparto_como_balance` (AFAC resta; el saldo es el de antes de la reserva). */
   comoBalance: boolean;
 }
 
@@ -456,6 +524,12 @@ export function utilidadAntesGastos(
  * «Utilidad antes de gastos» (subtotal) − combustible − indirectos −
  * permisos − fijos + otros ingresos. Todas las líneas se pintan aunque
  * valgan 0 (se cuadra renglón por renglón contra el Excel).
+ *
+ * Con la RESERVA RETENIDA (API 0.0.128, `reservaSeRetiene`) la cascada del
+ * balance sigue con «Saldo antes de la reserva de overhaul» (subtotal =
+ * `saldo_disponible_*`) y «(−) Reserva de overhaul» (`reserva_overhaul_*`);
+ * la fila final «Saldo a repartir» la pinta el componente con `saldoCascada`
+ * (= `saldo_a_repartir_*`). Las tres suman al centavo: lo manda el API.
  */
 export function filasCascadaAvion(avion: AvionReparto, o: OpcionesCascada): FilaCascada[] {
   const d = avion.detalle ?? null;
@@ -473,6 +547,32 @@ export function filasCascadaAvion(avion: AvionReparto, o: OpcionesCascada): Fila
     title: extra.title,
     monto: montoPrincipal(montos, o.enPesos, { deduccion: tipo === "deduccion", tc: extra.tc }),
   });
+  // La reserva se RETIENE (7-nov-2026, API 0.0.128): las dos filas que
+  // cierran la cascada del balance antes del «Saldo a repartir». Solo con la
+  // llave; sin ella la reserva va debajo del saldo (`reservaInformativa`).
+  const colaReservaRetenida = (): FilaCascada[] =>
+    o.comoBalance && reservaSeRetiene(avion)
+      ? [
+          fila(
+            "saldo_antes_reserva",
+            ETIQUETA_SALDO_ANTES_RESERVA,
+            "subtotal",
+            { mxn: avion.saldo_disponible_mxn, usd: avion.saldo_disponible_usd },
+            { title: TITULO_FILA_SALDO_ANTES_RESERVA },
+          ),
+          fila(
+            "reserva",
+            ETIQUETAS_CASCADA.reserva,
+            "deduccion",
+            { mxn: avion.reserva_overhaul_mxn, usd: avion.reserva_overhaul_usd },
+            {
+              sublabel: sublabelReservaRetenida(d?.reserva, avion.horas_voladas_hr),
+              title: TITULO_FILA_RESERVA_RETENIDA,
+              tc: d?.reserva.tc,
+            },
+          ),
+        ]
+      : [];
   if (combustibleSeparado(avion)) {
     const E = ETIQUETAS_CASCADA_EXCEL;
     const excel: FilaCascada[] = [
@@ -551,6 +651,7 @@ export function filasCascadaAvion(avion: AvionReparto, o: OpcionesCascada): Fila
         { mxn: avion.ingresos.otros_ingresos_avion_mxn, usd: avion.ingresos.otros_ingresos_avion_usd ?? 0 },
         { sublabel: SUBLABEL_OTROS_INGRESOS_AVION },
       ),
+      ...colaReservaRetenida(),
     );
     return excel;
   }
@@ -609,6 +710,7 @@ export function filasCascadaAvion(avion: AvionReparto, o: OpcionesCascada): Fila
         { mxn: avion.afac_reservado_mxn, usd: avion.afac_reservado_usd ?? 0 },
         { sublabel: sublabelAfac(d?.afac), title: TITULO_FILA_AFAC },
       ),
+      ...colaReservaRetenida(),
     );
   } else {
     out.push(
@@ -624,8 +726,20 @@ export function filasCascadaAvion(avion: AvionReparto, o: OpcionesCascada): Fila
   return out;
 }
 
-/** El saldo disponible como monto doble (pesos primero con la bandera). */
+/**
+ * La fila FINAL de la cascada (y el saldo del encabezado) como monto doble
+ * (pesos primero con la bandera): con la reserva retenida (API 0.0.128) es
+ * el saldo A REPARTIR (`saldo_a_repartir_*`); si no, el saldo disponible.
+ */
 export function saldoCascada(avion: AvionReparto, enPesos: boolean): MontoDoble {
+  if (reservaSeRetiene(avion)) {
+    return montoPrincipal({ mxn: avion.saldo_a_repartir_mxn, usd: avion.saldo_a_repartir_usd }, enPesos);
+  }
+  return saldoAntesReservaCascada(avion, enPesos);
+}
+
+/** El saldo ANTES de la reserva (`saldo_disponible_*`) como monto doble. */
+export function saldoAntesReservaCascada(avion: AvionReparto, enPesos: boolean): MontoDoble {
   return montoPrincipal({ mxn: avion.saldo_disponible_mxn, usd: avion.saldo_disponible_usd }, enPesos);
 }
 
@@ -640,7 +754,12 @@ export interface ReservaInformativa {
   todosDescuentan: boolean;
 }
 
-/** La reserva de overhaul que se INFORMA debajo del saldo (cascada del balance). */
+/**
+ * La reserva de overhaul que se INFORMA debajo del saldo (cascada del
+ * balance SIN `saldo_a_repartir_*`: API 0.0.101 a 0.0.127 y cierres viejos).
+ * Con la reserva retenida (API 0.0.128) no se usa: la reserva es una fila de
+ * la cascada (`filasCascadaAvion`).
+ */
 export function reservaInformativa(avion: AvionReparto, enPesos: boolean): ReservaInformativa {
   const d = avion.detalle ?? null;
   const retenidaUsd = avion.reserva_retenida_usd ?? 0;
@@ -665,14 +784,27 @@ export function reservaInformativa(avion: AvionReparto, enPesos: boolean): Reser
 export const ETIQUETA_COLUMNA_A_RECIBIR = "A recibir";
 export const ETIQUETA_COLUMNA_UTILIDAD = "Utilidad";
 export const ETIQUETA_COLUMNA_RESERVA_A_GUARDAR = "Reserva a guardar";
+/** Con la reserva RETENIDA (API 0.0.128): la columna dice lo que es. */
+export const ETIQUETA_COLUMNA_RESERVA_RETENIDA = "Reserva retenida";
 export const ETIQUETA_COLUMNA_ENTREGADO_AVION = "Entregado (este avión)";
 export const ETIQUETA_COLUMNA_POR_ENTREGAR_AVION = "Por entregar (este avión)";
-export const ETIQUETA_SE_DESCUENTA = "se le descuenta";
+/**
+ * Badge de la reserva de cada socio, por el DATO `descuenta_reserva`: «se le
+ * retiene» (VuelaTour se la queda para el overhaul; el `monto_*` del API ya
+ * viene neto) o «solo informativa» (un cierre cerrado antes del 6-nov-2026
+ * conserva en su snapshot a quién solo se le informaba).
+ */
+export const ETIQUETA_SE_RETIENE = "se le retiene";
 export const ETIQUETA_SOLO_INFORMATIVA = "solo informativa";
-export const TITULO_SE_DESCUENTA =
+export const TITULO_SE_RETIENE =
   "VuelaTour le retiene su parte de la reserva de overhaul: no se le entrega, se guarda para el overhaul del avión.";
 export const TITULO_SOLO_INFORMATIVA =
   "Recibe su utilidad completa; solo se le informa cuánto debería guardar para el overhaul.";
+
+/** Encabezado de la columna de la reserva por socio (avión e histórico). */
+export function etiquetaColumnaReserva(reservaRetenida: boolean): string {
+  return reservaRetenida ? ETIQUETA_COLUMNA_RESERVA_RETENIDA : ETIQUETA_COLUMNA_RESERVA_A_GUARDAR;
+}
 
 export interface FilaSocioReparto {
   socio_id: string;
@@ -709,14 +841,14 @@ export function filasSociosReparto(reparto: readonly RepartoSocio[], enPesos: bo
 
 /**
  * Renglón bajo «A recibir» de la card: «reserva $8,625.00 MXN · se le
- * descuenta» / «guardar $8,625.00 MXN · solo informativa»; null sin reserva
+ * retiene» / «guardar $8,625.00 MXN · solo informativa»; null sin reserva
  * (o con un API previo).
  */
 export function textoReservaSocio(f: Pick<FilaSocioReparto, "reserva" | "descuenta">): string | null {
   if (!f.reserva || f.descuenta === null) return null;
   if ((f.reserva.valor ?? 0) === 0) return null;
   return f.descuenta
-    ? `reserva ${f.reserva.principal} · ${ETIQUETA_SE_DESCUENTA}`
+    ? `reserva ${f.reserva.principal} · ${ETIQUETA_SE_RETIENE}`
     : `guardar ${f.reserva.principal} · ${ETIQUETA_SOLO_INFORMATIVA}`;
 }
 
@@ -1025,19 +1157,31 @@ export type ClaveColumnaHistorico = keyof TotalesHistoricoAvion | "cierre";
 export interface ColumnaHistorico {
   clave: ClaveColumnaHistorico;
   etiqueta: string;
+  /** Segunda línea del encabezado («no se resta» / «se retiene»). */
+  subEtiqueta?: string;
   tipo: "horas" | "entero" | "mxn" | "texto";
   /** «−» resta en la cascada, «+» suma; sin signo, un dato. */
   signo?: "-" | "+";
   /** Visible en la vista compacta (celular). */
   principal: boolean;
-  /** Dato que NO entra al saldo (la reserva). */
+  /** Dato que NO entra al saldo (la reserva hasta el API 0.0.127). */
   informativa?: boolean;
-  /** Solo se pinta cuando el API manda el dato (llave ADITIVA: el combustible). */
-  soloSiViene?: boolean;
+  /** Solo se pinta cuando el API manda el dato (llave ADITIVA): el
+   *  combustible (0.0.103) o el saldo a repartir (0.0.128). */
+  soloSiViene?: "combustible" | "saldo_a_repartir";
   title?: string;
 }
 
-/** Columnas del histórico, en el orden de la cascada. */
+/** Etiqueta de la columna del saldo ANTES de la reserva cuando el histórico trae el saldo a repartir. */
+export const ETIQUETA_COLUMNA_SALDO_ANTES_RESERVA = "Saldo antes de la reserva";
+/** Segunda línea del encabezado de la reserva cuando se retiene. */
+export const SUBETIQUETA_RESERVA_SE_RETIENE = "se retiene";
+
+/**
+ * Columnas del histórico, en el orden de la cascada (la forma de HASTA el
+ * API 0.0.127: la reserva informativa; `columnasHistoricoTodas` las viste
+ * según lo que manda el API).
+ */
 export const COLUMNAS_HISTORICO: readonly ColumnaHistorico[] = [
   { clave: "horas_voladas_hr", etiqueta: "Horas", tipo: "horas", principal: true },
   { clave: "vuelos", etiqueta: "Vuelos", tipo: "entero", principal: true },
@@ -1050,7 +1194,7 @@ export const COLUMNAS_HISTORICO: readonly ColumnaHistorico[] = [
     tipo: "mxn",
     signo: "-",
     principal: false,
-    soloSiViene: true,
+    soloSiViene: "combustible",
     title: TITULO_FILA_COMBUSTIBLE,
   },
   { clave: "indirectos_mxn", etiqueta: "Indirectos", tipo: "mxn", signo: "-", principal: false },
@@ -1062,27 +1206,71 @@ export const COLUMNAS_HISTORICO: readonly ColumnaHistorico[] = [
   {
     clave: "reserva_mxn",
     etiqueta: "Reserva a guardar",
+    subEtiqueta: ETIQUETA_RESERVA_INFORMATIVA,
     tipo: "mxn",
     principal: true,
     informativa: true,
     title: TEXTO_RESERVA_NO_RESTA,
   },
+  {
+    clave: "saldo_a_repartir_mxn",
+    etiqueta: ETIQUETA_SALDO_A_REPARTIR,
+    tipo: "mxn",
+    principal: true,
+    soloSiViene: "saldo_a_repartir",
+    title: TITULO_FILA_SALDO_A_REPARTIR,
+  },
   { clave: "entregado_mxn", etiqueta: "Entregado", tipo: "mxn", principal: true },
   { clave: "cierre", etiqueta: "Cierre", tipo: "texto", principal: true },
 ];
 
+export interface OpcionesColumnasHistorico {
+  /** El API manda `combustible_mxn` (0.0.103): `historicoConCombustible`. */
+  conCombustible?: boolean;
+  /** El API manda `saldo_a_repartir_mxn` (0.0.128): `historicoConSaldoARepartir`. */
+  conSaldoARepartir?: boolean;
+}
+
+/**
+ * TODAS las columnas vestidas según lo que manda el API (sin filtrar la
+ * vista compacta ni las aditivas): con el saldo a repartir (7-nov-2026, API
+ * 0.0.128) «Saldo» pasa a «Saldo antes de la reserva» y la reserva deja de
+ * ser informativa: RESTA («−»), «se retiene». Sin la llave, las de siempre.
+ */
+export function columnasHistoricoTodas(opts: OpcionesColumnasHistorico = {}): ColumnaHistorico[] {
+  if (opts.conSaldoARepartir !== true) return [...COLUMNAS_HISTORICO];
+  return COLUMNAS_HISTORICO.map((c) => {
+    if (c.clave === "saldo_mxn") {
+      return { ...c, etiqueta: ETIQUETA_COLUMNA_SALDO_ANTES_RESERVA, title: TITULO_FILA_SALDO_ANTES_RESERVA };
+    }
+    if (c.clave === "reserva_mxn") {
+      return {
+        ...c,
+        etiqueta: ETIQUETAS_CASCADA.reserva,
+        subEtiqueta: SUBETIQUETA_RESERVA_SE_RETIENE,
+        signo: "-",
+        informativa: false,
+        title: TITULO_FILA_RESERVA_RETENIDA,
+      };
+    }
+    return c;
+  });
+}
+
 /**
  * Las columnas de la vista compacta (o todas). La de «Combustible» (API
- * 0.0.103) solo con `conCombustible`: con un API previo no existe el dato y
- * la tabla queda como siempre.
+ * 0.0.103) solo con `conCombustible` y la de «Saldo a repartir» (API
+ * 0.0.128) solo con `conSaldoARepartir`: con un API previo no existe el dato
+ * y la tabla queda como siempre.
  */
 export function columnasHistorico(
   completas: boolean,
-  opts: { conCombustible?: boolean } = {},
+  opts: OpcionesColumnasHistorico = {},
 ): ColumnaHistorico[] {
-  return COLUMNAS_HISTORICO.filter(
-    (c) => (completas || c.principal) && (!c.soloSiViene || opts.conCombustible === true),
-  );
+  const viene = (c: ColumnaHistorico): boolean =>
+    !c.soloSiViene ||
+    (c.soloSiViene === "combustible" ? opts.conCombustible === true : opts.conSaldoARepartir === true);
+  return columnasHistoricoTodas(opts).filter((c) => (completas || c.principal) && viene(c));
 }
 
 /** ¿El histórico trae el combustible aparte? Si algún mes o los totales mandan `combustible_mxn`. */
@@ -1091,6 +1279,16 @@ export function historicoConCombustible(
   totales?: Pick<TotalesHistoricoAvion, "combustible_mxn"> | null,
 ): boolean {
   return numero(totales?.combustible_mxn) !== null || meses.some((m) => numero(m.combustible_mxn) !== null);
+}
+
+/** ¿El histórico trae el saldo a repartir (API 0.0.128)? Si algún mes o los totales mandan `saldo_a_repartir_mxn`. */
+export function historicoConSaldoARepartir(
+  meses: ReadonlyArray<Pick<MesHistoricoAvion, "saldo_a_repartir_mxn">>,
+  totales?: Pick<TotalesHistoricoAvion, "saldo_a_repartir_mxn"> | null,
+): boolean {
+  return (
+    numero(totales?.saldo_a_repartir_mxn) !== null || meses.some((m) => numero(m.saldo_a_repartir_mxn) !== null)
+  );
 }
 
 export const ETIQUETA_VER_TODAS_COLUMNAS = "Ver todas las columnas";
@@ -1134,9 +1332,23 @@ export function etiquetaMesHistorico(mes: string, enCurso: boolean): string {
 export const TITULO_HISTORICO = "Histórico mes a mes";
 export const AYUDA_HISTORICO =
   "Un reparto por mes, en pesos: la cascada completa, el saldo, la reserva que se debe guardar (no se resta) y lo entregado a los socios por este avión. El mes en curso todavía cambia.";
+/** Con la reserva RETENIDA (API 0.0.128). */
+export const AYUDA_HISTORICO_RESERVA_RETENIDA =
+  "Un reparto por mes, en pesos: la cascada completa, el saldo antes de la reserva, la reserva de overhaul que se retiene, el saldo a repartir y lo entregado a los socios por este avión. El mes en curso todavía cambia.";
 export const TITULO_SOCIOS_HISTORICO = "Socios en el rango";
 export const AYUDA_SOCIOS_HISTORICO =
   "Lo que generó cada socio con este avión en los meses del rango (lo que se le entrega, ya con su reserva descontada si aplica), lo que debe guardar, lo entregado por este avión y lo que falta.";
+export const AYUDA_SOCIOS_HISTORICO_RESERVA_RETENIDA =
+  "Lo que generó cada socio con este avión en los meses del rango (lo que se le entrega, ya con su reserva de overhaul retenida), la reserva que se le retuvo, lo entregado por este avión y lo que falta.";
+
+/** Ayudas del histórico según lo que manda el API (`historicoConSaldoARepartir`). */
+export function ayudaHistorico(reservaRetenida: boolean): string {
+  return reservaRetenida ? AYUDA_HISTORICO_RESERVA_RETENIDA : AYUDA_HISTORICO;
+}
+
+export function ayudaSociosHistorico(reservaRetenida: boolean): string {
+  return reservaRetenida ? AYUDA_SOCIOS_HISTORICO_RESERVA_RETENIDA : AYUDA_SOCIOS_HISTORICO;
+}
 export const TITULO_ENTREGAS_HISTORICO = "Entregas del rango";
 export const TEXTO_SIN_MESES_HISTORICO = "Sin meses que mostrar en este rango.";
 export const TEXTO_ERROR_CARGA_HISTORICO =
@@ -1159,32 +1371,51 @@ export interface FilaHistorico {
   reparto: RepartoMesSocio[];
 }
 
-export function filasHistorico(meses: readonly MesHistoricoAvion[]): FilaHistorico[] {
+/**
+ * Un mes por fila con los textos de TODAS las columnas (las vestidas según
+ * `opts`: con el saldo a repartir la reserva lleva «−»). `saldoNegativo` es
+ * el del saldo que se pinta como principal: el saldo a repartir si viene, si
+ * no el saldo de siempre.
+ */
+export function filasHistorico(
+  meses: readonly MesHistoricoAvion[],
+  opts: OpcionesColumnasHistorico = {},
+): FilaHistorico[] {
+  const columnas = columnasHistoricoTodas(opts);
   return meses.map((m) => {
     const celdas = {} as Record<ClaveColumnaHistorico, string>;
-    for (const col of COLUMNAS_HISTORICO) {
+    for (const col of columnas) {
       celdas[col.clave] =
         col.clave === "cierre"
           ? (textoEstadoCierreMes(m.cierre_estado) ?? "")
           : textoCeldaHistorico(col, m[col.clave]);
     }
+    const saldoPrincipal = opts.conSaldoARepartir === true ? m.saldo_a_repartir_mxn : m.saldo_mxn;
     return {
       mes: m.mes,
       etiqueta: etiquetaMesHistorico(m.mes, m.en_curso),
       enCurso: m.en_curso,
       celdas,
       cierre: textoEstadoCierreMes(m.cierre_estado),
-      saldoNegativo: (numero(m.saldo_mxn) ?? 0) < 0,
+      saldoNegativo: (numero(saldoPrincipal) ?? 0) < 0,
       pesosIncompletos: (numero(m.pesos_sin_tc_usd) ?? 0) > 0,
       reparto: m.reparto ?? [],
     };
   });
 }
 
+/** La clave de la columna que se pinta como EL saldo (negritas, verde/rojo). */
+export function claveSaldoPrincipalHistorico(opts: OpcionesColumnasHistorico = {}): ClaveColumnaHistorico {
+  return opts.conSaldoARepartir === true ? "saldo_a_repartir_mxn" : "saldo_mxn";
+}
+
 /** La fila de totales con los mismos textos. */
-export function celdasTotalesHistorico(t: TotalesHistoricoAvion): Record<ClaveColumnaHistorico, string> {
+export function celdasTotalesHistorico(
+  t: TotalesHistoricoAvion,
+  opts: OpcionesColumnasHistorico = {},
+): Record<ClaveColumnaHistorico, string> {
   const celdas = {} as Record<ClaveColumnaHistorico, string>;
-  for (const col of COLUMNAS_HISTORICO) {
+  for (const col of columnasHistoricoTodas(opts)) {
     celdas[col.clave] = col.clave === "cierre" ? "" : textoCeldaHistorico(col, t[col.clave]);
   }
   return celdas;
@@ -1288,9 +1519,11 @@ function totalesHistorico(raw: unknown): TotalesHistoricoAvion {
   const t = obj(raw) ?? {};
   const out = {} as TotalesHistoricoAvion;
   for (const k of LLAVES_MES) out[k] = num(t[k]);
-  // Combustible separado (API 0.0.103): ADITIVA, solo si viene (con un API
-  // previo la columna no existe y no se inventa un 0).
+  // Combustible separado (API 0.0.103) y saldo a repartir (API 0.0.128):
+  // ADITIVAS, solo si vienen (con un API previo la columna no existe y no se
+  // inventa un 0).
   if (t.combustible_mxn != null) out.combustible_mxn = num(t.combustible_mxn);
+  if (t.saldo_a_repartir_mxn != null) out.saldo_a_repartir_mxn = num(t.saldo_a_repartir_mxn);
   return out;
 }
 

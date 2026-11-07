@@ -19,21 +19,30 @@ import {
   TEXTO_SIN_MESES_HISTORICO,
   TITULO_PESOS_SIN_TC_MES,
   celdasTotalesHistorico,
+  claveSaldoPrincipalHistorico,
   columnasHistorico,
   filasHistorico,
   historicoConCombustible,
+  historicoConSaldoARepartir,
 } from "@/lib/admin/reparto-avion";
 import type { MesHistoricoAvion, TotalesHistoricoAvion } from "@/types/profit-sharing";
 
 /**
  * Tabla del histórico mes a mes de un avión (20-oct-2026, API 0.0.101): un
- * renglón por mes con la cascada EN PESOS, el saldo, la reserva informativa,
- * lo entregado y el estado del cierre; fila de totales. Fácil de leer: por
+ * renglón por mes con la cascada EN PESOS, el saldo, la reserva, lo
+ * entregado y el estado del cierre; fila de totales. Fácil de leer: por
  * defecto solo las columnas principales (mes, horas, vuelos, cobrado, saldo,
  * reserva, entregado, cierre) y un botón «Ver todas las columnas» para la
  * cascada completa; la tabla hace scroll horizontal en el celular. Los
  * números son del API. La columna «Combustible» (API 0.0.103) solo existe
  * cuando el API la manda (`combustible_mxn`), junto a «Directos».
+ *
+ * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128): cuando el API manda
+ * `saldo_a_repartir_mxn` (`historicoConSaldoARepartir`), «Saldo» pasa a
+ * «Saldo antes de la reserva», la reserva deja de decir «no se resta» (lleva
+ * «−» y «se retiene») y aparece la columna «Saldo a repartir» —la que se
+ * pinta en negritas y verde/rojo— con su total. Sin la llave, la tabla de
+ * siempre.
  */
 export function HistoricoAvionTable({
   meses,
@@ -45,11 +54,19 @@ export function HistoricoAvionTable({
   const [completas, setCompletas] = useState(false);
   if (meses.length === 0) return <p className="text-sm text-muted-foreground">{TEXTO_SIN_MESES_HISTORICO}</p>;
   const conCombustible = historicoConCombustible(meses, totales);
-  const columnas = columnasHistorico(completas, { conCombustible });
-  const filas = filasHistorico(meses);
-  const totalesCeldas = celdasTotalesHistorico(totales);
+  const conSaldoARepartir = historicoConSaldoARepartir(meses, totales);
+  const opciones = { conCombustible, conSaldoARepartir };
+  const columnas = columnasHistorico(completas, opciones);
+  const filas = filasHistorico(meses, opciones);
+  const totalesCeldas = celdasTotalesHistorico(totales, opciones);
+  const claveSaldo = claveSaldoPrincipalHistorico(opciones);
   return (
-    <div className="space-y-2" data-tabla-historico-avion data-con-combustible={conCombustible ? "" : undefined}>
+    <div
+      className="space-y-2"
+      data-tabla-historico-avion
+      data-con-combustible={conCombustible ? "" : undefined}
+      data-con-saldo-a-repartir={conSaldoARepartir ? "" : undefined}
+    >
       <div className="flex justify-end">
         <Button
           type="button"
@@ -75,8 +92,8 @@ export function HistoricoAvionTable({
                   title={c.title}
                 >
                   {c.etiqueta}
-                  {c.informativa && (
-                    <span className="block text-[10px] font-normal text-muted-foreground">no se resta</span>
+                  {c.subEtiqueta && (
+                    <span className="block text-[10px] font-normal text-muted-foreground">{c.subEtiqueta}</span>
                   )}
                 </TableHead>
               ))}
@@ -101,7 +118,7 @@ export function HistoricoAvionTable({
                       "whitespace-nowrap text-xs",
                       c.tipo === "texto" ? "" : "text-right font-mono",
                       c.informativa && "text-muted-foreground",
-                      c.clave === "saldo_mxn" &&
+                      c.clave === claveSaldo &&
                         (f.saldoNegativo ? "font-semibold text-destructive" : "font-semibold text-emerald-700 dark:text-emerald-400"),
                     )}
                   >

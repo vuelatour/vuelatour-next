@@ -44,9 +44,6 @@ import {
   puedeRegistrarEntregas,
 } from "@/lib/admin/reparto-pagos";
 import {
-  AYUDA_HISTORICO,
-  AYUDA_SOCIOS_HISTORICO,
-  ETIQUETA_COLUMNA_RESERVA_A_GUARDAR,
   ETIQUETA_TODO_EL_HISTORICO,
   ETIQUETA_VOLVER_REPARTO,
   TEXTO_AVION_NO_DISPONIBLE,
@@ -58,7 +55,11 @@ import {
   TITULO_ENTREGAS_HISTORICO,
   TITULO_HISTORICO,
   TITULO_SOCIOS_HISTORICO,
+  ayudaHistorico,
+  ayudaSociosHistorico,
+  etiquetaColumnaReserva,
   filtroMesesHistorico,
+  historicoConSaldoARepartir,
   hrefRepartoAvion,
   mesesFuturosDelRango,
   puedeVerRepartoAvion,
@@ -100,10 +101,16 @@ function Volver({ aeronaveId }: { aeronaveId: string }) {
  * HISTÓRICO mes a mes de UN avión (20-oct-2026, API 0.0.101): «que vengan
  * los números de todo el histórico del avión y poder filtrar por mes, que
  * sea muy fácil de entender». Un renglón por mes con la cascada EN PESOS,
- * el saldo, la reserva informativa, lo entregado y el estado del cierre;
- * totales del rango; los socios del rango (generado, reserva a guardar,
- * entregado, por entregar) y las entregas. Filtro `?desde=AAAA-MM&hasta=`
- * (default del API: del inicio oficial al mes en curso). Todo del API.
+ * el saldo, la reserva, lo entregado y el estado del cierre; totales del
+ * rango; los socios del rango (generado, reserva, entregado, por entregar) y
+ * las entregas. Filtro `?desde=AAAA-MM&hasta=` (default del API: del inicio
+ * oficial al mes en curso). Todo del API.
+ *
+ * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128): con `saldo_a_repartir_mxn`
+ * en los meses o los totales (`historicoConSaldoARepartir`) la tabla gana la
+ * columna «Saldo a repartir», la reserva deja de decir «no se resta» y la
+ * columna de los socios se llama «Reserva retenida». Sin la llave, lo de
+ * hasta el 6-nov-2026.
  */
 export default async function HistoricoAvionPage({ params, searchParams }: PageProps) {
   const [{ id }, sp, me] = await Promise.all([params, searchParams, getMe()]);
@@ -163,6 +170,9 @@ export default async function HistoricoAvionPage({ params, searchParams }: PageP
   const filtrado = !carga.filtroIgnorado && Boolean(filtro.desde || filtro.hasta);
   const futuros = mesesFuturosDelRango(datos.desde, datos.hasta, datos.mes_actual);
   const puedeAdjuntar = puedeRegistrarEntregas(me.rol);
+  // La reserva se RETIENE (API 0.0.128): la misma llave decide los textos y
+  // la columna de los socios; la tabla la lee por su cuenta.
+  const retiene = historicoConSaldoARepartir(datos.meses, datos.totales);
 
   return (
     <div className="space-y-6">
@@ -210,7 +220,7 @@ export default async function HistoricoAvionPage({ params, searchParams }: PageP
             {TITULO_HISTORICO} · {etiquetaMes(datos.desde)} a {etiquetaMes(datos.hasta)}
           </CardTitle>
           <CardDescription>
-            {AYUDA_HISTORICO}
+            {ayudaHistorico(retiene)}
             {futuros.length > 0 && ` Los meses que aún no llegan (${futuros.map(etiquetaMes).join(", ")}) no se muestran.`}
           </CardDescription>
         </CardHeader>
@@ -222,7 +232,7 @@ export default async function HistoricoAvionPage({ params, searchParams }: PageP
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{TITULO_SOCIOS_HISTORICO}</CardTitle>
-          <CardDescription>{AYUDA_SOCIOS_HISTORICO}</CardDescription>
+          <CardDescription>{ayudaSociosHistorico(retiene)}</CardDescription>
         </CardHeader>
         <CardContent className="p-0 sm:p-2">
           {datos.socios.length === 0 ? (
@@ -233,7 +243,7 @@ export default async function HistoricoAvionPage({ params, searchParams }: PageP
                 <TableRow>
                   <TableHead>Socio</TableHead>
                   <TableHead className="text-right">Generado (a recibir)</TableHead>
-                  <TableHead className="text-right">{ETIQUETA_COLUMNA_RESERVA_A_GUARDAR}</TableHead>
+                  <TableHead className="text-right">{etiquetaColumnaReserva(retiene)}</TableHead>
                   <TableHead className="text-right">Entregado</TableHead>
                   <TableHead className="text-right">Por entregar</TableHead>
                 </TableRow>

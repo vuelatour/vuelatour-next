@@ -64,6 +64,7 @@ import {
   TITULO_BLOQUEANTE_SIN_VERIFICAR,
   decidirRespuestaCerrar,
   deltasReparto,
+  TITULO_REPARTO_ANTES_DESPUES,
   etiquetaBotonCerrar,
   mensajeErrorCierre,
   mesEnMinuscula,
@@ -699,7 +700,9 @@ function RepartoAntesDespues({ previa }: { previa: PreviaCierre }) {
   if (deltas.length === 0) return null;
   return (
     <div className="space-y-1" data-reparto-antes-despues>
-      <p className="font-medium">Saldo del reparto por avión</p>
+      {/* Saldo ANTES de la reserva de overhaul (el API de cierres no cambió
+          con la reserva retenida, API 0.0.128): el título lo dice. */}
+      <p className="font-medium">{TITULO_REPARTO_ANTES_DESPUES}</p>
       <ul className="space-y-0.5 text-xs">
         {deltas.map((d) => (
           <li key={d.matricula} className="font-mono">

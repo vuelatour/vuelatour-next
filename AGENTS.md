@@ -13454,3 +13454,90 @@ reparto, conciliación, reportes): solo cambian de pantalla.
   `compras-estado.ts`; pruebas en `__tests__/refacciones-tienda.test.ts`.
 - La app del piloto ya no ofrece Refacción en «Registrar gasto» (App
   1.1.4+89); la captura de oficina del app sigue creando compra desde el gasto.
+
+## La reserva de overhaul se retiene (7-nov-2026, API 0.0.128)
+
+Decisión del cliente: «aún no se está reteniendo de las utilidades para cada
+socio en cada avión, aún dice informativa no se resta; debe verse bien y
+retenerse bien… y verse también en el reparto de utilidades». La reserva es
+una RESTA explícita de la cascada antes de repartir: `Saldo antes de la
+reserva de overhaul − Reserva de overhaul (se retiene) = Saldo a repartir`, y
+cada socio recibe su % de ese saldo (el `monto_*` del API, ya neto).
+
+- **Contrato ADITIVO** (`types/profit-sharing.ts`): cada `aviones[]` /
+  `avion` trae `saldo_a_repartir_usd` y `saldo_a_repartir_mxn` (= saldo −
+  reserva); `saldo_disponible_*` sigue siendo el saldo ANTES de la reserva,
+  `reserva_overhaul_*` igual y `reserva_retenida_*` = la reserva completa;
+  Σ `reparto[].monto_*` = `saldo_a_repartir_*` al centavo. El histórico trae
+  `saldo_a_repartir_mxn` por mes y en `totales`. **DISCRIMINADOR**:
+  `typeof saldo_a_repartir_usd === "number"` ⇒ `reservaSeRetiene(avion)` /
+  `flotaRetieneReserva(aviones)` (`reparto-pesos.ts`) y
+  `historicoConSaldoARepartir(meses, totales)` (`reparto-avion.ts`). Sin la
+  llave (API previo / cierres viejos) TODO queda como hasta el 6-nov-2026: la
+  reserva debajo del saldo con sus textos por datos («se descuenta a los
+  socios» / «no se resta»), los goldens intactos.
+- **Cascada** (`filasCascadaAvion`, con `comoBalance` + la llave): tras la
+  última fila de siempre (otros ingresos / AFAC) van `saldo_antes_reserva`
+  (`tipo: "subtotal"`, «Saldo antes de la reserva de overhaul» =
+  `saldo_disponible_*`) y `reserva` (`deduccion`, «Reserva de overhaul»,
+  sublabel `sublabelReservaRetenida` = «se retiene para el overhaul · 12.5 hr
+  × $40/hr», title `TITULO_FILA_RESERVA_RETENIDA`); la fila final
+  `data-fila-cascada="saldo"` la pinta `CascadaAvion` con `saldoCascada` (=
+  `saldo_a_repartir_*` con la llave) y `etiquetaSaldoCascada` («Saldo a
+  repartir»). `saldoAntesReservaCascada` da el de antes. El bloque
+  `data-reserva-informativa` NO se pinta con la llave (`reservaInformativa`
+  queda para la rama vieja). La raíz lleva `data-reserva-retenida`.
+- **Encabezados y KPIs**: `etiquetaSaldoEncabezado(avion)` («Saldo a
+  repartir» / «Saldo disponible») en la card y en la pantalla del avión («…
+  del periodo»). `KpiStrip`: con `comoBalance && flotaRetieneReserva` (TODA
+  la flota; nunca se mezclan saldos antes/después) el KPI de saldo es Σ
+  `saldo_a_repartir_*` rotulado `ETIQUETA_KPI_SALDO_A_REPARTIR` con
+  `HINT_KPI_SALDO_A_REPARTIR`, y el de la reserva dice
+  `ETIQUETA_KPI_RESERVA_RETENIDA` + `hintKpiReservaRetenida(horas)`; así
+  Venta + Otros − Gastos − Reserva = Saldo se lee en la tira. La nota de las
+  páginas es `notaRepartoComoBalance(retiene)` (`NOTA_RESERVA_RETENIDA` /
+  `NOTA_REPARTO_COMO_BALANCE`).
+- **Textos por la llave** (`reparto-avion.ts`): `ayudaCascada(conCombustible,
+  retiene)`, `ayudaSociosAvion(retiene)`, `ayudaHistorico(retiene)`,
+  `ayudaSociosHistorico(retiene)`, `etiquetaColumnaReserva(retiene)`
+  («Reserva retenida» / «Reserva a guardar»; `SociosAvionTable` recibe
+  `reservaRetenida`). Los textos viejos («no se resta», «solo se informa»,
+  «se le descuenta solo si así se configuró», «va aparte») siguen SOLO en la
+  rama sin la llave.
+- **Badge por socio** (`BadgeReservaSocio`, `textoReservaSocio`): por el DATO
+  `descuenta_reserva`, «se le retiene» (`ETIQUETA_SE_RETIENE`,
+  `TITULO_SE_RETIENE`; antes decía «se le descuenta») o «solo informativa»
+  (un snapshot cerrado antes del 6-nov-2026 con socios que solo recibían el
+  dato). No depende de la llave: desde el API 0.0.125 el monto ya viene neto.
+- **Histórico** (`columnasHistoricoTodas(opts)` / `columnasHistorico(completas,
+  opts)` con `OpcionesColumnasHistorico { conCombustible, conSaldoARepartir }`;
+  `filasHistorico(meses, opts)`, `celdasTotalesHistorico(t, opts)`,
+  `claveSaldoPrincipalHistorico(opts)`): con la llave «Saldo» pasa a «Saldo
+  antes de la reserva», la reserva lleva «−» y la sub-etiqueta «se retiene»
+  (`ColumnaHistorico.subEtiqueta`; la vieja dice «no se resta»), aparece la
+  columna `saldo_a_repartir_mxn` «Saldo a repartir» (principal, `soloSiViene:
+  "saldo_a_repartir"`; el combustible ahora es `soloSiViene: "combustible"`)
+  con su total, y es la que se pinta en negritas verde/rojo. La normalización
+  copia `saldo_a_repartir_mxn` solo si viene (nunca un 0).
+- **Estadísticas** (`dashboards/page.tsx`, `types/dashboards.ts`): el API
+  manda en `saldo_disponible_usd` / `saldo_usd` el saldo A REPARTIR (ya con
+  la reserva retenida, que va dentro de los gastos) SIN discriminador: el KPI
+  y la columna por avión se rotulan `ETIQUETA_TABLERO_SALDO_A_REPARTIR` con
+  `HINT_TABLERO_SALDO_A_REPARTIR` / `TITULO_TABLERO_SALDO_A_REPARTIR`
+  (`otros-ingresos-avion.ts`). Orden de deploy: API ⇒ panel.
+- **Pre-cierre**: `previa.reparto[].saldo_usd` sigue siendo el saldo ANTES
+  de la reserva (el API de cierres no cambió): el bloque antes/después se
+  titula `TITULO_REPARTO_ANTES_DESPUES` («… (antes de la reserva de
+  overhaul)», `cierre-mes.ts`). `pre-cierre-card.tsx` no cambia (sus
+  `saldo_usd` son de vuelos y grupos, no del reparto). La vista en pantalla
+  de los Balances (`libro-excel.ts`) pinta el `libro_json` tal cual.
+- **Fixtures y pruebas**: `avionReservaRetenida()` / `sinReservaRetenida()`
+  (`reparto-pesos.fixtures.ts`: 574,632.22 − 8,625.00 = 566,007.22 MXN;
+  33,280.16 − 500 = 32,780.16 USD; socios 231,610.15 + 334,397.07);
+  `reparto-avion.test.ts` (tres filas finales y suma exacta en MXN y USD =
+  Σ socios; cascada del balance sin Excel; fallback sin la llave; textos;
+  histórico: columnas, celdas, totales, normalización),
+  `reparto-avion-pantalla.test.tsx` (marcado de cascada, card, KPIs, socios,
+  histórico y cableado), `reparto-pesos.test.ts` (discriminadores, nota y
+  KPIs), `otros-ingresos-avion.test.ts` (tablero). El golden
+  `reparto-pesos.golden.json` (API ≤ 0.0.92) sigue byte a byte.

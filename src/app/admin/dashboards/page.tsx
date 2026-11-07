@@ -39,6 +39,9 @@ import {
   textoTableroGastosEmpresa,
 } from "@/lib/admin/categorias-gasto";
 import {
+  ETIQUETA_TABLERO_SALDO_A_REPARTIR,
+  HINT_TABLERO_SALDO_A_REPARTIR,
+  TITULO_TABLERO_SALDO_A_REPARTIR,
   hintDashboardOtrosIngresosAviones,
   textoCeldaOtrosIngresosAvion,
 } from "@/lib/admin/otros-ingresos-avion";
@@ -181,10 +184,14 @@ async function Ejecutivo({ desde, hasta }: { desde: string; hasta: string }) {
           // suman al saldo; con un API previo no hay hint.
           hint={hintDashboardOtrosIngresosAviones(resumen.otros_ingresos_aviones_usd ?? 0)}
         />
+        {/* Saldo A REPARTIR (7-nov-2026, API 0.0.128): ya con la reserva de
+            overhaul retenida, así Ingresos + otros − Gastos = Saldo cuadra. */}
         <Kpi
-          label="Saldo disponible"
+          label={ETIQUETA_TABLERO_SALDO_A_REPARTIR}
           value={fmtUsd(resumen.saldo_disponible_usd)}
           accent={resumen.saldo_disponible_usd < 0 ? "text-destructive" : undefined}
+          hint={HINT_TABLERO_SALDO_A_REPARTIR}
+          title={TITULO_TABLERO_SALDO_A_REPARTIR}
         />
         <Kpi label="Gastos del periodo" value={fmtUsd(resumen.gastos_totales_usd)} />
         <Kpi
@@ -246,7 +253,10 @@ async function Ejecutivo({ desde, hasta }: { desde: string; hasta: string }) {
                   <TableHead className="text-right">Vuelos</TableHead>
                   <TableHead className="text-right">Ingresos</TableHead>
                   <TableHead className="text-right">Gastos</TableHead>
-                  <TableHead className="text-right">Saldo</TableHead>
+                  {/* Saldo A REPARTIR por avión (API 0.0.128): la reserva ya retenida. */}
+                  <TableHead className="text-right" title={TITULO_TABLERO_SALDO_A_REPARTIR}>
+                    {ETIQUETA_TABLERO_SALDO_A_REPARTIR}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -738,15 +748,18 @@ function Kpi({
   value,
   accent,
   hint,
+  title,
 }: {
   label: string;
   value: string;
   accent?: string;
   /** Leyenda corta bajo el valor (p. ej. de qué se compone la cifra). */
   hint?: string;
+  /** Tooltip nativo con la explicación larga. */
+  title?: string;
 }) {
   return (
-    <Card>
+    <Card title={title}>
       <CardContent className="p-4">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className={`text-2xl font-semibold mt-1 ${accent ?? ""}`}>{value}</p>

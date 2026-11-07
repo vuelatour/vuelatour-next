@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   ETIQUETA_FILA_OTROS_INGRESOS_AVION,
+  ETIQUETA_TABLERO_SALDO_A_REPARTIR,
+  HINT_TABLERO_SALDO_A_REPARTIR,
   SUBLABEL_OTROS_INGRESOS_AVION,
   TITULO_BADGE_OTROS_INGRESOS_SIN_TC,
   TITULO_BADGE_OTROS_INGRESOS_TC_OFICIAL,
+  TITULO_TABLERO_SALDO_A_REPARTIR,
   hintDashboardOtrosIngresosAviones,
   hintKpiOtrosIngresosAviones,
   textoBadgeOtrosIngresosSinTc,
@@ -90,5 +93,14 @@ describe("KPI del reparto y tablero ejecutivo", () => {
     expect(hintDashboardOtrosIngresosAviones(0)).toBeUndefined();
     expect(textoCeldaOtrosIngresosAvion(2327.54)).toBe("+ $2,327.54 otros");
     expect(textoCeldaOtrosIngresosAvion(1200)).toBe("+ $1,200 otros");
+  });
+});
+
+describe("el saldo del tablero ejecutivo es el SALDO A REPARTIR (7-nov-2026, API 0.0.128)", () => {
+  it("rótulo, hint y tooltip del KPI y de la columna por avión (sin discriminador: el API cambió el dato en la misma llave)", () => {
+    expect(ETIQUETA_TABLERO_SALDO_A_REPARTIR).toBe("Saldo a repartir");
+    expect(HINT_TABLERO_SALDO_A_REPARTIR).toBe("Ya con la reserva de overhaul retenida");
+    expect(TITULO_TABLERO_SALDO_A_REPARTIR).toContain("que ya incluyen la reserva de overhaul");
+    expect(TITULO_TABLERO_SALDO_A_REPARTIR).toContain("Es lo que se reparte a los socios.");
   });
 });
