@@ -27,7 +27,7 @@ import type {
  * Espejo del `@Roles` de POST/PATCH/DELETE del API. SOCIO y ANALISTA solo
  * LEEN (GET): la card se les pinta sin formulario ni acciones.
  */
-export const ROLES_EDITAN_SEGUIMIENTO = ["ADMIN", "COORDINADOR", "FACTURACION"] as const;
+export const ROLES_EDITAN_SEGUIMIENTO = ["DIRECCION", "ADMIN", "COORDINADOR", "FACTURACION"] as const;
 
 /**
  * ¿Se ofrece anotar / resolver / eliminar? Sin rol (`/me` falló) SÍ se

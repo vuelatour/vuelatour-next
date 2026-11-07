@@ -32,7 +32,7 @@ export default async function IngenieriaPage() {
   // Ver documento = solo oficina (el endpoint firma con service key y regresa
   // 403 a otros roles: no pintarles un botón que falla).
   const me = await getMe();
-  const canVerDocs = me.rol === "ADMIN" || me.rol === "COORDINADOR";
+  const canVerDocs = me.rol === "DIRECCION" || me.rol === "ADMIN" || me.rol === "COORDINADOR";
 
   type Row = {
     id: string;

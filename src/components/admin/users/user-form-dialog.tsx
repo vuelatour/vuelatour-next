@@ -23,6 +23,8 @@ import { updatePilotAction } from "@/app/admin/pilots/actions";
 import { PilotoDatosSchema, UserFormSchema, type UserFormValues } from "@/app/admin/users/schema";
 import type { User } from "@/types/users";
 import { Field } from "@/components/admin/form-field";
+import { opcionesRolParaActor } from "@/lib/admin/roles";
+import type { Rol } from "@/types/me";
 import {
   APODO_HINT,
   APODO_LABEL,
@@ -41,16 +43,6 @@ import {
 } from "@/lib/admin/pilotos-edicion";
 import { MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-tecnicos";
 
-const ROLES = [
-  { value: "ADMIN", label: "ADMIN", description: "Acceso total" },
-  { value: "COORDINADOR", label: "COORDINADOR", description: "Itzel: solicitudes y cotizaciones" },
-  { value: "ANALISTA", label: "ANALISTA", description: "Jimmy: costos por avión" },
-  { value: "FACTURACION", label: "FACTURACION", description: "Mary: CFDI y caja chica" },
-  { value: "PILOTO", label: "PILOTO", description: "Operativos: app móvil" },
-  { value: "SOCIO", label: "SOCIO", description: "Lectura + PDFs de reparto" },
-  { value: "MECANICO", label: "MECÁNICO", description: "Luis: app, solo cargas de combustible" },
-  { value: "VISITANTE", label: "VISITANTE", description: "Solo gastos de visita desde la app (fondo + tarjeta); sin acceso a vuelos" },
-];
 
 const ESTADOS = [
   { value: "ACTIVO", label: "ACTIVO", description: "Puede usar el sistema" },
@@ -69,10 +61,13 @@ interface Props {
    * Rol/Estado/switches; guarda por `updatePilotAction`.
    */
   modo?: "usuario" | "piloto";
+  /** Rol de quien edita (invariante 122): a Administración no se le ofrece Dirección. */
+  rolActor?: Rol | null;
 }
 
-export function UserFormDialog({ open, onOpenChange, user, modo = "usuario" }: Props) {
+export function UserFormDialog({ open, onOpenChange, user, modo = "usuario", rolActor }: Props) {
   const esModoPiloto = modo === "piloto";
+  const ROLES = opcionesRolParaActor(rolActor);
   const [pending, startTransition] = useTransition();
   // Tarjetas del catálogo para el selector (26-ago): la terminación ya no es
   // texto libre — elegirla aquí VINCULA la tarjeta real en Tarjetas corp.

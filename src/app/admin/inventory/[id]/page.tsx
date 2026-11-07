@@ -128,10 +128,12 @@ export default async function InventoryItemPage({
     ubicacionesRes = ubicRes;
     // Mismos roles del PATCH del API: a los demás no se les muestra un botón
     // que les daría 403.
-    puedeEditarCosto = !!me && (me.rol === "ADMIN" || me.rol === "MECANICO");
+    puedeEditarCosto =
+      !!me && (me.rol === "DIRECCION" || me.rol === "ADMIN" || me.rol === "MECANICO");
     // La baja es SOLO ADMIN (mismo rol del DELETE) y solo con el API nuevo
     // desplegado: con un backend viejo el bote daría un 404 sin explicación.
-    puedeEliminar = !!me && me.rol === "ADMIN" && eliminados.disponible;
+    puedeEliminar =
+      !!me && (me.rol === "DIRECCION" || me.rol === "ADMIN") && eliminados.disponible;
   } catch (err) {
     if (isApiError(err) && err.status === 404) notFound();
     throw err;

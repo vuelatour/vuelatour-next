@@ -19,6 +19,8 @@ import {
 } from "@/lib/api/profit-sharing-server";
 import { Degradaciones } from "@/lib/api/degradar";
 import { getMe } from "@/lib/api/me";
+import { PantallaSoloDireccion } from "@/components/admin/solo-direccion";
+import { puedeVerReparto } from "@/lib/admin/reparto-pagos";
 import { getInicioOficial } from "@/lib/api/inicio-oficial";
 import { ajustarRangoAlInicio, type InicioOficial } from "@/lib/admin/inicio-oficial";
 import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
@@ -103,6 +105,11 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
   // «Entregó», T.C. oficial de hoy) es ACCESORIO y solo para quien registra.
   const degradado = new Degradaciones();
   const me = await getMe();
+  // SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): Administración ya no
+  // ve el reparto (el API le responde 403 al cálculo).
+  if (!puedeVerReparto(me.rol)) {
+    return <PantallaSoloDireccion seccion="Tesorería" titulo="Reparto de utilidades" />;
+  }
   const [result, cargaSocios, registro] = await Promise.all([
     getProfitSharing({ desde, hasta }),
     puedeVerCuentasSocios(me.rol) ? getSociosCuenta() : Promise.resolve(null),
@@ -237,7 +244,7 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
                 avion={a}
                 desde={desde}
                 hasta={hasta}
-                puedeDescargarBalance={me.rol === "ADMIN" || me.rol === "ANALISTA"}
+                puedeDescargarBalance={me.rol === "DIRECCION" || me.rol === "ANALISTA"}
                 rol={me.rol}
                 usuarioId={me.id}
                 cierre={result.cierre}

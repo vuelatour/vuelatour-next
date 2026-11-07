@@ -530,13 +530,15 @@ describe("quién ve la hoja interna", () => {
    * PDF interno; si no, expondría a SOCIO lo que el API le niega en papel.
    */
   it("es la MISMA lista del API (`ROLES_PDF_INTERNO`): sin SOCIO ni PILOTO", () => {
+    // = ROLES_PDF_INTERNO del API + Dirección (el guard del API la deja pasar).
     expect([...ROLES_HOJA_INTERNA].sort()).toEqual([
       "ADMIN",
       "ANALISTA",
       "COORDINADOR",
+      "DIRECCION",
       "FACTURACION",
     ]);
-    for (const rol of ["ADMIN", "COORDINADOR", "FACTURACION", "ANALISTA"]) {
+    for (const rol of ["DIRECCION", "ADMIN", "COORDINADOR", "FACTURACION", "ANALISTA"]) {
       expect(puedeVerHojaInterna(rol)).toBe(true);
     }
     for (const rol of ["SOCIO", "PILOTO", "MECANICO", "VISITANTE"]) {
@@ -737,7 +739,7 @@ describe("roles: quien puede guardar, ve la hoja interna", () => {
     for (const rol of ROLES_EDITAN_COTIZACION) {
       expect(ROLES_HOJA_INTERNA.has(rol), `${rol} edita pero no ve la hoja interna`).toBe(true);
     }
-    expect([...ROLES_EDITAN_COTIZACION].sort()).toEqual(["ADMIN", "COORDINADOR"]);
+    expect([...ROLES_EDITAN_COTIZACION].sort()).toEqual(["ADMIN", "COORDINADOR", "DIRECCION"]);
   });
 
   it("SOCIO consulta y simula, pero no guarda (el API responde 403)", () => {

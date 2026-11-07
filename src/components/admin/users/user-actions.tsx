@@ -34,8 +34,19 @@ import { UserFormDialog } from "./user-form-dialog";
 import { CajaVinculoDialog } from "./caja-vinculo-dialog";
 import { ResetPasswordDialog } from "./reset-password-dialog";
 import type { User } from "@/types/users";
+import type { Rol } from "@/types/me";
+import { TEXTO_USUARIO_SOLO_DIRECCION, puedeEditarUsuario } from "@/lib/admin/roles";
 
-export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
+export function UserActions({
+  user,
+  isSelf,
+  rolActor,
+}: {
+  user: User;
+  isSelf: boolean;
+  /** Rol de quien mira (invariante 122): Administración no toca a Dirección. */
+  rolActor?: Rol | null;
+}) {
   const [openEdit, setOpenEdit] = useState(false);
   const [openCaja, setOpenCaja] = useState(false);
   const [openReset, setOpenReset] = useState(false);
@@ -69,6 +80,20 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
       }
     });
   };
+
+  // SOLO DIRECCIÓN EDITA A DIRECCIÓN (invariante 122 del API): a Administración
+  // ni se le abre el menú (cada acción respondería 403).
+  if (!puedeEditarUsuario(rolActor, user.rol)) {
+    return (
+      <span
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/50 cursor-not-allowed"
+        title={TEXTO_USUARIO_SOLO_DIRECCION}
+        data-solo-direccion
+      >
+        <EllipsisHorizontalIcon className="h-4 w-4" />
+      </span>
+    );
+  }
 
   return (
     <>
@@ -121,7 +146,7 @@ export function UserActions({ user, isSelf }: { user: User; isSelf: boolean }) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <UserFormDialog open={openEdit} onOpenChange={setOpenEdit} user={user} />
+      <UserFormDialog open={openEdit} onOpenChange={setOpenEdit} user={user} rolActor={rolActor} />
       <CajaVinculoDialog open={openCaja} onOpenChange={setOpenCaja} user={user} />
       <ResetPasswordDialog open={openReset} onOpenChange={setOpenReset} user={user} />
 

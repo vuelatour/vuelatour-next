@@ -42,7 +42,7 @@ describe("esPagoOperadorExterno / apiConPagoOperador / puedeMarcarPagoOperador",
   });
 
   it("solo la oficina marca (ADMIN / FACTURACION / COORDINADOR)", () => {
-    expect([...ROLES_PAGO_OPERADOR_EXTERNO]).toEqual(["ADMIN", "FACTURACION", "COORDINADOR"]);
+    expect([...ROLES_PAGO_OPERADOR_EXTERNO]).toEqual(["DIRECCION", "ADMIN", "FACTURACION", "COORDINADOR"]);
     for (const rol of ROLES_PAGO_OPERADOR_EXTERNO) expect(puedeMarcarPagoOperador({ rol })).toBe(true);
     for (const rol of ["PILOTO", "MECANICO", "SOCIO", "ANALISTA", "VISITANTE"]) {
       expect(puedeMarcarPagoOperador({ rol })).toBe(false);

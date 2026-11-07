@@ -9,7 +9,7 @@ import { updateAlertConfig, runAlerts } from "@/lib/api/alerts";
 import { cn } from "@/lib/utils";
 import type { AlertConfig } from "@/types/alerts";
 
-const ROLES = ["ADMIN", "COORDINADOR", "FACTURACION", "ANALISTA", "SOCIO", "PILOTO"];
+const ROLES = ["DIRECCION", "ADMIN", "COORDINADOR", "FACTURACION", "ANALISTA", "SOCIO", "PILOTO"];
 
 export function AlertsConfigClient({ initial }: { initial: AlertConfig[] }) {
   const [configs, setConfigs] = useState<AlertConfig[]>(initial);

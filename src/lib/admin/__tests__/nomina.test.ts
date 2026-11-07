@@ -130,7 +130,7 @@ describe("categoría, ruta y roles", () => {
   });
 
   it("roles = los de Gastos y Otros gastos; falla CERRADO sin rol", () => {
-    expect(ROLES_NOMINA).toEqual(["ADMIN", "COORDINADOR", "FACTURACION"]);
+    expect(ROLES_NOMINA).toEqual(["DIRECCION", "COORDINADOR", "FACTURACION"]);
     for (const rol of ROLES_NOMINA) expect(puedeVerNomina(rol), rol).toBe(true);
     for (const rol of ["SOCIO", "ANALISTA", "PILOTO", "MECANICO", "VISITANTE", "admin", "", " ADMIN"]) {
       expect(puedeVerNomina(rol), rol).toBe(false);

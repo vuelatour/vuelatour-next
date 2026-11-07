@@ -300,7 +300,7 @@ export function textoBandaFechaOperativa(
 }
 
 /** Roles que pueden mover el vuelo operativo (los del endpoint del API). */
-const ROLES_MUEVEN_OPERATIVO = new Set(["ADMIN", "COORDINADOR"]);
+const ROLES_MUEVEN_OPERATIVO = new Set(["DIRECCION", "ADMIN", "COORDINADOR"]);
 
 /** ¿Este rol ve el botón de la banda? (el API igual responde 403 a otros). */
 export function puedeMoverVueloOperativo(rol: string | null | undefined): boolean {

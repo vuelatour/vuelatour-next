@@ -2,6 +2,7 @@ import { z } from "zod";
 import { APODO_MAX } from "@/lib/admin/usuario-apodo";
 
 const RolEnum = z.enum([
+  "DIRECCION",
   "ADMIN",
   "COORDINADOR",
   "ANALISTA",

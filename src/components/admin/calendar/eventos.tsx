@@ -88,7 +88,8 @@ const VACIO: EventoFormValues = {
 };
 
 const ROL_LABEL: Record<string, string> = {
-  ADMIN: "Admin",
+  DIRECCION: "Dirección",
+  ADMIN: "Administración",
   COORDINADOR: "Coordinación",
   ANALISTA: "Analista",
   FACTURACION: "Facturación",

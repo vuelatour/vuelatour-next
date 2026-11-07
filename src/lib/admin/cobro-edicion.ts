@@ -53,7 +53,7 @@ export type MonedaCobro = "USD" | "MXN";
 // ═══════════════════════════════ Roles ═══════════════════════════════
 
 /** Espejo del `@Roles(Rol.ADMIN, Rol.FACTURACION)` de `PATCH cobros/:id`. */
-export const ROLES_EDITAR_COBRO = ["ADMIN", "FACTURACION"] as const;
+export const ROLES_EDITAR_COBRO = ["DIRECCION", "ADMIN", "FACTURACION"] as const;
 
 export function puedeEditarCobro(rol: string | null | undefined): boolean {
   return !!rol && (ROLES_EDITAR_COBRO as readonly string[]).includes(rol);

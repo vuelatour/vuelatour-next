@@ -28,7 +28,7 @@ import { diaMas } from "@/lib/admin/conciliacion-auto";
 // =============================================================================
 
 /** Espejo del `@Roles` de POST/PATCH/DELETE `owners` y de `POST /users/socios`. */
-export const ROLES_EDITAN_PROPIETARIOS = ["ADMIN"] as const;
+export const ROLES_EDITAN_PROPIETARIOS = ["DIRECCION", "ADMIN"] as const;
 
 /** Sin rol conocido (`/me` falló) se ofrece: el gate real es el API. */
 export function puedeEditarPropietarios(rol: string | null | undefined): boolean {

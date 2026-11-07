@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { UserActions } from "@/components/admin/users/user-actions";
 import type { User } from "@/types/users";
+import type { Rol } from "@/types/me";
+import { etiquetaRol } from "@/lib/admin/roles";
 
 function initials(name: string): string {
   return name
@@ -65,7 +67,7 @@ function PushBadge({ user: u }: { user: User }) {
   );
 }
 
-function buildColumns(meId: string): Array<DataTableColumn<User>> {
+function buildColumns(meId: string, rolActor?: Rol | null): Array<DataTableColumn<User>> {
   return [
     {
       key: "usuario",
@@ -107,8 +109,8 @@ function buildColumns(meId: string): Array<DataTableColumn<User>> {
       header: "Rol",
       cell: (u) => (
         <div className="flex items-center gap-1.5">
-          <Badge variant="outline" className="font-mono text-xs">
-            {u.rol}
+          <Badge variant="outline" className="text-xs" title={u.rol}>
+            {etiquetaRol(u.rol)}
           </Badge>
           {u.es_piloto && u.rol !== "PILOTO" && (
             <Badge
@@ -162,19 +164,28 @@ function buildColumns(meId: string): Array<DataTableColumn<User>> {
       header: "",
       headClassName: "w-12",
       noLink: true,
-      cell: (u) => <UserActions user={u} isSelf={u.id === meId} />,
+      cell: (u) => <UserActions user={u} isSelf={u.id === meId} rolActor={rolActor} />,
     },
   ];
 }
 
-export function UsersTable({ users, meId }: { users: User[]; meId: string }) {
-  const columns = useMemo(() => buildColumns(meId), [meId]);
+export function UsersTable({
+  users,
+  meId,
+  rolActor,
+}: {
+  users: User[];
+  meId: string;
+  /** Rol de quien mira (invariante 122): Administración no edita a Dirección. */
+  rolActor?: Rol | null;
+}) {
+  const columns = useMemo(() => buildColumns(meId, rolActor), [meId, rolActor]);
   return (
     <DataTable
       columns={columns}
       rows={users}
       rowKey={(u) => u.id}
-      searchText={(u) => `${u.nombre} ${u.apodo ?? ""} ${u.email ?? ""} ${u.rol}`}
+      searchText={(u) => `${u.nombre} ${u.apodo ?? ""} ${u.email ?? ""} ${u.rol} ${etiquetaRol(u.rol)}`}
       searchPlaceholder="Buscar usuario (nombre, correo, rol)…"
     />
   );

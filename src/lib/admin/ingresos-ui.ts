@@ -59,7 +59,9 @@ export { textoConfianza };
 // ═══════════════════════════════ Roles ═══════════════════════════════
 
 /** Roles del menú «Ingresos» = los de «Gastos» (espejo de `ROLES_INGRESOS` del API). */
-export const ROLES_INGRESOS: readonly Rol[] = ["ADMIN", "COORDINADOR", "FACTURACION"];
+// SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): ADMIN (Administración)
+// salió de la pantalla; = `ROLES_PANTALLA_INGRESOS` del API.
+export const ROLES_INGRESOS: readonly Rol[] = ["DIRECCION", "COORDINADOR", "FACTURACION"];
 
 /**
  * Conciliar con el banco, desaplicar un anticipo (= borrar un cobro) y
@@ -67,7 +69,7 @@ export const ROLES_INGRESOS: readonly Rol[] = ["ADMIN", "COORDINADOR", "FACTURAC
  * DELETE de cobros. COORDINADOR registra ingresos y aplica anticipos, pero la
  * pestaña «Por conciliar» ni se le ofrece.
  */
-export const ROLES_CONCILIAR_INGRESOS: readonly Rol[] = ["ADMIN", "FACTURACION"];
+export const ROLES_CONCILIAR_INGRESOS: readonly Rol[] = ["DIRECCION", "ADMIN", "FACTURACION"];
 
 export function puedeVerIngresos(rol: string | null | undefined): boolean {
   return !!rol && (ROLES_INGRESOS as readonly string[]).includes(rol);

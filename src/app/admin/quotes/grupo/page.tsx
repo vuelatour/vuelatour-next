@@ -82,7 +82,7 @@ export default async function GruposPage({ searchParams }: GruposPageProps) {
 
   const clientsById = new Map(clientsRes.data.map((c) => [c.id, c]));
   const { data: grupos, count } = gruposRes;
-  const puedeCrear = me?.rol === "ADMIN" || me?.rol === "COORDINADOR";
+  const puedeCrear = me?.rol === "DIRECCION" || me?.rol === "ADMIN" || me?.rol === "COORDINADOR";
 
   const rows: GrupoListRow[] = grupos.map((g) => ({
     id: g.id,

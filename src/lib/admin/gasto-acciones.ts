@@ -15,6 +15,7 @@ import { fmtDateOnly } from "@/lib/datetime";
 
 /** Espejo del `@Roles` de `DELETE /v1/expenses/:id`. */
 export const ROLES_ELIMINAN_GASTO = [
+  "DIRECCION",
   "ADMIN",
   "COORDINADOR",
   "PILOTO",
@@ -23,7 +24,7 @@ export const ROLES_ELIMINAN_GASTO = [
 ] as const;
 
 /** Espejo del `@Roles` de `POST /v1/expenses/:id/visto-bueno`. */
-export const ROLES_VISTO_BUENO_GASTO = ["ADMIN", "FACTURACION", "ANALISTA"] as const;
+export const ROLES_VISTO_BUENO_GASTO = ["DIRECCION", "ADMIN", "FACTURACION", "ANALISTA"] as const;
 
 /**
  * Espejo del `@Roles` de `PATCH /v1/expenses/:id`, que es por donde viaja
@@ -32,6 +33,7 @@ export const ROLES_VISTO_BUENO_GASTO = ["ADMIN", "FACTURACION", "ANALISTA"] as c
  * API les responde 403: a ellos no se les ofrece (revisión del lote, P19).
  */
 export const ROLES_MARCAN_PAGADO_GASTO = [
+  "DIRECCION",
   "ADMIN",
   "COORDINADOR",
   "FACTURACION",

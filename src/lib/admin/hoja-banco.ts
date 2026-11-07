@@ -20,7 +20,7 @@ import type { EstadoCuentaDeCargo, MotivoSinArchivo } from "@/types/conciliacion
 // ───────────────────────────── Roles ─────────────────────────────
 
 /** Espejo de `ROLES_CONCILIACION` del API (= el menú «Conciliación»): quién ve el banco. */
-export const ROLES_DETALLE_BANCO = ["ADMIN", "FACTURACION"] as const;
+export const ROLES_DETALLE_BANCO = ["DIRECCION", "ADMIN", "FACTURACION"] as const;
 
 /**
  * ¿Se ofrece el clic del badge (gasto o entrada)? Sin rol conocido (`/me`

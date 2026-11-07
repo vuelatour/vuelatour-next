@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getMe } from "@/lib/api/me";
+import { etiquetaRol } from "@/lib/admin/roles";
 import { getDashboardOperativo } from "@/lib/api/dashboards-server";
 import { getFleetUpcoming } from "@/lib/api/engineering-server";
 import { filterNavGroupsForRole } from "@/lib/admin/nav-items";
@@ -41,7 +42,7 @@ export default async function AdminDashboardPage() {
     getFleetUpcoming(45).catch(() => null as FleetUpcoming | null),
   ]);
 
-  const canVerDocs = me.rol === "ADMIN" || me.rol === "COORDINADOR";
+  const canVerDocs = me.rol === "DIRECCION" || me.rol === "ADMIN" || me.rol === "COORDINADOR";
   const proximos = [
     ...(upcoming?.vencimientos ?? []).map((v) => ({
       id: `v-${v.id}`,
@@ -80,7 +81,7 @@ export default async function AdminDashboardPage() {
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">{me.nombre}</h1>
         </div>
         <Badge className="bg-brand-600/15 text-brand-600 hover:bg-brand-600/20 border-brand-600/30">
-          {me.rol}
+          {etiquetaRol(me.rol)}
         </Badge>
       </div>
 

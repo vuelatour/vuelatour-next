@@ -23,14 +23,14 @@ import { esErrorTecnico, MSG_SERVIDOR_NO_RESPONDIO } from "@/lib/admin/errores-t
 import { fmtDateTime, fmtDateTimeShort } from "@/lib/datetime";
 
 /** Roles de oficina que pueden omitir/deshacer (espejo de `taco/confirm` en el API). */
-export const ROLES_OMITIR_TACO = ["ADMIN", "COORDINADOR", "FACTURACION"] as const;
+export const ROLES_OMITIR_TACO = ["DIRECCION", "ADMIN", "COORDINADOR", "FACTURACION"] as const;
 /**
  * Roles que pueden «Completar vuelo» / «Iniciar y completar»: espejo EXACTO
  * de `@Roles` de `POST :id/start` y `POST :id/complete` en el API. FACTURACION
  * omite pero NO completa (el API le responde 403 «Required role: …» en
  * inglés): a ella el panel no le ofrece el botón ni la acción del toast.
  */
-export const ROLES_COMPLETAR_VUELO = ["ADMIN", "COORDINADOR", "PILOTO"] as const;
+export const ROLES_COMPLETAR_VUELO = ["DIRECCION", "ADMIN", "COORDINADOR", "PILOTO"] as const;
 export const MOTIVO_OMISION_MIN = 10;
 export const MOTIVO_OMISION_MAX = 500;
 export const MOTIVOS_OMISION_FRECUENTES = [

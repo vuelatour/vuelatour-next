@@ -14,7 +14,7 @@
  * avisar ANTES de mandar.
  */
 
-export const ROLES_EDITAN_PROVEEDOR = ["ADMIN", "FACTURACION", "COORDINADOR"] as const;
+export const ROLES_EDITAN_PROVEEDOR = ["DIRECCION", "ADMIN", "FACTURACION", "COORDINADOR"] as const;
 
 /** ¿Este rol crea/corrige proveedores desde el gasto? Sin rol: no se ofrece. */
 export function puedeEditarProveedor(rol: string | null | undefined): boolean {

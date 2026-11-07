@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { sinDireccion } from "@/lib/admin/roles";
 import { fmtDateOnly } from "@/lib/datetime";
 import { RUTA_BALANCE_VUELATOUR, librosBalanceVuelaTour } from "../reportes-balance";
 import {
@@ -255,7 +256,7 @@ describe("quién abre los balances (12-oct-2026)", () => {
     expect(puedeAbrirBalances(null)).toBe(true);
     expect(puedeAbrirBalances(undefined)).toBe(true);
     expect(puedeAbrirBalances("")).toBe(true);
-    expect(ROLES_ABREN_BALANCES).toEqual(["ADMIN", "ANALISTA"]);
+    expect(ROLES_ABREN_BALANCES).toEqual(["DIRECCION", "ADMIN", "ANALISTA"]);
   });
 
   it("la card con candado dice lo mismo que el 403 de la vista y nombra los roles, sin mandar a «pedirlo»", () => {
@@ -287,7 +288,8 @@ describe("quién abre los balances (12-oct-2026)", () => {
       const roles = ventana.match(/@Roles\(([^)]*)\)/)?.[1];
       expect(roles, `sin @Roles tras ${ruta}`).toBeTruthy();
       const parseados = [...roles!.matchAll(/Rol\.(\w+)/g)].map((m) => m[1]);
-      expect(parseados, ruta).toEqual([...ROLES_ABREN_BALANCES]);
+      // El API no nombra a DIRECCION (su guard la deja pasar); el panel sí.
+      expect(parseados, ruta).toEqual(sinDireccion(ROLES_ABREN_BALANCES));
     }
   });
 });

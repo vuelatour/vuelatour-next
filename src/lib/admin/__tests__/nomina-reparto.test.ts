@@ -59,7 +59,7 @@ const A2 = uuid(102);
 
 describe("roles y ruta (espejo del API)", () => {
   it("ADMIN, COORDINADOR y FACTURACION reparten; sin rol se ofrece (el API es el candado)", () => {
-    expect([...ROLES_REPARTO_NOMINA]).toEqual(["ADMIN", "COORDINADOR", "FACTURACION"]);
+    expect([...ROLES_REPARTO_NOMINA]).toEqual(["DIRECCION", "COORDINADOR", "FACTURACION"]);
     for (const rol of ROLES_REPARTO_NOMINA) expect(puedeRepartirNomina(rol), rol).toBe(true);
     for (const rol of ["SOCIO", "ANALISTA", "PILOTO", "MECANICO"]) expect(puedeRepartirNomina(rol), rol).toBe(false);
     expect(puedeRepartirNomina(null)).toBe(true);

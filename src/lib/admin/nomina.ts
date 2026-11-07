@@ -41,7 +41,9 @@ export const RUTA_NOMINA = "/admin/nomina";
  * Quién ve la pantalla: los MISMOS roles que «Gastos» y «Otros gastos», que ya
  * enseñan estos gastos (no se abre exposición nueva). El menú los toma de aquí.
  */
-export const ROLES_NOMINA = ["ADMIN", "COORDINADOR", "FACTURACION"] as const;
+// SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): ADMIN (Administración)
+// salió; la coordinación y facturación la siguen capturando.
+export const ROLES_NOMINA = ["DIRECCION", "COORDINADOR", "FACTURACION"] as const;
 
 export type RolNomina = (typeof ROLES_NOMINA)[number];
 

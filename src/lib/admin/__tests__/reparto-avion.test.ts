@@ -183,9 +183,9 @@ describe("rutas y roles", () => {
     expect(hrefRepartoConPeriodo({})).toBe("/admin/profit-sharing");
   });
 
-  it("roles: espejo del API (ver: ADMIN/ANALISTA/FACTURACION/SOCIO)", () => {
-    for (const r of ["ADMIN", "ANALISTA", "FACTURACION", "SOCIO"]) expect(puedeVerRepartoAvion(r)).toBe(true);
-    for (const r of ["COORDINADOR", "PILOTO", null, undefined, ""]) expect(puedeVerRepartoAvion(r)).toBe(false);
+  it("roles: espejo del API (ver: DIRECCION/ANALISTA/FACTURACION/SOCIO; Administración ya no, invariante 122)", () => {
+    for (const r of ["DIRECCION", "ANALISTA", "FACTURACION", "SOCIO"]) expect(puedeVerRepartoAvion(r)).toBe(true);
+    for (const r of ["ADMIN", "COORDINADOR", "PILOTO", null, undefined, ""]) expect(puedeVerRepartoAvion(r)).toBe(false);
   });
 
   it("periodo de la URL: la MISMA regla del reparto (inválido ⇒ mes corriente; invertido se endereza; piso del inicio con aviso)", () => {

@@ -28,6 +28,8 @@ import { listProviders } from "@/lib/api/providers-server";
 import { todayCancun } from "@/lib/datetime";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { getMe } from "@/lib/api/me";
+import { PantallaSoloDireccion } from "@/components/admin/solo-direccion";
+import { puedeVerGastosPersonales } from "@/lib/admin/roles";
 import { notFound } from "next/navigation";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
@@ -73,7 +75,12 @@ interface PageProps {
 
 export default async function GastosPersonalesPage({ searchParams }: PageProps) {
   const me = await getMe().catch(() => null);
-  if (!me || (me.rol !== "ADMIN" && me.rol !== "COORDINADOR")) notFound();
+  if (!me) notFound();
+  // SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): Administración ya no
+  // ve los gastos personales del dueño; la coordinación los sigue capturando.
+  if (!puedeVerGastosPersonales(me.rol)) {
+    return <PantallaSoloDireccion seccion="Operación" titulo="Gastos personales" />;
+  }
 
   const sp = await searchParams;
   // Mes elegido (default: mes corriente en hora Cancún, eje fecha_gasto).

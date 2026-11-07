@@ -46,11 +46,12 @@ export default async function GrupoDetailPage({ params, searchParams }: GrupoDet
   const [me, grupo] = await Promise.all([getMe().catch(() => null), getGrupo(id)]);
   if (!grupo) notFound();
 
-  const puedeEditar = me?.rol === "ADMIN" || me?.rol === "COORDINADOR";
+  const puedeEditar = me?.rol === "DIRECCION" || me?.rol === "ADMIN" || me?.rol === "COORDINADOR";
   // Sobre de cobro (Fase 2): mismos roles que el API (COBRA_GRUPO /
   // DELETE sobre = paridad con el cobro por vuelo).
   const puedeCobrar = puedeEditar || me?.rol === "FACTURACION";
-  const puedeEliminarCobro = me?.rol === "ADMIN" || me?.rol === "FACTURACION";
+  const puedeEliminarCobro =
+    me?.rol === "DIRECCION" || me?.rol === "ADMIN" || me?.rol === "FACTURACION";
   // Día Cancún en que se cotizó el grupo: TC oficial de ese día como
   // sugerencia al revisar y de respaldo al cobrar en pesos cuando el grupo
   // no fijó TC (misma regla que el cobro por vuelo) — no el de hoy.

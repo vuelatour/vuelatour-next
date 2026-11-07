@@ -185,7 +185,8 @@ export async function getContextoRegistro(
   };
   if (!puedeRegistrarEntregas(me.rol)) return base;
   const [usuariosRes, tcOficial] = await Promise.all([
-    me.rol === "ADMIN"
+    // Dirección elige quién entregó (invariante 122); FACTURACION va como «yo».
+    me.rol === "DIRECCION"
       ? degradado.opcional(
           "la lista de personas que entregan",
           listUsers({ estado: "ACTIVO", limit: 200 }),

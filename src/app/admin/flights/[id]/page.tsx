@@ -638,7 +638,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 </span>
               ))}
             <FlightActionsBar
-              esAdmin={me?.rol === "ADMIN"}
+              esAdmin={me?.rol === "ADMIN" || me?.rol === "DIRECCION"}
               omision={omision}
               // FACTURACION omite pero no completa (start/complete: 403).
               puedeCompletar={esRolCompletarVuelo(me?.rol)}
@@ -853,7 +853,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             // el badge de siempre.
             facturaCliente={snapshot.factura_cliente}
             puedeFacturar={
-              me?.rol === "ADMIN" || me?.rol === "COORDINADOR" || me?.rol === "FACTURACION"
+              me?.rol === "DIRECCION" ||
+              me?.rol === "ADMIN" ||
+              me?.rol === "COORDINADOR" ||
+              me?.rol === "FACTURACION"
             }
             participacionAviones={participacionAviones}
             participacionFuente={participacionFuente}
@@ -886,7 +889,9 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             tcOficialFecha={diaCotizacion}
             paywiseComisionPct={paywiseComisionPct}
             // Reembolsos: solo roles de oficina.
-            puedeReembolsar={me?.rol === "ADMIN" || me?.rol === "COORDINADOR"}
+            puedeReembolsar={
+              me?.rol === "DIRECCION" || me?.rol === "ADMIN" || me?.rol === "COORDINADOR"
+            }
             // FACTURA DEL SERVICIO registrada + «Necesito factura» y el
             // comprobante de cada cobro (24-sep-2026). `factura_servicio`
             // ausente/null (API previo o sin migración) ⇒ sin burbuja.

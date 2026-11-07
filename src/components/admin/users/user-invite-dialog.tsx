@@ -18,6 +18,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { createUserAction } from "@/app/admin/users/actions";
 import { UserInviteSchema, type UserInviteValues } from "@/app/admin/users/schema";
 import { Field } from "@/components/admin/form-field";
+import { opcionesRolParaActor } from "@/lib/admin/roles";
+import type { Rol } from "@/types/me";
 import {
   APODO_HINT,
   APODO_LABEL,
@@ -25,29 +27,23 @@ import {
   APODO_PLACEHOLDER,
 } from "@/lib/admin/usuario-apodo";
 
-const ROLES = [
-  { value: "ADMIN", label: "ADMIN", description: "Acceso total" },
-  { value: "COORDINADOR", label: "COORDINADOR", description: "Solicitudes y cotizaciones" },
-  { value: "ANALISTA", label: "ANALISTA", description: "Costos por avión" },
-  { value: "FACTURACION", label: "FACTURACION", description: "CFDI y caja chica" },
-  { value: "PILOTO", label: "PILOTO", description: "Operativos: app móvil" },
-  { value: "SOCIO", label: "SOCIO", description: "Lectura + PDFs de reparto" },
-  { value: "MECANICO", label: "MECÁNICO", description: "App: combustible e inventario" },
-  { value: "VISITANTE", label: "VISITANTE", description: "Solo gastos de visita desde la app (fondo + tarjeta); sin acceso a vuelos" },
-];
 
 const ESTADOS = [
   { value: "ACTIVO", label: "ACTIVO", description: "Puede entrar y usar el sistema" },
   { value: "INVITADO", label: "INVITADO", description: "Placeholder; actívalo para darle acceso" },
 ];
 
+/** `rolActor` (invariante 122): a Administración no se le ofrece el rol Dirección. */
 export function UserInviteDialog({
   open,
   onOpenChange,
+  rolActor,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  rolActor?: Rol | null;
 }) {
+  const ROLES = opcionesRolParaActor(rolActor);
   const [pending, startTransition] = useTransition();
 
   const {

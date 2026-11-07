@@ -119,7 +119,7 @@ const libro = (celdas: LibroExcelCelda[], generado: string | null = "2026-10-16T
 
 describe("quién captura el costo real (espejo del API)", () => {
   it("ROLES_AFAC_REAL = ADMIN, FACTURACION y COORDINADOR (ANALISTA ve el libro sin editar)", () => {
-    expect([...ROLES_AFAC_REAL]).toEqual(["ADMIN", "FACTURACION", "COORDINADOR"]);
+    expect([...ROLES_AFAC_REAL]).toEqual(["DIRECCION", "ADMIN", "FACTURACION", "COORDINADOR"]);
   });
 
   it("hace falta el rol Y `config.afac_real === true` (la base con la migración)", () => {

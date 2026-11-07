@@ -29,7 +29,7 @@ export function medioLlevaCuenta(medio: string | null | undefined): boolean {
 }
 
 /** Roles que dan de alta una cuenta desde el gasto (espejo del `@Roles` del POST). */
-export const ROLES_ALTA_CUENTA = ["ADMIN", "FACTURACION", "COORDINADOR"] as const;
+export const ROLES_ALTA_CUENTA = ["DIRECCION", "ADMIN", "FACTURACION", "COORDINADOR"] as const;
 
 /** ¿Puede este rol dar de alta una cuenta desde el gasto? Sin rol: no se ofrece. */
 export function puedeAgregarCuenta(rol: string | null | undefined): boolean {

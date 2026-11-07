@@ -211,7 +211,7 @@ export function descargaVistaBalance(
  * `balance-general/libro`, `:id/balance.xlsx` y `:id/balance/libro` del API
  * (`aircraft.controller.ts`; la paridad la congela `balance-vista.test.ts`).
  */
-export const ROLES_ABREN_BALANCES = ["ADMIN", "ANALISTA"] as const;
+export const ROLES_ABREN_BALANCES = ["DIRECCION", "ADMIN", "ANALISTA"] as const;
 
 /**
  * ¿Se le OFRECEN los balances a este rol? Sin rol (`/me` falló) se ofrece

@@ -13391,3 +13391,40 @@ que por defecto ya todas salgan con este formato».
 - Goldens regenerados a propósito el 6-nov-2026: `alta-gasto.golden.json`
   (`ACTUALIZAR_GOLDEN=1`, cambió el marcado del input de fecha) y
   `seleccion.golden.html` (solo las fechas «24 sep 2026» ⇒ «24/09/2026»).
+
+## Roles «Dirección» y «Administración» (6-nov-2026, API 0.0.126, invariante 122 del API)
+
+Pedido del dueño: «un nuevo rol que sea Super usuario o Dirección … para Ale
+Canales y Pablo Canales, además del rol de piloto que ya tienen; los demás que
+están de ADMIN sean de Administración». El código del rol ADMIN NO cambia (BD
+y API lo conservan); cambian su ETIQUETA («Administración») y su alcance.
+
+- **Fuente única**: `lib/admin/roles.ts` (`etiquetaRol`, `descripcionRol`,
+  `OPCIONES_ROL`, `opcionesRolParaActor`, `puedeEditarUsuario`,
+  `puedeVerGastosPersonales`, `MODULOS_SOLO_DIRECCION`, textos del candado).
+  Toda pantalla que muestre un rol usa `etiquetaRol` (menú de usuario, Mi
+  cuenta, Inicio, tabla de Usuarios).
+- **Menú**: `filterNavGroupsForRole` deja ver TODO a `DIRECCION` sin que las
+  listas `roles` lo nombren. ADMIN pierde solo `MODULOS_SOLO_DIRECCION`:
+  Estadísticas, Ingresos, Nómina, Gastos personales, Reparto de utilidades y
+  Pagos a socios (`__tests__/roles.test.ts` congela la diferencia). Los demás
+  roles no cambian.
+- **Candado visible**: `components/admin/solo-direccion.tsx`
+  (`PantallaSoloDireccion`) donde antes había un 404 o un error: Estadísticas
+  sin tableros para el rol, Nómina, Gastos personales, Reparto y la caja chica
+  cuyo 403 trae `CAJA_SOLO_DIRECCION`.
+- **Expediente del avión**: el API manda a Administración `finanzas` solo con
+  gastos (`ingresos`/`utilidad` en null, `finanzas_solo_gastos`): el KPI dice
+  «Gastos», la card «Gastos» (sin Cobrado ni Utilidad) y no se ofrecen
+  «Reparto y balance por mes», «Ver el reparto» ni «Balance (Excel)»
+  (`puedeVerRepartoAvion`, `puedeDescargarBalanceAvion`). Desde Reportes
+  todo sigue igual para Administración (decisión del dueño: «de momento pueden
+  ver todo de aquí»).
+- **Usuarios**: a Administración no se le ofrece el rol Dirección en el alta
+  ni en la edición (`opcionesRolParaActor`) y el menú ⋯ de un usuario de
+  Dirección sale deshabilitado (`puedeEditarUsuario`); el API responde 403
+  `SOLO_DIRECCION_EDITA_DIRECCION` de todos modos.
+- **Listas de roles del panel** (espejo de los `@Roles` del API) llevan
+  `"DIRECCION"` explícito donde se consultan con `.includes` o `===`
+  (`ROLES_*` de `lib/admin/*`). Al agregar una comprobación por rol nueva:
+  Dirección SIEMPRE puede lo que puede Administración.

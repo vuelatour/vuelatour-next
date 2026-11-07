@@ -181,8 +181,8 @@ export default async function IngresosPage({ searchParams }: PageProps) {
         <Encabezado />
         <EmptyState
           icon={LockClosedIcon}
-          title="Solo oficina"
-          description="Ingresos lo ven administración, coordinación y facturación."
+          title="Solo Dirección, coordinación y facturación"
+          description="Ingresos lo ven Dirección, coordinación y facturación; Administración ya no (6-nov-2026)."
         />
       </div>
     );

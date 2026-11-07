@@ -19,7 +19,8 @@ import { unirNombres } from "@/lib/admin/facturas-emitidas";
 import type { ResponsablesFacturacion } from "@/types/facturas-emitidas";
 
 const ROL_LABEL: Record<string, string> = {
-  ADMIN: "admin",
+  DIRECCION: "dirección",
+  ADMIN: "administración",
   COORDINADOR: "coordinación",
   FACTURACION: "facturación",
 };

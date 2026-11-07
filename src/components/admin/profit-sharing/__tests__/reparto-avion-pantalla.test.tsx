@@ -146,7 +146,7 @@ describe("la cascada (CascadaAvion)", () => {
 
 describe("la card resumida del reparto", () => {
   const html = renderToStaticMarkup(
-    <AvionRepartoCard avion={avionBalance()} desde="2026-09-01" hasta="2026-09-30" rol="ADMIN" usuarioId={ALE.id} enPesos comoBalance />,
+    <AvionRepartoCard avion={avionBalance()} desde="2026-09-01" hasta="2026-09-30" rol="DIRECCION" usuarioId={ALE.id} enPesos comoBalance />,
   );
 
   it("AFAC en la cascada, reserva informativa después del saldo y «Ver detalle del avión →»", () => {
@@ -181,7 +181,7 @@ describe("la card resumida del reparto", () => {
         avion={{ ...avionBalance(), cierre_avion: { estado: "CERRADO", cerrado_at: "2026-10-16T19:02:00Z", cerrado_por_nombre: "Ale", coincide_con_snapshot: false } }}
         desde="2026-09-01"
         hasta="2026-09-30"
-        rol="ADMIN"
+        rol="DIRECCION"
         usuarioId={ALE.id}
         enPesos
         comoBalance
@@ -192,7 +192,7 @@ describe("la card resumida del reparto", () => {
     expect(cerrado).toContain('data-no-coincide-snapshot="N621TX"');
     expect(cerrado).toContain(">No coincide con el cierre<");
     const abierto = renderToStaticMarkup(
-      <AvionRepartoCard avion={{ ...avionBalance(), cierre_avion: { estado: "ABIERTO" } }} desde="2026-09-01" hasta="2026-09-30" rol="ADMIN" usuarioId={ALE.id} enPesos comoBalance />,
+      <AvionRepartoCard avion={{ ...avionBalance(), cierre_avion: { estado: "ABIERTO" } }} desde="2026-09-01" hasta="2026-09-30" rol="DIRECCION" usuarioId={ALE.id} enPesos comoBalance />,
     );
     expect(abierto).toContain('data-estado-cierre="abierto"');
     expect(abierto).not.toContain("data-no-coincide-snapshot");
@@ -279,7 +279,7 @@ describe("socios de este avión (SociosAvionTable)", () => {
   });
   const filas = socios.map((s) => ({ socio: s, contexto: contexto(s) }));
   const html = renderToStaticMarkup(
-    <SociosAvionTable filas={filas} puedeRegistrar registro={REGISTRO} rol="ADMIN" usuarioId={ALE.id} />,
+    <SociosAvionTable filas={filas} puedeRegistrar registro={REGISTRO} rol="DIRECCION" usuarioId={ALE.id} />,
   );
 
   it("columnas en pesos: utilidad, reserva a guardar, a recibir, entregado y por entregar DE ESTE AVIÓN", () => {
@@ -592,7 +592,7 @@ describe("combustible separado: la cascada del Excel (CascadaAvion)", () => {
 describe("combustible separado: la card de la lista pinta la misma cascada del Excel", () => {
   it("orden del Excel, «Saldo a repartir» en la cascada y el saldo del encabezado", () => {
     const html = renderToStaticMarkup(
-      <AvionRepartoCard avion={avionCombustible()} desde="2026-09-01" hasta="2026-09-30" rol="ADMIN" usuarioId={ALE.id} enPesos comoBalance />,
+      <AvionRepartoCard avion={avionCombustible()} desde="2026-09-01" hasta="2026-09-30" rol="DIRECCION" usuarioId={ALE.id} enPesos comoBalance />,
     );
     expect(ordenFilas(html)).toEqual(ORDEN_EXCEL);
     expect(html).toContain(">Utilidad antes de gastos<");

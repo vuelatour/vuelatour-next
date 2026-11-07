@@ -59,6 +59,7 @@ import {
   ETIQUETA_VER_REPARTO_AVION,
   hrefHistoricoAvion,
   hrefRepartoAvion,
+  puedeDescargarBalanceAvion,
   puedeVerRepartoAvion,
 } from "@/lib/admin/reparto-avion";
 import { ErrorState } from "@/components/admin/error-state";
@@ -248,11 +249,15 @@ export default async function AircraftDetailPage({ params }: PageProps) {
                 </Link>
               </>
             )}
-            <ExcelExportButton
-              path={`/v1/aircraft/${aircraft.id}/balance.xlsx`}
-              filename={`balance-${aircraft.matricula}.xlsx`}
-              label="Balance (Excel)"
-            />
+            {/* El balance trae lo cobrado y la utilidad: Administración no lo
+                descarga desde el expediente (invariante 122); Reportes sigue. */}
+            {puedeDescargarBalanceAvion(me?.rol) && (
+              <ExcelExportButton
+                path={`/v1/aircraft/${aircraft.id}/balance.xlsx`}
+                filename={`balance-${aircraft.matricula}.xlsx`}
+                label="Balance (Excel)"
+              />
+            )}
             <AircraftEditButton aircraft={aircraft} />
           </div>
         </div>

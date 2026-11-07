@@ -16,7 +16,7 @@
  */
 
 /** Roles que pueden descargar (espejo de `GESTION` del controlador del API). */
-export const ROLES_EXCEL_CAJA = ["ADMIN", "FACTURACION"] as const;
+export const ROLES_EXCEL_CAJA = ["DIRECCION", "ADMIN", "FACTURACION"] as const;
 
 /** ¿Este rol puede descargar los Excel de caja chica? */
 export function puedeDescargarExcelCaja(rol: string | null | undefined): boolean {

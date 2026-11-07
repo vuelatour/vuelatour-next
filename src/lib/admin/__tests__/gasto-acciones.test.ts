@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { sinDireccion } from "@/lib/admin/roles";
 import {
   ROLES_ELIMINAN_GASTO,
   ROLES_MARCAN_PAGADO_GASTO,
@@ -21,8 +22,8 @@ import {
 
 describe("roles del menú ⋯ (espejo del API)", () => {
   it("DELETE /v1/expenses/:id y POST :id/visto-bueno", () => {
-    expect(ROLES_ELIMINAN_GASTO).toEqual(["ADMIN", "COORDINADOR", "PILOTO", "MECANICO", "VISITANTE"]);
-    expect(ROLES_VISTO_BUENO_GASTO).toEqual(["ADMIN", "FACTURACION", "ANALISTA"]);
+    expect(ROLES_ELIMINAN_GASTO).toEqual(["DIRECCION", "ADMIN", "COORDINADOR", "PILOTO", "MECANICO", "VISITANTE"]);
+    expect(ROLES_VISTO_BUENO_GASTO).toEqual(["DIRECCION", "ADMIN", "FACTURACION", "ANALISTA"]);
   });
 
   it("los roles de oficina que ven Combustibles", () => {
@@ -75,7 +76,7 @@ describe("403 por rol en español", () => {
 
 describe("«Marcar pagado» por rol (gastos por pagar, revisión del lote, P19)", () => {
   it("espejo del @Roles de PATCH /v1/expenses/:id: SOCIO y ANALISTA no lo tienen", () => {
-    expect(ROLES_MARCAN_PAGADO_GASTO).toEqual(["ADMIN", "COORDINADOR", "FACTURACION", "PILOTO", "MECANICO", "VISITANTE"]);
+    expect(ROLES_MARCAN_PAGADO_GASTO).toEqual(["DIRECCION", "ADMIN", "COORDINADOR", "FACTURACION", "PILOTO", "MECANICO", "VISITANTE"]);
     for (const rol of ROLES_MARCAN_PAGADO_GASTO) expect(puedeMarcarPagadoGasto(rol), rol).toBe(true);
     expect(puedeMarcarPagadoGasto("SOCIO")).toBe(false);
     expect(puedeMarcarPagadoGasto("ANALISTA")).toBe(false);
@@ -95,6 +96,7 @@ describe("«Marcar pagado» por rol (gastos por pagar, revisión del lote, P19)"
     const ventana = lineas.slice(i + 1, i + 12).join("\n");
     const roles = ventana.match(/@Roles\(([^)]*)\)/)?.[1];
     expect(roles, "sin @Roles tras @Patch(':id')").toBeTruthy();
-    expect([...roles!.matchAll(/Rol\.(\w+)/g)].map((m) => m[1])).toEqual([...ROLES_MARCAN_PAGADO_GASTO]);
+    // El API no nombra a DIRECCION (su guard la deja pasar); el panel sí.
+    expect([...roles!.matchAll(/Rol\.(\w+)/g)].map((m) => m[1])).toEqual(sinDireccion(ROLES_MARCAN_PAGADO_GASTO));
   });
 });

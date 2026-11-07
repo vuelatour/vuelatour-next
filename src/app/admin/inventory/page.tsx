@@ -132,7 +132,8 @@ export default async function InventoryPage({
   // solo consulta, así que no se le muestra un botón que le daría 403.
   const puedeAltaMasiva = !!me && me.rol !== "SOCIO";
   // Mismos roles del PATCH de costo del API (ADMIN/MECANICO).
-  const puedeEditarCosto = !!me && (me.rol === "ADMIN" || me.rol === "MECANICO");
+  const puedeEditarCosto =
+    !!me && (me.rol === "DIRECCION" || me.rol === "ADMIN" || me.rol === "MECANICO");
   // Mismos roles de POST/PATCH/DELETE/PUT orden de ubicaciones y
   // «mover-ubicacion» del API: con él, el formulario del producto trae
   // «＋ Agregar ubicación…» y el engrane «Administrar ubicaciones».

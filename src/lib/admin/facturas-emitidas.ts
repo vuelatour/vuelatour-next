@@ -51,26 +51,32 @@ import { ajustarRangoAlInicio, type InicioOficial } from "./inicio-oficial";
 type RolLike = string | null | undefined;
 
 /** Roles que ven el registro «Facturas emitidas» (clase del controller). */
-export const ROLES_FACTURAS_EMITIDAS = ["ADMIN", "FACTURACION"] as const;
+export const ROLES_FACTURAS_EMITIDAS = ["DIRECCION", "ADMIN", "FACTURACION"] as const;
 
 /** Registrar/editar/cancelar facturas: ADMIN y FACTURACION. */
 export function puedeRegistrarFactura(rol: RolLike): boolean {
-  return rol === "ADMIN" || rol === "FACTURACION";
+  return rol === "DIRECCION" || rol === "ADMIN" || rol === "FACTURACION";
 }
 
 /** «Necesito factura»: oficina que edita cotizaciones/vuelos o factura. */
 export function puedePedirFactura(rol: RolLike): boolean {
-  return rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION";
+  return (
+    rol === "DIRECCION" || rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION"
+  );
 }
 
 /** Abrir el PDF de una factura (`archivo-url` admite COORDINADOR). */
 export function puedeVerPdfFactura(rol: RolLike): boolean {
-  return rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION";
+  return (
+    rol === "DIRECCION" || rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION"
+  );
 }
 
 /** Adjuntar/reemplazar el comprobante de un cobro ya registrado. */
 export function puedeAdjuntarComprobante(rol: RolLike): boolean {
-  return rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION";
+  return (
+    rol === "DIRECCION" || rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION"
+  );
 }
 
 // =============================================================================

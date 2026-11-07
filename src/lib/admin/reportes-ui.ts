@@ -155,7 +155,7 @@ export const EMPTY_VUELOS_NO_CARGARON = "Los vuelos no cargaron: recarga la pág
  * paridad la congela `reportes-ui.test.ts`). ANALISTA y FACTURACION entran a
  * Reportes por el menú y ese botón siempre les respondía 403.
  */
-export const ROLES_EXPORTAN_HORAS_PILOTO = ["ADMIN", "COORDINADOR"] as const;
+export const ROLES_EXPORTAN_HORAS_PILOTO = ["DIRECCION", "ADMIN", "COORDINADOR"] as const;
 
 /** ¿Se le OFRECE «Horas por piloto» a este rol? Sin rol (`/me` falló) sí: el API es el candado. */
 export function puedeExportarHorasPiloto(rol?: string | null): boolean {

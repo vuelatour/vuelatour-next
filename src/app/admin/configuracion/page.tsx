@@ -66,7 +66,7 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
   // renderizaba operable para otros roles (GET /config es abierto a propósito
   // para la app) y el 403 recién aparecía al confirmar el switch.
   const me = await getMe();
-  if (me.rol !== "ADMIN") {
+  if (me.rol !== "ADMIN" && me.rol !== "DIRECCION") {
     return (
       <div className="space-y-6">
         <div>

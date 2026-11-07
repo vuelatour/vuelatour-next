@@ -202,7 +202,8 @@ export function QuoteWorkspace({
     editoresCobrada,
   };
   const candado = candadoRevision(quote, candadoOpts);
-  const puedeEditarPdf = rol === "ADMIN" || rol === "COORDINADOR";
+  const puedeEditarPdf = rol === "DIRECCION" ||
+    rol === "ADMIN" || rol === "COORDINADOR";
   // Ajustes anotados en el detalle del vuelo que aún no se reflejan aquí
   // (banda ámbar NO ocultable sobre el papel; se va sola al resolverlos).
   const bannerSeg = bannerSeguimiento(quote, seguimientoRespaldo);
@@ -212,7 +213,8 @@ export function QuoteWorkspace({
   // En SOLICITUD aún no hay precio que cobrar; cancelado registra el cargo
   // por cancelación (sin noción de pendiente, regla 28-ago).
   const puedeRegistrarCobro =
-    (rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION") &&
+    (rol === "DIRECCION" ||
+    rol === "ADMIN" || rol === "COORDINADOR" || rol === "FACTURACION") &&
     quote.estado !== "SOLICITUD";
   const [cobroOpen, setCobroOpen] = useState(false);
   const montoTotalUsd = Number(quote.monto_total_usd) || 0;
@@ -713,7 +715,8 @@ export function QuoteWorkspace({
             totalCobrado={totalCobrado}
             cobros={cobros}
             // Reembolsos: solo roles de oficina.
-            puedeReembolsar={rol === "ADMIN" || rol === "COORDINADOR"}
+            puedeReembolsar={rol === "DIRECCION" ||
+    rol === "ADMIN" || rol === "COORDINADOR"}
             onRegistrar={abrirCobro}
             registrarTitle={registrarTitle}
             // Factura del servicio + comprobantes (24-sep-2026).

@@ -151,8 +151,8 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
         <Volver periodo={sp} />
         <EmptyState
           icon={LockClosedIcon}
-          title="Solo administración, análisis, facturación y socios"
-          description="El reparto por avión lo ven los usuarios con rol ADMIN, ANALISTA, FACTURACION o SOCIO."
+          title="Solo Dirección, análisis, facturación y socios"
+          description="El reparto por avión lo ven Dirección, ANALISTA, FACTURACION y SOCIO; Administración ya no (6-nov-2026)."
         />
       </div>
     );

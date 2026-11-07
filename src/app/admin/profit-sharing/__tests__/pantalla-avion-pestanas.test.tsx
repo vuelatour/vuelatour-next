@@ -51,7 +51,7 @@ vi.mock("@/components/admin/excel-export-button", () => ({ ExcelExportButton: ()
 vi.mock("@/components/admin/profit-sharing/period-selector", () => ({ PeriodSelector: () => null }));
 // Las lecturas del servidor (todas pasan por `apiServer` → `@/lib/env`).
 vi.mock("@/lib/api/me", () => ({
-  getMe: async () => ({ id: ALE.id, rol: "ADMIN", nombre: ALE.nombre }),
+  getMe: async () => ({ id: ALE.id, rol: "DIRECCION", nombre: ALE.nombre }),
 }));
 vi.mock("@/lib/api/inicio-oficial", () => ({ getInicioOficial: async () => null }));
 vi.mock("@/lib/api/aircraft", () => ({ listAircraftOwners: async () => [] }));

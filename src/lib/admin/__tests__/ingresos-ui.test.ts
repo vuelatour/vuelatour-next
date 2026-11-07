@@ -722,7 +722,7 @@ describe("resumen y bitácora", () => {
 });
 
 describe("menú: «Ingresos» justo antes de «Gastos»", () => {
-  it("posición, ruta y roles (= los de Gastos)", async () => {
+  it("posición, ruta y roles (Dirección, coordinación y facturación; Administración ya no)", async () => {
     const { NAV_GROUPS, filterNavGroupsForRole } = await import("@/lib/admin/nav-items");
     const operacion = NAV_GROUPS.find((g) => g.label === "Operación");
     const items = operacion?.items ?? [];
@@ -732,10 +732,11 @@ describe("menú: «Ingresos» justo antes de «Gastos»", () => {
     expect(iGastos).toBe(iIngresos + 1);
     expect(items[iIngresos]).toMatchObject({
       label: "Ingresos",
-      roles: ["ADMIN", "COORDINADOR", "FACTURACION"],
+      roles: ["DIRECCION", "COORDINADOR", "FACTURACION"],
     });
-    expect(items[iIngresos].roles).toEqual(items[iGastos].roles);
-    for (const rol of ["PILOTO", "SOCIO", "ANALISTA", "MECANICO"] as const) {
+    // Gastos sigue con Administración; Ingresos es solo de Dirección (invariante 122 del API).
+    expect(items[iGastos].roles).toEqual(["ADMIN", "COORDINADOR", "FACTURACION"]);
+    for (const rol of ["ADMIN", "PILOTO", "SOCIO", "ANALISTA", "MECANICO"] as const) {
       expect(filterNavGroupsForRole(rol).flatMap((g) => g.items).some((i) => i.href === "/admin/ingresos")).toBe(false);
     }
     const { getPageTitleFromPathname } = await import("@/lib/admin/page-title");

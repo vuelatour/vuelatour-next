@@ -65,7 +65,7 @@ const AT = "2026-10-15T15:40:00Z";
 
 describe("textos congelados", () => {
   it("roles, límites y motivos frecuentes", () => {
-    expect(ROLES_OMITIR_TACO).toEqual(["ADMIN", "COORDINADOR", "FACTURACION"]);
+    expect(ROLES_OMITIR_TACO).toEqual(["DIRECCION", "ADMIN", "COORDINADOR", "FACTURACION"]);
     expect(MOTIVO_OMISION_MIN).toBe(10);
     expect(MOTIVO_OMISION_MAX).toBe(500);
     expect(MOTIVOS_OMISION_FRECUENTES).toEqual([

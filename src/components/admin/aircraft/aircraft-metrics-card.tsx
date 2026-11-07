@@ -54,6 +54,11 @@ export function AircraftMetricsCard({
 }) {
   const { airworthiness: aw, finanzas } = metrics;
   const razones = razonesNoApto(aw);
+  // ADMINISTRACIÓN (6-nov-2026, invariante 122 del API): el API manda solo los
+  // GASTOS (cobrado y utilidad en null): la sección se llama «Gastos» y no
+  // pinta lo que no llegó.
+  const soloGastos =
+    metrics.finanzas_solo_gastos === true || finanzas.some((f) => f.utilidad == null);
 
   return (
     <Card className="lg:col-span-2">
@@ -99,7 +104,8 @@ export function AircraftMetricsCard({
         <div>
           <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-2">
             <BanknotesIcon className="h-3.5 w-3.5" />
-            Cobrado vs gastos ({rotuloAcumuladoFinanzas(metrics.finanzas_desde)})
+            {soloGastos ? "Gastos" : "Cobrado vs gastos"} (
+            {rotuloAcumuladoFinanzas(metrics.finanzas_desde)})
           </p>
           {finanzas.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin movimientos registrados.</p>
@@ -108,10 +114,11 @@ export function AircraftMetricsCard({
               {finanzas.map((f) => (
                 <div
                   key={f.moneda}
-                  className="grid grid-cols-4 gap-2 rounded-lg border border-border bg-muted/20 p-3 text-sm"
+                  className={`grid ${soloGastos ? "grid-cols-2" : "grid-cols-4"} gap-2 rounded-lg border border-border bg-muted/20 p-3 text-sm`}
+                  data-solo-gastos={soloGastos ? "" : undefined}
                 >
                   <span className="font-mono font-semibold">{f.moneda}</span>
-                  <Mini label="Cobrado" value={monto(f.ingresos, f.moneda)} />
+                  {!soloGastos && <Mini label="Cobrado" value={monto(f.ingresos ?? 0, f.moneda)} />}
                   <div>
                     <p className="text-[11px] text-muted-foreground">Gastos</p>
                     <Link
@@ -122,22 +129,25 @@ export function AircraftMetricsCard({
                       {monto(f.gastos, f.moneda)}
                     </Link>
                   </div>
-                  <Mini
-                    label="Utilidad"
-                    value={monto(f.utilidad, f.moneda)}
-                    className={
-                      f.utilidad < 0
-                        ? "text-destructive"
-                        : "text-green-600 dark:text-green-400"
-                    }
-                  />
+                  {!soloGastos && (
+                    <Mini
+                      label="Utilidad"
+                      value={monto(f.utilidad ?? 0, f.moneda)}
+                      className={
+                        (f.utilidad ?? 0) < 0
+                          ? "text-destructive"
+                          : "text-green-600 dark:text-green-400"
+                      }
+                    />
+                  )}
                 </div>
               ))}
             </div>
           )}
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Acumulado simple por moneda (solo lo cobrado). El reparto formal por socio lo maneja
-            el cierre mensual.
+            {soloGastos
+              ? "Solo los gastos del avión: lo cobrado y la utilidad los ve Dirección."
+              : "Acumulado simple por moneda (solo lo cobrado). El reparto formal por socio lo maneja el cierre mensual."}
           </p>
         </div>
       </CardContent>

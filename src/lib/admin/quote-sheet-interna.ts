@@ -40,6 +40,7 @@ import type { QuoteBreakdown, TramoBreakdown } from "@/types/quote";
  * gate real es el API (403 ⇒ `getQuoteInterno` devuelve null).
  */
 export const ROLES_HOJA_INTERNA: ReadonlySet<string> = new Set([
+  "DIRECCION",
   "ADMIN",
   "COORDINADOR",
   "FACTURACION",
@@ -74,6 +75,7 @@ export function puedeVerHojaInterna(rol: string | null | undefined): boolean {
  * ancla nunca se duplican).
  */
 export const ROLES_EDITAN_COTIZACION: ReadonlySet<string> = new Set([
+  "DIRECCION",
   "ADMIN",
   "COORDINADOR",
 ]);

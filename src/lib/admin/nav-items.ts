@@ -32,6 +32,7 @@ import {
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
+import { esDireccion } from "@/lib/admin/roles";
 import { ROLES_NOMINA, TITULO_NOMINA } from "@/lib/admin/nomina";
 
 export interface NavItem {
@@ -61,10 +62,12 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Inicio", href: "/admin", icon: HomeIcon },
       {
+        // SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): Administración
+        // (ADMIN) ya no entra; los demás roles siguen como estaban.
         label: "Estadísticas",
         href: "/admin/dashboards",
         icon: ChartBarIcon,
-        roles: ["ADMIN", "ANALISTA", "SOCIO", "COORDINADOR"],
+        roles: ["DIRECCION", "ANALISTA", "SOCIO", "COORDINADOR"],
       },
       { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon },
@@ -79,7 +82,8 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Ingresos",
         href: "/admin/ingresos",
         icon: ArrowTrendingUpIcon,
-        roles: ["ADMIN", "COORDINADOR", "FACTURACION"],
+        // Solo Dirección (invariante 122): ADMIN salió; = `ROLES_INGRESOS`.
+        roles: ["DIRECCION", "COORDINADOR", "FACTURACION"],
       },
       {
         label: "Gastos",
@@ -113,7 +117,8 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Gastos personales",
         href: "/admin/gastos-personales",
         icon: WalletIcon,
-        roles: ["ADMIN", "COORDINADOR"],
+        // Solo Dirección (invariante 122): ADMIN salió.
+        roles: ["DIRECCION", "COORDINADOR"],
       },
       {
         label: "Combustibles",
@@ -244,7 +249,8 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Reparto de utilidades",
         href: "/admin/profit-sharing",
         icon: ChartPieIcon,
-        roles: ["ADMIN", "ANALISTA", "SOCIO"],
+        // Solo Dirección (invariante 122): ADMIN salió.
+        roles: ["DIRECCION", "ANALISTA", "SOCIO"],
       },
       {
         // Cuenta corriente de cada socio (1-oct-2026, API 0.0.50): generado,
@@ -253,7 +259,8 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Pagos a socios",
         href: "/admin/profit-sharing/socios",
         icon: UserGroupIcon,
-        roles: ["ADMIN", "FACTURACION", "ANALISTA", "SOCIO"],
+        // Solo Dirección (invariante 122): ADMIN salió.
+        roles: ["DIRECCION", "FACTURACION", "ANALISTA", "SOCIO"],
       },
       {
         label: "Reportes",
@@ -323,9 +330,16 @@ export function itemNavActivo(
   return !hrefs.some((h) => h !== href && h.length > href.length && coincide(h));
 }
 
+/**
+ * DIRECCIÓN ve TODO el menú (6-nov-2026, invariante 122 del API): es el
+ * superconjunto de ADMIN y el API le deja pasar cualquier ruta, así que las
+ * listas `roles` no necesitan nombrarla. Los demás roles, por su lista.
+ */
 export function filterNavGroupsForRole(rol: Rol | undefined): NavGroup[] {
   return NAV_GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((it) => !it.roles || (rol && it.roles.includes(rol))),
+    items: g.items.filter(
+      (it) => esDireccion(rol) || !it.roles || (rol && it.roles.includes(rol)),
+    ),
   })).filter((g) => g.items.length > 0);
 }

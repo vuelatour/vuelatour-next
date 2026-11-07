@@ -85,7 +85,7 @@ function diff(c: FlightCobro, cambios: Partial<ValoresEdicionCobro>) {
 
 describe("quién corrige un cobro", () => {
   it("solo ADMIN y FACTURACION (los roles del PATCH del API)", () => {
-    expect(ROLES_EDITAR_COBRO).toEqual(["ADMIN", "FACTURACION"]);
+    expect(ROLES_EDITAR_COBRO).toEqual(["DIRECCION", "ADMIN", "FACTURACION"]);
     expect(puedeEditarCobro("ADMIN")).toBe(true);
     expect(puedeEditarCobro("FACTURACION")).toBe(true);
     for (const rol of ["COORDINADOR", "SOCIO", "ANALISTA", "PILOTO", "MECANICO", "", null, undefined]) {

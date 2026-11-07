@@ -457,7 +457,7 @@ describe("Reparto de utilidades: «Socios · por entregar»", () => {
   it("tabla por avión: el NOMBRE del socio es un atajo a su cuenta («Ver cuenta ›») para quien lee cuentas; un SOCIO solo ve el suyo; sin permiso, texto plano", () => {
     const hrefMauricio = `/admin/profit-sharing/socios/${MAURICIO}`;
     const admin = renderToStaticMarkup(
-      <SociosSection socios={AVIONES[0].reparto} porcentajeTotal={100} aeronaveId={N4142R} rol="ADMIN" usuarioId={ALE.id} />,
+      <SociosSection socios={AVIONES[0].reparto} porcentajeTotal={100} aeronaveId={N4142R} rol="DIRECCION" usuarioId={ALE.id} />,
     );
     expect(admin).toContain(`href="${hrefMauricio}"`);
     expect(admin).toContain(`aria-label="Ver cuenta de Mauricio Roque"`);
@@ -584,12 +584,13 @@ describe("piezas de las páginas (renderizadas de verdad)", () => {
 });
 
 describe("menú «Pagos a socios» (Tesorería)", () => {
-  it("ADMIN, FACTURACION, ANALISTA y SOCIO lo ven; COORDINADOR no", () => {
+  it("DIRECCION, FACTURACION, ANALISTA y SOCIO lo ven; ADMIN (Administración) y COORDINADOR no", () => {
     const ve = (rol: Parameters<typeof filterNavGroupsForRole>[0]) =>
       filterNavGroupsForRole(rol)
         .find((g) => g.label === "Tesorería")
         ?.items.some((i) => i.href === "/admin/profit-sharing/socios") ?? false;
-    expect(ve("ADMIN")).toBe(true);
+    expect(ve("DIRECCION")).toBe(true);
+    expect(ve("ADMIN")).toBe(false);
     expect(ve("FACTURACION")).toBe(true);
     expect(ve("ANALISTA")).toBe(true);
     expect(ve("SOCIO")).toBe(true);

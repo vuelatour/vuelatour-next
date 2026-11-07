@@ -112,15 +112,20 @@ export function hrefRepartoConPeriodo(periodo: { desde?: string | null; hasta?: 
 }
 
 /** Espejo del `@Roles` de `GET /v1/profit-sharing/aviones/:id` (SOCIO: solo lo suyo). */
-export const ROLES_VEN_REPARTO_AVION = ["ADMIN", "ANALISTA", "FACTURACION", "SOCIO"] as const;
+// Solo Dirección (6-nov-2026, invariante 122 del API): ADMIN salió.
+export const ROLES_VEN_REPARTO_AVION = ["DIRECCION", "ANALISTA", "FACTURACION", "SOCIO"] as const;
 
 export function puedeVerRepartoAvion(rol: string | null | undefined): boolean {
   return (ROLES_VEN_REPARTO_AVION as readonly string[]).includes(rol ?? "");
 }
 
-/** El balance en Excel del avión es ADMIN/ANALISTA (como en la card). */
+/**
+ * El balance en Excel del avión desde SU expediente y la card del reparto:
+ * Dirección y ANALISTA. Administración no lo descarga desde aquí (trae lo
+ * cobrado y la utilidad; invariante 122); desde Reportes sigue como siempre.
+ */
 export function puedeDescargarBalanceAvion(rol: string | null | undefined): boolean {
-  return rol === "ADMIN" || rol === "ANALISTA";
+  return rol === "DIRECCION" || rol === "ANALISTA";
 }
 
 // =============================================================================

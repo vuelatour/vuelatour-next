@@ -5,6 +5,7 @@
  * `fmtDate` / `fmtDateTime` (Intl puede escribir «sept»).
  */
 import { describe, expect, it } from "vitest";
+import { sinDireccion } from "@/lib/admin/roles";
 import { fmtDate, fmtDateOnly, fmtDateTime } from "@/lib/datetime";
 import { estadoBancoGasto } from "@/lib/admin/conciliacion-estado";
 import { NAV_GROUPS } from "@/lib/admin/nav-items";
@@ -61,7 +62,7 @@ import type { ConciliacionDeGasto } from "@/types/conciliacion";
 
 describe("roles: ADMIN y FACTURACION (sin rol conocido se ofrece; el API es el candado)", () => {
   it("quién ve el detalle", () => {
-    for (const rol of ["ADMIN", "FACTURACION", null, undefined, ""]) expect(puedeVerDetalleBancoGasto(rol), String(rol)).toBe(true);
+    for (const rol of ["DIRECCION", "ADMIN", "FACTURACION", null, undefined, ""]) expect(puedeVerDetalleBancoGasto(rol), String(rol)).toBe(true);
     for (const rol of ["COORDINADOR", "ANALISTA", "SOCIO", "PILOTO", "MECANICO", "VISITANTE"]) {
       expect(puedeVerDetalleBancoGasto(rol), rol).toBe(false);
     }
@@ -69,7 +70,8 @@ describe("roles: ADMIN y FACTURACION (sin rol conocido se ofrece; el API es el c
 
   it("paridad con el menú «Conciliación» (nav-items)", () => {
     const item = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.href === "/admin/conciliacion");
-    expect([...(item?.roles ?? [])].sort()).toEqual([...ROLES_DETALLE_BANCO_GASTO].sort());
+    // El menú no nombra a DIRECCION (`filterNavGroupsForRole` la deja ver todo).
+    expect([...(item?.roles ?? [])].sort()).toEqual(sinDireccion(ROLES_DETALLE_BANCO_GASTO).sort());
   });
 
   it("el título del Excel solo a quien recibe el detalle del banco", () => {

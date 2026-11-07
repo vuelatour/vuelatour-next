@@ -42,7 +42,7 @@ const card = (a: AvionReparto, enPesos?: boolean) =>
       avion={a}
       desde="2026-09-01"
       hasta="2026-09-30"
-      rol="ADMIN"
+      rol="DIRECCION"
       usuarioId="u-1"
       {...(enPesos === undefined ? {} : { enPesos })}
     />,

@@ -5,6 +5,10 @@
  * por el tipo generado en src/types/api.ts.
  */
 export type Rol =
+  // Dirección (6-nov-2026, invariante 122 del API): superusuario (Ale y
+  // Pablo). ADMIN = «Administración» (la oficina). Etiquetas y matriz:
+  // `lib/admin/roles.ts`.
+  | "DIRECCION"
   | "ADMIN"
   | "COORDINADOR"
   | "ANALISTA"

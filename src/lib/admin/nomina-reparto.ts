@@ -38,7 +38,7 @@ export const TOPE_AVIONES_REPARTO_IGUALES = 20;
 export const RUTA_REPARTO_IGUALES = "/v1/expenses/reparto-iguales";
 
 /** Roles que reparten (espejo del `@Roles` de la ruta). */
-export const ROLES_REPARTO_NOMINA = ["ADMIN", "COORDINADOR", "FACTURACION"] as const;
+export const ROLES_REPARTO_NOMINA = ["DIRECCION", "COORDINADOR", "FACTURACION"] as const;
 
 /** ¿Este rol ve el botón «Repartir entre aviones»? Sin rol ⇒ se ofrece (el API es el candado). */
 export function puedeRepartirNomina(rol: string | null | undefined): boolean {

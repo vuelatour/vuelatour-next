@@ -29,7 +29,7 @@ export default async function UsersPage() {
             llegan avisos de eventos ni vuelos).
           </p>
         </div>
-        <UserInviteButton />
+        <UserInviteButton rolActor={me.rol} />
       </div>
 
       {users.length === 0 ? (
@@ -41,7 +41,7 @@ export default async function UsersPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <UsersTable users={users} meId={me.id} />
+            <UsersTable users={users} meId={me.id} rolActor={me.rol} />
           </CardContent>
         </Card>
       )}

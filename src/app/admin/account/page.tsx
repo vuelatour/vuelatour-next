@@ -16,19 +16,12 @@ import {
 } from "@/components/ui/card";
 import { AccountForm } from "@/components/admin/account/account-form";
 import { getMe } from "@/lib/api/me";
+import { descripcionRol, etiquetaRol } from "@/lib/admin/roles";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: TITULOS_PAGINA.miCuenta };
 
-const ROL_DESCRIPTIONS: Record<string, string> = {
-  ADMIN: "Acceso total. Promueve usuarios, edita catálogos y financieros.",
-  COORDINADOR: "Gestiona vuelos, cotizaciones y operación diaria.",
-  ANALISTA: "Lectura amplia para análisis y reportes.",
-  FACTURACION: "Emisión de CFDI, conciliación y cuentas bancarias.",
-  PILOTO: "Captura tacómetros y gastos durante el vuelo.",
-  SOCIO: "Visibilidad limitada al reparto y resultados.",
-};
 
 export default async function AccountPage() {
   const me = await getMe();
@@ -81,10 +74,10 @@ export default async function AccountPage() {
               <Row icon={<ShieldCheckIcon className="h-4 w-4 text-muted-foreground" />} label="Rol">
                 <div className="flex flex-col items-end gap-0.5">
                   <Badge className="bg-brand-600/15 text-brand-600 dark:text-brand-400 border-brand-600/30">
-                    {me.rol}
+                    {etiquetaRol(me.rol)}
                   </Badge>
                   <span className="text-[10px] text-muted-foreground text-right">
-                    {ROL_DESCRIPTIONS[me.rol] ?? ""}
+                    {descripcionRol(me.rol)}
                   </span>
                 </div>
               </Row>

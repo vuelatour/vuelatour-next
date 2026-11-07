@@ -44,7 +44,7 @@ describe("nombres de respaldo (el del API gana)", () => {
 
 describe("quién descarga (espejo de GESTION del API)", () => {
   it("ADMIN y FACTURACION sí; los demás no", () => {
-    expect([...ROLES_EXCEL_CAJA]).toEqual(["ADMIN", "FACTURACION"]);
+    expect([...ROLES_EXCEL_CAJA]).toEqual(["DIRECCION", "ADMIN", "FACTURACION"]);
     expect(puedeDescargarExcelCaja("ADMIN")).toBe(true);
     expect(puedeDescargarExcelCaja("FACTURACION")).toBe(true);
     for (const rol of ["COORDINADOR", "SOCIO", "PILOTO", "MECANICO", "VISITANTE", null, undefined]) {

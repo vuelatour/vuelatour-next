@@ -22,6 +22,7 @@ import { PeriodSelector } from "@/components/admin/profit-sharing/period-selecto
 import { VuelosSemanaTable } from "@/components/admin/dashboards/vuelos-semana-table";
 import { ExcelExportButton } from "@/components/admin/excel-export-button";
 import { getMe } from "@/lib/api/me";
+import { PantallaSoloDireccion } from "@/components/admin/solo-direccion";
 import {
   getDashboardGastos,
   getDashboardHorasPiloto,
@@ -57,13 +58,14 @@ interface TabDef {
   roles: Rol[];
 }
 
-// Cada tablero es visible para ADMIN + el rol dueño (doc 5.10). SOCIO: solo ejecutivo.
+// Cada tablero es visible para DIRECCION + el rol dueño (doc 5.10). SOCIO: solo
+// ejecutivo. Administración (ADMIN) ya no entra (6-nov-2026, invariante 122).
 const TABS: TabDef[] = [
-  { key: "ejecutivo", label: "Ejecutivo", roles: ["ADMIN", "ANALISTA", "SOCIO"] },
-  { key: "operativo", label: "Operativo", roles: ["ADMIN", "COORDINADOR"] },
-  { key: "gastos", label: "Gastos", roles: ["ADMIN", "ANALISTA"] },
-  { key: "tarjetas", label: "Gastos por tarjeta", roles: ["ADMIN"] },
-  { key: "horas", label: "Horas de piloto", roles: ["ADMIN", "COORDINADOR"] },
+  { key: "ejecutivo", label: "Ejecutivo", roles: ["DIRECCION", "ANALISTA", "SOCIO"] },
+  { key: "operativo", label: "Operativo", roles: ["DIRECCION", "COORDINADOR"] },
+  { key: "gastos", label: "Gastos", roles: ["DIRECCION", "ANALISTA"] },
+  { key: "tarjetas", label: "Gastos por tarjeta", roles: ["DIRECCION"] },
+  { key: "horas", label: "Horas de piloto", roles: ["DIRECCION", "COORDINADOR"] },
 ];
 
 function currentMonth(): { desde: string; hasta: string } {
@@ -101,6 +103,10 @@ export default async function DashboardsPage({ searchParams }: PageProps) {
 
   const me = await getMe();
   const tabs = TABS.filter((t) => t.roles.includes(me.rol));
+  // SOLO DIRECCIÓN (invariante 122): sin tableros para el rol, el candado.
+  if (tabs.length === 0) {
+    return <PantallaSoloDireccion seccion="Reportes" titulo="Estadísticas" />;
+  }
 
   // Tab activa: la solicitada si el rol la permite, si no la primera disponible.
   const requested = tabs.find((t) => t.key === sp.tab)?.key;

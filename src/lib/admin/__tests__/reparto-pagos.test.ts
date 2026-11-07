@@ -859,9 +859,11 @@ describe("qué pinta cada pantalla", () => {
     expect(hrefCuentaSocio(MAURICIO, { desde: "2026-09", hasta: "nada" })).toBe(
       `/admin/profit-sharing/socios/${MAURICIO}?desde=2026-09`,
     );
-    for (const r of ["ADMIN", "ANALISTA", "FACTURACION", "SOCIO"]) expect(puedeVerCuentasSocios(r)).toBe(true);
-    for (const r of ["COORDINADOR", "PILOTO", "MECANICO", null]) expect(puedeVerCuentasSocios(r)).toBe(false);
-    expect(puedeRegistrarEntregas("ADMIN")).toBe(true);
+    for (const r of ["DIRECCION", "ANALISTA", "FACTURACION", "SOCIO"]) expect(puedeVerCuentasSocios(r)).toBe(true);
+    // Administración salió de Pagos a socios (6-nov-2026, invariante 122 del API).
+    for (const r of ["ADMIN", "COORDINADOR", "PILOTO", "MECANICO", null]) expect(puedeVerCuentasSocios(r)).toBe(false);
+    expect(puedeRegistrarEntregas("DIRECCION")).toBe(true);
+    expect(puedeRegistrarEntregas("ADMIN")).toBe(false);
     expect(puedeRegistrarEntregas("FACTURACION")).toBe(true);
     expect(puedeRegistrarEntregas("ANALISTA")).toBe(false);
     expect(puedeRegistrarEntregas("SOCIO")).toBe(false);
@@ -1235,8 +1237,8 @@ describe("hrefCuentaSocioDesdeReparto (atajo «Ver cuenta ›» en la tabla por 
   const SOCIO_B = "50c10000-0000-4000-8000-0000000000b2";
   const OFICINA = "0f1c0000-0000-4000-8000-0000000000c3";
 
-  it("ADMIN, ANALISTA y FACTURACION ven el atajo de cualquier socio (el mismo href de la cuenta)", () => {
-    for (const rol of ["ADMIN", "ANALISTA", "FACTURACION"]) {
+  it("DIRECCION, ANALISTA y FACTURACION ven el atajo de cualquier socio (el mismo href de la cuenta)", () => {
+    for (const rol of ["DIRECCION", "ANALISTA", "FACTURACION"]) {
       expect(hrefCuentaSocioDesdeReparto({ rol, usuarioId: OFICINA }, SOCIO_A)).toBe(hrefCuentaSocio(SOCIO_A));
     }
   });

@@ -927,9 +927,17 @@ export function mensajeErrorCuentaSocio(
 // =============================================================================
 
 /** `GET /v1/profit-sharing/socios*` (SOCIO: solo lo suyo). */
-export const ROLES_LEEN_CUENTAS_SOCIOS = ["ADMIN", "ANALISTA", "FACTURACION", "SOCIO"] as const;
+// PAGOS A SOCIOS ES SOLO DE DIRECCIÓN (6-nov-2026, invariante 122 del API):
+// ADMIN (Administración) salió de las dos listas.
+export const ROLES_LEEN_CUENTAS_SOCIOS = ["DIRECCION", "ANALISTA", "FACTURACION", "SOCIO"] as const;
 /** Entregas (alta/edición/baja/comprobante) y «Configurar cuenta». */
-export const ROLES_REGISTRAN_ENTREGAS = ["ADMIN", "FACTURACION"] as const;
+export const ROLES_REGISTRAN_ENTREGAS = ["DIRECCION", "FACTURACION"] as const;
+/** Quién abre «Reparto de utilidades» (`GET /v1/profit-sharing`; espejo del menú). */
+export const ROLES_VEN_REPARTO = ["DIRECCION", "ANALISTA", "SOCIO"] as const;
+
+export function puedeVerReparto(rol: string | null | undefined): boolean {
+  return (ROLES_VEN_REPARTO as readonly string[]).includes(rol ?? "");
+}
 
 export function puedeVerCuentasSocios(rol: string | null | undefined): boolean {
   return (ROLES_LEEN_CUENTAS_SOCIOS as readonly string[]).includes(rol ?? "");

@@ -25,6 +25,8 @@ import { esUuid } from "@/lib/admin/url-params";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { getMe } from "@/lib/api/me";
+import { PantallaSoloDireccion } from "@/components/admin/solo-direccion";
+import { TEXTO_CAJA_SOLO_DIRECCION } from "@/lib/admin/roles";
 import { porReponerDeFondo, puedeDescargarExcelCaja } from "@/lib/admin/caja-chica-excel";
 import { DescargarPorReponerButton } from "@/components/admin/caja-chica/excel-caja-buttons";
 import { puedeAbrirBalances } from "@/lib/admin/balance-vista";
@@ -101,6 +103,17 @@ export default async function CajaFondoPage({
     usuarios = usersRes.data.map((u) => ({ id: u.id, nombre: u.nombre }));
   } catch (err) {
     if (isApiError(err) && err.status === 404) notFound();
+    // CAJA DE DIRECCIÓN (6-nov-2026, invariante 122 del API): a Administración
+    // el API le responde 403 CAJA_SOLO_DIRECCION.
+    if (isApiError(err) && err.status === 403) {
+      return (
+        <PantallaSoloDireccion
+          seccion="Tesorería"
+          titulo="Caja chica"
+          descripcion={TEXTO_CAJA_SOLO_DIRECCION}
+        />
+      );
+    }
     throw err;
   }
 

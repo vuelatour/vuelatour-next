@@ -24,6 +24,8 @@ import { listGastosAll, signFuelPhotos } from "@/lib/api/expenses-server";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listProviders } from "@/lib/api/providers-server";
 import { getMe } from "@/lib/api/me";
+import { PantallaSoloDireccion } from "@/components/admin/solo-direccion";
+import { TEXTO_NOMINA_SOLO_DIRECCION } from "@/lib/admin/roles";
 import { Degradaciones, principal } from "@/lib/api/degradar";
 import { todayCancun } from "@/lib/datetime";
 import { avionCatalogoGasto } from "@/lib/admin/combustibles";
@@ -110,7 +112,18 @@ export default async function NominaPage({
   // Sueldos = dato sensible: sin `/me` (o con otro rol) la pantalla no existe.
   // Falla CERRADO, como Gastos personales.
   const me = await getMe().catch(() => null);
-  if (!puedeVerNomina(me?.rol)) notFound();
+  if (!me) notFound();
+  // SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): a Administración se le
+  // explica, no se le esconde con un 404.
+  if (!puedeVerNomina(me.rol)) {
+    return (
+      <PantallaSoloDireccion
+        seccion="Operación"
+        titulo={TITULO_NOMINA}
+        descripcion={TEXTO_NOMINA_SOLO_DIRECCION}
+      />
+    );
+  }
 
   const sp = await searchParams;
   const hoy = todayCancun();

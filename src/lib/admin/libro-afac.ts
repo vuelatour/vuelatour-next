@@ -53,7 +53,7 @@ import { llaveCelda, recalcularDependientes } from "@/lib/admin/libro-recalculo"
 
 /** Espejo de `ROLES_AFAC_REAL` del API (`common/afac-real.util.ts`): el PUT
  *  y la marca «Pago de AFAC» del gasto. ANALISTA ve el libro sin editar. */
-export const ROLES_AFAC_REAL = ["ADMIN", "FACTURACION", "COORDINADOR"] as const satisfies readonly Rol[];
+export const ROLES_AFAC_REAL = ["DIRECCION", "ADMIN", "FACTURACION", "COORDINADOR"] as const satisfies readonly Rol[];
 
 type MeAfac = { rol?: string | null; config?: { afac_real?: unknown } | null } | null | undefined;
 

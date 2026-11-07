@@ -25,7 +25,8 @@ export function ReportDownloads({
   rol?: string;
 }) {
   const [loading, setLoading] = useState<Kind | null>(null);
-  const esAdmin = !rol || rol === "ADMIN";
+  // Dirección y Administración (invariante 122): Reportes sigue ofreciendo todo.
+  const esAdmin = !rol || rol === "ADMIN" || rol === "DIRECCION";
   // «PDF socios» = `@Roles(ADMIN, ANALISTA, SOCIO)` de GET /v1/profit-sharing/pdf
   // (12-oct-2026: FACTURACION llega aquí desde Reportes y abría una pestaña con 403).
   const vePdf = esAdmin || rol === "ANALISTA" || rol === "SOCIO";

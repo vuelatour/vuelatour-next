@@ -52,9 +52,9 @@ import { fmtDate, fmtDateOnly } from "@/lib/datetime";
 // =============================================================================
 
 /** `POST /v1/cierres/:periodo`. */
-export const ROLES_CIERRAN_MES = ["ADMIN", "FACTURACION"] as const;
+export const ROLES_CIERRAN_MES = ["DIRECCION", "ADMIN", "FACTURACION"] as const;
 /** `POST /v1/cierres/:periodo/reabrir`. */
-export const ROLES_REABREN_MES = ["ADMIN"] as const;
+export const ROLES_REABREN_MES = ["DIRECCION", "ADMIN"] as const;
 
 /** ¿Se le OFRECE «Cerrar <mes>»? Sin rol (`/me` falló) sí: el API es el candado. */
 export function puedeCerrarMes(rol?: string | null): boolean {

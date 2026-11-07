@@ -38,7 +38,7 @@ describe("hoja-banco: los valores de siempre", () => {
   });
 
   it("roles, descarga, búsqueda y el archivo de un cargo o un abono", () => {
-    expect(H.ROLES_DETALLE_BANCO).toEqual(["ADMIN", "FACTURACION"]);
+    expect(H.ROLES_DETALLE_BANCO).toEqual(["DIRECCION", "ADMIN", "FACTURACION"]);
     expect(H.puedeVerDetalleBanco(null)).toBe(true);
     expect(H.puedeVerDetalleBanco("")).toBe(true);
     expect(H.puedeVerDetalleBanco("ADMIN")).toBe(true);

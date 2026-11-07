@@ -40,7 +40,7 @@ export default async function ExpirationsPage({ searchParams }: ExpirationsPageP
   // MECANICO consulta la lista, pero crear/editar/borrar/ver documento son de
   // oficina (el API le responde 403): no pintarle botones que fallan.
   const me = await getMe();
-  const canManage = me.rol === "ADMIN" || me.rol === "COORDINADOR";
+  const canManage = me.rol === "DIRECCION" || me.rol === "ADMIN" || me.rol === "COORDINADOR";
   // `?orden=` validado aquí (fuera de catálogo ⇒ default); la tabla lo relee
   // de la URL viva y esto es solo su respaldo.
   const ordenInicial = ordenVencimientosDeUrl(sp.orden);

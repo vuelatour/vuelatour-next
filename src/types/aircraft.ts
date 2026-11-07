@@ -427,12 +427,18 @@ export interface AircraftMetrics {
     vuelos_mes: number;
     vuelos_anio: number;
   };
+  /**
+   * ADMINISTRACIÓN (6-nov-2026, API 0.0.126, invariante 122): el API manda
+   * solo los GASTOS — `ingresos` y `utilidad` llegan en `null` y
+   * `finanzas_solo_gastos` en true. Dirección, ANALISTA y SOCIO reciben todo.
+   */
   finanzas: {
     moneda: string;
-    ingresos: number;
+    ingresos: number | null;
     gastos: number;
-    utilidad: number;
+    utilidad: number | null;
   }[];
+  finanzas_solo_gastos?: boolean;
   /**
    * ADITIVO (16-oct-2026, API 0.0.84): desde qué día cuenta `finanzas` (el
    * inicio oficial) o null = de por vida. Ausente = API previo (de por vida).

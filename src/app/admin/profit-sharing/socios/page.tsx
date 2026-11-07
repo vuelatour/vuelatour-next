@@ -34,6 +34,7 @@ import {
   mesActual,
   puedeRegistrarEntregas,
   puedeVerCuentasSocios,
+  ROLES_VEN_REPARTO,
   sociosSinConfigurar,
   textoSociosSinConfigurar,
 } from "@/lib/admin/reparto-pagos";
@@ -42,8 +43,8 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: TITULOS_SECCION.pagosSocios };
 
-/** Roles que abren «Reparto de utilidades» (espejo del menú). */
-const VEN_REPARTO = ["ADMIN", "ANALISTA", "SOCIO"];
+/** Roles que abren «Reparto de utilidades» (espejo del menú; invariante 122). */
+const VEN_REPARTO: readonly string[] = ROLES_VEN_REPARTO;
 
 function Encabezado({ conReparto }: { conReparto: boolean }) {
   return (
@@ -90,8 +91,8 @@ export default async function PagosSociosPage({
         <Encabezado conReparto={false} />
         <EmptyState
           icon={LockClosedIcon}
-          title="Solo administración, facturación, análisis y socios"
-          description="Las cuentas de los socios las ven los usuarios con rol ADMIN, FACTURACION, ANALISTA o SOCIO."
+          title="Solo Dirección, facturación, análisis y socios"
+          description="Las cuentas de los socios las ven Dirección, FACTURACION, ANALISTA y SOCIO; Administración ya no (6-nov-2026)."
         />
       </div>
     );

@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { MeResponse } from "@/types/me";
+import { etiquetaRol } from "@/lib/admin/roles";
 
 function initials(name: string): string {
   return name
@@ -43,7 +44,7 @@ export function UserMenu({ me }: { me: MeResponse }) {
         <div className="hidden md:flex flex-col items-start leading-tight">
           <span className="text-xs font-medium">{me.nombre}</span>
           <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-            {me.rol}
+            {etiquetaRol(me.rol)}
           </span>
         </div>
       </DropdownMenuTrigger>

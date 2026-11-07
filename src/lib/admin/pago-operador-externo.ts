@@ -32,7 +32,7 @@ import {
 } from "@/lib/admin/categorias-gasto";
 
 /** Quién marca el pago al operador (espejo de `ROLES_PAGO_OPERADOR_EXTERNO` del API). */
-export const ROLES_PAGO_OPERADOR_EXTERNO: readonly string[] = ["ADMIN", "FACTURACION", "COORDINADOR"];
+export const ROLES_PAGO_OPERADOR_EXTERNO: readonly string[] = ["DIRECCION", "ADMIN", "FACTURACION", "COORDINADOR"];
 
 /** Categorías del vuelo que NUNCA restan en sus columnas (espejo del API). */
 const CATEGORIAS_FUERA_DE_COLUMNAS: ReadonlySet<string> = new Set(["TUAS", "GAS", "PERMISO", "INDIRECTO"]);

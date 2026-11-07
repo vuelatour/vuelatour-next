@@ -23,7 +23,7 @@ import {
 
 describe("quién completa un vuelo con tacómetro omitido", () => {
   it("espejo exacto de @Roles de start/complete en el API", () => {
-    expect(ROLES_COMPLETAR_VUELO).toEqual(["ADMIN", "COORDINADOR", "PILOTO"]);
+    expect(ROLES_COMPLETAR_VUELO).toEqual(["DIRECCION", "ADMIN", "COORDINADOR", "PILOTO"]);
   });
 
   it("FACTURACION omite pero NO completa; ADMIN/COORDINADOR sí; sin rol, no", () => {

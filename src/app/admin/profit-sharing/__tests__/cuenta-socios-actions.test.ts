@@ -379,7 +379,7 @@ describe("getContextoRegistro (lista de «Entregó» y T.C. oficial de hoy)", ()
     expect(r.tcOficial).toBe(18.45);
   });
 
-  it("ADMIN: usuarios activos (sin pilotos externos) + T.C.; si la lista falla, se DICE y sigue", async () => {
+  it("DIRECCION: usuarios activos (sin pilotos externos) + T.C.; si la lista falla, se DICE y sigue", async () => {
     apiServer.mockImplementation(async (ruta: string) =>
       ruta === "/v1/users"
         ? {
@@ -391,7 +391,7 @@ describe("getContextoRegistro (lista de «Entregó» y T.C. oficial de hoy)", ()
           }
         : { tc: null },
     );
-    const r = await getContextoRegistro({ ...ME, rol: "ADMIN" }, new Degradaciones());
+    const r = await getContextoRegistro({ ...ME, rol: "DIRECCION" }, new Degradaciones());
     expect(r.usuarios).toEqual([{ id: "u1", nombre: "Itzi" }]);
     expect(r.tcOficial).toBeNull();
 
@@ -401,7 +401,7 @@ describe("getContextoRegistro (lista de «Entregó» y T.C. oficial de hoy)", ()
       return { tc: 18.45 };
     });
     const degradado = new Degradaciones();
-    const r2 = await getContextoRegistro({ ...ME, rol: "ADMIN" }, degradado);
+    const r2 = await getContextoRegistro({ ...ME, rol: "DIRECCION" }, degradado);
     expect(r2.usuarios).toEqual([]);
     expect(degradado.faltantes).toEqual(["la lista de personas que entregan"]);
   });

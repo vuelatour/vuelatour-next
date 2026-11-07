@@ -367,16 +367,17 @@ describe("menú: «Nómina» justo debajo de «Otros gastos»", () => {
     expect(operacion[i].icon).toBe(UserGroupIcon);
   });
 
-  it("roles = los de «Gastos» y «Otros gastos» (no se abre exposición nueva)", () => {
+  it("roles: Dirección, coordinación y facturación (Administración ya no; invariante 122 del API)", () => {
     const gastos = operacion.find((it) => it.href === "/admin/expenses");
     const otros = operacion.find((it) => it.href === "/admin/otros-gastos");
-    expect(operacion[i].roles).toEqual(["ADMIN", "COORDINADOR", "FACTURACION"]);
-    expect(operacion[i].roles).toEqual(gastos?.roles);
-    expect(operacion[i].roles).toEqual(otros?.roles);
-    for (const rol of ["ADMIN", "COORDINADOR", "FACTURACION"] as const) {
+    expect(operacion[i].roles).toEqual(["DIRECCION", "COORDINADOR", "FACTURACION"]);
+    // Gastos y Otros gastos siguen con Administración; Nómina es solo de Dirección.
+    expect(gastos?.roles).toEqual(["ADMIN", "COORDINADOR", "FACTURACION"]);
+    expect(otros?.roles).toEqual(["ADMIN", "COORDINADOR", "FACTURACION"]);
+    for (const rol of ["DIRECCION", "COORDINADOR", "FACTURACION"] as const) {
       expect(filterNavGroupsForRole(rol).flatMap((g) => g.items).some((it) => it.href === "/admin/nomina"), rol).toBe(true);
     }
-    for (const rol of ["SOCIO", "ANALISTA", "PILOTO", "MECANICO"] as const) {
+    for (const rol of ["ADMIN", "SOCIO", "ANALISTA", "PILOTO", "MECANICO"] as const) {
       expect(filterNavGroupsForRole(rol).flatMap((g) => g.items).some((it) => it.href === "/admin/nomina"), rol).toBe(false);
     }
   });
@@ -399,8 +400,10 @@ describe("menú: «Nómina» justo debajo de «Otros gastos»", () => {
 describe("página /admin/nomina (cableado por regex)", () => {
   const page = leer("../../../../app/admin/nomina/page.tsx");
 
-  it("falla CERRADO: /me ⇒ puedeVerNomina ⇒ notFound(), antes de leer nada", () => {
-    expect(page).toMatch(/const me = await getMe\(\)\.catch\(\(\) => null\);\s*if \(!puedeVerNomina\(me\?\.rol\)\) notFound\(\);/);
+  it("falla CERRADO: sin /me ⇒ notFound(); sin permiso ⇒ el candado de Dirección, antes de leer nada", () => {
+    expect(page).toMatch(/const me = await getMe\(\)\.catch\(\(\) => null\);\s*if \(!me\) notFound\(\);/);
+    expect(page).toMatch(/if \(!puedeVerNomina\(me\.rol\)\) \{\s*return \(\s*<PantallaSoloDireccion/);
+    expect(page.indexOf("<PantallaSoloDireccion")).toBeLessThan(page.indexOf("await searchParams"));
     expect(page.indexOf("notFound();")).toBeLessThan(page.indexOf("await searchParams"));
     expect(page).toContain('export const dynamic = "force-dynamic";');
     expect(page).toContain("export const metadata: Metadata = { title: TITULOS_SECCION.nomina };");

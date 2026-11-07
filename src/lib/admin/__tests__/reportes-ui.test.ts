@@ -15,6 +15,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { sinDireccion } from "@/lib/admin/roles";
 import { fmtDateOnly } from "@/lib/datetime";
 import { textoDegradado } from "@/lib/api/degradar";
 import type { Aircraft } from "@/types/aircraft";
@@ -281,7 +282,7 @@ describe("«Horas por piloto» solo se OFRECE a quien el API se lo da (ADMIN y C
     expect(puedeExportarHorasPiloto(null)).toBe(true);
     expect(puedeExportarHorasPiloto(undefined)).toBe(true);
     expect(puedeExportarHorasPiloto("")).toBe(true);
-    expect(ROLES_EXPORTAN_HORAS_PILOTO).toEqual(["ADMIN", "COORDINADOR"]);
+    expect(ROLES_EXPORTAN_HORAS_PILOTO).toEqual(["DIRECCION", "ADMIN", "COORDINADOR"]);
   });
 
   const controller = leerApi("modules/dashboards/dashboards.controller.ts");
@@ -293,7 +294,8 @@ describe("«Horas por piloto» solo se OFRECE a quien el API se lo da (ADMIN y C
     const roles = ventana.match(/@Roles\(([^)]*)\)/)?.[1];
     expect(roles, "sin @Roles tras horas-piloto/export").toBeTruthy();
     const parseados = [...roles!.matchAll(/Rol\.(\w+)/g)].map((m) => m[1]);
-    expect(parseados).toEqual([...ROLES_EXPORTAN_HORAS_PILOTO]);
+    // El API no nombra a DIRECCION (su guard la deja pasar); el panel sí.
+    expect(parseados).toEqual(sinDireccion(ROLES_EXPORTAN_HORAS_PILOTO));
   });
 });
 

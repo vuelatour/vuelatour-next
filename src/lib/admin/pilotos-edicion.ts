@@ -58,7 +58,7 @@ export function puedeEditarPiloto(
   rol: Rol | null | undefined,
   destino?: DestinoEdicionPiloto | null,
 ): boolean {
-  if (rol == null || rol === "ADMIN") return true;
+  if (rol == null || rol === "ADMIN" || rol === "DIRECCION") return true;
   if (rol !== "COORDINADOR") return false;
   return destino == null || esDestinoEditablePorCoordinador(destino);
 }
@@ -70,7 +70,7 @@ export function puedeEditarPiloto(
  * API decide). Quien no puede, ve el estado SIN botón.
  */
 export function puedeCambiarAccesoPiloto(rol: Rol | null | undefined): boolean {
-  return rol == null || rol === "ADMIN";
+  return rol == null || rol === "ADMIN" || rol === "DIRECCION";
 }
 
 // ===== Textos =====

@@ -30,11 +30,16 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
   // Utilidad acumulada: preferimos USD (moneda de operación); si no, la primera.
   const fin =
     metrics.finanzas?.find((f) => f.moneda === "USD") ?? metrics.finanzas?.[0];
-  const montoFin = fin
-    ? fin.moneda === "MXN"
-      ? fmtMxn(fin.utilidad)
-      : fmtUsd(fin.utilidad)
-    : "—";
+  // ADMINISTRACIÓN (6-nov-2026, invariante 122 del API): el API manda solo los
+  // GASTOS (utilidad y cobrado en null) ⇒ el KPI es «Gastos», no «Utilidad».
+  const soloGastos = fin != null && fin.utilidad == null;
+  const cifraFin = fin == null ? null : soloGastos ? fin.gastos : fin.utilidad;
+  const montoFin =
+    fin && cifraFin != null
+      ? fin.moneda === "MXN"
+        ? fmtMxn(cifraFin)
+        : fmtUsd(cifraFin)
+      : "—";
 
   // Tiempo total del planeador: solo si difiere del taco (base histórica
   // capturada); si son iguales el dato no agrega nada.
@@ -127,13 +132,21 @@ export function AircraftKpiStrip({ metrics }: { metrics: AircraftMetricsDetalle 
         icon={BanknotesIcon}
         label={
           metrics.finanzas_desde
-            ? `Utilidad (${rotuloAcumuladoFinanzas(metrics.finanzas_desde)})`
-            : "Utilidad (acumulada)"
+            ? `${soloGastos ? "Gastos" : "Utilidad"} (${rotuloAcumuladoFinanzas(metrics.finanzas_desde)})`
+            : soloGastos
+              ? "Gastos (acumulados)"
+              : "Utilidad (acumulada)"
         }
         value={montoFin}
-        hint={fin ? "Cobrado − gastos · detalle en Resumen operativo" : undefined}
-        valueClass={
+        hint={
           fin
+            ? soloGastos
+              ? "Solo los gastos · lo cobrado y la utilidad los ve Dirección"
+              : "Cobrado − gastos · detalle en Resumen operativo"
+            : undefined
+        }
+        valueClass={
+          fin && !soloGastos && fin.utilidad != null
             ? fin.utilidad < 0
               ? "text-destructive"
               : "text-emerald-600 dark:text-emerald-400"
