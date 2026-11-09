@@ -12,6 +12,7 @@ import {
   XCircleIcon,
 } from "@heroicons/react/24/outline";
 import { toast } from "sonner";
+import { DESCRIPCION_TOAST_CONFIRMAR_GRUPO } from "@/lib/admin/correo-cliente";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -120,7 +121,12 @@ export function GrupoHeaderActions({
     startTransition(async () => {
       const res = await confirmGrupoAction(grupo.id);
       if (res.ok) {
-        toast.success(`Grupo ${folio} confirmado · ${vivos.length} ${vivos.length === 1 ? "avión" : "aviones"}`);
+        // 9-nov-2026 (API 0.0.133): confirmar ya no manda correo al cliente
+        // (antes salía uno POR AVIÓN del grupo); se dice, como en la cotización.
+        toast.success(
+          `Grupo ${folio} confirmado · ${vivos.length} ${vivos.length === 1 ? "avión" : "aviones"}`,
+          { description: DESCRIPCION_TOAST_CONFIRMAR_GRUPO },
+        );
         toastAvisos(avisosNuevos(res.data));
         setOpenConfirm(false);
         router.refresh();

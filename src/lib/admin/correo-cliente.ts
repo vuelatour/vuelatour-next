@@ -109,6 +109,9 @@ export const ETIQUETA_ASUNTO = "Asunto";
  */
 export const DESCRIPCION_TOAST_CONFIRMAR =
   "No se envió ningún correo al cliente. Si lo necesitas, usa «Enviar confirmación al cliente».";
+/** Lo mismo al confirmar un GRUPO (antes salía un correo por cada avión). */
+export const DESCRIPCION_TOAST_CONFIRMAR_GRUPO =
+  "No se envió ningún correo al cliente. Si lo necesitas, envíalo desde «Correo al cliente» en el vuelo de cada avión.";
 
 // ═══════════════════════════════ Piezas ═══════════════════════════════
 
