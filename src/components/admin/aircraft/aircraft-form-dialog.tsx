@@ -267,8 +267,8 @@ export function AircraftFormDialog({
               <Input type="number" min={0} step="0.01" placeholder="650" {...register("tarifa_hora_broker_usd")} />
             </Field>
             <Field
-              label="Reserva OH/hr"
-              hint="USD"
+              label="Reserva overhaul USD/hr (por motor)"
+              hint="El balance y el reparto la suman por motor"
               error={errors.reserva_overhaul_hr_usd?.message}
             >
               <Input type="number" min={0} step="0.01" placeholder="55" {...register("reserva_overhaul_hr_usd")} />
