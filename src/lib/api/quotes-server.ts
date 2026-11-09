@@ -1,4 +1,14 @@
 import { apiServer } from "./server";
+import { esErrorDeNext } from "./degradar";
+import type {
+  CargaCorreos,
+  CargaCorreosDeVuelo,
+  CargaCorreosEnviados,
+  CorreoCliente,
+  CorreosDeVueloResponse,
+  CorreosEnviadosResponse,
+  VistaPreviaCorreoConfirmacion,
+} from "@/types/correos-cliente";
 import type { CotizacionInterna } from "@/types/quotes-interno";
 import {
   esApiSinRangoFechas,
@@ -153,4 +163,104 @@ export async function getQuoteVecinos(
     if (hayRangoLista(filtros) && esApiSinRangoFechas(err)) return pedir(sinRango(filtros));
     throw err;
   }
+}
+
+// =============================================================================
+// Correos al cliente (9-nov-2026, API 0.0.133)
+// =============================================================================
+
+/** Solo filas con forma de correo: una respuesta rara no rompe la pantalla. */
+function soloCorreos(valor: unknown): CorreoCliente[] {
+  if (!Array.isArray(valor)) return [];
+  return valor.filter(
+    (c): c is CorreoCliente =>
+      !!c && typeof c === "object" && typeof (c as { id?: unknown }).id === "string",
+  );
+}
+
+/**
+ * Lectura de correos SIN mentir (ver `CargaCorreos`): jamás se devuelve una
+ * lista vacía cuando la lectura falló, porque la pantalla diría «no se le ha
+ * enviado ningún correo al cliente» de un vuelo al que sí se le envió.
+ * `estadosSinRuta` = los HTTP que significan «el API aún no tiene la ruta».
+ */
+async function leerCorreos<T>(
+  etiqueta: string,
+  lectura: () => Promise<T>,
+  estadosSinRuta: readonly number[],
+): Promise<CargaCorreos<T>> {
+  try {
+    return { estado: "ok", datos: await lectura() };
+  } catch (err) {
+    if (esErrorDeNext(err)) throw err;
+    const status = (err as { status?: unknown } | null)?.status;
+    if (status === 401 || status === 403) return { estado: "sin-acceso" };
+    if (typeof status === "number" && estadosSinRuta.includes(status)) {
+      return { estado: "no-disponible" };
+    }
+    console.error(`[admin] no se pudieron cargar ${etiqueta}`, err);
+    return { estado: "error" };
+  }
+}
+
+/**
+ * Historial de correos de UN vuelo/cotización (`GET /v1/quotes/:id/correos`,
+ * más reciente primero). Roles: ADMIN, COORDINADOR, FACTURACION, ANALISTA.
+ * Nunca lanza: 404 = API sin desplegar (`no-disponible`).
+ */
+export function getQuoteCorreos(id: string): Promise<CargaCorreosDeVuelo> {
+  return leerCorreos(
+    "los correos enviados al cliente",
+    async () => {
+      const r = await apiServer<CorreosDeVueloResponse>(`/v1/quotes/${id}/correos`, {
+        cache: "no-store",
+      });
+      return soloCorreos(r?.correos);
+    },
+    [404],
+  );
+}
+
+/**
+ * Vista previa de la confirmación (`GET /v1/quotes/:id/correo-confirmacion`):
+ * lo que se MANDARÍA; no envía nada. LANZA si falla: la consume una server
+ * action que devuelve el error clasificado.
+ */
+export function getCorreoConfirmacionPreview(id: string) {
+  return apiServer<VistaPreviaCorreoConfirmacion>(`/v1/quotes/${id}/correo-confirmacion`, {
+    cache: "no-store",
+  });
+}
+
+/**
+ * TODOS los correos enviados a clientes (`GET /v1/quotes/correos`). El API
+ * rechaza parámetros desconocidos (400, `forbidNonWhitelisted`): viajan SOLO
+ * `desde`, `hasta` (días `AAAA-MM-DD` ya validados) y `limite`.
+ *
+ * `no-disponible` cubre 404 **y 400**: un API anterior al 0.0.133 no tiene
+ * esta ruta y lee «correos» como el id de `GET /v1/quotes/:id` ⇒ responde
+ * 400 «uuid inválido», no 404. Como aquí solo viajan valores validados, un
+ * 400 no puede ser culpa de un filtro del operador.
+ */
+export function listCorreosClientes(query: {
+  desde?: string;
+  hasta?: string;
+  limite: number;
+}): Promise<CargaCorreosEnviados> {
+  return leerCorreos(
+    "los correos enviados a clientes",
+    async () => {
+      const r = await apiServer<CorreosEnviadosResponse>("/v1/quotes/correos", {
+        searchParams: { desde: query.desde, hasta: query.hasta, limite: query.limite },
+        cache: "no-store",
+      });
+      return {
+        correos: soloCorreos(r?.correos),
+        truncado: r?.truncado === true,
+        desde: typeof r?.desde === "string" ? r.desde : "",
+        hasta: typeof r?.hasta === "string" ? r.hasta : "",
+      };
+    },
+    [404, 400],
+  );
 }

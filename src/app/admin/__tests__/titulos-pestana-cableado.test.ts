@@ -65,6 +65,7 @@ const ESTATICAS: Record<string, string> = {
   "clients/page.tsx": "TITULOS_SECCION.clientes",
   "combustibles/page.tsx": "TITULOS_SECCION.combustibles",
   "configuracion/page.tsx": "TITULOS_SECCION.configuracion",
+  "correos-enviados/page.tsx": "TITULOS_SECCION.correosEnviados",
   "dashboards/page.tsx": "TITULOS_SECCION.estadisticas",
   "distancias/page.tsx": "TITULOS_SECCION.distancias",
   "document-types/page.tsx": "TITULOS_SECCION.tiposDocumento",

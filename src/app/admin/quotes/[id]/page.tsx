@@ -7,10 +7,13 @@ import { QuoteWorkspace } from "@/components/admin/quotes/quote-workspace";
 import { getCobroVoucherUrls, getFlightSnapshot } from "@/lib/api/flights-server";
 import {
   getQuote,
+  getQuoteCorreos,
   getQuoteInterno,
   getQuoteVecinos,
   getQuoteVersions,
 } from "@/lib/api/quotes-server";
+import { puedeVerCorreosCliente } from "@/lib/admin/correo-cliente";
+import type { CargaCorreosDeVuelo } from "@/types/correos-cliente";
 import { cargarCatalogosCotizador } from "@/lib/api/quote-catalogos-server";
 import { getClient } from "@/lib/api/clients-server";
 import { getMe } from "@/lib/api/me";
@@ -138,6 +141,7 @@ export default async function QuoteDetailPage({
     interno,
     vecinos,
     editoresCobrada,
+    correos,
   ] = await Promise.all([
       getClient(quote.cliente_id).catch(() => null),
       // Los cobros alimentan el candado y el saldo: si no cargan se AVISA
@@ -155,6 +159,13 @@ export default async function QuoteDetailPage({
         : Promise.resolve(null),
       vecinosPromesa,
       editoresPromesa,
+      // CORREOS AL CLIENTE (9-nov-2026, API 0.0.133): historial de este
+      // vuelo para la card «Correo al cliente». Best-effort y sin mentir:
+      // `getQuoteCorreos` nunca lanza y distingue «sin envíos» de «no se pudo
+      // leer» (la card lo dice ahí mismo). Solo se PIDE a quien puede verlos.
+      puedeVerCorreosCliente(me?.rol)
+        ? getQuoteCorreos(id)
+        : Promise.resolve<CargaCorreosDeVuelo>({ estado: "sin-acceso" }),
     ]);
 
   // Comprobantes de los cobros (24-sep-2026): URLs firmadas best-effort —
@@ -208,6 +219,9 @@ export default async function QuoteDetailPage({
       // «COBRADO DE MÁS» (14-oct-2026, API 0.0.78, ADITIVO del snapshot): el
       // aviso de la card de cobros lo arma el API; ausente/null ⇒ nada.
       cobradoDeMas={cobrosVuelo?.cobrado_de_mas ?? null}
+      // CORREO AL CLIENTE (9-nov-2026, API 0.0.133): confirmar ya no manda
+      // nada; la card enseña el historial y envía a mano con vista previa.
+      correos={correos}
       // SEGUIMIENTO (29-sep-2026, ADITIVO): los contadores del snapshot solo
       // RESPALDAN a los de la cotización para el banner ámbar del cotizador.
       seguimientoRespaldo={

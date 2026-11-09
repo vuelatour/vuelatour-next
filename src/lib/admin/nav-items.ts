@@ -22,6 +22,7 @@ import {
   BellAlertIcon,
   Cog6ToothIcon,
   BeakerIcon,
+  EnvelopeIcon,
   WrenchScrewdriverIcon,
   ArchiveBoxIcon,
   ShoppingCartIcon,
@@ -34,6 +35,7 @@ import type { ComponentType, SVGProps } from "react";
 import type { Rol } from "@/types/me";
 import { esDireccion } from "@/lib/admin/roles";
 import { ROLES_NOMINA, TITULO_NOMINA } from "@/lib/admin/nomina";
+import { ROLES_VEN_CORREOS_CLIENTE, TITULO_CORREOS_ENVIADOS } from "@/lib/admin/correo-cliente";
 
 export interface NavItem {
   label: string;
@@ -71,6 +73,17 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { label: "Cotizaciones", href: "/admin/quotes", icon: CalculatorIcon },
       { label: "Vuelos", href: "/admin/flights", icon: PaperAirplaneIcon },
+      {
+        // Correos enviados a CLIENTES (9-nov-2026, API 0.0.133), pedido de la
+        // oficina: «¿en dónde veo que se enviaron? ¿desde qué correo?». Junto
+        // a Cotizaciones y Vuelos, que es desde donde se mandan (a mano: el
+        // correo de confirmación ya no sale solo). Roles = los que el API deja
+        // leerlos, desde la fuente única `lib/admin/correo-cliente.ts` (pura).
+        label: TITULO_CORREOS_ENVIADOS,
+        href: "/admin/correos-enviados",
+        icon: EnvelopeIcon,
+        roles: [...ROLES_VEN_CORREOS_CLIENTE],
+      },
       { label: "Calendario", href: "/admin/calendar", icon: CalendarIcon },
       // Tablero del día: cada escala espera su tacómetro; lo vencido se
       // deduce solo y oficina confirma/ajusta — la operación no se detiene.

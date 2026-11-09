@@ -23,6 +23,7 @@ import {
   type RouteOption,
 } from "@/components/admin/quotes/quote-calculator";
 import { QuoteCobrosCard } from "@/components/admin/quotes/quote-cobros-card";
+import { CorreoClienteCard } from "@/components/admin/quotes/correo-cliente-card";
 import { CobroFormSheet } from "@/components/admin/flights/cobro-form-sheet";
 import { asignacionDisponible } from "@/lib/admin/cobro-factura";
 import { QuoteEscalaPdfFecha } from "@/components/admin/quotes/quote-escala-pdf-fecha";
@@ -52,6 +53,7 @@ import { tramosCotizadosDeCotizacion } from "@/lib/admin/tramos-cotizados";
 import { fmtDateOnly, fmtDateTime, TZ_LABEL } from "@/lib/datetime";
 import { combinadoFolio, type CobradoDeMasVuelo, type FlightCobro } from "@/types/flights";
 import type { VueloConGrupo } from "@/types/grupos";
+import type { CargaCorreosDeVuelo } from "@/types/correos-cliente";
 import type { CotizacionInterna } from "@/types/quotes-interno";
 import type { FacturaServicioBloque } from "@/types/facturas-emitidas";
 import type { QuoteVecinos } from "@/types/quote-vecinos";
@@ -114,6 +116,7 @@ export function QuoteWorkspace({
   editoresCobrada = null,
   seguimientoRespaldo = null,
   cobradoDeMas = null,
+  correos = { estado: "sin-acceso" },
 }: {
   quote: PersistedQuote;
   versions: CotizacionVersion[];
@@ -185,6 +188,12 @@ export function QuoteWorkspace({
    * del vuelo para la card de cobros. null/ausente ⇒ sin aviso.
    */
   cobradoDeMas?: CobradoDeMasVuelo | null;
+  /**
+   * CORREOS AL CLIENTE (9-nov-2026, API 0.0.133): historial de correos de
+   * este vuelo, leído por la página. Distingue «sin envíos» de «no se pudo
+   * leer» (`CargaCorreos`). Ausente ⇒ la card «Correo al cliente» no se pinta.
+   */
+  correos?: CargaCorreosDeVuelo;
 }) {
   // Espejo del candado D3 del API: un anticipo parcial (neto > 0) o un cobro
   // MXN sin TC también congelan la edición, no solo la bandera `cobrado`.
@@ -754,6 +763,8 @@ export function QuoteWorkspace({
           />
         </div>
 
+        {/* Tercera columna: operación y, debajo, el correo al cliente. */}
+        <div className="min-w-0 space-y-6">
         {/* Operación: lo que no vive en la hoja ni en el panel interno. */}
         <Card className="min-w-0">
           <CardHeader>
@@ -812,6 +823,12 @@ export function QuoteWorkspace({
             </p>
           </CardContent>
         </Card>
+
+        {/* CORREO AL CLIENTE (9-nov-2026, API 0.0.133): confirmar ya NO manda
+            nada; aquí se ve si se le envió algo y se manda a mano, con vista
+            previa. Se esconde sola si el rol no ve correos. */}
+        <CorreoClienteCard vueloId={quote.id} carga={correos} rol={rol} />
+        </div>
       </div>
     </div>
   );

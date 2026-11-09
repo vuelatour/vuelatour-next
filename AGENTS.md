@@ -13559,3 +13559,65 @@ DISPONIBLE → Aerocharter % + Socios %`.
   de cascada, card, KPIs, socios, histórico y cableado; ningún
   `saldo_a_repartir_*` en el código), `reparto-pesos.test.ts`
   (discriminadores, nota y KPIs). Los goldens siguen byte a byte.
+
+## Correos al cliente: SOLO a mano, con vista previa y registro (9-nov-2026, API 0.0.133)
+
+Pedido de la oficina (descubrieron por accidente que confirmar una cotización
+mandaba un «Vuelo confirmado» al cliente): «que se cancele el envío
+automático; que solo se mande cuando ellos le den en enviar de forma manual,
+solo si se requiere, y saber si se mandó o no y con qué contenido» y «¿en
+dónde veo que se enviaron? ¿desde qué correo?». Desde el API 0.0.133
+confirmar NO manda nada; cada envío (ENVIADO o FALLIDO) queda registrado con
+su contenido exacto.
+
+- **Fuente única PURA**: `lib/admin/correo-cliente.ts` (roles, leyenda,
+  línea «Enviado el DD/MM/AAAA, h:mm por Itzel a correo@x.com», resumen,
+  aviso de reenvío, `motivoNoEnviable`, `resultadoEnvio`, textos de la
+  pantalla). Ningún componente redacta esas frases. Tipos 1:1 con el API en
+  `types/correos-cliente.ts`.
+- **Card «Correo al cliente»** (`quotes/correo-cliente-card.tsx`) en la página
+  única de la cotización (tercera columna, bajo «Operación») y en el detalle
+  del vuelo (columna derecha). Leyenda fija «Los correos al cliente NO se
+  envían solos…», historial con «Ver contenido» y el botón «Enviar
+  confirmación al cliente» (Dirección, Administración, Coordinación;
+  Facturación y Analista solo leen; los demás roles no tienen card).
+- **Nada sale sin vista previa**: el botón abre un diálogo que pide
+  `GET /v1/quotes/:id/correo-confirmacion` EN EL CLIC (no en un efecto:
+  `RefreshOnFocus` entrega props nuevas) y enseña De / Para / Asunto + el
+  contenido. `puede_enviar: false` ⇒ se pinta `motivo` y no hay botón de
+  envío: cuándo se puede (CONFIRMADO/RESERVA, cliente con correo) lo decide
+  el API, el panel no lo recalcula. `enviados > 0` ⇒ aviso ámbar y «Enviar
+  otra vez» (`reenviar: true`).
+- **Los 409 se leen por `code`**, nunca por el mensaje: `CORREO_YA_ENVIADO`
+  (alguien lo mandó mientras tanto ⇒ se vuelve a preguntar como reenvío, no
+  sale nada) y `CORREO_NO_ENVIABLE`. Un 200 con `enviado: false` = el
+  proveedor falló: mensaje en rojo, queda FALLIDO. Un 5xx o la red caída es
+  INCIERTO: se manda a revisar la lista, no se afirma que no salió.
+- **El contenido del correo va en `<iframe sandbox="" srcDoc>`**
+  (`quotes/correo-contenido.tsx`: `CorreoSobre`, `CorreoMarco`,
+  `VerContenidoCorreo`), jamás inyectado en la página.
+- **Sin mentir**: `getQuoteCorreos` y `listCorreosClientes`
+  (`lib/api/quotes-server.ts`) nunca lanzan y devuelven `ok` /
+  `no-disponible` / `sin-acceso` / `error` (`CargaCorreos`). «No se le ha
+  enviado ningún correo» SOLO con una lectura buena y vacía. Con el API sin
+  desplegar la card no pinta ni la leyenda (un API anterior aún mandaría el
+  correo al confirmar). La lista general trata 404 **y 400** como
+  `no-disponible`: un API anterior lee «correos» como el id de
+  `GET /v1/quotes/:id` y responde 400.
+- **Actions** (`quotes/actions.ts`: `previsualizarCorreoConfirmacionAction`,
+  `enviarCorreoConfirmacionAction`): sin `revalidatePath` (el diálogo debe
+  seguir montado); quien llama hace `router.refresh()`. El POST no se
+  reintenta solo.
+- **Toast de «Confirmar»** (`quote-actions-bar.tsx`): lleva la descripción
+  `DESCRIPCION_TOAST_CONFIRMAR` («No se envió ningún correo al cliente…»).
+  El detalle del vuelo no confirma cotizaciones; el grupo
+  (`grupo-header-actions.tsx`) no se tocó.
+- **Pantalla «Correos enviados»** (`/admin/correos-enviados`, menú
+  «Operación» bajo «Vuelos»; `ROLES_VEN_CORREOS_CLIENTE`): `DataTable` con
+  Fecha · Folio (liga al vuelo) · Cliente · Para · Asunto · Estado · Enviado
+  por · «Ver contenido». `?desde=&hasta=` validados con `rangoCorreosDeUrl`
+  (solo días `AAAA-MM-DD`); al API viajan SOLO `desde`, `hasta` y `limite`
+  (200). Sin periodo = últimos 90 días del API; `truncado` se avisa.
+- Pruebas: `lib/admin/__tests__/correo-cliente.test.ts`,
+  `lib/api/__tests__/correos-cliente-server.test.ts` (contrato con
+  `apiServer` simulado) y `quotes/__tests__/correo-cliente-card.test.tsx`.

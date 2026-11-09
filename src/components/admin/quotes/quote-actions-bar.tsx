@@ -44,6 +44,7 @@ import {
   type CandadoRevisionOpts,
 } from "@/lib/admin/quote-revision";
 import { puedeVerHojaInterna } from "@/lib/admin/quote-sheet-interna";
+import { DESCRIPCION_TOAST_CONFIRMAR } from "@/lib/admin/correo-cliente";
 import {
   puedeCopiarCotizacion,
   TEXTO_BOTON_COPIAR,
@@ -168,7 +169,11 @@ export function QuoteActionsBar({
     startConfirm(async () => {
       const res = await confirmQuoteAction(quote.id);
       if (res.ok) {
-        toast.success(`Cotización #${quote.folio} confirmada`);
+        // 9-nov-2026 (API 0.0.133): confirmar ya NO le manda el correo al
+        // cliente. Se DICE aquí, porque hasta ese día este clic lo enviaba.
+        toast.success(`Cotización #${quote.folio} confirmada`, {
+          description: DESCRIPCION_TOAST_CONFIRMAR,
+        });
         router.refresh();
       } else {
         toast.error(res.error ?? "Error al confirmar");

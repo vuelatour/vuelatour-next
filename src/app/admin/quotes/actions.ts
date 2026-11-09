@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
+import { getCorreoConfirmacionPreview } from "@/lib/api/quotes-server";
+import { esUuid } from "@/lib/admin/url-params";
+import type {
+  EnvioCorreoConfirmacion,
+  VistaPreviaCorreoConfirmacion,
+} from "@/types/correos-cliente";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import type { CalculateQuoteRequest } from "@/types/quote";
 
@@ -316,6 +322,54 @@ export async function cancelQuoteAction(
     revalidatePath("/admin/quotes");
     revalidatePath(`/admin/quotes/${id}`);
     return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// =============================================================================
+// Correo al cliente (9-nov-2026, API 0.0.133)
+// =============================================================================
+//
+// Pedido de la oficina: el correo «Vuelo confirmado» ya NO sale solo al
+// confirmar; se manda únicamente cuando alguien lo pide desde la card «Correo
+// al cliente», después de ver la vista previa.
+//
+// Ninguna de las dos actions hace `revalidatePath`: las llama un diálogo que
+// debe seguir montado (un revalidate repinta la página abierta y lo cerraría
+// a media lectura). Quien llama hace `router.refresh()` al terminar.
+
+/** Lo que se MANDARÍA (De / Para / Asunto / contenido). No envía nada. */
+export async function previsualizarCorreoConfirmacionAction(
+  id: string,
+): Promise<ActionResult<VistaPreviaCorreoConfirmacion>> {
+  if (!esUuid(id)) return { ok: false, error: "Cotización inválida" };
+  try {
+    const data = await getCorreoConfirmacionPreview(id);
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * ENVÍA la confirmación al cliente. `reenviar: true` solo cuando el operador
+ * ya vio el aviso «Ya se envió… ¿Enviarlo otra vez?»; sin él, el API responde
+ * 409 `CORREO_YA_ENVIADO` si ya había un ENVIADO. Un 200 con `enviado:false`
+ * = el proveedor falló (quedó registrado como FALLIDO). Es un POST: NO se
+ * reintenta solo (mandaría el correo dos veces).
+ */
+export async function enviarCorreoConfirmacionAction(
+  id: string,
+  opciones: { reenviar?: boolean } = {},
+): Promise<ActionResult<EnvioCorreoConfirmacion>> {
+  if (!esUuid(id)) return { ok: false, error: "Cotización inválida" };
+  try {
+    const data = await apiServer<EnvioCorreoConfirmacion>(
+      `/v1/quotes/${id}/correo-confirmacion`,
+      { method: "POST", body: opciones.reenviar === true ? { reenviar: true } : {} },
+    );
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

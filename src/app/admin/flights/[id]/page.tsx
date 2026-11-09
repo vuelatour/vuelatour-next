@@ -55,7 +55,10 @@ import {
 import { listProviders } from "@/lib/api/providers-server";
 import { FlightGastosCard } from "@/components/admin/flights/flight-gastos-card";
 import { getClient } from "@/lib/api/clients-server";
-import { getQuote } from "@/lib/api/quotes-server";
+import { getQuote, getQuoteCorreos } from "@/lib/api/quotes-server";
+import { CorreoClienteCard } from "@/components/admin/quotes/correo-cliente-card";
+import { puedeVerCorreosCliente } from "@/lib/admin/correo-cliente";
+import type { CargaCorreosDeVuelo } from "@/types/correos-cliente";
 import { avionCatalogoGasto } from "@/lib/admin/combustibles";
 import { listAircraft } from "@/lib/api/aircraft";
 import { listUsers } from "@/lib/api/users-server";
@@ -161,7 +164,7 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
   }
 
   const degradado = new Degradaciones();
-  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, gastosHistorial, planVuelo, quote, gastosRes, vueloAnteriorRes, seguimientoCarga] =
+  const [client, aircraftRes, pilotsRes, airportsRes, tacoPhotos, bitacora, gastosHistorial, planVuelo, quote, gastosRes, vueloAnteriorRes, seguimientoCarga, correosCarga] =
     await Promise.all([
       getClient(snapshot.cliente_id).catch(() => null),
       // Catálogos de los diálogos (asignar avión/piloto, editar ruta): si uno
@@ -201,6 +204,13 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
       // API previo o un rol sin acceso ⇒ la card no se pinta; una falla ⇒
       // la card lo DICE (jamás «sin notas»).
       getFlightSeguimiento(id),
+      // CORREOS AL CLIENTE (9-nov-2026, API 0.0.133): historial del vuelo
+      // para la card «Correo al cliente». Nunca lanza y no miente: «sin
+      // envíos» y «no se pudo leer» son estados distintos. Solo se PIDE a
+      // quien puede verlos (a SOCIO/PILOTO el API les respondería 403).
+      puedeVerCorreosCliente(me?.rol)
+        ? getQuoteCorreos(id)
+        : Promise.resolve<CargaCorreosDeVuelo>({ estado: "sin-acceso" }),
     ]);
   // TC oficial de referencia del DÍA DE LA COTIZACIÓN (pedido 29-ago: no el
   // de hoy) para prellenar el TC al cobrar en MXN cuando la cotización no lo
@@ -1094,6 +1104,16 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
                 )}
             </CardContent>
           </Card>
+
+          {/* CORREO AL CLIENTE (9-nov-2026, API 0.0.133): el correo de
+              confirmación ya NO sale solo; aquí se ve si se le mandó algo
+              (con su contenido) y se envía a mano, con vista previa. La card
+              se esconde sola si el rol no ve correos. */}
+          <CorreoClienteCard
+            vueloId={snapshot.id}
+            carga={correosCarga}
+            rol={me?.rol ?? null}
+          />
 
           {/* SEGUIMIENTO DE LA COTIZACIÓN (29-sep-2026, pedido del cliente
               con la captura del #358): ajustes por cobrar o agregar a la
