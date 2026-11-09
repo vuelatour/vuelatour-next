@@ -395,21 +395,27 @@ export function sinCombustible(a: AvionReparto): AvionReparto {
 }
 
 /**
- * El mismo N621TX de septiembre con LA RESERVA RETENIDA (7-nov-2026, API
- * 0.0.128, aditivo sobre el 0.0.103): `saldo_a_repartir_*` = saldo −
- * reserva (574,632.22 − 8,625.00 = 566,007.22 MXN; 33,280.16 − 500 =
- * 32,780.16 USD), la reserva retenida completa y `reparto[].monto_*` ya neto
- * (Σ = saldo a repartir al centavo: 231,610.15 + 334,397.07 = 566,007.22;
- * 13,413.64 + 19,366.52 = 32,780.16). `descuenta_reserva: true` para todos.
+ * El mismo N621TX de septiembre con LA RESERVA DE OVERHAUL EN LA CASCADA
+ * (9-nov-2026, API 0.0.129, invariante 125; aditivo sobre el 0.0.103):
+ * `reserva_overhaul_en_cascada: true` y `saldo_disponible_*` YA NETO (la
+ * reserva es una resta más antes del total: 574,632.22 − 8,625.00 =
+ * 566,007.22 MXN; 33,280.16 − 500 = 32,780.16 USD), la reserva retenida
+ * completa, `reparto[].utilidad_*` = su parte del saldo ANTES de la reserva
+ * (sin cambio) y `reparto[].monto_*` ya neto (Σ = `saldo_disponible_*` al
+ * centavo: 231,610.15 + 334,397.07 = 566,007.22; 13,413.64 + 19,366.52 =
+ * 32,780.16). `descuenta_reserva: true` para todos.
  */
 export function avionReservaRetenida(): AvionReparto {
   const a = avionCombustible();
   return {
     ...a,
+    reserva_overhaul_en_cascada: true,
+    saldo_disponible_usd: 32780.16,
+    saldo_disponible_mxn: 566007.22,
+    reserva_overhaul_usd: 500,
+    reserva_overhaul_mxn: 8625,
     reserva_retenida_usd: 500,
     reserva_retenida_mxn: 8625,
-    saldo_a_repartir_usd: 32780.16,
-    saldo_a_repartir_mxn: 566007.22,
     reparto: [
       { ...a.reparto[0], descuenta_reserva: true, monto_usd: 13413.64, monto_mxn: 231610.15 },
       { ...a.reparto[1], descuenta_reserva: true, monto_usd: 19366.52, monto_mxn: 334397.07 },
@@ -417,10 +423,21 @@ export function avionReservaRetenida(): AvionReparto {
   };
 }
 
-/** El mismo avión como lo mandaría un API ≤ 0.0.127: sin el saldo a repartir. */
+const masCentavos = (a: number, b: number): number => Math.round(a * 100 + b * 100) / 100;
+
+/**
+ * El mismo avión como lo mandaría un API 0.0.125 a 0.0.128 (sin la llave):
+ * la reserva solo se informaba y `saldo_disponible_*` era el saldo ANTES de
+ * la reserva (saldo neto + reserva, en centavos).
+ */
 export function sinReservaRetenida(a: AvionReparto): AvionReparto {
-  const out: AvionReparto = { ...a };
-  delete out.saldo_a_repartir_usd;
-  delete out.saldo_a_repartir_mxn;
+  const out: AvionReparto = {
+    ...a,
+    saldo_disponible_usd: masCentavos(a.saldo_disponible_usd, a.reserva_overhaul_usd),
+    ...(a.saldo_disponible_mxn != null && a.reserva_overhaul_mxn != null
+      ? { saldo_disponible_mxn: masCentavos(a.saldo_disponible_mxn, a.reserva_overhaul_mxn) }
+      : {}),
+  };
+  delete out.reserva_overhaul_en_cascada;
   return out;
 }

@@ -9,9 +9,9 @@ import {
 /**
  * Badge «se le retiene» / «solo informativa» de la reserva de overhaul de
  * un socio (sin hooks: también en la card). Desde el 6-nov-2026 (API 0.0.125,
- * invariante 121) a TODOS los socios se les descuenta —y desde el 7-nov-2026
- * (API 0.0.128) la reserva se resta del saldo antes de repartir y VuelaTour
- * la retiene—: el interruptor por socio («Cambiar», `PATCH
+ * invariante 121) a TODOS los socios se les descuenta —y desde el 9-nov-2026
+ * (API 0.0.129) la reserva es una resta más de la cascada, antes del saldo a
+ * repartir, y VuelaTour la retiene—: el interruptor por socio («Cambiar», `PATCH
  * /v1/aircraft/owners/:id`) se quitó. El badge sigue leyendo
  * `descuenta_reserva` porque un cierre cerrado antes conserva en su snapshot
  * a quién se le descontaba y a quién solo se le informaba.

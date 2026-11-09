@@ -45,8 +45,8 @@ export interface FilaSocioAvion {
  * MXN (su parte del saldo antes de la reserva), la reserva de overhaul con
  * «se le retiene» / «solo informativa» (el dato del API: desde el
  * 6-nov-2026, invariante 121, a todos se les descuenta y ya no hay
- * interruptor; desde el 7-nov-2026, API 0.0.128, la columna se llama
- * «Reserva retenida» cuando el avión trae `saldo_a_repartir_*`), a recibir,
+ * interruptor; desde el 9-nov-2026, API 0.0.129, la columna se llama
+ * «Reserva retenida» cuando el avión trae `reserva_overhaul_en_cascada`), a recibir,
  * entregado por ESTE avión en el periodo, por entregar, «Registrar entrega»
  * (avión y socio preseleccionados) y el atajo a su cuenta. Todo lo manda el
  * API; la tabla solo pinta (tabla de RESUMEN ⇒ primitivos de `ui/table`).
@@ -64,7 +64,7 @@ export function SociosAvionTable({
   registro: ContextoRegistro;
   rol: string | null;
   usuarioId: string | null;
-  /** El avión trae el saldo a repartir (`reservaSeRetiene`, API 0.0.128). */
+  /** El avión trae la reserva en la cascada (`reservaSeRetiene`, API 0.0.129). */
   reservaRetenida?: boolean;
 }) {
   if (filas.length === 0) {

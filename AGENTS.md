@@ -13455,89 +13455,107 @@ reparto, conciliación, reportes): solo cambian de pantalla.
 - La app del piloto ya no ofrece Refacción en «Registrar gasto» (App
   1.1.4+89); la captura de oficina del app sigue creando compra desde el gasto.
 
-## La reserva de overhaul se retiene (7-nov-2026, API 0.0.128)
+## La reserva de overhaul resta EN la cascada, antes del total (9-nov-2026, API 0.0.129, invariante 125)
 
-Decisión del cliente: «aún no se está reteniendo de las utilidades para cada
-socio en cada avión, aún dice informativa no se resta; debe verse bien y
-retenerse bien… y verse también en el reparto de utilidades». La reserva es
-una RESTA explícita de la cascada antes de repartir: `Saldo antes de la
-reserva de overhaul − Reserva de overhaul (se retiene) = Saldo a repartir`, y
-cada socio recibe su % de ese saldo (el `monto_*` del API, ya neto).
+El cliente rechazó la forma del 7-nov-2026 (API 0.0.128: la cascada
+terminaba en «Saldo antes de la reserva de overhaul» − «Reserva de overhaul
+(se retiene)» = «Saldo a repartir», con llaves `saldo_a_repartir_*`):
+«Necesito resolver ese tema del Overhaul, que quede ANTES del total». En su
+Excel manual y en el Diseño Funcional §4.8 la reserva es UNA RESTA MÁS de la
+cascada, antes del total: `INGRESOS − GASTOS DIRECTOS − GASTOS INDIRECTOS −
+OTROS GASTOS − PERMISOS − RESERVA OVERHAUL − PENDIENTE DE COBRO = SALDO
+DISPONIBLE → Aerocharter % + Socios %`.
 
-- **Contrato ADITIVO** (`types/profit-sharing.ts`): cada `aviones[]` /
-  `avion` trae `saldo_a_repartir_usd` y `saldo_a_repartir_mxn` (= saldo −
-  reserva); `saldo_disponible_*` sigue siendo el saldo ANTES de la reserva,
-  `reserva_overhaul_*` igual y `reserva_retenida_*` = la reserva completa;
-  Σ `reparto[].monto_*` = `saldo_a_repartir_*` al centavo. El histórico trae
-  `saldo_a_repartir_mxn` por mes y en `totales`. **DISCRIMINADOR**:
-  `typeof saldo_a_repartir_usd === "number"` ⇒ `reservaSeRetiene(avion)` /
-  `flotaRetieneReserva(aviones)` (`reparto-pesos.ts`) y
-  `historicoConSaldoARepartir(meses, totales)` (`reparto-avion.ts`). Sin la
-  llave (API previo / cierres viejos) TODO queda como hasta el 6-nov-2026: la
-  reserva debajo del saldo con sus textos por datos («se descuenta a los
-  socios» / «no se resta»), los goldens intactos.
-- **Cascada** (`filasCascadaAvion`, con `comoBalance` + la llave): tras la
-  última fila de siempre (otros ingresos / AFAC) van `saldo_antes_reserva`
-  (`tipo: "subtotal"`, «Saldo antes de la reserva de overhaul» =
-  `saldo_disponible_*`) y `reserva` (`deduccion`, «Reserva de overhaul»,
-  sublabel `sublabelReservaRetenida` = «se retiene para el overhaul · 12.5 hr
-  × $40/hr», title `TITULO_FILA_RESERVA_RETENIDA`); la fila final
-  `data-fila-cascada="saldo"` la pinta `CascadaAvion` con `saldoCascada` (=
-  `saldo_a_repartir_*` con la llave) y `etiquetaSaldoCascada` («Saldo a
-  repartir»). `saldoAntesReservaCascada` da el de antes. El bloque
-  `data-reserva-informativa` NO se pinta con la llave (`reservaInformativa`
-  queda para la rama vieja). La raíz lleva `data-reserva-retenida`.
-- **Encabezados y KPIs**: `etiquetaSaldoEncabezado(avion)` («Saldo a
-  repartir» / «Saldo disponible») en la card y en la pantalla del avión («…
-  del periodo»). `KpiStrip`: con `comoBalance && flotaRetieneReserva` (TODA
-  la flota; nunca se mezclan saldos antes/después) el KPI de saldo es Σ
-  `saldo_a_repartir_*` rotulado `ETIQUETA_KPI_SALDO_A_REPARTIR` con
-  `HINT_KPI_SALDO_A_REPARTIR`, y el de la reserva dice
-  `ETIQUETA_KPI_RESERVA_RETENIDA` + `hintKpiReservaRetenida(horas)`; así
-  Venta + Otros − Gastos − Reserva = Saldo se lee en la tira. La nota de las
-  páginas es `notaRepartoComoBalance(retiene)` (`NOTA_RESERVA_RETENIDA` /
-  `NOTA_REPARTO_COMO_BALANCE`).
+- **Contrato** (`types/profit-sharing.ts`): DISCRIMINADOR único, aditivo y
+  booleano `reserva_overhaul_en_cascada: true` en cada avión del reparto
+  (`aviones[]` del compute y `avion` de la pantalla) y en la RAÍZ del
+  histórico (`avionHistorico`, junto a `reparto_como_balance`). Con la llave
+  `saldo_disponible_usd/_mxn` YA RESTAN la reserva: venta cobrada −
+  comisiones − gastos directos − provisión AFAC = utilidad antes de gastos;
+  − combustible − gastos indirectos − permisos − fijos prorrateados −
+  reserva de overhaul (se retiene) + otros ingresos del avión = saldo a
+  repartir (las filas suman al centavo: lo manda el API).
+  `reparto[].utilidad_*` = la parte del socio del saldo ANTES de la reserva,
+  `reparto[].reserva_*` = su parte de la reserva, `monto_*` = utilidad −
+  reserva (Σ `monto_*` = `saldo_disponible_*`), `descuenta_reserva: true` en
+  todos, `reserva_retenida_*` = Σ reserva. Histórico: `saldo_mxn` por mes y
+  `totales.saldo_mxn` ya netos. Las llaves `saldo_a_repartir_usd/_mxn` del
+  0.0.128 y la `saldo_a_repartir_mxn` del histórico YA NO EXISTEN: ningún
+  API las vuelve a mandar y el panel no las lee (se SUSTITUYÓ el código; no
+  hay un tercer camino). Lectura: `reservaSeRetiene(avion)` /
+  `flotaRetieneReserva(aviones)` (`reparto-pesos.ts`, `=== true`) y
+  `historicoConReservaEnCascada(historico)` (`reparto-avion.ts`). Sin la
+  llave (API previo / cierres viejos) TODO queda como hasta el 6-nov-2026:
+  la reserva debajo del saldo, informativa, con sus textos por datos («se
+  descuenta a los socios» / «no se resta»); los goldens intactos.
+- **Cascada** (`filasCascadaAvion`, con `comoBalance` + la llave): la fila
+  `reserva` (`deduccion`, `ETIQUETA_FILA_RESERVA_RETENIDA` = «Reserva de
+  overhaul (se retiene)», sublabel `sublabelReservaOverhaul` = «12.5 hr ×
+  $40/hr», title `TITULO_FILA_RESERVA_RETENIDA`) va DESPUÉS de «Fijos
+  prorrateados» y ANTES de «Otros ingresos del avión» (en la cascada del
+  balance sin las líneas del Excel —combinación que el API no produce— va
+  tras la AFAC, como última resta). NO hay fila «Saldo antes de la reserva»
+  ni subtotal nuevo. La fila final `data-fila-cascada="saldo"` la pinta
+  `CascadaAvion` con `saldoCascada` (= `saldo_disponible_*` SIEMPRE) y
+  `etiquetaSaldoCascada` («Saldo a repartir» con la llave; title
+  `TITULO_FILA_SALDO_A_REPARTIR`). El bloque `data-reserva-informativa` NO se
+  pinta con la llave. La raíz lleva `data-reserva-en-cascada`.
+  `saldoAntesReservaCascada`, `ETIQUETA_SALDO_ANTES_RESERVA`,
+  `SUBLABEL_RESERVA_SE_RETIENE`, `sublabelReservaRetenida`,
+  `ETIQUETA_COLUMNA_SALDO_ANTES_RESERVA` e `historicoConSaldoARepartir` del
+  0.0.128 se eliminaron.
+- **Encabezados, KPIs y notas**: `etiquetaSaldoEncabezado(avion)` («Saldo a
+  repartir» / «Saldo disponible») en la card y en la pantalla del avión.
+  `KpiStrip`: el KPI de saldo SIEMPRE es Σ `saldo_disponible_*`; con
+  `comoBalance && flotaRetieneReserva` (TODA la flota) se rotula
+  `ETIQUETA_KPI_SALDO_A_REPARTIR` («Saldo a repartir»,
+  `HINT_KPI_SALDO_A_REPARTIR`, `TITULO_KPI_SALDO_A_REPARTIR`) y el de la
+  reserva `ETIQUETA_KPI_RESERVA_RETENIDA` («Reserva retenida») +
+  `hintKpiReservaRetenida(horas)`; la reserva NO entra en «Gastos del
+  periodo»: es su propia línea, así Venta + Otros − Gastos − Reserva = Saldo
+  se lee en la tira. La nota de las páginas es
+  `notaRepartoComoBalance(retiene)` (`NOTA_RESERVA_RETENIDA`: «… − fijos
+  prorrateados − reserva de overhaul (se retiene para el overhaul) + otros
+  ingresos del avión = saldo a repartir»).
 - **Textos por la llave** (`reparto-avion.ts`): `ayudaCascada(conCombustible,
-  retiene)`, `ayudaSociosAvion(retiene)`, `ayudaHistorico(retiene)`,
+  retiene)` (`AYUDA_CASCADA_EXCEL_RESERVA_RETENIDA`: «… menos combustible,
+  gastos indirectos, permisos, fijos prorrateados y la reserva de overhaul
+  (que se retiene a los socios y VuelaTour guarda para el overhaul), más
+  otros ingresos del avión, da el saldo a repartir»),
+  `ayudaSociosAvion(retiene)`, `ayudaHistorico(retiene)`,
   `ayudaSociosHistorico(retiene)`, `etiquetaColumnaReserva(retiene)`
   («Reserva retenida» / «Reserva a guardar»; `SociosAvionTable` recibe
-  `reservaRetenida`). Los textos viejos («no se resta», «solo se informa»,
-  «se le descuenta solo si así se configuró», «va aparte») siguen SOLO en la
-  rama sin la llave.
+  `reservaRetenida`). Los textos viejos siguen SOLO en la rama sin la llave.
 - **Badge por socio** (`BadgeReservaSocio`, `textoReservaSocio`): por el DATO
-  `descuenta_reserva`, «se le retiene» (`ETIQUETA_SE_RETIENE`,
-  `TITULO_SE_RETIENE`; antes decía «se le descuenta») o «solo informativa»
-  (un snapshot cerrado antes del 6-nov-2026 con socios que solo recibían el
-  dato). No depende de la llave: desde el API 0.0.125 el monto ya viene neto.
+  `descuenta_reserva`, «se le retiene» / «solo informativa» (snapshot cerrado
+  antes del 6-nov-2026). No depende de la llave.
 - **Histórico** (`columnasHistoricoTodas(opts)` / `columnasHistorico(completas,
-  opts)` con `OpcionesColumnasHistorico { conCombustible, conSaldoARepartir }`;
+  opts)` con `OpcionesColumnasHistorico { conCombustible, conReservaEnCascada }`;
   `filasHistorico(meses, opts)`, `celdasTotalesHistorico(t, opts)`,
-  `claveSaldoPrincipalHistorico(opts)`): con la llave «Saldo» pasa a «Saldo
-  antes de la reserva», la reserva lleva «−» y la sub-etiqueta «se retiene»
-  (`ColumnaHistorico.subEtiqueta`; la vieja dice «no se resta»), aparece la
-  columna `saldo_a_repartir_mxn` «Saldo a repartir» (principal, `soloSiViene:
-  "saldo_a_repartir"`; el combustible ahora es `soloSiViene: "combustible"`)
-  con su total, y es la que se pinta en negritas verde/rojo. La normalización
-  copia `saldo_a_repartir_mxn` solo si viene (nunca un 0).
-- **Estadísticas** (`dashboards/page.tsx`, `types/dashboards.ts`): el API
-  manda en `saldo_disponible_usd` / `saldo_usd` el saldo A REPARTIR (ya con
-  la reserva retenida, que va dentro de los gastos) SIN discriminador: el KPI
-  y la columna por avión se rotulan `ETIQUETA_TABLERO_SALDO_A_REPARTIR` con
-  `HINT_TABLERO_SALDO_A_REPARTIR` / `TITULO_TABLERO_SALDO_A_REPARTIR`
-  (`otros-ingresos-avion.ts`). Orden de deploy: API ⇒ panel.
-- **Pre-cierre**: `previa.reparto[].saldo_usd` sigue siendo el saldo ANTES
-  de la reserva (el API de cierres no cambió): el bloque antes/después se
-  titula `TITULO_REPARTO_ANTES_DESPUES` («… (antes de la reserva de
-  overhaul)», `cierre-mes.ts`). `pre-cierre-card.tsx` no cambia (sus
-  `saldo_usd` son de vuelos y grupos, no del reparto). La vista en pantalla
-  de los Balances (`libro-excel.ts`) pinta el `libro_json` tal cual.
-- **Fixtures y pruebas**: `avionReservaRetenida()` / `sinReservaRetenida()`
-  (`reparto-pesos.fixtures.ts`: 574,632.22 − 8,625.00 = 566,007.22 MXN;
-  33,280.16 − 500 = 32,780.16 USD; socios 231,610.15 + 334,397.07);
-  `reparto-avion.test.ts` (tres filas finales y suma exacta en MXN y USD =
-  Σ socios; cascada del balance sin Excel; fallback sin la llave; textos;
-  histórico: columnas, celdas, totales, normalización),
-  `reparto-avion-pantalla.test.tsx` (marcado de cascada, card, KPIs, socios,
-  histórico y cableado), `reparto-pesos.test.ts` (discriminadores, nota y
-  KPIs), `otros-ingresos-avion.test.ts` (tablero). El golden
-  `reparto-pesos.golden.json` (API ≤ 0.0.92) sigue byte a byte.
+  `CLAVE_SALDO_PRINCIPAL_HISTORICO` = `saldo_mxn`): con la llave la columna
+  `reserva_mxn` pasa justo ANTES de «Saldo», rotulada «Reserva de overhaul
+  (se retiene)», con «−» y sin `informativa` (ya no va en gris); «Saldo»
+  sigue siendo `saldo_mxn` (ya neto, principal, negritas verde/rojo, con
+  total, title `TITULO_FILA_SALDO_A_REPARTIR`). La columna
+  `saldo_a_repartir_mxn` desapareció. `HistoricoAvionTable` recibe
+  `reservaEnCascada` de la página (`historicoConReservaEnCascada(datos)`) y
+  marca `data-reserva-en-cascada`; la normalización copia
+  `reserva_overhaul_en_cascada === true` a la raíz.
+- **Estadísticas** (`dashboards/page.tsx`, `types/dashboards.ts`): sin
+  cambio de contrato; `saldo_disponible_usd` / `saldo_usd` son el saldo neto
+  (la reserva va dentro de los gastos del tablero) y el rótulo «Saldo a
+  repartir» del 7-nov se queda.
+- **Pre-cierre**: el `saldo_usd` del API de cierres pasa a ser el saldo
+  neto ⇒ `TITULO_REPARTO_ANTES_DESPUES` vuelve a «Saldo del reparto por
+  avión» (`cierre-mes.ts`).
+- **Fixtures y pruebas**: `avionReservaRetenida()` (`reparto-pesos.fixtures.ts`:
+  `reserva_overhaul_en_cascada: true`, `saldo_disponible_mxn: 566007.22` =
+  574,632.22 − 8,625.00, `saldo_disponible_usd: 32780.16`,
+  `reserva_overhaul_mxn: 8625`; socios 231,610.15 + 334,397.07) y
+  `sinReservaRetenida()` (API 0.0.125 a 0.0.128: sin la llave y el saldo
+  ANTES de la reserva). `reparto-avion.test.ts` (orden de la fila, identidad
+  Σ filas con la reserva como resta = saldo = Σ socios, en MXN y USD;
+  fallback; textos; histórico), `reparto-avion-pantalla.test.tsx` (marcado
+  de cascada, card, KPIs, socios, histórico y cableado; ningún
+  `saldo_a_repartir_*` en el código), `reparto-pesos.test.ts`
+  (discriminadores, nota y KPIs). Los goldens siguen byte a byte.

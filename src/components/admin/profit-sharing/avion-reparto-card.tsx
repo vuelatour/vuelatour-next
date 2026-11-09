@@ -52,12 +52,12 @@ const INFO =
  * Card RESUMEN de un avión en el reparto (20-oct-2026, API 0.0.101): el
  * detalle vive en `/admin/profit-sharing/aviones/[id]` («Ver detalle del
  * avión →»). Aquí: matrícula, modelo, el saldo (el SALDO A REPARTIR, ya con
- * la reserva de overhaul retenida, cuando el API manda `saldo_a_repartir_*`
- * —7-nov-2026, API 0.0.128—; si no, el saldo disponible), los avisos de
- * siempre, la cascada (con la fila «Provisión AFAC»; con la reserva
- * retenida termina en «Saldo antes de la reserva» − «Reserva de overhaul» =
- * «Saldo a repartir»; sin la llave la reserva va DEBAJO del saldo con los
- * textos de entonces), un renglón por socio con lo que recibe, los vuelos de
+ * la reserva de overhaul restada en la cascada, cuando el avión trae
+ * `reserva_overhaul_en_cascada` —9-nov-2026, API 0.0.129—; si no, el saldo
+ * disponible), los avisos de siempre, la cascada (con la fila «Provisión
+ * AFAC»; con la llave la fila «Reserva de overhaul (se retiene)» resta antes
+ * del total «Saldo a repartir»; sin la llave la reserva va DEBAJO del saldo
+ * con los textos de entonces), un renglón por socio con lo que recibe, los vuelos de
  * este avión que pasan / vienen por el cierre de mes y la descarga del
  * balance en Excel. El desglose vuelo por vuelo y gasto por gasto se fue a
  * la pantalla del avión.
@@ -97,9 +97,9 @@ export function AvionRepartoCard({
   comoBalance?: boolean;
 }) {
   // El saldo del encabezado = la fila final de la cascada (`saldoCascada`):
-  // el saldo a repartir con la reserva retenida; si no, el disponible.
+  // `saldo_disponible_*`, que con la reserva en la cascada ya es el saldo a repartir.
   const saldo = saldoCascada(avion, enPesos);
-  const positivo = (saldo.valor ?? avion.saldo_a_repartir_usd ?? avion.saldo_disponible_usd) >= 0;
+  const positivo = (saldo.valor ?? avion.saldo_disponible_usd) >= 0;
   const totalVuelos =
     avion.ingresos.vuelos_cobrados + avion.ingresos.vuelos_pendientes;
   // Deuda COMPLETA del cliente (venta + otros VuelaTour) cuando supera el
@@ -291,8 +291,8 @@ export function AvionRepartoCard({
 
       <CardContent className="space-y-4">
         {/* Cascada del saldo: estas filas suman EXACTO el saldo; con la
-            reserva retenida (API 0.0.128) termina en «Saldo a repartir»; sin
-            la llave, la reserva va debajo del saldo, informativa. */}
+            reserva en la cascada (API 0.0.129) la reserva resta antes del
+            total «Saldo a repartir»; sin la llave, va debajo, informativa. */}
         <CascadaAvion avion={avion} enPesos={enPesos} comoBalance={comoBalance} compacta />
 
         <SociosSection

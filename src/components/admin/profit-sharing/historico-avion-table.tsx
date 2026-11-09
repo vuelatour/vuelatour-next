@@ -14,16 +14,15 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  CLAVE_SALDO_PRINCIPAL_HISTORICO,
   ETIQUETA_MENOS_COLUMNAS,
   ETIQUETA_VER_TODAS_COLUMNAS,
   TEXTO_SIN_MESES_HISTORICO,
   TITULO_PESOS_SIN_TC_MES,
   celdasTotalesHistorico,
-  claveSaldoPrincipalHistorico,
   columnasHistorico,
   filasHistorico,
   historicoConCombustible,
-  historicoConSaldoARepartir,
 } from "@/lib/admin/reparto-avion";
 import type { MesHistoricoAvion, TotalesHistoricoAvion } from "@/types/profit-sharing";
 
@@ -37,35 +36,38 @@ import type { MesHistoricoAvion, TotalesHistoricoAvion } from "@/types/profit-sh
  * números son del API. La columna «Combustible» (API 0.0.103) solo existe
  * cuando el API la manda (`combustible_mxn`), junto a «Directos».
  *
- * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128): cuando el API manda
- * `saldo_a_repartir_mxn` (`historicoConSaldoARepartir`), «Saldo» pasa a
- * «Saldo antes de la reserva», la reserva deja de decir «no se resta» (lleva
- * «−» y «se retiene») y aparece la columna «Saldo a repartir» —la que se
- * pinta en negritas y verde/rojo— con su total. Sin la llave, la tabla de
- * siempre.
+ * LA RESERVA DE OVERHAUL RESTA EN LA CASCADA (9-nov-2026, API 0.0.129): con
+ * `reservaEnCascada` (la llave `reserva_overhaul_en_cascada` de la raíz del
+ * histórico, que la página lee con `historicoConReservaEnCascada`) la
+ * columna de la reserva pasa ANTES de «Saldo», deja de ser informativa/gris
+ * (lleva «−» y dice «Reserva de overhaul (se retiene)») y «Saldo» es el
+ * saldo a repartir, ya neto, con su total —la que se pinta en negritas y
+ * verde/rojo, como siempre—. Sin la llave, la tabla de siempre.
  */
 export function HistoricoAvionTable({
   meses,
   totales,
+  reservaEnCascada = false,
 }: {
   meses: MesHistoricoAvion[];
   totales: TotalesHistoricoAvion;
+  /** `reserva_overhaul_en_cascada` de la raíz del histórico (API 0.0.129). */
+  reservaEnCascada?: boolean;
 }) {
   const [completas, setCompletas] = useState(false);
   if (meses.length === 0) return <p className="text-sm text-muted-foreground">{TEXTO_SIN_MESES_HISTORICO}</p>;
   const conCombustible = historicoConCombustible(meses, totales);
-  const conSaldoARepartir = historicoConSaldoARepartir(meses, totales);
-  const opciones = { conCombustible, conSaldoARepartir };
+  const opciones = { conCombustible, conReservaEnCascada: reservaEnCascada };
   const columnas = columnasHistorico(completas, opciones);
   const filas = filasHistorico(meses, opciones);
   const totalesCeldas = celdasTotalesHistorico(totales, opciones);
-  const claveSaldo = claveSaldoPrincipalHistorico(opciones);
+  const claveSaldo = CLAVE_SALDO_PRINCIPAL_HISTORICO;
   return (
     <div
       className="space-y-2"
       data-tabla-historico-avion
       data-con-combustible={conCombustible ? "" : undefined}
-      data-con-saldo-a-repartir={conSaldoARepartir ? "" : undefined}
+      data-reserva-en-cascada={reservaEnCascada ? "" : undefined}
     >
       <div className="flex justify-end">
         <Button

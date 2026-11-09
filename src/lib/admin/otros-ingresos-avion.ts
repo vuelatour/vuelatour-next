@@ -72,6 +72,8 @@ export function textoCeldaOtrosIngresosAvion(usd: number): string {
 // `saldo_usd` (por avión) el saldo YA con la reserva de overhaul retenida, así
 // Ingresos cobrados + otros ingresos − Gastos (que incluyen la reserva) =
 // Saldo vuelve a cuadrar. El contrato no trae discriminador: el rótulo lo dice.
+// Desde el 9-nov-2026 (API 0.0.129) el reparto resta la reserva EN su propia
+// cascada, antes del total: es el mismo saldo neto que pinta el tablero.
 
 /** KPI del resumen y columna por avión. */
 export const ETIQUETA_TABLERO_SALDO_A_REPARTIR = "Saldo a repartir";

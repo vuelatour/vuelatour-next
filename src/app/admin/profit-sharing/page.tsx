@@ -137,10 +137,11 @@ export default async function ProfitSharingPage({ searchParams }: PageProps) {
   // Cascada del balance (20-oct-2026, API 0.0.101): la provisión AFAC resta.
   // Sin la bandera, lo de antes.
   const comoBalance = repartoComoBalance(result);
-  // La reserva de overhaul se RETIENE (7-nov-2026, API 0.0.128): con
-  // `saldo_a_repartir_*` en toda la flota, la cascada de cada card termina en
-  // «Saldo a repartir» (saldo − reserva) y la leyenda lo dice. Sin la llave,
-  // la reserva va debajo del saldo como hasta el 6-nov-2026.
+  // La reserva de overhaul resta EN la cascada (9-nov-2026, API 0.0.129):
+  // con `reserva_overhaul_en_cascada` en toda la flota, la cascada de cada
+  // card lleva la reserva como una resta más antes del «Saldo a repartir» y
+  // la leyenda lo dice. Sin la llave, la reserva va debajo del saldo como
+  // hasta el 6-nov-2026.
   const retiene = comoBalance && flotaRetieneReserva(result.aviones);
   // Combustible separado de los directos (23-oct-2026, API 0.0.103): la
   // cascada de cada card sigue el orden del Excel del cliente. Sin las

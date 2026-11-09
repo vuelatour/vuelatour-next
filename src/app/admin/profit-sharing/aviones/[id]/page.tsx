@@ -134,12 +134,13 @@ function Volver({ periodo }: { periodo: { desde?: string; hasta?: string } }) {
  * entrega») y las entregas del avión. Todo en pesos; el USD en gris. Todo lo
  * manda el API.
  *
- * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128; «debe verse bien y
- * retenerse bien»): con `saldo_a_repartir_*` (`reservaSeRetiene`) el saldo
- * del encabezado es el SALDO A REPARTIR, la cascada termina en «Saldo antes
- * de la reserva» − «Reserva de overhaul» = «Saldo a repartir» y la columna
- * de los socios se llama «Reserva retenida». Sin la llave (API previo /
- * cierres viejos) la reserva va debajo del saldo con los textos de entonces.
+ * LA RESERVA DE OVERHAUL RESTA EN LA CASCADA (9-nov-2026, API 0.0.129; «que
+ * quede ANTES del total»): con `reserva_overhaul_en_cascada`
+ * (`reservaSeRetiene`) el saldo del encabezado es el SALDO A REPARTIR, la
+ * cascada lleva «Reserva de overhaul (se retiene)» como una resta más antes
+ * del total y la columna de los socios se llama «Reserva retenida». Sin la
+ * llave (API previo / cierres viejos) la reserva va debajo del saldo con los
+ * textos de entonces.
  *
  * EN PESTAÑAS (23-oct-2026; «las tablas acomódalas por pestañas, para que no
  * esté una tabla encima de otra y nos confundamos con el scroll»): el saldo
@@ -226,11 +227,11 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
   // Combustible separado de los directos (23-oct-2026, API 0.0.103): la
   // cascada y los gastos siguen las líneas del Excel. Sin las llaves, lo de antes.
   const conCombustible = combustibleSeparado(avion);
-  // La reserva se RETIENE (API 0.0.128): el saldo que se pinta arriba es el
-  // saldo a repartir (`saldoCascada` lo decide con la misma llave).
+  // La reserva EN la cascada (API 0.0.129): el saldo que se pinta arriba
+  // (`saldoCascada` = `saldo_disponible_*`) ya es el saldo a repartir.
   const retiene = comoBalance && reservaSeRetiene(avion);
   const saldo = saldoCascada(avion, enPesos);
-  const positivo = (saldo.valor ?? avion.saldo_a_repartir_usd ?? avion.saldo_disponible_usd) >= 0;
+  const positivo = (saldo.valor ?? avion.saldo_disponible_usd) >= 0;
   const detalle = avion.detalle ?? null;
   // CIERRE POR AVIÓN (23-oct-2026, API 0.0.104): el chip «Mes:» es el de
   // ESTE avión (`cierre.cierre_avion` / `avion.cierre_avion`); con un API
@@ -356,8 +357,8 @@ export default async function RepartoAvionPage({ params, searchParams }: PagePro
 
       <CierreRepartoAvion cierre={datos.cierre} matricula={avion.aeronave.matricula} />
 
-      {/* 2. La cascada completa: las filas SUMAN el saldo; con la reserva
-          retenida termina en «Saldo a repartir», si no la reserva va aparte. */}
+      {/* 2. La cascada completa: las filas SUMAN el saldo; con la reserva en
+          la cascada resta antes del «Saldo a repartir», si no va aparte. */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{TITULO_CASCADA}</CardTitle>

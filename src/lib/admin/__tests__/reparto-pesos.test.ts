@@ -259,16 +259,19 @@ describe("combustible separado de los directos (23-oct-2026, API 0.0.103)", () =
   });
 });
 
-describe("la reserva de overhaul se RETIENE (7-nov-2026, API 0.0.128)", () => {
-  it("el discriminador por avión y por flota (`saldo_a_repartir_usd` numérico); sin la llave, nada", () => {
+describe("la reserva de overhaul resta EN la cascada (9-nov-2026, API 0.0.129, invariante 125)", () => {
+  it("el discriminador por avión y por flota (`reserva_overhaul_en_cascada === true`); sin la llave, nada", () => {
     const a = avionReservaRetenida();
     expect(reservaSeRetiene(a)).toBe(true);
     expect(reservaSeRetiene(sinReservaRetenida(a))).toBe(false);
-    expect(reservaSeRetiene({ saldo_a_repartir_usd: 0 })).toBe(true);
-    expect(reservaSeRetiene({ saldo_a_repartir_usd: null })).toBe(false);
-    expect(reservaSeRetiene({ saldo_a_repartir_usd: Number.NaN })).toBe(false);
+    expect(reservaSeRetiene({ reserva_overhaul_en_cascada: true })).toBe(true);
+    expect(reservaSeRetiene({ reserva_overhaul_en_cascada: false })).toBe(false);
+    expect(reservaSeRetiene({ reserva_overhaul_en_cascada: null })).toBe(false);
     expect(reservaSeRetiene({})).toBe(false);
     expect(reservaSeRetiene(undefined)).toBe(false);
+    // El fixture con la llave trae el saldo YA NETO; el viejo, el de antes de la reserva.
+    expect(a).toMatchObject({ saldo_disponible_mxn: 566007.22, saldo_disponible_usd: 32780.16, reserva_overhaul_mxn: 8625 });
+    expect(sinReservaRetenida(a)).toMatchObject({ saldo_disponible_mxn: 574632.22, saldo_disponible_usd: 33280.16 });
     // La flota entera o nada: nunca se mezclan saldos antes y después de la reserva.
     expect(flotaRetieneReserva([a, { ...a, aeronave: { ...a.aeronave, id: "x" } }])).toBe(true);
     expect(flotaRetieneReserva([a, sinReservaRetenida(a)])).toBe(false);
@@ -276,22 +279,34 @@ describe("la reserva de overhaul se RETIENE (7-nov-2026, API 0.0.128)", () => {
     expect(flotaRetieneReserva([])).toBe(false);
   });
 
-  it("la nota de la página y los textos de los KPIs; los de antes siguen para la rama sin la llave", () => {
+  it("la nota de la página y los textos de los KPIs dicen que la reserva es una resta más antes del total; los de antes siguen para la rama sin la llave", () => {
     expect(notaRepartoComoBalance(true)).toBe(NOTA_RESERVA_RETENIDA);
     expect(notaRepartoComoBalance(false)).toBe(NOTA_REPARTO_COMO_BALANCE);
-    expect(NOTA_RESERVA_RETENIDA).toContain("se resta antes de repartir");
-    expect(NOTA_RESERVA_RETENIDA).toContain("a cada socio se le retiene su parte en proporción a su porcentaje y VuelaTour la guarda para el overhaul");
+    expect(NOTA_RESERVA_RETENIDA).toContain("es una resta más de la cascada, antes del total");
+    expect(NOTA_RESERVA_RETENIDA).toContain(
+      "− fijos prorrateados − reserva de overhaul (se retiene para el overhaul) + otros ingresos del avión = saldo a repartir",
+    );
+    expect(NOTA_RESERVA_RETENIDA).toContain(
+      "A cada socio se le retiene su parte en proporción a su porcentaje y VuelaTour la guarda para el overhaul",
+    );
     expect(NOTA_RESERVA_RETENIDA).not.toContain("no se resta");
     expect(NOTA_RESERVA_RETENIDA).not.toContain("solo se informa");
+    expect(NOTA_RESERVA_RETENIDA).not.toContain("antes de la reserva");
     expect(NOTA_REPARTO_COMO_BALANCE).toContain("no se resta");
     expect(ETIQUETA_KPI_SALDO).toBe("Saldo disponible total");
     expect(HINT_KPI_SALDO).toBe("A repartir entre socios");
     expect(ETIQUETA_KPI_SALDO_A_REPARTIR).toBe("Saldo a repartir");
     expect(HINT_KPI_SALDO_A_REPARTIR).toBe("Entre los socios · ya con la reserva de overhaul retenida");
-    expect(TITULO_KPI_SALDO_A_REPARTIR).toContain("− reserva retenida = saldo a repartir");
+    expect(TITULO_KPI_SALDO_A_REPARTIR).toContain(
+      "− gastos del periodo − reserva de overhaul (se retiene para el overhaul) = saldo a repartir",
+    );
+    expect(TITULO_KPI_SALDO_A_REPARTIR).toContain(
+      "− fijos prorrateados − reserva de overhaul (se retiene para el overhaul) + otros ingresos del avión = saldo a repartir",
+    );
     expect(ETIQUETA_KPI_RESERVA_RETENIDA).toBe("Reserva retenida");
     expect(hintKpiReservaRetenida(12.5)).toBe("se retiene para el overhaul · 12.5 hr voladas");
     expect(hintKpiReservaRetenida(0)).toBe("se retiene para el overhaul · 0.0 hr voladas");
-    expect(TITULO_KPI_RESERVA_RETENIDA).toContain("Se resta del saldo antes de repartir");
+    expect(TITULO_KPI_RESERVA_RETENIDA).toContain("Es una resta más de la cascada, antes del saldo a repartir");
+    expect(TITULO_KPI_RESERVA_RETENIDA).not.toContain("antes de repartir");
   });
 });

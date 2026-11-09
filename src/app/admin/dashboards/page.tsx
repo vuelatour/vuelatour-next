@@ -184,8 +184,9 @@ async function Ejecutivo({ desde, hasta }: { desde: string; hasta: string }) {
           // suman al saldo; con un API previo no hay hint.
           hint={hintDashboardOtrosIngresosAviones(resumen.otros_ingresos_aviones_usd ?? 0)}
         />
-        {/* Saldo A REPARTIR (7-nov-2026, API 0.0.128): ya con la reserva de
-            overhaul retenida, así Ingresos + otros − Gastos = Saldo cuadra. */}
+        {/* Saldo A REPARTIR (API 0.0.128 / 0.0.129): el saldo neto, ya con la
+            reserva de overhaul restada (en el tablero va dentro de los
+            gastos), así Ingresos + otros − Gastos = Saldo cuadra. */}
         <Kpi
           label={ETIQUETA_TABLERO_SALDO_A_REPARTIR}
           value={fmtUsd(resumen.saldo_disponible_usd)}
@@ -253,7 +254,7 @@ async function Ejecutivo({ desde, hasta }: { desde: string; hasta: string }) {
                   <TableHead className="text-right">Vuelos</TableHead>
                   <TableHead className="text-right">Ingresos</TableHead>
                   <TableHead className="text-right">Gastos</TableHead>
-                  {/* Saldo A REPARTIR por avión (API 0.0.128): la reserva ya retenida. */}
+                  {/* Saldo A REPARTIR por avión (API 0.0.128 / 0.0.129): la reserva ya restada. */}
                   <TableHead className="text-right" title={TITULO_TABLERO_SALDO_A_REPARTIR}>
                     {ETIQUETA_TABLERO_SALDO_A_REPARTIR}
                   </TableHead>

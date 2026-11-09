@@ -700,8 +700,8 @@ function RepartoAntesDespues({ previa }: { previa: PreviaCierre }) {
   if (deltas.length === 0) return null;
   return (
     <div className="space-y-1" data-reparto-antes-despues>
-      {/* Saldo ANTES de la reserva de overhaul (el API de cierres no cambió
-          con la reserva retenida, API 0.0.128): el título lo dice. */}
+      {/* Saldo NETO del avión (desde el API 0.0.129 la reserva de overhaul
+          resta en la cascada, antes del total): el mismo saldo a repartir. */}
       <p className="font-medium">{TITULO_REPARTO_ANTES_DESPUES}</p>
       <ul className="space-y-0.5 text-xs">
         {deltas.map((d) => (

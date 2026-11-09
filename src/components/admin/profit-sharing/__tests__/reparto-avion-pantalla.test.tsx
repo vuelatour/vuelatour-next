@@ -13,10 +13,11 @@
  *     AVIÓN, «Registrar entrega» y «Ver cuenta»; un SOCIO sin control;
  *  5. las entregas del avión y el histórico (columnas compactas, totales);
  *  6. el cableado de las dos páginas (lecturas, títulos, periodo validado);
- *  7. LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128): con
- *     `saldo_a_repartir_*` la cascada termina en «Saldo antes de la reserva
- *     de overhaul» − «Reserva de overhaul · se retiene» = «Saldo a repartir»
- *     (card, pantalla, KPIs, socios e histórico); sin la llave, lo de hoy.
+ *  7. LA RESERVA DE OVERHAUL RESTA EN LA CASCADA (9-nov-2026, API 0.0.129):
+ *     con `reserva_overhaul_en_cascada` la fila «Reserva de overhaul (se
+ *     retiene)» resta tras «Fijos prorrateados», antes de «Otros ingresos del
+ *     avión» y del total «Saldo a repartir» (card, pantalla, KPIs, socios e
+ *     histórico, donde la columna va antes de «Saldo»); sin la llave, lo de hoy.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -478,7 +479,7 @@ describe("cableado de las páginas", () => {
     expect(historico).toContain("getAvionHistorico(id, filtro)");
     expect(historico).toContain("<TituloPestana titulo={tituloHistoricoAvion(datos.aeronave.matricula)} />");
     expect(historico).toContain("etiquetaTodo={ETIQUETA_TODO_EL_HISTORICO}");
-    expect(historico).toContain("<HistoricoAvionTable meses={datos.meses} totales={datos.totales} />");
+    expect(historico).toContain("<HistoricoAvionTable meses={datos.meses} totales={datos.totales} reservaEnCascada={retiene} />");
     expect(historico).toContain("{carga.filtroIgnorado && (");
   });
 
@@ -779,39 +780,58 @@ describe("combustible separado: el histórico", () => {
 });
 
 // =============================================================================
-// LA RESERVA DE OVERHAUL SE RETIENE (7-nov-2026, API 0.0.128): marcado de la
-// cascada, la card, los KPIs, los socios y el histórico con el fixture
-// `avionReservaRetenida()` (N621TX, sep-2026: 574,632.22 − 8,625.00 =
-// 566,007.22 MXN a repartir). Sin la llave, el marcado de hoy.
+// LA RESERVA DE OVERHAUL RESTA EN LA CASCADA (9-nov-2026, API 0.0.129,
+// invariante 125): marcado de la cascada, la card, los KPIs, los socios y el
+// histórico con el fixture `avionReservaRetenida()` (N621TX, sep-2026: … −
+// fijos 10,350.00 − reserva 8,625.00 + otros 46,550.80 = 566,007.22 MXN a
+// repartir, ya neto). Sin la llave, el marcado de hoy.
 // =============================================================================
 
-describe("la reserva se RETIENE: la cascada (CascadaAvion)", () => {
+/** El orden del Excel con la reserva como última resta: antes de los otros ingresos y del total. */
+const ORDEN_EXCEL_CON_RESERVA = [...ORDEN_EXCEL.slice(0, -2), "reserva", "otros_ingresos", "saldo"];
+
+describe("la reserva EN la cascada: la cascada (CascadaAvion)", () => {
   const html = renderToStaticMarkup(<CascadaAvion avion={avionReservaRetenida()} enPesos comoBalance />);
 
-  it("termina en «Saldo antes de la reserva de overhaul» (subtotal) − «Reserva de overhaul · se retiene» = «Saldo a repartir»; ya no hay bloque informativo", () => {
-    expect(ordenFilas(html)).toEqual([...ORDEN_EXCEL.slice(0, -1), "saldo_antes_reserva", "reserva", "saldo"]);
-    expect(html).toMatch(/data-cascada-avion="av-621" data-reserva-retenida=""/);
-    expect(html).toMatch(/data-fila-cascada="saldo_antes_reserva" data-tipo="subtotal"/);
+  it("la fila «Reserva de overhaul (se retiene)» resta tras «Fijos prorrateados» y antes de «Otros ingresos del avión»; el total es «Saldo a repartir»; sin bloque informativo ni «Saldo antes de la reserva»", () => {
+    expect(ORDEN_EXCEL_CON_RESERVA).toEqual([
+      "cobrado",
+      "comisiones",
+      "directos",
+      "afac",
+      "utilidad_antes_gastos",
+      "combustible",
+      "indirectos",
+      "permisos",
+      "fijos",
+      "reserva",
+      "otros_ingresos",
+      "saldo",
+    ]);
+    expect(ordenFilas(html)).toEqual(ORDEN_EXCEL_CON_RESERVA);
+    expect(html).toMatch(/data-cascada-avion="av-621" data-reserva-en-cascada=""/);
     expect(html).toMatch(/data-fila-cascada="reserva" data-tipo="deduccion"/);
-    expect(html).toContain(">Saldo antes de la reserva de overhaul<");
-    expect(html).toContain(">$574,632.22 MXN<");
-    expect(html).toContain(">Reserva de overhaul<span");
-    expect(html).toContain("se retiene para el overhaul · 12.5 hr × $40/hr");
+    expect(html).toContain(">Reserva de overhaul (se retiene)<span");
+    expect(html).toContain(">12.5 hr × $40/hr<");
     expect(html).toContain(">−$8,625.00 MXN<");
     expect(html).toContain(">≈ −$500 USD · al T.C. 17.25<");
     expect(html).toContain(">Saldo a repartir<");
     expect(html).toContain(">$566,007.22 MXN<");
     expect(html).toContain(">≈ $32,780.16 USD<");
-    expect(html).toContain('title="Saldo antes de la reserva menos la reserva de overhaul');
+    expect(html).toContain('title="Lo que queda del avión después de todas las restas, la reserva de overhaul incluida');
+    // Un solo subtotal («Utilidad antes de gastos»): ya no hay «Saldo antes de la reserva».
+    expect((html.match(/data-tipo="subtotal"/g) ?? []).length).toBe(1);
+    expect(html).not.toContain("saldo_antes_reserva");
+    expect(html).not.toContain("antes de la reserva");
+    expect(html).not.toContain("574,632.22");
     expect(html).not.toContain("data-reserva-informativa");
-    // Los textos de la reserva de antes ya no están (el «no se resta nada» de
-    // la nota del pago al vendedor y el «va aparte» del combustible son de otras filas).
     for (const t of [">no se resta<", "No se resta del saldo", "se descuenta a los socios", "VuelaTour retiene", "solo informativa"]) {
       expect(html, t).not.toContain(t);
     }
-    // La reserva resta ANTES de la fila final, que es la última.
-    expect(pos(html, 'data-fila-cascada="saldo_antes_reserva"')).toBeLessThan(pos(html, 'data-fila-cascada="reserva"'));
-    expect(pos(html, 'data-fila-cascada="reserva"')).toBeLessThan(pos(html, 'data-fila-cascada="saldo"'));
+    // Fijos < reserva < otros ingresos < saldo.
+    expect(pos(html, 'data-fila-cascada="fijos"')).toBeLessThan(pos(html, 'data-fila-cascada="reserva"'));
+    expect(pos(html, 'data-fila-cascada="reserva"')).toBeLessThan(pos(html, 'data-fila-cascada="otros_ingresos"'));
+    expect(pos(html, 'data-fila-cascada="otros_ingresos"')).toBeLessThan(pos(html, 'data-fila-cascada="saldo"'));
   });
 
   it("FALLBACK: sin la llave, el marcado de hoy (bloque informativo debajo del saldo del Excel, «se descuenta a los socios»)", () => {
@@ -819,16 +839,17 @@ describe("la reserva se RETIENE: la cascada (CascadaAvion)", () => {
       <CascadaAvion avion={sinReservaRetenida(avionReservaRetenida())} enPesos comoBalance />,
     );
     expect(ordenFilas(viejo)).toEqual(ORDEN_EXCEL);
-    expect(viejo).not.toContain("data-reserva-retenida");
+    expect(viejo).not.toContain("data-reserva-en-cascada");
     expect(viejo).toContain("data-reserva-informativa");
     expect(viejo).toContain(">se descuenta a los socios<");
     expect(viejo).toContain(">$574,632.22 MXN<");
     expect(viejo).not.toContain("$566,007.22");
+    expect(viejo).not.toContain("(se retiene)");
   });
 });
 
-describe("la reserva se RETIENE: la card de la lista y los KPIs de la flota", () => {
-  it("la card: «Saldo a repartir» en el encabezado con el mismo número que la fila final; los socios con «se le retiene»", () => {
+describe("la reserva EN la cascada: la card de la lista y los KPIs de la flota", () => {
+  it("la card: «Saldo a repartir» en el encabezado con el mismo número que la fila final; la reserva resta en la cascada; los socios con «se le retiene»", () => {
     const html = renderToStaticMarkup(
       <AvionRepartoCard
         avion={avionReservaRetenida()}
@@ -843,7 +864,10 @@ describe("la reserva se RETIENE: la card de la lista y los KPIs de la flota", ()
     expect(html).toContain(">Saldo a repartir</p>");
     expect(html).not.toContain(">Saldo disponible<");
     expect(html.match(/>\$566,007\.22 MXN</g)?.length).toBe(2);
-    expect(html).toContain(">$574,632.22 MXN<");
+    expect(ordenFilas(html)).toEqual(ORDEN_EXCEL_CON_RESERVA);
+    expect(html).toContain(">Reserva de overhaul (se retiene)<span");
+    expect(html).toContain(">−$8,625.00 MXN<");
+    expect(html).not.toContain("574,632.22");
     expect(html).toMatch(/data-reserva-socio="descuenta"[^>]*>reserva \$3,529\.35 MXN · se le retiene</);
     expect(html).toContain(">$231,610.15 MXN<");
     expect(html).toContain(">$334,397.07 MXN<");
@@ -852,7 +876,7 @@ describe("la reserva se RETIENE: la card de la lista y los KPIs de la flota", ()
     expect(html).not.toContain("No se resta del saldo");
   });
 
-  it("los KPIs: «Reserva retenida» y «Saldo a repartir» (Σ saldo_a_repartir_*), así Venta + Otros − Gastos − Reserva = Saldo se lee; sin la llave en algún avión, los de hoy", () => {
+  it("los KPIs: «Reserva retenida» como línea propia y «Saldo a repartir» (Σ saldo_disponible_*, ya netos): Venta + Otros − Gastos − Reserva = Saldo; sin la llave en algún avión, los de hoy", () => {
     const html = renderToStaticMarkup(
       <KpiStrip aviones={[avionReservaRetenida()]} otrosIngresos={otrosIngresosVt()} enPesos comoBalance />,
     );
@@ -862,11 +886,13 @@ describe("la reserva se RETIENE: la card de la lista y los KPIs de la flota", ()
     expect(html).toContain(">$566,007.22 MXN<");
     expect(html).toContain(">≈ $32,780.16 USD<");
     expect(html).toContain(">Entre los socios · ya con la reserva de overhaul retenida<");
+    expect(html).toContain("− reserva de overhaul (se retiene para el overhaul) = saldo a repartir");
     expect(html).not.toContain("no se resta ·");
     expect(html).not.toContain("No se resta del saldo");
     expect(html).not.toContain(">Saldo disponible total<");
     // Venta 787,851.13 + otros 46,550.80 − gastos 259,769.71 (comisiones, directos,
-    // combustible, indirectos, permisos, fijos y AFAC) − reserva 8,625.00 = 566,007.22.
+    // combustible, indirectos, permisos, fijos y AFAC; la reserva NO va ahí) −
+    // reserva 8,625.00 = 566,007.22.
     expect(html).toContain(">$787,851.13 MXN<");
     expect(html).toContain("+ $46,550.80 MXN otros ingresos de aviones");
     expect(html).toContain(">$259,769.71 MXN<");
@@ -889,7 +915,7 @@ describe("la reserva se RETIENE: la card de la lista y los KPIs de la flota", ()
   });
 });
 
-describe("la reserva se RETIENE: socios del avión e histórico", () => {
+describe("la reserva EN la cascada: socios del avión e histórico", () => {
   it("la tabla de socios dice «Reserva retenida» con `reservaRetenida`; el badge, «se le retiene»", () => {
     const socios: SocioAvionDetalle[] = [
       { socio_id: SOCIO, socio_nombre: "Hernán Pérez", porcentaje: 40.92, utilidad_mxn: 235139.5, reserva_mxn: 3529.35, descuenta_reserva: true, monto_mxn: 231610.15, entregado_mxn: 0, por_entregar_mxn: 231610.15, monto_usd: 13413.64, reserva_usd: 204.6 },
@@ -911,7 +937,7 @@ describe("la reserva se RETIENE: socios del avión e histórico", () => {
     expect(html).toMatch(/data-a-recibir="50c10000-0000-4000-8000-000000000001"[^>]*>\$231,610\.15 MXN</);
   });
 
-  it("el histórico: «Saldo antes de la reserva», la reserva con «−» y «se retiene», la columna «Saldo a repartir» (negritas, verde/rojo) y su total; sin la llave, «no se resta»", () => {
+  it("el histórico: «Reserva de overhaul (se retiene)» con «−» justo ANTES de «Saldo» (ya neto, negritas, verde/rojo) y su total; sin la llave, la reserva informativa DESPUÉS del saldo", () => {
     const mes = (over: Partial<MesHistoricoAvion>): MesHistoricoAvion => ({
       mes: "2026-09",
       en_curso: false,
@@ -927,59 +953,54 @@ describe("la reserva se RETIENE: socios del avión e histórico", () => {
       otros_mxn: 10350,
       afac_mxn: 42575.49,
       otros_ingresos_mxn: 46550.8,
-      saldo_mxn: 574632.22,
+      // Ya neto: 574,632.22 − 8,625.00.
+      saldo_mxn: 566007.22,
       reserva_mxn: 8625,
       reserva_retenida_mxn: 8625,
-      saldo_a_repartir_mxn: 566007.22,
       entregado_mxn: 0,
       pesos_sin_tc_usd: 0,
-      saldo_usd: 33280.16,
+      saldo_usd: 32780.16,
       reparto: [],
       cierre_estado: "ABIERTO",
       ...over,
     });
     const html = renderToStaticMarkup(
       <HistoricoAvionTable
-        meses={[mes({}), mes({ mes: "2026-10", en_curso: true, saldo_mxn: 100, saldo_a_repartir_mxn: -50 })]}
-        totales={{ ...mes({}), saldo_mxn: 574732.22, saldo_a_repartir_mxn: 565957.22 }}
+        meses={[mes({}), mes({ mes: "2026-10", en_curso: true, saldo_mxn: -50 })]}
+        totales={{ ...mes({}), saldo_mxn: 565957.22, reserva_mxn: 17250 }}
+        reservaEnCascada
       />,
     );
-    expect(html).toMatch(/data-tabla-historico-avion="true"[^>]*data-con-saldo-a-repartir=""/);
+    expect(html).toMatch(/data-tabla-historico-avion="true"[^>]*data-reserva-en-cascada=""/);
     const ths = (html.match(/<th[^>]*>[\s\S]*?<\/th>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, "").trim());
-    expect(ths).toEqual([
-      "Mes",
-      "Horas",
-      "Vuelos",
-      "Cobrado",
-      "Saldo antes de la reserva",
-      "Reserva de overhaulse retiene",
-      "Saldo a repartir",
-      "Entregado",
-      "Cierre",
-    ]);
+    expect(ths).toEqual(["Mes", "Horas", "Vuelos", "Cobrado", "Reserva de overhaul (se retiene)", "Saldo", "Entregado", "Cierre"]);
     expect(html).not.toContain("no se resta");
+    expect(html).not.toContain("antes de la reserva");
+    expect(html).not.toContain("saldo_a_repartir");
     expect(html).toContain(">−$8,625.00 MXN<");
+    // La reserva ya no va en gris (dejó de ser informativa).
+    expect(html).not.toMatch(/text-muted-foreground"[^>]*>−\$8,625\.00 MXN</);
     expect(html).toMatch(/font-semibold text-emerald-700[^"]*"[^>]*>\$566,007\.22 MXN</);
     expect(html).toMatch(/font-semibold text-destructive"[^>]*>-\$50\.00 MXN</);
-    // El saldo antes de la reserva ya no lleva el color del saldo.
-    expect(html).not.toMatch(/text-emerald-700[^"]*"[^>]*>\$574,632\.22 MXN</);
-    expect(html).toMatch(/data-total-historico="saldo_a_repartir_mxn"[^>]*>\$565,957\.22 MXN</);
-    expect(html).toMatch(/data-total-historico="reserva_mxn"[^>]*>−\$8,625\.00 MXN</);
+    expect(html).toMatch(/data-total-historico="reserva_mxn"[^>]*>−\$17,250\.00 MXN</);
+    expect(html).toMatch(/data-total-historico="saldo_mxn"[^>]*>\$565,957\.22 MXN</);
+    expect(pos(html, 'data-total-historico="reserva_mxn"')).toBeLessThan(pos(html, 'data-total-historico="saldo_mxn"'));
     const viejo = renderToStaticMarkup(
-      <HistoricoAvionTable meses={[mes({ saldo_a_repartir_mxn: undefined })]} totales={mes({ saldo_a_repartir_mxn: undefined })} />,
+      <HistoricoAvionTable meses={[mes({ saldo_mxn: 574632.22 })]} totales={mes({ saldo_mxn: 574632.22 })} />,
     );
-    expect(viejo).not.toContain("data-con-saldo-a-repartir");
+    expect(viejo).not.toContain("data-reserva-en-cascada");
     expect(viejo).toContain("Reserva a guardar");
     expect(viejo).toContain(">no se resta<");
-    expect(viejo).not.toContain("Saldo a repartir");
+    expect(viejo).not.toContain("(se retiene)");
     expect(viejo).toMatch(/text-emerald-700[^"]*"[^>]*>\$574,632\.22 MXN</);
+    expect(pos(viejo, 'data-total-historico="saldo_mxn"')).toBeLessThan(pos(viejo, 'data-total-historico="reserva_mxn"'));
   });
 });
 
-describe("la reserva se RETIENE: cableado de las páginas", () => {
+describe("la reserva EN la cascada: cableado de las páginas", () => {
   const leer = (rel: string) => readFileSync(path.join(process.cwd(), rel), "utf8");
 
-  it("la lista, la pantalla del avión y el histórico leen la llave con la fuente única y la pasan a textos, KPIs y tablas; el tablero y el pre-cierre dicen qué saldo es", () => {
+  it("la lista, la pantalla del avión y el histórico leen la llave con la fuente única y la pasan a textos, KPIs y tablas; el tablero y el pre-cierre, sin la aclaración del 0.0.128", () => {
     const reparto = leer("src/app/admin/profit-sharing/page.tsx");
     expect(reparto).toContain("const retiene = comoBalance && flotaRetieneReserva(result.aviones);");
     expect(reparto).toContain("{comoBalance && <p>{notaRepartoComoBalance(retiene)}</p>}");
@@ -990,12 +1011,14 @@ describe("la reserva se RETIENE: cableado de las páginas", () => {
     expect(detalle).toContain("<CardDescription>{ayudaSociosAvion(retiene)}</CardDescription>");
     expect(detalle).toContain("reservaRetenida={retiene}");
     const historico = leer("src/app/admin/profit-sharing/aviones/[id]/historico/page.tsx");
-    expect(historico).toContain("const retiene = historicoConSaldoARepartir(datos.meses, datos.totales);");
+    expect(historico).toContain("const retiene = historicoConReservaEnCascada(datos);");
+    expect(historico).toContain("<HistoricoAvionTable meses={datos.meses} totales={datos.totales} reservaEnCascada={retiene} />");
     expect(historico).toContain("{ayudaHistorico(retiene)}");
     expect(historico).toContain("<CardDescription>{ayudaSociosHistorico(retiene)}</CardDescription>");
     expect(historico).toContain("{etiquetaColumnaReserva(retiene)}");
     const kpi = leer("src/components/admin/profit-sharing/kpi-strip.tsx");
     expect(kpi).toContain("const retiene = comoBalance && flotaRetieneReserva(aviones);");
+    expect(kpi).toContain("const saldo = sum((a) => a.saldo_disponible_usd);");
     const tarjeta = leer("src/components/admin/profit-sharing/avion-reparto-card.tsx");
     expect(tarjeta).toContain("{etiquetaSaldoEncabezado(avion)}");
     const tablero = leer("src/app/admin/dashboards/page.tsx");
@@ -1003,5 +1026,22 @@ describe("la reserva se RETIENE: cableado de las páginas", () => {
     expect(tablero).not.toContain('label="Saldo disponible"');
     const cierre = leer("src/components/admin/reportes/cierre-mes-acciones.tsx");
     expect(cierre).toContain("{TITULO_REPARTO_ANTES_DESPUES}");
+    expect(leer("src/lib/admin/cierre-mes.ts")).toContain(
+      'export const TITULO_REPARTO_ANTES_DESPUES = "Saldo del reparto por avión";',
+    );
+    // Ningún resto de las llaves del API 0.0.128 (`saldo_a_repartir_*`): el 0.0.129 las sustituyó.
+    for (const rel of [
+      "src/types/profit-sharing.ts",
+      "src/lib/admin/reparto-avion.ts",
+      "src/lib/admin/reparto-pesos.ts",
+      "src/components/admin/profit-sharing/cascada-avion.tsx",
+      "src/components/admin/profit-sharing/kpi-strip.tsx",
+      "src/components/admin/profit-sharing/historico-avion-table.tsx",
+      "src/components/admin/profit-sharing/avion-reparto-card.tsx",
+    ]) {
+      const f = leer(rel);
+      expect(f, rel).not.toContain("saldo_a_repartir_usd");
+      expect(f, rel).not.toContain("saldo_a_repartir_mxn");
+    }
   });
 });

@@ -53,11 +53,13 @@ import type {
  * como dato informativo (`montoPrincipal`); sin la bandera, lo de siempre.
  * «Otros ingresos VuelaTour» sigue en dólares (no se reparte) con su sufijo.
  *
- * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128): cuando TODA la flota trae
- * `saldo_a_repartir_*` (`flotaRetieneReserva`), el KPI de saldo es el SALDO
- * A REPARTIR (Σ `saldo_a_repartir_*`, ya con la reserva retenida) y el de la
- * reserva dice «Reserva retenida», así Venta + Otros − Gastos − Reserva =
- * Saldo se lee en la tira. Sin la llave, los KPIs de hasta el 6-nov-2026.
+ * LA RESERVA DE OVERHAUL RESTA EN LA CASCADA (9-nov-2026, API 0.0.129):
+ * cuando TODA la flota trae `reserva_overhaul_en_cascada`
+ * (`flotaRetieneReserva`), el KPI de saldo es el SALDO A REPARTIR (Σ
+ * `saldo_disponible_*`, que ya traen la reserva restada) y el de la reserva
+ * dice «Reserva retenida»; la reserva NO va en «Gastos del periodo»: es su
+ * propia línea, así Venta + Otros − Gastos − Reserva = Saldo se lee en la
+ * tira. Sin la llave, los KPIs de hasta el 6-nov-2026.
  */
 export function KpiStrip({
   aviones,
@@ -75,8 +77,8 @@ export function KpiStrip({
 }) {
   const sum = (fn: (a: AvionReparto) => number) =>
     aviones.reduce((acc, a) => acc + fn(a), 0);
-  // La reserva se RETIENE (API 0.0.128): solo si TODA la flota manda el
-  // saldo a repartir (nunca se mezclan saldos antes y después de la reserva).
+  // La reserva EN la cascada (API 0.0.129): solo si TODA la flota trae la
+  // llave (nunca se mezclan saldos antes y después de la reserva).
   const retiene = comoBalance && flotaRetieneReserva(aviones);
 
   const ingresos = sum((a) => a.ingresos.cobrado_usd);
@@ -120,9 +122,9 @@ export function KpiStrip({
   const pendiente = sum((a) => a.ingresos.pendiente_cobro_usd);
   const vuelosPendientes = sum((a) => a.ingresos.vuelos_pendientes);
   const vuelosCobrados = sum((a) => a.ingresos.vuelos_cobrados);
-  // Con la reserva retenida el saldo de la flota es el SALDO A REPARTIR que
-  // ya manda cada avión (saldo − reserva); si no, el saldo disponible.
-  const saldo = sum((a) => (retiene ? (a.saldo_a_repartir_usd ?? 0) : a.saldo_disponible_usd));
+  // Σ `saldo_disponible_*`: con la reserva en la cascada cada avión ya lo
+  // manda neto (el SALDO A REPARTIR); si no, el saldo disponible de siempre.
+  const saldo = sum((a) => a.saldo_disponible_usd);
   const horas = sum((a) => a.horas_voladas_hr);
   // Pesos (API 0.0.93): solo SUMA lo que ya trae cada card, en centavos; si a
   // algún avión le falta la llave, el KPI cae a los dólares y lo dice.
@@ -138,10 +140,7 @@ export function KpiStrip({
     { mxn: mxn((a) => a.ingresos.pendiente_cobro_mxn), usd: pendiente },
     enPesos,
   );
-  const saldoKpi = montoPrincipal(
-    { mxn: mxn((a) => (retiene ? a.saldo_a_repartir_mxn : a.saldo_disponible_mxn)), usd: saldo },
-    enPesos,
-  );
+  const saldoKpi = montoPrincipal({ mxn: mxn((a) => a.saldo_disponible_mxn), usd: saldo }, enPesos);
   const saldoPositivo = (saldoKpi.valor ?? saldo) >= 0;
   const otrosAvionMxn = mxn((a) => a.ingresos.otros_ingresos_avion_mxn ?? 0);
   const hintVenta =
@@ -176,9 +175,9 @@ export function KpiStrip({
         informativo={gastosKpi.informativo}
         hint={hintKpiGastosPeriodo({ comoBalance, conCombustible })}
       />
-      {/* La reserva: «Reserva retenida» (se resta del saldo antes de
-          repartir, API 0.0.128) · «Reserva a guardar» (solo se informaba,
-          API 0.0.101 a 0.0.127) · «Reserva overhaul» (API previo: resta). */}
+      {/* La reserva: «Reserva retenida» (una resta más de la cascada, antes
+          del total, API 0.0.129) · «Reserva a guardar» (solo se informaba,
+          API 0.0.101 a 0.0.128) · «Reserva overhaul» (API previo: resta). */}
       <Kpi
         icon={WrenchScrewdriverIcon}
         label={retiene ? ETIQUETA_KPI_RESERVA_RETENIDA : comoBalance ? "Reserva a guardar" : "Reserva overhaul"}
@@ -203,8 +202,8 @@ export function KpiStrip({
           pendiente > 0 ? "text-amber-600 dark:text-amber-400" : undefined
         }
       />
-      {/* El saldo: con la reserva retenida es el SALDO A REPARTIR (ya con la
-          reserva descontada); si no, el saldo disponible de siempre. */}
+      {/* El saldo: con la reserva en la cascada es el SALDO A REPARTIR (ya
+          con la reserva restada); si no, el saldo disponible de siempre. */}
       <Kpi
         icon={ScaleIcon}
         label={retiene ? ETIQUETA_KPI_SALDO_A_REPARTIR : ETIQUETA_KPI_SALDO}

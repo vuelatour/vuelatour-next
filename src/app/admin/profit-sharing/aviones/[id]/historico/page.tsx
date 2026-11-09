@@ -59,7 +59,7 @@ import {
   ayudaSociosHistorico,
   etiquetaColumnaReserva,
   filtroMesesHistorico,
-  historicoConSaldoARepartir,
+  historicoConReservaEnCascada,
   hrefRepartoAvion,
   mesesFuturosDelRango,
   puedeVerRepartoAvion,
@@ -106,11 +106,11 @@ function Volver({ aeronaveId }: { aeronaveId: string }) {
  * las entregas. Filtro `?desde=AAAA-MM&hasta=` (default del API: del inicio
  * oficial al mes en curso). Todo del API.
  *
- * LA RESERVA SE RETIENE (7-nov-2026, API 0.0.128): con `saldo_a_repartir_mxn`
- * en los meses o los totales (`historicoConSaldoARepartir`) la tabla gana la
- * columna «Saldo a repartir», la reserva deja de decir «no se resta» y la
- * columna de los socios se llama «Reserva retenida». Sin la llave, lo de
- * hasta el 6-nov-2026.
+ * LA RESERVA DE OVERHAUL RESTA EN LA CASCADA (9-nov-2026, API 0.0.129): con
+ * `reserva_overhaul_en_cascada` en la raíz (`historicoConReservaEnCascada`)
+ * la columna de la reserva pasa antes de «Saldo» (que ya es el saldo a
+ * repartir, neto), deja de decir «no se resta» y la columna de los socios se
+ * llama «Reserva retenida». Sin la llave, lo de hasta el 6-nov-2026.
  */
 export default async function HistoricoAvionPage({ params, searchParams }: PageProps) {
   const [{ id }, sp, me] = await Promise.all([params, searchParams, getMe()]);
@@ -170,9 +170,9 @@ export default async function HistoricoAvionPage({ params, searchParams }: PageP
   const filtrado = !carga.filtroIgnorado && Boolean(filtro.desde || filtro.hasta);
   const futuros = mesesFuturosDelRango(datos.desde, datos.hasta, datos.mes_actual);
   const puedeAdjuntar = puedeRegistrarEntregas(me.rol);
-  // La reserva se RETIENE (API 0.0.128): la misma llave decide los textos y
-  // la columna de los socios; la tabla la lee por su cuenta.
-  const retiene = historicoConSaldoARepartir(datos.meses, datos.totales);
+  // La reserva EN la cascada (API 0.0.129): la misma llave decide los textos,
+  // la columna de los socios y el orden de las columnas de la tabla.
+  const retiene = historicoConReservaEnCascada(datos);
 
   return (
     <div className="space-y-6">
@@ -225,7 +225,7 @@ export default async function HistoricoAvionPage({ params, searchParams }: PageP
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <HistoricoAvionTable meses={datos.meses} totales={datos.totales} />
+          <HistoricoAvionTable meses={datos.meses} totales={datos.totales} reservaEnCascada={retiene} />
         </CardContent>
       </Card>
 

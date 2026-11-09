@@ -3,9 +3,10 @@
  * la fuente única pura `lib/admin/reparto-avion.ts`. Se custodian:
  *  1. la cascada: con `reparto_como_balance` la provisión AFAC RESTA y la
  *     reserva NO está en la cascada (va aparte, informativa); sin la bandera
- *     la reserva resta como siempre y no hay AFAC; con `saldo_a_repartir_*`
- *     (7-nov-2026, API 0.0.128) la cascada termina en «Saldo antes de la
- *     reserva» − «Reserva de overhaul (se retiene)» = «Saldo a repartir»;
+ *     la reserva resta como siempre y no hay AFAC; con
+ *     `reserva_overhaul_en_cascada` (9-nov-2026, API 0.0.129) la fila
+ *     «Reserva de overhaul (se retiene)» resta tras «Fijos prorrateados»,
+ *     antes de «Otros ingresos del avión» y del total «Saldo a repartir»;
  *  2. los gastos agrupados como en el balance, con subtotales en centavos y
  *     el cuadre contra la fila de la cascada (se DICE si no cuadra);
  *  3. los socios: utilidad, reserva, «se le descuenta» / «solo informativa»,
@@ -30,28 +31,22 @@ import {
   AYUDA_SOCIOS_AVION_RESERVA_RETENIDA,
   AYUDA_SOCIOS_HISTORICO,
   AYUDA_SOCIOS_HISTORICO_RESERVA_RETENIDA,
+  CLAVE_SALDO_PRINCIPAL_HISTORICO,
   COLUMNAS_HISTORICO,
   ETIQUETA_COLUMNA_RESERVA_A_GUARDAR,
   ETIQUETA_COLUMNA_RESERVA_RETENIDA,
-  ETIQUETA_COLUMNA_SALDO_ANTES_RESERVA,
-  ETIQUETA_SALDO_ANTES_RESERVA,
+  ETIQUETA_FILA_RESERVA_RETENIDA,
   ETIQUETA_SALDO_A_REPARTIR,
   ETIQUETA_SE_RETIENE,
-  SUBETIQUETA_RESERVA_SE_RETIENE,
-  SUBLABEL_RESERVA_SE_RETIENE,
   TITULO_FILA_RESERVA_RETENIDA,
-  TITULO_FILA_SALDO_ANTES_RESERVA,
   TITULO_FILA_SALDO_A_REPARTIR,
   ayudaHistorico,
   ayudaSociosAvion,
   ayudaSociosHistorico,
-  claveSaldoPrincipalHistorico,
   columnasHistoricoTodas,
   etiquetaColumnaReserva,
   etiquetaSaldoEncabezado,
-  historicoConSaldoARepartir,
-  saldoAntesReservaCascada,
-  sublabelReservaRetenida,
+  historicoConReservaEnCascada,
   DESCRIPCION_GRUPO_DIRECTO_SIN_COMBUSTIBLE,
   DESCRIPCION_GRUPO_GASTO,
   ETIQUETAS_CASCADA,
@@ -127,7 +122,7 @@ import {
   sinCombustible,
   sinReservaRetenida,
 } from "@/components/admin/profit-sharing/__tests__/reparto-pesos.fixtures";
-import type { AvionReparto, FilaGastoDetalle, MesHistoricoAvion } from "@/types/profit-sharing";
+import type { AvionReparto, FilaGastoDetalle, MesHistoricoAvion, RepartoSocio } from "@/types/profit-sharing";
 
 const AV = "a1a1a1a1-0000-4000-8000-000000000621";
 const SOCIO = "50c10000-0000-4000-8000-000000000001";
@@ -535,7 +530,6 @@ describe("histórico mes a mes", () => {
       "otros_ingresos_mxn",
       "saldo_mxn",
       "reserva_mxn",
-      "saldo_a_repartir_mxn",
       "entregado_mxn",
       "cierre",
     ]);
@@ -548,13 +542,12 @@ describe("histórico mes a mes", () => {
       "entregado_mxn",
       "cierre",
     ]);
-    // API previo: todas las columnas de siempre, SIN la de combustible (ni la del saldo a repartir, API 0.0.128).
+    // API previo: todas las columnas de siempre, SIN la de combustible.
     expect(columnasHistorico(true).map((c) => c.clave)).not.toContain("combustible_mxn");
-    expect(columnasHistorico(true).map((c) => c.clave)).not.toContain("saldo_a_repartir_mxn");
-    expect(columnasHistorico(true)).toHaveLength(COLUMNAS_HISTORICO.length - 2);
+    expect(columnasHistorico(true)).toHaveLength(COLUMNAS_HISTORICO.length - 1);
     // API 0.0.103: «Combustible» junto a «Directos»; la vista compacta no cambia.
     const completas = columnasHistorico(true, { conCombustible: true });
-    expect(completas).toHaveLength(COLUMNAS_HISTORICO.length - 1);
+    expect(completas).toHaveLength(COLUMNAS_HISTORICO.length);
     expect(completas.map((c) => c.clave).indexOf("combustible_mxn")).toBe(
       completas.map((c) => c.clave).indexOf("directos_mxn") + 1,
     );
@@ -1066,30 +1059,35 @@ describe("pantalla por avión en pestañas (23-oct-2026)", () => {
 });
 
 // =============================================================================
-// LA RESERVA DE OVERHAUL SE RETIENE (7-nov-2026, API 0.0.128). Decisión del
-// cliente: «aún no se está reteniendo de las utilidades para cada socio en
-// cada avión, aún dice informativa no se resta; debe verse bien y retenerse
-// bien… y verse también en el reparto de utilidades». Con `saldo_a_repartir_*`
-// la cascada termina en «Saldo antes de la reserva de overhaul» − «Reserva de
-// overhaul · se retiene» = «Saldo a repartir»; sin la llave, lo de hoy.
+// LA RESERVA DE OVERHAUL RESTA EN LA CASCADA (9-nov-2026, API 0.0.129,
+// invariante 125). El cliente rechazó la forma del 7-nov (API 0.0.128: la
+// reserva restaba DESPUÉS del saldo, en «Saldo antes de la reserva»):
+// «Necesito resolver ese tema del Overhaul, que quede ANTES del total». Con
+// `reserva_overhaul_en_cascada` la fila «Reserva de overhaul (se retiene)» va
+// tras «Fijos prorrateados» y antes de «Otros ingresos del avión», y el total
+// «Saldo a repartir» es `saldo_disponible_*`, ya neto; sin la llave, lo de
+// hasta el 6-nov-2026.
 // =============================================================================
 
-describe("la reserva se RETIENE (API 0.0.128): la cascada termina en saldo antes − reserva = saldo a repartir", () => {
+describe("la reserva EN la cascada (API 0.0.129): una resta más antes del «Saldo a repartir»", () => {
   const cent = (v: number | null | undefined) => Math.round((v ?? Number.NaN) * 100);
   const a = avionReservaRetenida();
 
-  it("el discriminador es `saldo_a_repartir_usd` numérico; sin la llave, nada cambia", () => {
+  it("el discriminador es `reserva_overhaul_en_cascada === true`; sin la llave, nada cambia", () => {
     expect(reservaSeRetiene(a)).toBe(true);
     expect(reservaSeRetiene(sinReservaRetenida(a))).toBe(false);
     expect(reservaSeRetiene(avionCombustible())).toBe(false);
     expect(reservaSeRetiene(avionBalance())).toBe(false);
-    expect(reservaSeRetiene({ saldo_a_repartir_usd: null })).toBe(false);
-    expect(reservaSeRetiene({ saldo_a_repartir_usd: Number.NaN })).toBe(false);
-    expect(reservaSeRetiene({ saldo_a_repartir_usd: 0 })).toBe(true);
+    expect(reservaSeRetiene({ reserva_overhaul_en_cascada: false })).toBe(false);
+    expect(reservaSeRetiene({ reserva_overhaul_en_cascada: null })).toBe(false);
     expect(reservaSeRetiene(null)).toBe(false);
+    // El fixture viejo (API 0.0.125 a 0.0.128) vuelve al saldo ANTES de la reserva y sin la llave.
+    const viejo = sinReservaRetenida(a);
+    expect(viejo).toMatchObject({ saldo_disponible_mxn: 574632.22, saldo_disponible_usd: 33280.16 });
+    expect("reserva_overhaul_en_cascada" in viejo).toBe(false);
   });
 
-  it("tres filas finales: «Saldo antes de la reserva de overhaul» (subtotal), «(−) Reserva de overhaul · se retiene» y «Saldo a repartir»", () => {
+  it("la fila «Reserva de overhaul (se retiene)» resta tras «Fijos prorrateados» y antes de «Otros ingresos del avión»; la final es «Saldo a repartir» = `saldo_disponible_*`", () => {
     const filas = filasCascadaAvion(a, { enPesos: true, comoBalance: true });
     expect(filas.map((f) => f.clave)).toEqual([
       "cobrado",
@@ -1101,24 +1099,24 @@ describe("la reserva se RETIENE (API 0.0.128): la cascada termina en saldo antes
       "indirectos",
       "permisos",
       "fijos",
-      "otros_ingresos",
-      "saldo_antes_reserva",
       "reserva",
+      "otros_ingresos",
     ]);
-    const antes = filas.at(-2)!;
-    const reserva = filas.at(-1)!;
-    expect(antes).toMatchObject({
-      etiqueta: "Saldo antes de la reserva de overhaul",
-      tipo: "subtotal",
-      title: TITULO_FILA_SALDO_ANTES_RESERVA,
+    expect(filas.some((f) => f.etiqueta.includes("antes de la reserva"))).toBe(false);
+    expect(filas.filter((f) => f.tipo === "subtotal").map((f) => f.clave)).toEqual(["utilidad_antes_gastos"]);
+    const reserva = filas[9];
+    expect(reserva).toMatchObject({
+      clave: "reserva",
+      etiqueta: "Reserva de overhaul (se retiene)",
+      tipo: "deduccion",
+      title: TITULO_FILA_RESERVA_RETENIDA,
     });
-    expect(antes.monto.principal).toBe("$574,632.22 MXN");
-    expect(antes.monto.informativo).toBe("≈ $33,280.16 USD");
-    expect(reserva).toMatchObject({ etiqueta: "Reserva de overhaul", tipo: "deduccion", title: TITULO_FILA_RESERVA_RETENIDA });
-    expect(reserva.sublabel).toBe("se retiene para el overhaul · 12.5 hr × $40/hr");
+    expect(ETIQUETA_FILA_RESERVA_RETENIDA).toBe("Reserva de overhaul (se retiene)");
+    expect(reserva.sublabel).toBe("12.5 hr × $40/hr");
     expect(reserva.monto.principal).toBe("−$8,625.00 MXN");
     expect(reserva.monto.informativo).toBe("≈ −$500 USD · al T.C. 17.25");
-    // La fila final (la pinta el componente con `saldoCascada`): el saldo a repartir.
+    expect(filas.at(-1)).toMatchObject({ clave: "otros_ingresos", tipo: "ingreso" });
+    // La fila final (la pinta el componente con `saldoCascada`): el saldo a repartir, ya neto.
     expect(etiquetaSaldoCascada(a)).toBe("Saldo a repartir");
     expect(ETIQUETA_SALDO_A_REPARTIR).toBe("Saldo a repartir");
     expect(etiquetaSaldoEncabezado(a)).toBe("Saldo a repartir");
@@ -1129,35 +1127,43 @@ describe("la reserva se RETIENE (API 0.0.128): la cascada termina en saldo antes
       valor: 566007.22,
     });
     expect(saldoCascada(a, false).principal).toBe("$32,780.16");
-    expect(saldoAntesReservaCascada(a, true).principal).toBe("$574,632.22 MXN");
-    expect(saldoAntesReservaCascada(a, false).principal).toBe("$33,280.16");
   });
 
-  it("las sumas cuadran al centavo en pesos y en dólares: … + otros = saldo antes; saldo antes − reserva = saldo a repartir = Σ de lo que reciben los socios", () => {
+  it("las sumas cuadran al centavo en pesos y en dólares: utilidad − combustible − indirectos − permisos − fijos − reserva + otros = saldo a repartir = Σ de lo que reciben los socios", () => {
     for (const enPesos of [true, false]) {
       const v = Object.fromEntries(
         filasCascadaAvion(a, { enPesos, comoBalance: true }).map((f) => [f.clave, cent(f.monto.valor)]),
       );
       expect(v.cobrado - v.comisiones - v.directos - v.afac).toBe(v.utilidad_antes_gastos);
-      expect(v.utilidad_antes_gastos - v.combustible - v.indirectos - v.permisos - v.fijos + v.otros_ingresos).toBe(
-        v.saldo_antes_reserva,
-      );
-      expect(v.saldo_antes_reserva).toBe(cent(enPesos ? a.saldo_disponible_mxn : a.saldo_disponible_usd));
-      const aRepartir = cent(enPesos ? a.saldo_a_repartir_mxn : a.saldo_a_repartir_usd);
-      expect(v.saldo_antes_reserva - v.reserva).toBe(aRepartir);
-      expect(cent(saldoCascada(a, enPesos).valor)).toBe(aRepartir);
-      expect(aRepartir).toBe(enPesos ? 56600722 : 3278016);
-      const socios = a.reparto.reduce((acc, s) => acc + cent(enPesos ? s.monto_mxn : s.monto_usd), 0);
-      expect(socios).toBe(aRepartir);
+      const saldo = cent(enPesos ? a.saldo_disponible_mxn : a.saldo_disponible_usd);
+      expect(
+        v.utilidad_antes_gastos - v.combustible - v.indirectos - v.permisos - v.fijos - v.reserva + v.otros_ingresos,
+      ).toBe(saldo);
+      expect(cent(saldoCascada(a, enPesos).valor)).toBe(saldo);
+      expect(saldo).toBe(enPesos ? 56600722 : 3278016);
+      // La reserva es la que manda el API (8,625.00 MXN / $500); antes de ella el saldo era 574,632.22 / 33,280.16.
+      expect(v.reserva).toBe(enPesos ? 862500 : 50000);
+      expect(saldo + v.reserva).toBe(enPesos ? 57463222 : 3328016);
+      // Los socios: Σ monto = saldo a repartir; utilidad − reserva = monto, socio por
+      // socio; Σ utilidad = el saldo antes de la reserva; Σ reserva = la reserva.
+      const monto = (s: RepartoSocio) => cent(enPesos ? s.monto_mxn : s.monto_usd);
+      const utilidad = (s: RepartoSocio) => cent(enPesos ? s.utilidad_mxn : s.utilidad_usd);
+      const parteReserva = (s: RepartoSocio) => cent(enPesos ? s.reserva_mxn : s.reserva_usd);
+      expect(a.reparto.reduce((acc, s) => acc + monto(s), 0)).toBe(saldo);
+      for (const s of a.reparto) expect(utilidad(s) - parteReserva(s)).toBe(monto(s));
+      expect(a.reparto.reduce((acc, s) => acc + utilidad(s), 0)).toBe(saldo + v.reserva);
+      expect(a.reparto.reduce((acc, s) => acc + parteReserva(s), 0)).toBe(v.reserva);
     }
   });
 
-  it("en la cascada del balance sin las líneas del Excel (API 0.0.101 + 0.0.128) las mismas tres filas; sin `reparto_como_balance` no se agregan ni se duplica la reserva", () => {
+  it("en la cascada del balance sin las líneas del Excel (API 0.0.101 + la llave) la reserva es la última resta, tras la AFAC; sin `reparto_como_balance` resta una sola vez, como siempre", () => {
     const base = avionBalance();
     const balance: AvionReparto = {
       ...base,
-      saldo_a_repartir_usd: 7976.16,
-      saldo_a_repartir_mxn: 141600.03,
+      reserva_overhaul_en_cascada: true,
+      // 150,225.03 − 8,625.00 = 141,600.03 MXN; 8,476.16 − 500 = 7,976.16 USD.
+      saldo_disponible_usd: 7976.16,
+      saldo_disponible_mxn: 141600.03,
       reparto: base.reparto.map((s) => ({ ...s, descuenta_reserva: true })),
     };
     const filas = filasCascadaAvion(balance, { enPesos: true, comoBalance: true });
@@ -1170,27 +1176,29 @@ describe("la reserva se RETIENE (API 0.0.128): la cascada termina en saldo antes
       "permisos",
       "fijos",
       "afac",
-      "saldo_antes_reserva",
       "reserva",
     ]);
-    expect(filas.at(-2)!.monto.principal).toBe("$150,225.03 MXN");
+    expect(filas.at(-1)).toMatchObject({ etiqueta: "Reserva de overhaul (se retiene)", tipo: "deduccion" });
     expect(filas.at(-1)!.monto.principal).toBe("−$8,625.00 MXN");
+    const v = Object.fromEntries(filas.map((f) => [f.clave, cent(f.monto.valor)]));
+    expect(
+      v.cobrado + v.otros_ingresos - v.comisiones - v.directos - v.indirectos - v.permisos - v.fijos - v.afac - v.reserva,
+    ).toBe(14160003);
     expect(saldoCascada(balance, true).principal).toBe("$141,600.03 MXN");
     expect(etiquetaSaldoCascada(balance)).toBe("Saldo a repartir");
-    // Sin la bandera del balance (combinación que el API 0.0.128 no produce)
-    // la reserva resta como siempre, una sola vez, y no hay filas nuevas.
+    // Sin la bandera del balance (combinación que el API 0.0.129 no produce)
+    // la reserva resta como siempre, una sola vez y con su etiqueta de siempre.
     const viejo = filasCascadaAvion(balance, { enPesos: true, comoBalance: false });
     expect(viejo.filter((f) => f.clave === "reserva")).toHaveLength(1);
-    expect(viejo.map((f) => f.clave)).not.toContain("saldo_antes_reserva");
+    expect(viejo.at(-1)).toMatchObject({ clave: "reserva", etiqueta: "Reserva de overhaul" });
   });
 
-  it("FALLBACK: sin la llave (API ≤ 0.0.127 / cierre viejo) todo es lo de hoy: sin filas nuevas, el saldo disponible y la reserva informativa debajo con sus textos por datos", () => {
+  it("FALLBACK: sin la llave (API ≤ 0.0.128 / cierre viejo) todo es lo de hoy: sin fila de reserva, el saldo disponible y la reserva informativa debajo con sus textos por datos", () => {
     const viejo = sinReservaRetenida(a);
     const filas = filasCascadaAvion(viejo, { enPesos: true, comoBalance: true });
     expect(filas.map((f) => f.clave)).toEqual(
       filasCascadaAvion(avionCombustible(), { enPesos: true, comoBalance: true }).map((f) => f.clave),
     );
-    expect(filas.map((f) => f.clave)).not.toContain("saldo_antes_reserva");
     expect(filas.find((f) => f.clave === "reserva")).toBeUndefined();
     expect(saldoCascada(viejo, true).principal).toBe("$574,632.22 MXN");
     expect(etiquetaSaldoCascada(viejo)).toBe("Saldo a repartir"); // la línea del Excel, como el 23-oct-2026
@@ -1204,25 +1212,22 @@ describe("la reserva se RETIENE (API 0.0.128): la cascada termina en saldo antes
     expect(etiquetaReservaCascada(false)).toBe("no se resta");
   });
 
-  it("textos: ayudas, sublabel, columna de los socios; los de antes siguen para la rama sin la llave", () => {
+  it("textos: ayudas con el orden nuevo, columna de los socios; los de antes siguen para la rama sin la llave", () => {
     expect(ayudaCascada(true, true)).toBe(AYUDA_CASCADA_EXCEL_RESERVA_RETENIDA);
     expect(ayudaCascada(false, true)).toBe(AYUDA_CASCADA_RESERVA_RETENIDA);
     expect(ayudaCascada(true, false)).toBe(AYUDA_CASCADA_EXCEL);
     expect(ayudaCascada(false)).toBe(AYUDA_CASCADA);
     expect(AYUDA_CASCADA_EXCEL_RESERVA_RETENIDA).toContain(
-      "da el saldo antes de la reserva; menos la reserva de overhaul, que se retiene a los socios y VuelaTour guarda para el overhaul, da el saldo a repartir",
+      "menos combustible, gastos indirectos, permisos, fijos prorrateados y la reserva de overhaul (que se retiene a los socios y VuelaTour guarda para el overhaul), más otros ingresos del avión, da el saldo a repartir",
     );
-    expect(AYUDA_CASCADA_RESERVA_RETENIDA).toContain("Menos la reserva de overhaul, que se retiene a los socios");
+    expect(AYUDA_CASCADA_RESERVA_RETENIDA).toContain("Las filas suman exacto el saldo a repartir");
+    expect(AYUDA_CASCADA_RESERVA_RETENIDA).toContain("la provisión AFAC y la reserva de overhaul, que se retiene a los socios");
     for (const t of [AYUDA_CASCADA_RESERVA_RETENIDA, AYUDA_CASCADA_EXCEL_RESERVA_RETENIDA]) {
       expect(t).not.toContain("no se resta");
       expect(t).not.toContain("va aparte");
+      expect(t).not.toContain("antes de la reserva");
     }
     expect(AYUDA_CASCADA).toContain("no se resta");
-    expect(sublabelReservaRetenida({ horas_hr: 12.5, tarifa_hora_usd: 40 }, 12.5)).toBe(
-      "se retiene para el overhaul · 12.5 hr × $40/hr",
-    );
-    expect(sublabelReservaRetenida(null, 2)).toBe("se retiene para el overhaul · 2.0 hr voladas");
-    expect(sublabelReservaRetenida(null, 0)).toBe(SUBLABEL_RESERVA_SE_RETIENE);
     expect(ayudaSociosAvion(true)).toBe(AYUDA_SOCIOS_AVION_RESERVA_RETENIDA);
     expect(ayudaSociosAvion(false)).toBe(AYUDA_SOCIOS_AVION);
     expect(AYUDA_SOCIOS_AVION_RESERVA_RETENIDA).toContain("la reserva de overhaul que se le retiene");
@@ -1232,9 +1237,10 @@ describe("la reserva se RETIENE (API 0.0.128): la cascada termina en saldo antes
     expect(ETIQUETA_COLUMNA_RESERVA_RETENIDA).toBe("Reserva retenida");
     expect(etiquetaColumnaReserva(false)).toBe(ETIQUETA_COLUMNA_RESERVA_A_GUARDAR);
     expect(ETIQUETA_COLUMNA_RESERVA_A_GUARDAR).toBe("Reserva a guardar");
-    expect(ETIQUETA_SALDO_ANTES_RESERVA).toBe("Saldo antes de la reserva de overhaul");
+    expect(TITULO_FILA_RESERVA_RETENIDA).toContain("Es una resta más de la cascada, antes del saldo a repartir");
     expect(TITULO_FILA_RESERVA_RETENIDA).toContain("se le retiene su parte en proporción a su porcentaje");
-    expect(TITULO_FILA_SALDO_A_REPARTIR).toContain("lo que se reparte entre los socios");
+    expect(TITULO_FILA_SALDO_A_REPARTIR).toContain("la reserva de overhaul incluida");
+    expect(TITULO_FILA_SALDO_A_REPARTIR).toContain("se reparte entre los socios según su porcentaje");
   });
 
   it("los socios: «se le retiene» por el dato (el monto ya viene neto); «solo informativa» se conserva para un snapshot viejo", () => {
@@ -1249,7 +1255,7 @@ describe("la reserva se RETIENE (API 0.0.128): la cascada termina en saldo antes
   });
 });
 
-describe("la reserva se RETIENE: el histórico gana «Saldo a repartir» y la reserva deja de ser informativa", () => {
+describe("la reserva EN la cascada: el histórico pone la reserva ANTES de «Saldo» (ya neto) y deja de ser informativa", () => {
   const mes = (over: Partial<MesHistoricoAvion>): MesHistoricoAvion => ({
     mes: "2026-09",
     en_curso: false,
@@ -1265,120 +1271,145 @@ describe("la reserva se RETIENE: el histórico gana «Saldo a repartir» y la re
     otros_mxn: 10350,
     afac_mxn: 42575.49,
     otros_ingresos_mxn: 46550.8,
-    saldo_mxn: 574632.22,
+    // Ya neto: 574,632.22 − 8,625.00.
+    saldo_mxn: 566007.22,
     reserva_mxn: 8625,
     reserva_retenida_mxn: 8625,
-    saldo_a_repartir_mxn: 566007.22,
     entregado_mxn: 0,
     pesos_sin_tc_usd: 0,
-    saldo_usd: 33280.16,
+    saldo_usd: 32780.16,
     reparto: [],
     cierre_estado: "ABIERTO",
     ...over,
   });
-
-  it("se detecta por mes o por totales; sin la llave, nada", () => {
-    expect(historicoConSaldoARepartir([mes({})], null)).toBe(true);
-    expect(historicoConSaldoARepartir([mes({ saldo_a_repartir_mxn: undefined })], { saldo_a_repartir_mxn: 566007.22 })).toBe(true);
-    expect(historicoConSaldoARepartir([mes({ saldo_a_repartir_mxn: undefined })], { saldo_a_repartir_mxn: undefined })).toBe(false);
-    expect(historicoConSaldoARepartir([], null)).toBe(false);
+  /** La respuesta cruda de `GET …/historico` con la llave en la raíz. */
+  const historico = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    aeronave: { id: AV, matricula: "N621TX", modelo: "Cessna 421C" },
+    desde: "2026-09",
+    hasta: "2026-09",
+    mes_actual: "2026-10",
+    reparto_en_pesos: true,
+    reparto_como_balance: true,
+    reserva_overhaul_en_cascada: true,
+    meses: [mes({})],
+    totales: mes({}),
+    socios: [],
+    entregas: [],
+    ...over,
   });
 
-  it("columnas: «Saldo antes de la reserva», la reserva con «−» y «se retiene», «Saldo a repartir» principal; sin la llave, las de siempre", () => {
-    const todas = columnasHistoricoTodas({ conSaldoARepartir: true });
-    expect(todas.map((c) => c.clave)).toEqual(COLUMNAS_HISTORICO.map((c) => c.clave));
-    expect(todas.find((c) => c.clave === "saldo_mxn")).toMatchObject({
-      etiqueta: ETIQUETA_COLUMNA_SALDO_ANTES_RESERVA,
-      principal: true,
-      title: TITULO_FILA_SALDO_ANTES_RESERVA,
-    });
-    expect(ETIQUETA_COLUMNA_SALDO_ANTES_RESERVA).toBe("Saldo antes de la reserva");
-    expect(todas.find((c) => c.clave === "reserva_mxn")).toMatchObject({
-      etiqueta: "Reserva de overhaul",
-      subEtiqueta: SUBETIQUETA_RESERVA_SE_RETIENE,
-      signo: "-",
-      informativa: false,
-      title: TITULO_FILA_RESERVA_RETENIDA,
-    });
-    expect(SUBETIQUETA_RESERVA_SE_RETIENE).toBe("se retiene");
-    expect(todas.find((c) => c.clave === "saldo_a_repartir_mxn")).toMatchObject({
-      etiqueta: "Saldo a repartir",
-      principal: true,
-      title: TITULO_FILA_SALDO_A_REPARTIR,
-    });
-    expect(columnasHistorico(false, { conSaldoARepartir: true }).map((c) => c.clave)).toEqual([
+  it("se detecta por la llave de la raíz (solo `true` estricto); sin ella, nada", () => {
+    expect(historicoConReservaEnCascada({ reserva_overhaul_en_cascada: true })).toBe(true);
+    expect(historicoConReservaEnCascada({ reserva_overhaul_en_cascada: false })).toBe(false);
+    expect(historicoConReservaEnCascada({ reserva_overhaul_en_cascada: null })).toBe(false);
+    expect(historicoConReservaEnCascada({})).toBe(false);
+    expect(historicoConReservaEnCascada(null)).toBe(false);
+    expect(historicoConReservaEnCascada(undefined)).toBe(false);
+  });
+
+  it("columnas: «Reserva de overhaul (se retiene)» con «−» justo ANTES de «Saldo» (principal, con total); sin la llave, las de siempre", () => {
+    const todas = columnasHistoricoTodas({ conReservaEnCascada: true });
+    expect(todas.map((c) => c.clave)).toEqual([
       "horas_voladas_hr",
       "vuelos",
       "cobrado_mxn",
-      "saldo_mxn",
+      "comisiones_mxn",
+      "directos_mxn",
+      "combustible_mxn",
+      "indirectos_mxn",
+      "permisos_mxn",
+      "otros_mxn",
+      "afac_mxn",
+      "otros_ingresos_mxn",
       "reserva_mxn",
-      "saldo_a_repartir_mxn",
+      "saldo_mxn",
       "entregado_mxn",
       "cierre",
     ]);
-    expect(columnasHistorico(true, { conCombustible: true, conSaldoARepartir: true })).toHaveLength(COLUMNAS_HISTORICO.length);
-    expect(columnasHistorico(true, { conSaldoARepartir: true }).map((c) => c.clave)).not.toContain("combustible_mxn");
-    // Sin la llave: las columnas de siempre, byte a byte.
+    expect(todas.find((c) => c.clave === "reserva_mxn")).toEqual({
+      clave: "reserva_mxn",
+      etiqueta: "Reserva de overhaul (se retiene)",
+      tipo: "mxn",
+      signo: "-",
+      principal: true,
+      title: TITULO_FILA_RESERVA_RETENIDA,
+    });
+    expect(todas.find((c) => c.clave === "saldo_mxn")).toMatchObject({
+      etiqueta: "Saldo",
+      principal: true,
+      title: TITULO_FILA_SALDO_A_REPARTIR,
+    });
+    expect(todas.some((c) => c.etiqueta.includes("antes de la reserva"))).toBe(false);
+    expect(columnasHistorico(false, { conReservaEnCascada: true }).map((c) => c.clave)).toEqual([
+      "horas_voladas_hr",
+      "vuelos",
+      "cobrado_mxn",
+      "reserva_mxn",
+      "saldo_mxn",
+      "entregado_mxn",
+      "cierre",
+    ]);
+    expect(columnasHistorico(true, { conCombustible: true, conReservaEnCascada: true })).toHaveLength(COLUMNAS_HISTORICO.length);
+    expect(columnasHistorico(true, { conReservaEnCascada: true }).map((c) => c.clave)).not.toContain("combustible_mxn");
+    // Sin la llave: las columnas de siempre, byte a byte (la reserva informativa, DESPUÉS del saldo).
     expect(columnasHistoricoTodas()).toEqual([...COLUMNAS_HISTORICO]);
     expect(columnasHistoricoTodas({ conCombustible: true })).toEqual([...COLUMNAS_HISTORICO]);
-    expect(columnasHistorico(false).map((c) => c.clave)).not.toContain("saldo_a_repartir_mxn");
-    expect(claveSaldoPrincipalHistorico({ conSaldoARepartir: true })).toBe("saldo_a_repartir_mxn");
-    expect(claveSaldoPrincipalHistorico()).toBe("saldo_mxn");
+    const viejas = columnasHistorico(false).map((c) => c.clave);
+    expect(viejas.indexOf("reserva_mxn")).toBe(viejas.indexOf("saldo_mxn") + 1);
+    expect(CLAVE_SALDO_PRINCIPAL_HISTORICO).toBe("saldo_mxn");
   });
 
-  it("celdas y totales: la reserva con «−», el saldo a repartir del API; el color sigue al saldo a repartir", () => {
-    const filas = filasHistorico(
-      [mes({}), mes({ mes: "2026-10", en_curso: true, saldo_mxn: 100, saldo_a_repartir_mxn: -50 })],
-      { conSaldoARepartir: true },
-    );
-    expect(filas[0].celdas.saldo_mxn).toBe("$574,632.22 MXN");
+  it("celdas y totales: la reserva con «−» y el saldo neto del API; el color sigue a `saldo_mxn`", () => {
+    const filas = filasHistorico([mes({}), mes({ mes: "2026-10", en_curso: true, saldo_mxn: -50 })], {
+      conReservaEnCascada: true,
+    });
+    expect(filas[0].celdas.saldo_mxn).toBe("$566,007.22 MXN");
     expect(filas[0].celdas.reserva_mxn).toBe("−$8,625.00 MXN");
-    expect(filas[0].celdas.saldo_a_repartir_mxn).toBe("$566,007.22 MXN");
     expect(filas[0].saldoNegativo).toBe(false);
-    // El saldo antes de la reserva es positivo, pero el que se pinta como EL saldo (a repartir) no.
     expect(filas[1].saldoNegativo).toBe(true);
-    // Sin la opción, como siempre: la reserva sin signo, «—» en la columna que no existe y el color del saldo de siempre.
-    const viejas = filasHistorico([mes({ saldo_a_repartir_mxn: undefined, saldo_mxn: -1 })]);
+    expect(Object.keys(filas[0].celdas)).not.toContain("saldo_a_repartir_mxn");
+    // Sin la opción, como siempre: la reserva sin signo y el color del saldo de siempre.
+    const viejas = filasHistorico([mes({ saldo_mxn: -1 })]);
     expect(viejas[0].celdas.reserva_mxn).toBe("$8,625.00 MXN");
-    expect(viejas[0].celdas.saldo_a_repartir_mxn).toBe("—");
     expect(viejas[0].saldoNegativo).toBe(true);
-    const totales = celdasTotalesHistorico({ ...mes({}), saldo_a_repartir_mxn: 1132014.44 }, { conSaldoARepartir: true });
-    expect(totales.saldo_a_repartir_mxn).toBe("$1,132,014.44 MXN");
-    expect(totales.reserva_mxn).toBe("−$8,625.00 MXN");
+    const totales = celdasTotalesHistorico({ ...mes({}), saldo_mxn: 1132014.44, reserva_mxn: 17250 }, { conReservaEnCascada: true });
+    expect(totales.saldo_mxn).toBe("$1,132,014.44 MXN");
+    expect(totales.reserva_mxn).toBe("−$17,250.00 MXN");
     expect(celdasTotalesHistorico(mes({})).reserva_mxn).toBe("$8,625.00 MXN");
   });
 
-  it("normalización: `saldo_a_repartir_mxn` solo si viene (API previo ⇒ ausente, nunca un 0 inventado)", () => {
-    const base = {
-      aeronave: { id: AV, matricula: "N621TX", modelo: "Cessna 421C" },
-      desde: "2026-09",
-      hasta: "2026-09",
-      mes_actual: "2026-10",
-      socios: [],
-      entregas: [],
-    };
-    const nuevo = normalizarAvionHistorico({
-      ...base,
-      meses: [{ mes: "2026-09", saldo_mxn: "574632.22", reserva_mxn: "8625", saldo_a_repartir_mxn: "566007.22" }],
-      totales: { saldo_mxn: "574632.22", reserva_mxn: "8625", saldo_a_repartir_mxn: "566007.22" },
-    })!;
-    expect(nuevo.meses[0]).toMatchObject({ saldo_mxn: 574632.22, reserva_mxn: 8625, saldo_a_repartir_mxn: 566007.22 });
-    expect(nuevo.totales.saldo_a_repartir_mxn).toBe(566007.22);
-    expect(historicoConSaldoARepartir(nuevo.meses, nuevo.totales)).toBe(true);
-    const viejo = normalizarAvionHistorico({
-      ...base,
-      meses: [{ mes: "2026-09", saldo_mxn: "574632.22", reserva_mxn: "8625" }],
-      totales: { saldo_mxn: "574632.22", reserva_mxn: "8625" },
-    })!;
-    expect("saldo_a_repartir_mxn" in viejo.meses[0]).toBe(false);
-    expect(viejo.totales.saldo_a_repartir_mxn).toBeUndefined();
-    expect(historicoConSaldoARepartir(viejo.meses, viejo.totales)).toBe(false);
+  it("normalización: la llave de la raíz solo `true` estricto; `saldo_mxn` tal cual (ya neto) y nunca un `saldo_a_repartir_mxn`", () => {
+    const nuevo = normalizarAvionHistorico(
+      historico({
+        meses: [{ mes: "2026-09", saldo_mxn: "566007.22", reserva_mxn: "8625" }],
+        totales: { saldo_mxn: "566007.22", reserva_mxn: "8625" },
+      }),
+    )!;
+    expect(nuevo.reserva_overhaul_en_cascada).toBe(true);
+    expect(historicoConReservaEnCascada(nuevo)).toBe(true);
+    expect(nuevo.meses[0]).toMatchObject({ saldo_mxn: 566007.22, reserva_mxn: 8625 });
+    expect(Object.keys(nuevo.meses[0])).not.toContain("saldo_a_repartir_mxn");
+    expect(Object.keys(nuevo.totales)).not.toContain("saldo_a_repartir_mxn");
+    // Un API previo (hasta el 0.0.128): sin la llave; la `saldo_a_repartir_mxn` del 0.0.128 ya no se copia.
+    const viejo = normalizarAvionHistorico(
+      historico({
+        reserva_overhaul_en_cascada: undefined,
+        meses: [{ mes: "2026-09", saldo_mxn: "574632.22", reserva_mxn: "8625", saldo_a_repartir_mxn: "566007.22" }],
+        totales: { saldo_mxn: "574632.22", reserva_mxn: "8625" },
+      }),
+    )!;
+    expect(viejo.reserva_overhaul_en_cascada).toBe(false);
+    expect(historicoConReservaEnCascada(viejo)).toBe(false);
+    expect(viejo.meses[0].saldo_mxn).toBe(574632.22);
+    expect(Object.keys(viejo.meses[0])).not.toContain("saldo_a_repartir_mxn");
+    expect(normalizarAvionHistorico(historico({ reserva_overhaul_en_cascada: "true" }))!.reserva_overhaul_en_cascada).toBe(false);
   });
 
   it("ayudas del histórico y de sus socios según la llave", () => {
     expect(ayudaHistorico(true)).toBe(AYUDA_HISTORICO_RESERVA_RETENIDA);
     expect(ayudaHistorico(false)).toBe(AYUDA_HISTORICO);
-    expect(AYUDA_HISTORICO_RESERVA_RETENIDA).toContain("la reserva de overhaul que se retiene, el saldo a repartir");
+    expect(AYUDA_HISTORICO_RESERVA_RETENIDA).toContain("la reserva de overhaul como una resta más antes del total");
+    expect(AYUDA_HISTORICO_RESERVA_RETENIDA).not.toContain("antes de la reserva");
     expect(AYUDA_HISTORICO).toContain("(no se resta)");
     expect(ayudaSociosHistorico(true)).toBe(AYUDA_SOCIOS_HISTORICO_RESERVA_RETENIDA);
     expect(ayudaSociosHistorico(false)).toBe(AYUDA_SOCIOS_HISTORICO);
