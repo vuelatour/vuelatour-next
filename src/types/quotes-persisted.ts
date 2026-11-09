@@ -319,6 +319,12 @@ export interface CotizacionVersion {
   motivo: string | null;
   created_at: string;
   created_by: string | null;
+  /**
+   * QUIÉN HIZO LA VERSIÓN (9-nov-2026, API 0.0.132, ADITIVO): el nombre de
+   * `created_by`, ya resuelto por el API. null si el usuario ya no existe o
+   * no tiene nombre; ausente con un API anterior. Texto: `textoAutorVersion`.
+   */
+  creado_por_nombre?: string | null;
 }
 
 export type PersistedQuoteListResponse = ListResponse<PersistedQuote>;

@@ -3,6 +3,22 @@ import { fmtDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { CotizacionVersion } from "@/types/quotes-persisted";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * «por Itzi Canales»: quién hizo la versión (9-nov-2026, API 0.0.132; pedido
+ * de la oficina: «pueden poner quién hace cada versión»). El nombre lo manda
+ * el API (`creado_por_nombre`); sin nombre —usuario que ya no existe, API
+ * anterior— o si llegara un uuid, null: no se pinta nada (nunca un id).
+ */
+export function textoAutorVersion(
+  v: Pick<CotizacionVersion, "creado_por_nombre"> | null | undefined,
+): string | null {
+  const nombre = (v?.creado_por_nombre ?? "").trim().replace(/\s+/g, " ");
+  if (!nombre || UUID_RE.test(nombre)) return null;
+  return `por ${nombre}`;
+}
+
 export function QuoteVersionsTimeline({
   versions,
   currentVersion,
@@ -25,6 +41,7 @@ export function QuoteVersionsTimeline({
     <ol className="space-y-4 relative before:absolute before:left-[7px] before:top-2 before:bottom-2 before:w-px before:bg-border">
       {ordered.map((v) => {
         const isCurrent = v.version === currentVersion;
+        const autor = textoAutorVersion(v);
         return (
           <li key={v.id} className="pl-6 relative">
             <span
@@ -46,6 +63,12 @@ export function QuoteVersionsTimeline({
               </p>
               <p className="text-xs text-muted-foreground">
                 {fmtDateTime(v.created_at)}
+                {autor && (
+                  <span className="font-medium text-foreground" data-autor-version>
+                    {" · "}
+                    {autor}
+                  </span>
+                )}
               </p>
             </div>
             <p className="text-sm font-mono font-semibold mt-0.5">
