@@ -23,6 +23,7 @@ import { BotonRegistrarEntrega } from "@/components/admin/profit-sharing/entrega
 import { BotonConfigurarCuenta } from "@/components/admin/profit-sharing/cuenta-socio-dialog";
 import { FiltroMesesCuenta } from "@/components/admin/profit-sharing/filtro-meses-cuenta";
 import { MovimientosCuenta } from "@/components/admin/profit-sharing/movimientos-cuenta";
+import { CuentaPorAvion } from "@/components/admin/profit-sharing/cuenta-por-avion";
 import { ResumenMesesCuenta } from "@/components/admin/profit-sharing/resumen-meses-cuenta";
 import {
   AvisoEntregasPrevias,
@@ -47,6 +48,7 @@ import {
   RUTA_PAGOS_SOCIOS,
   TEXTO_ERROR_CARGA_CUENTAS,
   TEXTO_FILTRO_MESES_IGNORADO,
+  TEXTO_SIN_MOVIMIENTOS_CUENTA,
   TITULO_PAGOS_SOCIOS,
   contextoEntregaDeEstadoCuenta,
   escondeEntregasAntesDelArranque,
@@ -58,6 +60,7 @@ import {
   mesParaVerEntregasPrevias,
   puedeRegistrarEntregas,
   puedeVerCuentasSocios,
+  saldosPorAvion,
   textoAvionDeSocio,
   textoEntregasAntesDelArranque,
 } from "@/lib/admin/reparto-pagos";
@@ -94,6 +97,12 @@ function Volver() {
  * corrido (utilidades por mes y avión, entregas con método, quién entregó,
  * recibió/factura, referencia y comprobante) y el resumen por mes. Filtro
  * por meses en la URL (`?desde=YYYY-MM&hasta=YYYY-MM`). Todo del API.
+ *
+ * SALDO POR AVIÓN (10-nov-2026, API 0.0.134): la cuenta de un socio con 2+
+ * aviones se lleva por avión («un balance para cada avión, porque las
+ * entregas son por avión»). Con `cuenta_por_avion` + `por_avion` la tabla
+ * única se sustituye por una card por avión (`CuentaPorAvion`); sin ellos,
+ * la pantalla de siempre.
  */
 export default async function EstadoCuentaSocioPage({ params, searchParams }: PageProps) {
   const [{ id }, sp, me] = await Promise.all([params, searchParams, getMe()]);
@@ -186,6 +195,24 @@ export default async function EstadoCuentaSocioPage({ params, searchParams }: Pa
     }
   }
 
+  // SALDO POR AVIÓN (10-nov-2026, API 0.0.134): si la cuenta tiene 2+ aviones
+  // el API la manda separada por avión y se pinta UNA card por sección en
+  // lugar de la tabla única (que mezclaba los aviones en un solo saldo).
+  // `null` (API previo, un solo avión o dato ilegible) ⇒ la pantalla de siempre.
+  const secciones = saldosPorAvion(datos);
+  // El filtro de meses es UNO: en la card «Movimientos» o arriba de las cards
+  // por avión.
+  const filtroMeses = (
+    <FiltroMesesCuenta
+      desde={datos.desde}
+      hasta={datos.hasta}
+      cuentaDesdeMes={cuentaDesdeMes}
+      mesActual={hoyMes}
+      mesMinimo={entregasPrevias?.mes ?? null}
+      filtrado={filtrado}
+    />
+  );
+
   return (
     <div className="space-y-6">
       <TituloPestana titulo={tituloSocio(datos.socio.nombre)} />
@@ -257,48 +284,55 @@ export default async function EstadoCuentaSocioPage({ params, searchParams }: Pa
         />
       )}
 
-      <KpisCuenta totales={datos.totales} mesEnCurso={hoyMes} />
+      <KpisCuenta totales={datos.totales} mesEnCurso={hoyMes} porAvion={secciones !== null} />
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <CardTitle className="text-base">Movimientos</CardTitle>
-              <CardDescription>
-                {etiquetaMes(datos.desde)} a {etiquetaMes(datos.hasta)}
-                {datos.rango && (
-                  <>
-                    {" "}
-                    · generó <span className="font-mono">{fmtMxn(datos.rango.generado_mxn)}</span>
-                    {" "}· se le entregó{" "}
-                    <span className="font-mono">{fmtMxn(datos.rango.entregado_mxn)}</span>
-                  </>
-                )}
-              </CardDescription>
+      {secciones ? (
+        <CuentaPorAvion
+          secciones={secciones}
+          desde={datos.desde}
+          hasta={datos.hasta}
+          filtrado={filtrado}
+          mesEnCurso={hoyMes}
+          contexto={contexto}
+          registro={registro}
+          puedeRegistrar={puedeRegistrar}
+          filtro={filtroMeses}
+        />
+      ) : (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Movimientos</CardTitle>
+                <CardDescription>
+                  {etiquetaMes(datos.desde)} a {etiquetaMes(datos.hasta)}
+                  {datos.rango && (
+                    <>
+                      {" "}
+                      · generó <span className="font-mono">{fmtMxn(datos.rango.generado_mxn)}</span>
+                      {" "}· se le entregó{" "}
+                      <span className="font-mono">{fmtMxn(datos.rango.entregado_mxn)}</span>
+                    </>
+                  )}
+                </CardDescription>
+              </div>
+              {filtroMeses}
             </div>
-            <FiltroMesesCuenta
-              desde={datos.desde}
-              hasta={datos.hasta}
-              cuentaDesdeMes={cuentaDesdeMes}
-              mesActual={hoyMes}
-              mesMinimo={entregasPrevias?.mes ?? null}
-              filtrado={filtrado}
-            />
-          </div>
-        </CardHeader>
-        <CardContent>
-          {datos.movimientos.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin movimientos en estos meses.</p>
-          ) : (
-            <MovimientosCuenta
-              movimientos={datos.movimientos}
-              contexto={contexto}
-              registro={registro}
-              puedeRegistrar={puedeRegistrar}
-            />
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {datos.movimientos.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{TEXTO_SIN_MOVIMIENTOS_CUENTA}</p>
+            ) : (
+              <MovimientosCuenta
+                movimientos={datos.movimientos}
+                contexto={contexto}
+                registro={registro}
+                puedeRegistrar={puedeRegistrar}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {datos.por_mes.length > 0 && (
         <Card>

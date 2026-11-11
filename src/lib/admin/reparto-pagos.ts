@@ -59,6 +59,8 @@ import type {
   ResultadoPagoSocio,
   ResumenCuentaSocio,
   ResumenMesCuenta,
+  SaldoAvionCuenta,
+  SeccionAvionCuenta,
   SociosCuentaRespuesta,
   SocioRef,
   TotalesCuentasSocios,
@@ -730,12 +732,19 @@ export function detalleExcesoSaldo(details: unknown): DetalleExcesoSaldo | null 
   const monto = n("monto_mxn");
   const exceso = n("exceso_mxn");
   if (porEntregar == null || monto == null || exceso == null) return null;
+  // SALDO POR AVIÓN (API 0.0.134): el avión contra el que se midió y lo ya
+  // adelantado «a cuenta general» que se le descontó. Las llaves existen
+  // SOLO si llegaron legibles (ausentes = se midió contra toda la cuenta).
+  const aeronave = aeronaveRef(d.aeronave);
+  const adelantadoGeneral = n("adelantado_general_mxn");
   return {
     por_entregar_mxn: porEntregar,
     monto_mxn: monto,
     exceso_mxn: exceso,
     mes_en_curso_mxn: n("mes_en_curso_mxn"),
     saldo_despues_mxn: n("saldo_despues_mxn"),
+    ...(aeronave ? { aeronave } : {}),
+    ...(adelantadoGeneral != null ? { adelantado_general_mxn: adelantadoGeneral } : {}),
   };
 }
 
@@ -749,6 +758,14 @@ export const BOTON_REVISAR_MONTO = "Revisar el monto";
  * había por entregar de los meses CERRADOS (si el mes en curso ya lleva
  * algo, se dice que no cuenta) y el exceso (= el saldo que queda a favor de
  * VuelaTour).
+ *
+ * SALDO POR AVIÓN (10-nov-2026, API 0.0.134): en una cuenta que se lleva por
+ * avión el API mide la entrega contra el saldo de SU avión y manda
+ * `details.aeronave`: el texto lo NOMBRA («…por entregar de N4142R…», «…el
+ * saldo de N4142R quedará a favor…», espejo de `mensajeExcedeSaldo` del
+ * API). Si además ya había adelantos «a cuenta general», el API los descontó
+ * de ese «por entregar» y se dice cuánto (`adelantado_general_mxn`). Sin
+ * avión (o API previo), el texto de siempre.
  */
 export function confirmacionAdelanto(
   details: unknown,
@@ -768,11 +785,17 @@ export function confirmacionAdelanto(
     d.mes_en_curso_mxn != null && centavos(d.mes_en_curso_mxn) !== 0
       ? `, sin contar el mes en curso: ${fmtMxn(d.mes_en_curso_mxn)}`
       : "";
+  const matricula = (d.aeronave?.matricula ?? "").trim();
+  const deAvion = matricula ? ` de ${matricula}` : "";
+  const general =
+    matricula && d.adelantado_general_mxn != null && centavos(d.adelantado_general_mxn) > 0
+      ? `, ya descontados ${fmtMxn(d.adelantado_general_mxn)} adelantados a cuenta general`
+      : "";
   return {
     titulo,
-    descripcion: `Esta entrega de ${fmtMxn(d.monto_mxn)} supera lo que hay por entregar (${fmtMxn(
+    descripcion: `Esta entrega de ${fmtMxn(d.monto_mxn)} supera lo que hay por entregar${deAvion} (${fmtMxn(
       porEntregar,
-    )}${curso}). Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour por ${fmtMxn(
+    )}${general}${curso}). Se registrará como ADELANTO y el saldo${deAvion} quedará a favor de VuelaTour por ${fmtMxn(
       d.exceso_mxn,
     )}. ${verbo}`,
   };
@@ -1120,6 +1143,99 @@ function normalizarAviones(v: unknown): AvionDeSocio[] {
     : [];
 }
 
+// -----------------------------------------------------------------------------
+// SALDO POR AVIÓN (10-nov-2026, API 0.0.134): `por_avion` + `cuenta_por_avion`
+// -----------------------------------------------------------------------------
+
+/** Número del API (o `numeric` como texto); otra cosa ⇒ null. A diferencia
+    de `num`, NO convierte la basura en 0: un saldo por avión inventado en $0
+    sería peor que no pintarlo. */
+function numEstricto(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/** El saldo de UN avión (o de «a cuenta general», `aeronave: null`). Sin
+    sus cinco importes legibles, o con un avión que no es ni `null` ni
+    `{id, matricula}` ⇒ null (basura). */
+function normalizarSaldoAvion(raw: unknown): SaldoAvionCuenta | null {
+  const s = obj(raw);
+  if (!s) return null;
+  const aeronave = s.aeronave === null ? null : aeronaveRef(s.aeronave);
+  if (s.aeronave !== null && !aeronave) return null;
+  const generado = numEstricto(s.generado_mxn);
+  const enCurso = numEstricto(s.mes_en_curso_mxn);
+  const entregado = numEstricto(s.entregado_mxn);
+  const porEntregar = numEstricto(s.por_entregar_mxn);
+  const cerrado = numEstricto(s.por_entregar_cerrado_mxn);
+  if (generado == null || enCurso == null || entregado == null || porEntregar == null || cerrado == null) {
+    return null;
+  }
+  return {
+    aeronave,
+    porcentaje: numONull(s.porcentaje),
+    generado_mxn: generado,
+    mes_en_curso_mxn: enCurso,
+    entregado_mxn: entregado,
+    por_entregar_mxn: porEntregar,
+    por_entregar_cerrado_mxn: cerrado,
+    estado: typeof s.estado === "string" ? s.estado : "",
+  };
+}
+
+/** La sección de un avión del estado de cuenta: su saldo + SUS movimientos
+    (normalizados igual que los de la raíz). Sin lista de movimientos ⇒ null. */
+function normalizarSeccionAvion(raw: unknown): SeccionAvionCuenta | null {
+  const s = obj(raw);
+  const saldo = normalizarSaldoAvion(raw);
+  if (!s || !saldo || !Array.isArray(s.movimientos)) return null;
+  const rango = obj(s.rango);
+  return {
+    ...saldo,
+    saldo_anterior_mxn: num(s.saldo_anterior_mxn),
+    movimientos: s.movimientos
+      .map(normalizarMovimiento)
+      .filter((m): m is MovimientoCuenta => m !== null),
+    rango: rango
+      ? {
+          generado_mxn: num(rango.generado_mxn),
+          entregado_mxn: num(rango.entregado_mxn),
+          saldo_final_mxn: num(rango.saldo_final_mxn),
+        }
+      : null,
+  };
+}
+
+/**
+ * `por_avion` + `cuenta_por_avion` con tipos sanos, TODO O NADA: las
+ * secciones SUMAN la cuenta completa, así que si una sola llega ilegible (o
+ * un avión viene repetido) no se pinta ninguna — media cuenta por avión
+ * sería una cifra falsa. Sin la llave (API previo) o con basura ⇒ `{}` ⇒ la
+ * pantalla de siempre. `cuenta_por_avion` solo es true si el API lo dijo Y
+ * hay secciones que pintar.
+ */
+function aditivoPorAvion<T extends SaldoAvionCuenta>(
+  porAvion: unknown,
+  bandera: unknown,
+  normalizar: (raw: unknown) => T | null,
+): { por_avion?: T[]; cuenta_por_avion?: boolean } {
+  if (!Array.isArray(porAvion)) return {};
+  const secciones: T[] = [];
+  const vistas = new Set<string>();
+  for (const raw of porAvion) {
+    const s = normalizar(raw);
+    const clave = s ? claveSeccionAvion(s) : null;
+    if (!s || clave == null || vistas.has(clave)) return {};
+    vistas.add(clave);
+    secciones.push(s);
+  }
+  return { por_avion: secciones, cuenta_por_avion: bandera === true && secciones.length > 0 };
+}
+
 /** Un renglón del resumen con tipos sanos (sin socio ⇒ null). */
 export function normalizarResumen(raw: unknown): ResumenCuentaSocio | null {
   const r = obj(raw);
@@ -1137,6 +1253,7 @@ export function normalizarResumen(raw: unknown): ResumenCuentaSocio | null {
     ultimo_pago: normalizarUltimoPago(r.ultimo_pago),
     aviones: normalizarAviones(r.aviones),
     avisos: textos(r.avisos),
+    ...aditivoPorAvion(r.por_avion, r.cuenta_por_avion, normalizarSaldoAvion),
   };
 }
 
@@ -1247,6 +1364,7 @@ export function normalizarEstadoCuenta(raw: unknown): EstadoCuentaRespuesta | nu
         }
       : null,
     avisos: textos(r.avisos),
+    ...aditivoPorAvion(r.por_avion, r.cuenta_por_avion, normalizarSeccionAvion),
   };
 }
 
@@ -1317,6 +1435,14 @@ export interface ContextoEntrega {
   /** «Corresponde al avión» prellenado (pantalla por avión, 20-oct-2026):
       el uuid del avión que se está viendo. null = «Sin avión». */
   avionSugerido?: string | null;
+  /** SALDO POR AVIÓN (10-nov-2026, API 0.0.134): true = la cuenta tiene 2+
+      aviones y se lleva POR AVIÓN — el alta EXIGE elegir el avión (o «Sin
+      avión (a cuenta general)») y dice su saldo. Las dos llaves existen SOLO
+      en una cuenta por avión; ausentes ⇒ el diálogo de siempre. */
+  cuentaPorAvion?: boolean;
+  /** Los saldos por avión de esa cuenta (`por_avion` del API, sin sus
+      movimientos; la sección general incluida si existe). */
+  porAvion?: SaldoAvionCuenta[];
 }
 
 /** Lo que la pantalla que abre el diálogo sabe además del renglón. */
@@ -1342,6 +1468,7 @@ export function contextoEntrega(
     cuentaDesdeMes: mesDeFecha(r.cuenta.cuenta_desde) ?? MES_CUENTA_DEFAULT,
     mesSugerido: esMesValido(extras.mesSugerido) ? extras.mesSugerido : null,
     avionSugerido: esUuid(extras.avionSugerido) ? (extras.avionSugerido as string) : null,
+    ...saldosDeContexto(r),
   };
 }
 
@@ -1363,7 +1490,428 @@ export function contextoEntregaDeEstadoCuenta(
     cuentaDesdeMes: mesDeFecha(e.cuenta.cuenta_desde) ?? MES_CUENTA_DEFAULT,
     mesSugerido: esMesValido(extras.mesSugerido) ? extras.mesSugerido : null,
     avionSugerido: esUuid(extras.avionSugerido) ? (extras.avionSugerido as string) : null,
+    ...saldosDeContexto(e),
   };
+}
+
+/**
+ * Las dos llaves del contexto de una cuenta POR AVIÓN (`cuentaPorAvion` +
+ * `porAvion`), o `{}` si la cuenta es la de siempre. Del resumen llegan los
+ * saldos tal cual; del estado de cuenta, las secciones SIN sus movimientos
+ * (el contexto viaja al navegador en cada botón: solo lleva lo que el diálogo
+ * lee).
+ */
+function saldosDeContexto(
+  x: Pick<ResumenCuentaSocio, "por_avion" | "cuenta_por_avion">,
+): Pick<ContextoEntrega, "cuentaPorAvion" | "porAvion"> {
+  const saldos = saldosPorAvion(x);
+  if (!saldos) return {};
+  return {
+    cuentaPorAvion: true,
+    porAvion: saldos.map((s) => ({
+      aeronave: s.aeronave,
+      porcentaje: s.porcentaje,
+      generado_mxn: s.generado_mxn,
+      mes_en_curso_mxn: s.mes_en_curso_mxn,
+      entregado_mxn: s.entregado_mxn,
+      por_entregar_mxn: s.por_entregar_mxn,
+      por_entregar_cerrado_mxn: s.por_entregar_cerrado_mxn,
+      estado: s.estado,
+    })),
+  };
+}
+
+// -----------------------------------------------------------------------------
+// SALDO POR AVIÓN (10-nov-2026, API 0.0.134)
+// -----------------------------------------------------------------------------
+//
+// Pedido del cliente con la cuenta de un socio de DOS aviones (N4142R 69 % y
+// XB-ANU 70 %): «está mezclado todos los aviones que tenga un socio en su
+// cuenta; debería ser, dentro de la cuenta del socio, un balance para cada
+// avión, porque las entregas son por avión… lo mete todo en la misma
+// licuadora». El saldo corrido único restaba la pérdida del XB-ANU del saldo
+// contra el que se veía la entrega del N4142R.
+//
+// El API reparte la cuenta en secciones (`por_avion`: una por avión + «a
+// cuenta general» si hay saldo inicial o entregas sin avión) y dice si se
+// lleva por avión (`cuenta_por_avion`: 2+ aviones). Aquí SOLO se decide qué
+// se pinta y con qué palabras: ningún saldo se suma ni se resta en el panel.
+
+/** Clave de la sección «a cuenta general» (las de avión usan su uuid). */
+export const CLAVE_SECCION_GENERAL = "general";
+
+/** Clave estable de una sección (React, `data-*`, búsquedas). */
+export function claveSeccionAvion(s: Pick<SaldoAvionCuenta, "aeronave">): string {
+  return s.aeronave ? s.aeronave.id : CLAVE_SECCION_GENERAL;
+}
+
+/**
+ * Los saldos por avión de una cuenta que SE LLEVA POR AVIÓN, o `null` si es
+ * la cuenta de siempre (API previo, un solo avión o `por_avion` ilegible).
+ * ÚNICA puerta: la lista, el estado de cuenta y el diálogo preguntan aquí;
+ * con `null` cada pantalla queda EXACTAMENTE como antes del 0.0.134.
+ */
+export function saldosPorAvion<T extends SaldoAvionCuenta>(
+  x: { cuenta_por_avion?: boolean | null; por_avion?: T[] | null } | null | undefined,
+): T[] | null {
+  if (!x || x.cuenta_por_avion !== true) return null;
+  const lista = x.por_avion;
+  return lista && lista.length > 0 ? lista : null;
+}
+
+/** Lo mismo desde el contexto del diálogo «Registrar entrega». */
+export function saldosPorAvionDeContexto(
+  ctx: Pick<ContextoEntrega, "cuentaPorAvion" | "porAvion">,
+): SaldoAvionCuenta[] | null {
+  return saldosPorAvion({ cuenta_por_avion: ctx.cuentaPorAvion, por_avion: ctx.porAvion });
+}
+
+/** El saldo del avión ELEGIDO en el diálogo (null: cuenta de siempre, sin
+    elegir, «Sin avión» o un avión que no tiene sección en la cuenta). */
+export function saldoDeAvionElegido(
+  ctx: Pick<ContextoEntrega, "cuentaPorAvion" | "porAvion">,
+  aeronaveId: string | null | undefined,
+): SaldoAvionCuenta | null {
+  if (!aeronaveId) return null;
+  return saldosPorAvionDeContexto(ctx)?.find((s) => s.aeronave?.id === aeronaveId) ?? null;
+}
+
+/** Lo ya adelantado «a cuenta general» (la sección general en negativo), en
+    positivo; 0 si no hay. Es el `por_entregar_mxn` de esa sección SIN el
+    signo: el API lo descuenta del saldo del avión al medir una entrega. */
+function adelantadoACuentaGeneral(saldos: readonly SaldoAvionCuenta[]): number {
+  const general = saldos.find((s) => !s.aeronave);
+  return general && centavos(general.por_entregar_mxn) < 0 ? Math.abs(general.por_entregar_mxn) : 0;
+}
+
+export const TITULO_SECCION_GENERAL = "A cuenta general (sin avión)";
+export const NOMBRE_SECCION_GENERAL = "Cuenta general";
+/** Opción EXPLÍCITA del selector del avión en una cuenta por avión. */
+export const ETIQUETA_SIN_AVION_GENERAL = "Sin avión (a cuenta general)";
+
+/** «N4142R» · «Cuenta general»: el nombre corto de la sección. */
+export function nombreSeccionAvion(s: Pick<SaldoAvionCuenta, "aeronave">): string {
+  return s.aeronave ? s.aeronave.matricula.trim() || "(sin matrícula)" : NOMBRE_SECCION_GENERAL;
+}
+
+/** Título de la card: «N4142R · 69 %» (la general: «A cuenta general (sin avión)»). */
+export function tituloSeccionAvion(s: Pick<SaldoAvionCuenta, "aeronave" | "porcentaje">): string {
+  if (!s.aeronave) return TITULO_SECCION_GENERAL;
+  const matricula = nombreSeccionAvion(s);
+  return s.porcentaje != null ? `${matricula} · ${fmtPct(s.porcentaje)}` : matricula;
+}
+
+/**
+ * Cómo se llama el saldo de UN avión. Los tres estados de siempre
+ * («Por entregar» · «Al corriente» · «Adelantado») más uno que solo existe
+ * por avión: un saldo negativo SIN entregas no es un adelanto (nadie le
+ * entregó nada), es la PÉRDIDA del avión que se arrastra.
+ */
+export type ClaveSaldoAvion = "POR_ENTREGAR" | "AL_CORRIENTE" | "ADELANTADO" | "PERDIDA";
+
+export const ETIQUETAS_SALDO_AVION: Record<ClaveSaldoAvion, string> = {
+  POR_ENTREGAR: "Por entregar",
+  AL_CORRIENTE: "Al corriente",
+  ADELANTADO: "Adelantado",
+  PERDIDA: "Pérdida acumulada",
+};
+
+/** Qué significa «Pérdida acumulada» (va junto a la cifra). */
+export const AYUDA_PERDIDA_ACUMULADA =
+  "Se descuenta de las próximas utilidades de este avión; no es dinero entregado.";
+
+/**
+ * La regla de la etiqueta (PURA): saldo > $1 ⇒ por entregar; |saldo| ≤ $1 ⇒
+ * al corriente; saldo < −$1 con entregas ⇒ adelantado; saldo < −$1 SIN
+ * entregas ⇒ pérdida acumulada. El estado del API manda en los tres primeros
+ * (misma tolerancia de $1; uno desconocido se pinta con el espejo). «A
+ * cuenta general» no tiene utilidades, así que ahí un saldo negativo es
+ * SIEMPRE un adelanto (el saldo inicial ya adelantado o entregas sin avión).
+ */
+function claveSaldoAvion(p: {
+  saldoMxn: number;
+  entregadoMxn: number;
+  estado?: string | null;
+  general: boolean;
+}): ClaveSaldoAvion {
+  const estado = estiloEstadoCuenta(p.estado, p.saldoMxn).estado;
+  if (estado !== "ADELANTADO") return estado;
+  return !p.general && centavos(p.entregadoMxn) <= 0 ? "PERDIDA" : "ADELANTADO";
+}
+
+export interface SaldoAvionPintado {
+  clave: ClaveSaldoAvion;
+  /** «Por entregar» · «Al corriente» · «Adelantado» · «Pérdida acumulada». */
+  etiqueta: string;
+  /** El saldo del API como se pinta junto a la etiqueta: por entregar / al
+      corriente, tal cual; adelantado o pérdida, SIN el signo (ya lo dice la
+      etiqueta, como «Adelantado (a favor de VuelaTour)» del total). */
+  monto: number;
+  /** Color del número: el del saldo de siempre (ámbar por entregar, azul en
+      negativo, normal al corriente). */
+  clase: string;
+  /** Solo en la pérdida: qué significa. */
+  ayuda: string | null;
+}
+
+/** Etiqueta, monto y color del saldo de una sección (avión o general). */
+export function saldoDeSeccionAvion(
+  s: Pick<SaldoAvionCuenta, "aeronave" | "por_entregar_mxn" | "entregado_mxn" | "estado">,
+): SaldoAvionPintado {
+  const saldo = Number(s.por_entregar_mxn) || 0;
+  const clave = claveSaldoAvion({
+    saldoMxn: saldo,
+    entregadoMxn: s.entregado_mxn,
+    estado: s.estado,
+    general: !s.aeronave,
+  });
+  return {
+    clave,
+    etiqueta: ETIQUETAS_SALDO_AVION[clave],
+    monto: clave === "ADELANTADO" || clave === "PERDIDA" ? Math.abs(saldo) : saldo,
+    clase: claseTextoSaldo(s.estado, saldo),
+    ayuda: clave === "PERDIDA" ? AYUDA_PERDIDA_ACUMULADA : null,
+  };
+}
+
+/**
+ * El saldo de una sección en una línea: «N4142R · Por entregar: $18,798.71
+ * MXN», «XB-ANU · Pérdida acumulada: $3,862.60 MXN. Se descuenta de las
+ * próximas utilidades…», «N990GG · Al corriente». Es el `title` de cada
+ * pieza del desglose de la lista y la línea del paso «Entrega registrada».
+ */
+export function textoSaldoDeSeccion(
+  s: Pick<SaldoAvionCuenta, "aeronave" | "por_entregar_mxn" | "entregado_mxn" | "estado">,
+): string {
+  const p = saldoDeSeccionAvion(s);
+  const nombre = nombreSeccionAvion(s);
+  const base =
+    p.clave === "AL_CORRIENTE" ? `${nombre} · ${p.etiqueta}` : `${nombre} · ${p.etiqueta}: ${fmtMxn(p.monto)}`;
+  return p.ayuda ? `${base}. ${p.ayuda}` : base;
+}
+
+/** Una pieza del desglose corto por avión de las tablas de socios. */
+export interface PiezaDesgloseSaldo {
+  /** uuid del avión o `general`. */
+  clave: string;
+  /** «N4142R» · «Cuenta general». */
+  nombre: string;
+  /** El saldo de ese avión CON su signo («-$3,862.60 MXN»), como la columna. */
+  monto: string;
+  /** Color del saldo (el de la columna). */
+  clase: string;
+  /** `title`: el saldo en palabras (adelantado o pérdida acumulada). */
+  titulo: string;
+}
+
+/**
+ * Desglose corto bajo el «por entregar» de un socio cuya cuenta se lleva por
+ * avión: «N4142R $18,798.71 MXN · XB-ANU -$3,862.60 MXN», para ver de un
+ * vistazo qué avión debe y cuál va en negativo. null en la cuenta de siempre
+ * (no se pinta nada). Los números son los del API, uno por sección.
+ */
+export function desgloseSaldosPorAvion(
+  x: Pick<ResumenCuentaSocio, "por_avion" | "cuenta_por_avion"> | null | undefined,
+): PiezaDesgloseSaldo[] | null {
+  const saldos = saldosPorAvion(x);
+  if (!saldos) return null;
+  return saldos.map((s) => ({
+    clave: claveSeccionAvion(s),
+    nombre: nombreSeccionAvion(s),
+    monto: fmtMxn(s.por_entregar_mxn),
+    clase: saldoDeSeccionAvion(s).clase,
+    titulo: textoSaldoDeSeccion(s),
+  }));
+}
+
+// --- Estado de cuenta: una card por avión -------------------------------------
+
+export const TITULO_CUENTA_POR_AVION = "Movimientos por avión";
+
+/** La línea que va arriba de las cards (palabras de operador). */
+export const TEXTO_CUENTA_POR_AVION =
+  "La cuenta de este socio se lleva por avión: cada avión tiene su propio saldo y cada entrega descuenta del avión al que corresponde.";
+
+/** Nota bajo los KPIs del total, SOLO en cuentas por avión. */
+export const NOTA_TOTALES_CUENTA_POR_AVION = "Suma de sus aviones; el saldo de cada avión está abajo.";
+
+/** Con filtro de meses: qué es cada número de las cards. */
+export const NOTA_FILTRO_CUENTA_POR_AVION =
+  "Las cifras de cada avión son de toda la cuenta, a hoy; las tablas enseñan solo estos meses.";
+
+/** Ayuda de la card «A cuenta general (sin avión)». */
+export const AYUDA_SECCION_GENERAL =
+  "Saldo inicial y entregas que no se asignaron a un avión. Para que descuenten del saldo de un avión, asígnaselo con «Editar».";
+
+/** Leyenda de las columnas, UNA vez arriba de las cards (cada tabla es de un avión). */
+export const AYUDA_COLUMNAS_CUENTA_POR_AVION =
+  "Todo en pesos (MXN). Generó: la utilidad de ese avión cada mes (negativa si tuvo pérdida). Entregado: lo que se le dio por ese avión (una entrega en dólares cuenta por sus pesos al T.C. del día). Saldo: lo que queda por entregarle de ese avión; en negativo, lo que se le adelantó o la pérdida que arrastra.";
+
+/** Tabla (o sección) sin movimientos en el rango que se ve. */
+export const TEXTO_SIN_MOVIMIENTOS_CUENTA = "Sin movimientos en estos meses.";
+
+export const ETIQUETA_GENERO_SECCION = "Generó";
+export const ETIQUETA_ENTREGADO_SECCION = "Entregado";
+/** La misma cifra en «a cuenta general»: son las entregas que no llevan avión. */
+export const ETIQUETA_ENTREGADO_SIN_AVION = "Entregado sin avión";
+
+/**
+ * Con filtro de meses, lo que cae en el rango en ESA sección: «En estos
+ * meses: generó $19,002.73 MXN · se le entregó $103,614.04 MXN» («a cuenta
+ * general» no genera: solo lo entregado). null si el API no mandó `rango`.
+ */
+export function textoRangoSeccion(s: Pick<SeccionAvionCuenta, "aeronave" | "rango">): string | null {
+  if (!s.rango) return null;
+  const entregado = `se le entregó ${fmtMxn(s.rango.entregado_mxn)}`;
+  return s.aeronave
+    ? `En estos meses: generó ${fmtMxn(s.rango.generado_mxn)} · ${entregado}`
+    : `En estos meses: ${entregado}`;
+}
+
+// --- Diálogo «Registrar entrega» en una cuenta por avión ------------------------
+
+/** Bajo «Por entregar hoy» del diálogo: ese total es la suma de los aviones. */
+export const NOTA_DIALOGO_CUENTA_POR_AVION =
+  "Es la suma de sus aviones: la cuenta se lleva por avión. Elige abajo el avión de la entrega para ver su saldo.";
+
+/** El alta de una cuenta por avión sin avión elegido. */
+export const ERROR_AVION_SIN_ELEGIR =
+  "Elige a qué avión corresponde la entrega: en esta cuenta el saldo se lleva por avión. Si no es de ninguno, elige «Sin avión (a cuenta general)».";
+
+const AYUDA_ELIGE_AVION =
+  "En esta cuenta el saldo se lleva por avión: elige a cuál corresponde la entrega.";
+const AYUDA_SIN_AVION_GENERAL =
+  "Sin avión: la entrega queda a cuenta general y no descuenta del saldo de ningún avión.";
+const AYUDA_AVION_EDICION_POR_AVION =
+  "En esta cuenta el saldo se lleva por avión: la entrega descuenta del avión que elijas; sin avión queda a cuenta general.";
+
+/** Etiqueta del campo del avión: obligatorio (sin «opcional») en una cuenta por avión. */
+export function etiquetaCampoAvion(cuentaPorAvion: boolean): string {
+  return cuentaPorAvion ? "Corresponde al avión" : "Corresponde al avión (opcional)";
+}
+
+/** Lo que dice el selector del avión sin valor. */
+export function placeholderCampoAvion(cuentaPorAvion: boolean): string {
+  return cuentaPorAvion ? "Elige el avión" : "Sin avión";
+}
+
+/** Ayuda de «Corresponde al mes»: en una cuenta por avión el saldo del que
+    descuenta lo decide el AVIÓN, no «el saldo total del socio». */
+export function ayudaMesEntrega(cuentaPorAvion: boolean): string {
+  return cuentaPorAvion
+    ? "Solo informativo: el mes no cambia de qué saldo descuenta la entrega; eso lo decide el avión."
+    : "Solo informativo: la entrega descuenta del saldo total del socio.";
+}
+
+/** Lo que se dice bajo el campo del avión en una cuenta por avión. */
+export interface AyudaAvionEntrega {
+  texto: string;
+  /** true = `texto` ES el saldo del avión elegido (se resalta); false = ayuda en gris. */
+  esSaldo: boolean;
+  /** Color del saldo (ámbar por entregar, azul en negativo); "" sin color. */
+  clase: string;
+  /** Segunda línea: lo ya adelantado «a cuenta general», que el API descuenta
+      del saldo del avión al medir la entrega. */
+  adelantoGeneral: string | null;
+}
+
+/**
+ * Bajo el campo del avión, en una cuenta POR AVIÓN (null en la de siempre:
+ * el campo queda como estaba). En el ALTA, al elegir un avión se dice SU
+ * saldo de MESES CERRADOS (`por_entregar_cerrado_mxn`, el número contra el
+ * que el API decide un adelanto): «Por entregar de N4142R: $103,410.02 MXN
+ * (sin contar el mes en curso: $19,002.73 MXN)»; en negativo se dice como
+ * adelantado o pérdida acumulada, con el monto del API sin el signo. Si ya
+ * hay adelantos «a cuenta general» se avisa que se descuentan (el panel no
+ * hace esa resta: la hace el API al guardar). En la EDICIÓN solo se explica
+ * la regla: el saldo del avión ya trae descontada esa misma entrega.
+ */
+export function ayudaAvionEntrega(
+  ctx: Pick<ContextoEntrega, "cuentaPorAvion" | "porAvion">,
+  aeronaveId: string,
+  tipo: "alta" | "edicion",
+): AyudaAvionEntrega | null {
+  const saldos = saldosPorAvionDeContexto(ctx);
+  if (!saldos) return null;
+  const ayuda = (texto: string): AyudaAvionEntrega => ({
+    texto,
+    esSaldo: false,
+    clase: "",
+    adelantoGeneral: null,
+  });
+  if (tipo === "edicion") return ayuda(AYUDA_AVION_EDICION_POR_AVION);
+  if (aeronaveId === AVION_SIN_ELEGIR) return ayuda(AYUDA_ELIGE_AVION);
+  if (aeronaveId === SIN_AVION) return ayuda(AYUDA_SIN_AVION_GENERAL);
+  const s = saldoDeAvionElegido(ctx, aeronaveId);
+  if (!s) return null;
+  const matricula = nombreSeccionAvion(s);
+  const cerrado = Number(s.por_entregar_cerrado_mxn) || 0;
+  const curso =
+    centavos(s.mes_en_curso_mxn) !== 0 ? `sin contar el mes en curso: ${fmtMxn(s.mes_en_curso_mxn)}` : null;
+  const nada = `no hay nada por entregar de este avión${curso ? `, ${curso}` : ""}`;
+  const clave = claveSaldoAvion({
+    saldoMxn: cerrado,
+    entregadoMxn: s.entregado_mxn,
+    general: false,
+  });
+  const texto: Record<ClaveSaldoAvion, string> = {
+    POR_ENTREGAR: `Por entregar de ${matricula}: ${fmtMxn(cerrado)}${curso ? ` (${curso})` : ""}`,
+    AL_CORRIENTE: `${matricula} está al corriente (${nada}).`,
+    ADELANTADO: `${matricula} va adelantado: ${fmtMxn(Math.abs(cerrado))} a favor de VuelaTour (${nada}).`,
+    PERDIDA: `${matricula} lleva una pérdida acumulada de ${fmtMxn(Math.abs(cerrado))}: se descuenta de sus próximas utilidades (${nada}).`,
+  };
+  const general = adelantadoACuentaGeneral(saldos);
+  return {
+    texto: texto[clave],
+    esSaldo: true,
+    clase: claseTextoSaldo(null, cerrado),
+    adelantoGeneral:
+      general > 0
+        ? `Ya se le adelantaron ${fmtMxn(general)} a cuenta general: el sistema los descuenta de lo que hay por entregar de este avión.`
+        : null,
+  };
+}
+
+/**
+ * Lo por entregar que el ALTA propone como monto. Cuenta de siempre: lo por
+ * entregar HOY del socio, como hasta ahora. Cuenta POR AVIÓN: lo por entregar
+ * de MESES CERRADOS del avión elegido — nunca el total mezclado del socio — y
+ * solo si es positivo y no hay adelantos «a cuenta general» (el API se los
+ * descuenta a ese saldo y aquí no se resta nada: mejor vacío que un monto que
+ * siempre pediría confirmar un adelanto). Sin avión elegido, con «Sin avión»
+ * o con un avión sin saldo ⇒ null (el monto se captura a mano).
+ */
+export function porEntregarParaPrellenar(
+  ctx: Pick<ContextoEntrega, "porEntregarMxn" | "cuentaPorAvion" | "porAvion">,
+  aeronaveId: string | null | undefined,
+): number | null {
+  const saldos = saldosPorAvionDeContexto(ctx);
+  if (!saldos) return ctx.porEntregarMxn;
+  const s = saldoDeAvionElegido(ctx, aeronaveId);
+  if (!s || adelantadoACuentaGeneral(saldos) > 0) return null;
+  return centavos(s.por_entregar_cerrado_mxn) > 0 ? s.por_entregar_cerrado_mxn : null;
+}
+
+/** El mismo número como texto del campo («103410.02»; "" = sin prellenado). */
+export function montoPrellenadoAlta(
+  ctx: Pick<ContextoEntrega, "porEntregarMxn" | "cuentaPorAvion" | "porAvion">,
+  aeronaveId: string | null | undefined,
+): string {
+  return textoMontoPrellenado(porEntregarParaPrellenar(ctx, aeronaveId));
+}
+
+/**
+ * Paso «Entrega registrada» en una cuenta POR AVIÓN: cómo quedó el saldo del
+ * avión de esa entrega (o de «a cuenta general» si no lleva avión), con la
+ * cuenta que devolvió el API. null en la cuenta de siempre o si esa sección
+ * no llegó (se queda solo el «Por entregar hoy» del socio).
+ */
+export function textoSaldoTrasEntrega(
+  cuenta: Pick<ResumenCuentaSocio, "por_avion" | "cuenta_por_avion"> | null | undefined,
+  pago: Pick<PagoSocio, "aeronave_id">,
+): string | null {
+  const s = saldosPorAvion(cuenta)?.find((x) => (x.aeronave?.id ?? null) === (pago.aeronave_id ?? null));
+  return s ? textoSaldoDeSeccion(s) : null;
 }
 
 // -----------------------------------------------------------------------------
@@ -1566,24 +2114,39 @@ export function opcionesCorrespondeMes(
   ];
 }
 
-/** «Corresponde a» · avión: «Sin avión» y los aviones del socio. */
+/**
+ * «Corresponde a» · avión: «Sin avión» y los aviones del socio.
+ *
+ * En una cuenta POR AVIÓN (`cuentaPorAvion`, API 0.0.134) el orden se
+ * invierte: primero los aviones (lo normal es elegir uno) y al final la
+ * opción EXPLÍCITA «Sin avión (a cuenta general)», que dice a dónde va ese
+ * dinero.
+ */
 export function opcionesCorrespondeAvion(
   aviones: readonly AvionDeSocio[],
   /** En la edición, el avión que ya tiene la entrega (aunque no esté en la lista). */
   actual?: { id: string; matricula: string } | null,
+  opciones: { cuentaPorAvion?: boolean } = {},
 ): { value: string; label: string; description?: string }[] {
-  const out: { value: string; label: string; description?: string }[] = [
-    { value: SIN_AVION, label: "Sin avión" },
-    ...aviones.map((a) => ({
-      value: a.id,
-      label: a.matricula || "Avión",
-      description: `${fmtPct(a.porcentaje)}${a.vigente ? "" : " · ya no vigente"}`,
-    })),
-  ];
+  const deAviones: { value: string; label: string; description?: string }[] = aviones.map((a) => ({
+    value: a.id,
+    label: a.matricula || "Avión",
+    description: `${fmtPct(a.porcentaje)}${a.vigente ? "" : " · ya no vigente"}`,
+  }));
   if (actual?.id && !aviones.some((a) => a.id === actual.id)) {
-    out.push({ value: actual.id, label: actual.matricula || "Avión" });
+    deAviones.push({ value: actual.id, label: actual.matricula || "Avión" });
   }
-  return out;
+  if (opciones.cuentaPorAvion) {
+    return [
+      ...deAviones,
+      {
+        value: SIN_AVION,
+        label: ETIQUETA_SIN_AVION_GENERAL,
+        description: "No descuenta del saldo de ningún avión",
+      },
+    ];
+  }
+  return [{ value: SIN_AVION, label: "Sin avión" }, ...deAviones];
 }
 
 /** «69 %» · «33.333 %» · «12.5 %» (espejo de `fmtPorcentaje` del API). */
@@ -1624,9 +2187,14 @@ export interface FormPagoSocio {
   notas: string;
   /** «Corresponde a» · `YYYY-MM` o `SIN_MES`. */
   mes: string;
-  /** «Corresponde a» · uuid o `SIN_AVION`. */
+  /** «Corresponde a» · uuid o `SIN_AVION`. En el ALTA de una cuenta POR
+      AVIÓN arranca en `AVION_SIN_ELEGIR` ("") y hay que elegirlo. */
   aeronave_id: string;
 }
+
+/** Valor del selector del avión cuando todavía NO se elige (alta de una
+    cuenta por avión): no es «Sin avión», es «falta decidir». */
+export const AVION_SIN_ELEGIR = "";
 
 export type ErroresFormPago = Partial<Record<keyof FormPagoSocio, string>>;
 
@@ -1655,6 +2223,12 @@ function textoTcOficial(tcOficial: number | null | undefined): string {
  * el Reparto) o «Sin mes (a cuenta)». El MÉTODO NO se prellena: un medio de
  * pago por defecto se cuela sin que nadie lo revise (regla del 3-sep-2026 en
  * gastos).
+ *
+ * Cuenta POR AVIÓN (`cuentaPorAvion`, API 0.0.134): el avión NO arranca en
+ * «Sin avión» sino SIN ELEGIR (salvo el sugerido): cada entrega descuenta del
+ * saldo de su avión y eso lo decide quien la registra. `porEntregarMxn` es
+ * entonces lo por entregar de ESE avión (`porEntregarParaPrellenar`), nunca
+ * el total mezclado del socio.
  */
 export function formInicialAlta(p: {
   porEntregarMxn: number | null | undefined;
@@ -1663,13 +2237,10 @@ export function formInicialAlta(p: {
   mesSugerido?: string | null;
   avionSugerido?: string | null;
   tcOficial?: number | null;
+  cuentaPorAvion?: boolean;
 }): FormPagoSocio {
-  const porEntregar = Number(p.porEntregarMxn);
   return {
-    monto:
-      p.porEntregarMxn != null && Number.isFinite(porEntregar) && round2(porEntregar) > 0
-        ? round2(porEntregar).toFixed(2)
-        : "",
+    monto: textoMontoPrellenado(p.porEntregarMxn),
     moneda: "MXN",
     tc: textoTcOficial(p.tcOficial),
     fecha_pago: p.hoy,
@@ -1684,8 +2255,40 @@ export function formInicialAlta(p: {
       esMesValido(p.mesSugerido) && p.mesSugerido <= (mesActual(p.hoy) ?? "")
         ? p.mesSugerido
         : SIN_MES,
-    aeronave_id: esUuid(p.avionSugerido) ? (p.avionSugerido as string) : SIN_AVION,
+    aeronave_id: esUuid(p.avionSugerido)
+      ? (p.avionSugerido as string)
+      : p.cuentaPorAvion
+        ? AVION_SIN_ELEGIR
+        : SIN_AVION,
   };
+}
+
+/** El monto con el que el alta prellena el campo («1395.94»); sin nada
+    positivo que entregar, "" (un adelanto se captura a mano). */
+function textoMontoPrellenado(porEntregarMxn: number | null | undefined): string {
+  const n = Number(porEntregarMxn);
+  return porEntregarMxn != null && Number.isFinite(n) && round2(n) > 0 ? round2(n).toFixed(2) : "";
+}
+
+/**
+ * Cambio de AVIÓN en el alta de una cuenta POR AVIÓN: el monto prellenado es
+ * lo por entregar del avión ANTERIOR, así que si el operador no lo tocó (está
+ * vacío o sigue igual al prellenado) pasa a lo por entregar del NUEVO («» si
+ * no tiene: adelantado, pérdida o «Sin avión»). Un monto tecleado nunca se
+ * toca, y en DÓLARES tampoco (el prellenado está en pesos: `formAlCambiarMoneda`
+ * lo restaura al volver a MXN).
+ */
+export function formAlCambiarAvion(
+  form: FormPagoSocio,
+  aeronaveId: string,
+  prellenadoAnterior: string | null,
+  prellenadoNuevo: string | null,
+): FormPagoSocio {
+  const out: FormPagoSocio = { ...form, aeronave_id: aeronaveId };
+  if (prellenadoAnterior === null || prellenadoNuevo === null || form.moneda !== "MXN") return out;
+  const monto = form.monto.trim();
+  const intacto = monto === "" || monto === prellenadoAnterior.trim();
+  return intacto ? { ...out, monto: prellenadoNuevo.trim() } : out;
 }
 
 /**
@@ -1719,21 +2322,27 @@ export function etiquetaMontoPago(moneda: MonedaPagoSocio): string {
   return `Monto entregado (${moneda})`;
 }
 
-/** Ayuda bajo el monto del ALTA. */
+/**
+ * Ayuda bajo el monto del ALTA. En una cuenta POR AVIÓN `porEntregarMxn` es
+ * lo por entregar del avión elegido y `matricula` lo nombra («…por entregar
+ * de N4142R: $X»): el monto sugerido nunca es el total mezclado del socio.
+ */
 export function hintMontoPago(p: {
   moneda: MonedaPagoSocio;
   porEntregarMxn: number | null | undefined;
   alta: boolean;
+  matricula?: string | null;
 }): string | null {
   if (!p.alta) return null;
   const porEntregar = Number(p.porEntregarMxn);
   const con = p.porEntregarMxn != null && Number.isFinite(porEntregar) && round2(porEntregar) > 0;
+  const deAvion = (p.matricula ?? "").trim() ? ` de ${(p.matricula ?? "").trim()}` : "";
   if (p.moneda === "USD") {
     return con
-      ? `Captura el monto en dólares; por entregar ${fmtMxn(porEntregar)}. Con el T.C. se sabe cuántos pesos descuenta.`
+      ? `Captura el monto en dólares; por entregar${deAvion} ${fmtMxn(porEntregar)}. Con el T.C. se sabe cuántos pesos descuenta.`
       : "Captura el monto en dólares. Con el T.C. se sabe cuántos pesos descuenta.";
   }
-  return con ? `Prellenado con lo que hay por entregar: ${fmtMxn(porEntregar)}.` : null;
+  return con ? `Prellenado con lo que hay por entregar${deAvion}: ${fmtMxn(porEntregar)}.` : null;
 }
 
 /** Etiqueta del campo del T.C. (obligatorio en las dos monedas). */
@@ -1826,8 +2435,20 @@ export function formDePago(pago: PagoSocio): FormPagoSocio {
   };
 }
 
-/** Errores del formulario (vacío = válido). `hoy` = día Cancún. */
-export function validarFormPago(form: FormPagoSocio, hoy: string): ErroresFormPago {
+/**
+ * Errores del formulario (vacío = válido). `hoy` = día Cancún.
+ *
+ * `cuentaPorAvion` (API 0.0.134): en el ALTA de una cuenta que se lleva por
+ * avión el campo arranca SIN ELEGIR y aquí se exige — un avión del socio o
+ * «Sin avión (a cuenta general)» —, con un texto que dice por qué. En la
+ * EDICIÓN el campo siempre trae el valor de la entrega (o «Sin avión»), así
+ * que una entrega vieja sin avión se guarda sin tocarlo.
+ */
+export function validarFormPago(
+  form: FormPagoSocio,
+  hoy: string,
+  opciones: { cuentaPorAvion?: boolean } = {},
+): ErroresFormPago {
   const e: ErroresFormPago = {};
   const monto = leerNumero(form.monto);
   if (!Number.isFinite(monto) || round2(monto) <= 0) {
@@ -1859,7 +2480,7 @@ export function validarFormPago(form: FormPagoSocio, hoy: string): ErroresFormPa
     e.mes = "Elige el mes o «Sin mes».";
   }
   if (form.aeronave_id !== SIN_AVION && !esUuid(form.aeronave_id)) {
-    e.aeronave_id = "Elige el avión o «Sin avión».";
+    e.aeronave_id = opciones.cuentaPorAvion ? ERROR_AVION_SIN_ELEGIR : "Elige el avión o «Sin avión».";
   }
   if (form.recibido_por.trim().length > RECIBIDO_POR_MAX) {
     e.recibido_por = `Máximo ${RECIBIDO_POR_MAX} caracteres.`;

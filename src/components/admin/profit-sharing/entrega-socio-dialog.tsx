@@ -34,30 +34,41 @@ import {
   ETIQUETA_TC_PAGO,
   FACTURA_FOLIO_MAX,
   METODOS_PAGO_SOCIO,
+  NOTA_DIALOGO_CUENTA_POR_AVION,
   NOTAS_PAGO_MAX,
   RECIBIDO_POR_MAX,
   REFERENCIA_MAX,
   TEXTO_FALLO_RED_PAGO,
   avisoFechaAntesDelArranque,
+  ayudaAvionEntrega,
+  ayudaMesEntrega,
   cambiosPago,
   confirmacionAdelanto,
+  etiquetaCampoAvion,
   etiquetaMontoPago,
   etiquetaRegistrarEntrega,
+  formAlCambiarAvion,
   formAlCambiarMoneda,
   formDePago,
   formInicialAlta,
   hayErrores,
   hintMontoPago,
   hintTcPago,
+  montoPrellenadoAlta,
   opcionesCorrespondeAvion,
   opcionesCorrespondeMes,
   opcionesEntrego,
   pasoTrasGuardarEntrega,
   payloadAltaPago,
   piezasPago,
+  placeholderCampoAvion,
+  porEntregarParaPrellenar,
+  saldoDeAvionElegido,
+  saldosPorAvionDeContexto,
   textoMesEnCurso,
   textoPorEntregarHoy,
   textoPreviewEntrega,
+  textoSaldoTrasEntrega,
   validarFormPago,
   type ContextoEntrega,
   type ContextoRegistro,
@@ -140,6 +151,17 @@ export function BotonRegistrarEntrega({
  * MISMO `client_request_id`. Tras registrar, el diálogo ofrece adjuntar el
  * comprobante (del navegador directo al API).
  *
+ * CUENTA POR AVIÓN (10-nov-2026, API 0.0.134; «las entregas son por avión»):
+ * si el contexto trae `cuentaPorAvion`, el avión deja de ser un dato
+ * informativo. En el ALTA va ARRIBA del monto, es OBLIGATORIO (un avión del
+ * socio o la opción explícita `ETIQUETA_SIN_AVION_GENERAL`; sin valor inicial
+ * salvo el sugerido), bajo él se dice el saldo de ese avión y el monto propuesto es
+ * lo por entregar de ESE avión. La confirmación del adelanto nombra el avión
+ * contra el que midió el API. En la EDICIÓN no se exige nada nuevo (una
+ * entrega vieja sin avión se guarda sin tocarlo). Todo sale de
+ * `lib/admin/reparto-pagos.ts`; en una cuenta de un solo avión el diálogo es
+ * el de siempre.
+ *
  * Mientras GUARDA o SUBE no se cierra (ni con la X, ni Esc, ni clic fuera):
  * reabrirlo generaría otro `client_request_id` y una entrega que sí entró se
  * registraría dos veces.
@@ -200,21 +222,32 @@ export function FormularioEntrega({
   const pago = dialogo.tipo === "edicion" ? dialogo.pago : null;
   const alta = dialogo.tipo === "alta";
   const [hoyLocal] = useState(() => todayCancun() || registro.hoy);
+  // SALDO POR AVIÓN (10-nov-2026, API 0.0.134): en una cuenta con 2+ aviones
+  // cada entrega descuenta del saldo de SU avión. El alta exige elegirlo, dice
+  // su saldo y propone como monto lo por entregar de ESE avión (nunca el total
+  // mezclado del socio). En la cuenta de siempre nada de esto aplica.
+  const porAvion = saldosPorAvionDeContexto(contexto) !== null;
   const [inicial] = useState<FormPagoSocio>(() =>
     pago
       ? formDePago(pago)
       : formInicialAlta({
-          porEntregarMxn: contexto.porEntregarMxn,
+          porEntregarMxn: porEntregarParaPrellenar(contexto, contexto.avionSugerido ?? null),
           hoy: hoyLocal,
           meId: registro.me.id,
           mesSugerido: contexto.mesSugerido,
           avionSugerido: contexto.avionSugerido ?? null,
           tcOficial: registro.tcOficial,
+          cuentaPorAvion: porAvion,
         }),
   );
-  // Lo que el alta prellenó (lo por entregar EN PESOS); en la edición no aplica.
-  const montoPrellenado = pago ? null : inicial.monto;
   const [form, setForm] = useState<FormPagoSocio>(inicial);
+  // Lo que el alta prellenó (lo por entregar EN PESOS); en la edición no
+  // aplica. En una cuenta por avión es lo por entregar del avión ELEGIDO.
+  const montoPrellenado = pago
+    ? null
+    : porAvion
+      ? montoPrellenadoAlta(contexto, form.aeronave_id)
+      : inicial.monto;
   // Idempotencia: UN id por apertura; el reintento (red o «Registrar como
   // adelanto») viaja con el MISMO id.
   const [clientRequestId] = useState(nuevoIdSolicitud);
@@ -244,8 +277,9 @@ export function FormularioEntrega({
     [contexto.cuentaDesdeMes, hoyLocal, inicial.mes],
   );
   const opcionesAvion = useMemo(
-    () => opcionesCorrespondeAvion(contexto.aviones, pago?.aeronave ?? null),
-    [contexto.aviones, pago],
+    () =>
+      opcionesCorrespondeAvion(contexto.aviones, pago?.aeronave ?? null, { cuentaPorAvion: porAvion }),
+    [contexto.aviones, pago, porAvion],
   );
 
   if (registrada) {
@@ -291,8 +325,35 @@ export function FormularioEntrega({
     if (nuevo.monto === "" && form.monto !== "") montoRef.current?.focus();
   };
 
+  // Avión: en el alta de una cuenta POR AVIÓN el monto propuesto es lo por
+  // entregar de ese avión; si el operador no lo tocó, sigue al avión nuevo
+  // (un monto tecleado nunca se toca). En lo demás es un campo como cualquiera.
+  const cambiarAvion = (aeronaveId: string) => {
+    if (!alta || !porAvion) {
+      cambiar("aeronave_id", aeronaveId);
+      return;
+    }
+    setForm((f) =>
+      formAlCambiarAvion(
+        f,
+        aeronaveId,
+        montoPrellenadoAlta(contexto, f.aeronave_id),
+        montoPrellenadoAlta(contexto, aeronaveId),
+      ),
+    );
+    setErrores((e) => {
+      if (!e.aeronave_id && !e.monto) return e;
+      const resto = { ...e };
+      delete resto.aeronave_id;
+      delete resto.monto;
+      return resto;
+    });
+    setExceso(null);
+    setErrorGeneral(null);
+  };
+
   const guardar = async (aceptarExceso: boolean) => {
-    const e = validarFormPago(form, hoyLocal);
+    const e = validarFormPago(form, hoyLocal, { cuentaPorAvion: porAvion });
     setErrores(e);
     if (hayErrores(e)) return;
     setErrorGeneral(null);
@@ -374,11 +435,63 @@ export function FormularioEntrega({
   const titulo = alta
     ? `Registrar entrega a ${contexto.socio.nombre}`
     : `Editar entrega a ${contexto.socio.nombre}`;
+  // Cuenta de siempre: lo por entregar del socio. Cuenta por avión: lo por
+  // entregar del avión elegido (y lo nombra); sin avión elegido, nada.
   const hintMonto = hintMontoPago({
     moneda: form.moneda,
-    porEntregarMxn: contexto.porEntregarMxn,
+    porEntregarMxn: porEntregarParaPrellenar(contexto, form.aeronave_id),
     alta,
+    matricula: saldoDeAvionElegido(contexto, form.aeronave_id)?.aeronave?.matricula ?? null,
   });
+  // Bajo el campo del avión (solo en una cuenta por avión): su saldo, o qué
+  // falta elegir. null = el campo de siempre.
+  const ayudaAvion = ayudaAvionEntrega(contexto, form.aeronave_id, dialogo.tipo);
+  // «Corresponde al avión». En una cuenta por avión es lo PRIMERO que se
+  // decide (de él salen el saldo y el monto propuesto) y va arriba del monto;
+  // en la de siempre sigue al final, junto al mes, como dato informativo.
+  const campoAvion = (
+    <Field
+      label={etiquetaCampoAvion(porAvion)}
+      required={porAvion && alta}
+      error={errores.aeronave_id}
+      hint={
+        ayudaAvion ? (
+          <span data-ayuda-avion={ayudaAvion.esSaldo ? "saldo" : "ayuda"}>
+            <span className={cn(ayudaAvion.esSaldo && "font-medium text-foreground", ayudaAvion.clase)}>
+              {ayudaAvion.texto}
+            </span>
+            {ayudaAvion.adelantoGeneral && (
+              <span className="mt-0.5 block text-amber-700 dark:text-amber-400" data-adelanto-general>
+                {ayudaAvion.adelantoGeneral}
+              </span>
+            )}
+          </span>
+        ) : undefined
+      }
+    >
+      <SearchableSelect
+        options={opcionesAvion}
+        value={form.aeronave_id}
+        onChange={cambiarAvion}
+        placeholder={placeholderCampoAvion(porAvion)}
+        searchPlaceholder="Buscar matrícula…"
+      />
+    </Field>
+  );
+  const campoMonto = (
+    <Field label={etiquetaMontoPago(form.moneda)} required error={errores.monto} hint={hintMonto ?? undefined}>
+      <Input
+        ref={montoRef}
+        type="number"
+        inputMode="decimal"
+        step="0.01"
+        min={0}
+        placeholder="0.00"
+        value={form.monto}
+        onChange={(e) => cambiar("monto", e.target.value)}
+      />
+    </Field>
+  );
   // La parte del mes EN CURSO de lo por entregar todavía cambia: se dice
   // junto al número (números del API; aquí no se resta nada).
   const enCurso = alta ? textoMesEnCurso(contexto.mesEnCursoMxn, contexto.mesEnCurso) : null;
@@ -410,6 +523,11 @@ export function FormularioEntrega({
                   {enCurso}
                 </span>
               )}
+              {porAvion && (
+                <span className="mt-0.5 block text-xs" data-nota-cuenta-por-avion>
+                  {NOTA_DIALOGO_CUENTA_POR_AVION}
+                </span>
+              )}
             </>
           ) : (
             "Corrige los datos de la entrega. El saldo del socio se recalcula al guardar."
@@ -418,18 +536,16 @@ export function FormularioEntrega({
       </DialogHeader>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={etiquetaMontoPago(form.moneda)} required error={errores.monto} hint={hintMonto ?? undefined}>
-          <Input
-            ref={montoRef}
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min={0}
-            placeholder="0.00"
-            value={form.monto}
-            onChange={(e) => cambiar("monto", e.target.value)}
-          />
-        </Field>
+        {/* Cuenta por avión: el avión va ANTES del monto, en la misma casilla
+            de hijos (así la cuenta de siempre conserva su marcado tal cual). */}
+        {porAvion ? (
+          <>
+            <div className="sm:col-span-2">{campoAvion}</div>
+            {campoMonto}
+          </>
+        ) : (
+          campoMonto
+        )}
         <div className="space-y-1.5">
           <Label className="text-sm font-medium">Moneda</Label>
           <GrupoOpciones
@@ -549,11 +665,7 @@ export function FormularioEntrega({
           </Field>
         </div>
 
-        <Field
-          label="Corresponde al mes (opcional)"
-          error={errores.mes}
-          hint="Solo informativo: la entrega descuenta del saldo total del socio."
-        >
+        <Field label="Corresponde al mes (opcional)" error={errores.mes} hint={ayudaMesEntrega(porAvion)}>
           <SearchableSelect
             options={opcionesMes}
             value={form.mes}
@@ -562,15 +674,7 @@ export function FormularioEntrega({
             searchPlaceholder="Buscar mes…"
           />
         </Field>
-        <Field label="Corresponde al avión (opcional)" error={errores.aeronave_id}>
-          <SearchableSelect
-            options={opcionesAvion}
-            value={form.aeronave_id}
-            onChange={(v) => cambiar("aeronave_id", v)}
-            placeholder="Sin avión"
-            searchPlaceholder="Buscar matrícula…"
-          />
-        </Field>
+        {!porAvion && campoAvion}
 
         <div className="sm:col-span-2">
           <Field label="Notas (opcional)" error={errores.notas}>
@@ -647,6 +751,9 @@ export function PasoComprobante({
   const [adjunto, setAdjunto] = useState(Boolean(resultado.pago.comprobante_path));
   const p = piezasPago(resultado.pago);
   const saldo = resultado.cuenta?.por_entregar_mxn;
+  // Cuenta POR AVIÓN (API 0.0.134): además del total del socio, cómo quedó el
+  // saldo del avión de ESTA entrega (del renglón que devolvió el API).
+  const saldoAvion = textoSaldoTrasEntrega(resultado.cuenta, resultado.pago);
 
   const subir = async (file: File) => {
     const motivo = motivoComprobanteInvalido(file);
@@ -685,6 +792,11 @@ export function PasoComprobante({
           {saldo != null && (
             <span className="mt-1 block font-medium text-foreground" data-saldo-despues>
               {textoPorEntregarHoy(saldo)}
+            </span>
+          )}
+          {saldoAvion && (
+            <span className="mt-0.5 block text-xs" data-saldo-avion-despues>
+              {saldoAvion}
             </span>
           )}
         </DialogDescription>

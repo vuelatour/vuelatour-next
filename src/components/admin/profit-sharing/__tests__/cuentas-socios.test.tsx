@@ -649,7 +649,11 @@ describe("cableado en el código", () => {
     expect(cuenta).toContain("mesMinimo={entregasPrevias?.mes ?? null}");
     expect(cuenta).toContain("<MovimientosCuenta");
     expect(cuenta).toContain("contextoEntregaDeEstadoCuenta(datos, { mesEnCurso: hoyMes })");
-    expect(cuenta).toContain("<KpisCuenta totales={datos.totales} mesEnCurso={hoyMes} />");
+    // `porAvion` (10-nov-2026, API 0.0.134): en una cuenta por avión los
+    // totales llevan su nota («Suma de sus aviones…»).
+    expect(cuenta).toContain(
+      "<KpisCuenta totales={datos.totales} mesEnCurso={hoyMes} porAvion={secciones !== null} />",
+    );
     expect(cuenta).toContain("{carga.filtroIgnorado && (");
   });
 

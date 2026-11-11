@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { fmtMxn } from "@/lib/format";
 import {
   ETIQUETA_VER_ENTREGAS_PREVIAS,
+  NOTA_TOTALES_CUENTA_POR_AVION,
   TEXTO_CUENTAS_NO_DISPONIBLES,
   claseTextoSaldo,
   kpiSaldoCuenta,
@@ -57,13 +58,40 @@ export function KpiCuenta({
  * hoy (o «Adelantado (a favor de VuelaTour)» sin signo) · Estatus. La parte
  * del mes EN CURSO se dice bajo «Generado» y bajo el saldo: esa utilidad
  * todavía cambia.
+ *
+ * `porAvion` (10-nov-2026, API 0.0.134): en una cuenta que se lleva POR
+ * AVIÓN estos totales son la SUMA de sus aviones y se dice debajo («Suma de
+ * sus aviones; el saldo de cada avión está abajo»). Sin él, el marcado de
+ * siempre.
  */
 export function KpisCuenta({
   totales,
   mesEnCurso,
+  porAvion = false,
 }: {
   totales: TotalesEstadoCuenta;
   /** `YYYY-MM` del mes en curso (para «incluye $X de Octubre 2026»). */
+  mesEnCurso: string | null;
+  /** true = la cuenta se lleva por avión: los totales llevan su nota. */
+  porAvion?: boolean;
+}) {
+  const kpis = <TotalesCuenta totales={totales} mesEnCurso={mesEnCurso} />;
+  if (!porAvion) return kpis;
+  return (
+    <div className="space-y-2">
+      {kpis}
+      <p className="text-xs text-muted-foreground" data-nota-totales-por-avion>
+        {NOTA_TOTALES_CUENTA_POR_AVION}
+      </p>
+    </div>
+  );
+}
+
+function TotalesCuenta({
+  totales,
+  mesEnCurso,
+}: {
+  totales: TotalesEstadoCuenta;
   mesEnCurso: string | null;
 }) {
   const enCurso = textoMesEnCurso(totales.mes_en_curso_mxn ?? 0, mesEnCurso);

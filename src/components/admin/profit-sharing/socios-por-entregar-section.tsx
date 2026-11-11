@@ -41,6 +41,7 @@ import type { AvionReparto } from "@/types/profit-sharing";
 import type { SociosCuentaRespuesta } from "@/types/reparto-pagos";
 import { EstadoCuentaBadge } from "./estado-cuenta-badge";
 import { BotonRegistrarEntrega } from "./entrega-socio-dialog";
+import { DesgloseSaldosPorAvion } from "./saldos-por-avion";
 
 export const TITULO_SECCION_POR_ENTREGAR = "Socios · por entregar";
 
@@ -160,6 +161,8 @@ export function SociosPorEntregarSection({
                           {adelantado}
                         </span>
                       )}
+                      {/* Cuenta POR AVIÓN (API 0.0.134): el saldo de cada avión. */}
+                      <DesgloseSaldosPorAvion cuenta={r} />
                     </TableCell>
                     <TableCell>
                       <EstadoCuentaBadge estado={r.estado} saldoMxn={r.por_entregar_mxn} />

@@ -13621,3 +13621,66 @@ su contenido exacto.
 - Pruebas: `lib/admin/__tests__/correo-cliente.test.ts`,
   `lib/api/__tests__/correos-cliente-server.test.ts` (contrato con
   `apiServer` simulado) y `quotes/__tests__/correo-cliente-card.test.tsx`.
+
+## Pagos a socios: el saldo se lleva POR AVIÓN (10-nov-2026, API 0.0.134, invariante 129 del API)
+
+Reclamo del cliente con la cuenta de un socio de DOS aviones (Mauricio Roque:
+N4142R 69 % y XB-ANU 70 %): «está mezclado todos los aviones que tenga un
+socio en su cuenta; debería ser, dentro de la cuenta del socio, un balance
+para cada avión, porque las entregas son por avión… lo mete todo en la misma
+licuadora». La tabla «Movimientos» llevaba UN saldo corrido: la pérdida del
+XB-ANU restaba del saldo contra el que se veía la entrega del N4142R
+(−$4,066.62 en pantalla; el N4142R solo iba −$204.02).
+
+- **El dinero es del API; el panel JAMÁS suma secciones.** Contrato ADITIVO
+  (`types/reparto-pagos.ts`): `por_avion` + `cuenta_por_avion` en cada renglón
+  de `GET /v1/profit-sharing/socios` (`SaldoAvionCuenta`: `aeronave | null`,
+  `porcentaje`, `generado_mxn`, `mes_en_curso_mxn`, `entregado_mxn`,
+  `por_entregar_mxn`, `por_entregar_cerrado_mxn`, `estado`) y en el estado de
+  cuenta (`SeccionAvionCuenta`: lo mismo + `saldo_anterior_mxn`, `movimientos`
+  con el saldo corrido DE ESE AVIÓN y `rango`). `aeronave: null` = «a cuenta
+  general» (saldo inicial y entregas SIN avión; solo existe si mueve dinero).
+  El 409 `PAGO_EXCEDE_SALDO` gana `details.aeronave` y
+  `details.adelantado_general_mxn`.
+- **Puerta ÚNICA `saldosPorAvion(x)`** (`lib/admin/reparto-pagos.ts`): devuelve
+  las secciones solo si `cuenta_por_avion === true` y hay `por_avion`; con
+  `null` (API previo, un solo avión o dato ilegible) cada pantalla queda
+  EXACTAMENTE como antes. La normalización es TODO O NADA
+  (`aditivoPorAvion`): una sección ilegible o un avión repetido ⇒ no se pinta
+  ninguna (media cuenta por avión sería una cifra falsa).
+- **Estado de cuenta** (`socios/[id]/page.tsx`): con secciones, la card única
+  se sustituye por `CuentaPorAvion` (`profit-sharing/cuenta-por-avion.tsx`):
+  UNA card por sección — «N4142R · 69 %» / «A cuenta general (sin avión)» —
+  con Generó · Entregado · saldo y debajo la MISMA `MovimientosCuenta`
+  alimentada con `seccion.movimientos` (`ayuda={null}`: la leyenda de columnas
+  va una vez arriba). Etiqueta del saldo: `saldoDeSeccionAvion` ⇒ «Por
+  entregar» · «Al corriente» · «Adelantado» · **«Pérdida acumulada»** (saldo
+  negativo SIN entregas: no es un adelanto; ayuda «Se descuenta de las
+  próximas utilidades de este avión; no es dinero entregado»). Los KPIs del
+  total llevan la nota «Suma de sus aviones; el saldo de cada avión está
+  abajo.» (`KpisCuenta porAvion`). El filtro de meses es UNO para las dos
+  vistas; con filtro, cada card dice lo del rango (`textoRangoSeccion`) y que
+  sus cifras son de toda la cuenta.
+- **Diálogo «Registrar entrega»** (`entrega-socio-dialog.tsx`; el contexto
+  lleva `cuentaPorAvion` + `porAvion`, `saldosDeContexto`): en el ALTA de una
+  cuenta por avión el avión va ARRIBA del monto y es OBLIGATORIO
+  (`AVION_SIN_ELEGIR` = sin valor; opción explícita «Sin avión (a cuenta
+  general)» al final; `ERROR_AVION_SIN_ELEGIR`). Bajo el campo
+  `ayudaAvionEntrega` dice el saldo de MESES CERRADOS de ese avión
+  (`por_entregar_cerrado_mxn`, el número contra el que el API decide un
+  adelanto) o que va adelantado / con pérdida; si ya hay adelantos a cuenta
+  general avisa que el sistema los descuenta. El monto propuesto es lo por
+  entregar de ESE avión (`porEntregarParaPrellenar`; sin prellenado si hay
+  adelanto general) y sigue al avión mientras el operador no lo toque
+  (`formAlCambiarAvion`). `confirmacionAdelanto` NOMBRA el avión con
+  `details.aeronave`. Tras guardar se dice cómo quedó el saldo de ese avión
+  (`textoSaldoTrasEntrega`). En la EDICIÓN no se exige nada nuevo. En una
+  cuenta de un solo avión el diálogo es el de siempre.
+- **Lista y «Socios · por entregar»**: bajo el saldo del socio,
+  `DesgloseSaldosPorAvion` («N4142R $18,798.71 MXN · XB-ANU -$3,862.60 MXN»,
+  cada saldo con su color y el `title` en palabras).
+- Ningún texto vive en los componentes: todo sale de
+  `lib/admin/reparto-pagos.ts` (lo congela el test de cableado).
+- Pruebas: `lib/admin/__tests__/reparto-pagos-por-avion.test.ts` y
+  `profit-sharing/__tests__/cuenta-por-avion.test.tsx` (+ fixtures con los
+  números de la captura del cliente).

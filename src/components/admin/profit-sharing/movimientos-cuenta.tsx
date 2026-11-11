@@ -45,6 +45,12 @@ import { ComprobanteEntrega } from "./comprobante-entrega";
  * repetía monto, T.C. y referencia (ya están en el detalle) y decía
  * «Adelanto a cuenta» a toda entrega sin mes. El SALDO negativo se pinta en
  * azul (adelantado) y el positivo en ámbar, con la tolerancia del API.
+ *
+ * SALDO POR AVIÓN (10-nov-2026, API 0.0.134): en una cuenta que se lleva por
+ * avión esta MISMA tabla se monta una vez por sección (`CuentaPorAvion`) con
+ * los movimientos de ESE avión, así que su columna «Saldo» es el saldo
+ * corrido del avión. Nada cambia aquí: el saldo de cada renglón es el que
+ * manda el API.
  */
 /**
  * Clave de un renglón: UNA sola fuente para la `key` del Fragment y para la
@@ -60,12 +66,17 @@ export function MovimientosCuenta({
   contexto,
   registro,
   puedeRegistrar,
+  ayuda = AYUDA_COLUMNAS_CUENTA,
 }: {
   movimientos: MovimientoCuenta[];
   /** Para editar una entrega (socio, aviones, arranque de la cuenta). */
   contexto: ContextoEntrega;
   registro: ContextoRegistro;
   puedeRegistrar: boolean;
+  /** Leyenda de las columnas sobre la tabla. `null` = no se pinta: en una
+      cuenta POR AVIÓN (API 0.0.134) hay una tabla por avión y la leyenda va
+      UNA vez arriba de todas. */
+  ayuda?: string | null;
 }) {
   const router = useRouter();
   const [dialogo, setDialogo] = useState<(DialogoEntrega & { clave: string }) | null>(null);
@@ -77,7 +88,7 @@ export function MovimientosCuenta({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">{AYUDA_COLUMNAS_CUENTA}</p>
+      {ayuda && <p className="text-xs text-muted-foreground">{ayuda}</p>}
       <Table data-tabla-movimientos>
         <TableHeader>
           <TableRow>

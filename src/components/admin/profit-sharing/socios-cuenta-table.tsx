@@ -32,6 +32,7 @@ import type { ResumenCuentaSocio, TotalesCuentasSocios } from "@/types/reparto-p
 import { EstadoCuentaBadge } from "./estado-cuenta-badge";
 import { BotonRegistrarEntrega } from "./entrega-socio-dialog";
 import { BotonConfigurarCuenta } from "./cuenta-socio-dialog";
+import { DesgloseSaldosPorAvion } from "./saldos-por-avion";
 
 /**
  * Tabla de «Pagos a socios» (`/admin/profit-sharing/socios`): una fila por
@@ -39,6 +40,10 @@ import { BotonConfigurarCuenta } from "./cuenta-socio-dialog";
  * la última entrega, todo EN PESOS (API 0.0.101). Todo lo calcula el API
  * (`GET /v1/profit-sharing/socios`); la tabla solo pinta. Tabla de RESUMEN
  * (con totales) ⇒ primitivos de `ui/table`, no `DataTable`.
+ *
+ * Un socio cuya cuenta se lleva POR AVIÓN (10-nov-2026, API 0.0.134) lleva,
+ * bajo su «por entregar», el desglose corto por avión
+ * (`DesgloseSaldosPorAvion`): el total es la suma y cada avión tiene su saldo.
  */
 export function SociosCuentaTable({
   socios,
@@ -140,6 +145,8 @@ export function SociosCuentaTable({
                     {adelantado}
                   </span>
                 )}
+                {/* Cuenta POR AVIÓN (API 0.0.134): qué avión debe y cuál va en negativo. */}
+                <DesgloseSaldosPorAvion cuenta={s} />
               </TableCell>
               <TableCell className="align-top">
                 <EstadoCuentaBadge estado={s.estado} saldoMxn={s.por_entregar_mxn} />

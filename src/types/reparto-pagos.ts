@@ -170,6 +170,52 @@ export interface ResumenCuentaSocio {
   /** ADITIVO: avisos de la cuenta en texto listo (entregas antes del
       arranque, avión dado de baja…). */
   avisos?: string[];
+  /** ADITIVO (10-nov-2026, API 0.0.134): el saldo de la cuenta POR AVIÓN
+      (y «a cuenta general» si mueve dinero). Σ == los totales del renglón,
+      al centavo. Ausente (API previo o dato ilegible) ⇒ la cuenta de siempre. */
+  por_avion?: SaldoAvionCuenta[];
+  /** ADITIVO (API 0.0.134): true = la cuenta tiene 2+ aviones y se lleva POR
+      AVIÓN (cada entrega se mide contra el saldo de su avión). */
+  cuenta_por_avion?: boolean;
+}
+
+/**
+ * SALDO POR AVIÓN dentro de la cuenta del socio (10-nov-2026, API 0.0.134,
+ * invariante 129 del API). Pedido del cliente con la cuenta de un socio de
+ * DOS aviones: «está mezclado todos los aviones que tenga un socio en su
+ * cuenta; debería ser, dentro de la cuenta del socio, un balance para cada
+ * avión, porque las entregas son por avión… lo mete todo en la misma
+ * licuadora». El API reparte los MISMOS movimientos por avión y cada sección
+ * lleva su saldo; el panel solo los pinta (jamás suma secciones).
+ */
+export interface SaldoAvionCuenta {
+  /** El avión; null = «a cuenta general»: el saldo inicial y las entregas
+      SIN avión (solo existe si mueve dinero; el API la manda al final). */
+  aeronave: AeronaveRef | null;
+  /** % del socio en el avión (null en la general). */
+  porcentaje: number | null;
+  /** Utilidades de ESE avión (incluye el mes en curso; negativa = pérdida). */
+  generado_mxn: number;
+  /** Parte de `generado_mxn` del mes en curso (todavía cambia). */
+  mes_en_curso_mxn: number;
+  /** Entregas que «corresponden a» ese avión (la general: las sin avión). */
+  entregado_mxn: number;
+  /** Saldo de ESE avión (negativo = adelantado o pérdida). */
+  por_entregar_mxn: number;
+  /** El mismo saldo SIN el mes en curso: contra esto el API decide un ADELANTO. */
+  por_entregar_cerrado_mxn: number;
+  estado: EstadoCuentaSocio | (string & {});
+}
+
+/** La sección de un avión en el estado de cuenta: su saldo y SUS movimientos. */
+export interface SeccionAvionCuenta extends SaldoAvionCuenta {
+  /** Saldo de ESE avión al cierre del mes anterior a `desde`. */
+  saldo_anterior_mxn: number;
+  /** MISMA forma que los de la raíz; `saldo_mxn` = saldo corrido DE ESE
+      AVIÓN. Con filtro de meses abre con un renglón SALDO_ANTERIOR. */
+  movimientos: MovimientoCuenta[];
+  /** Solo lo que cae en [desde, hasta] (null si no llegó: no se pinta). */
+  rango?: { generado_mxn: number; entregado_mxn: number; saldo_final_mxn: number } | null;
 }
 
 export interface TotalesCuentasSocios {
@@ -278,6 +324,13 @@ export interface EstadoCuentaRespuesta {
   rango?: { generado_mxn: number; entregado_mxn: number; saldo_final_mxn: number } | null;
   /** ADITIVO: avisos de la cuenta en texto listo. */
   avisos?: string[];
+  /** ADITIVO (10-nov-2026, API 0.0.134): la MISMA cuenta separada por avión,
+      cada sección con su saldo corrido, sus movimientos del rango y sus
+      totales de hoy. Σ de las secciones == `totales`. Ausente ⇒ la pantalla
+      de siempre (una sola tabla «Movimientos»). */
+  por_avion?: SeccionAvionCuenta[];
+  /** ADITIVO (API 0.0.134): true = la cuenta tiene 2+ aviones y se lleva por avión. */
+  cuenta_por_avion?: boolean;
 }
 
 /** `POST /v1/profit-sharing/pagos`. */
@@ -368,6 +421,13 @@ export interface DetalleExcesoSaldo {
   monto_mxn: number;
   exceso_mxn: number;
   saldo_despues_mxn?: number | null;
+  /** ADITIVO (10-nov-2026, API 0.0.134): el avión contra cuyo saldo se midió
+      la entrega (cuenta POR AVIÓN); ausente o null = contra toda la cuenta. */
+  aeronave?: AeronaveRef | null;
+  /** ADITIVO (API 0.0.134): de lo adelantado «a cuenta general», lo que el
+      API ya le descontó a ese avión (0 si no aplica). `por_entregar_mxn` ya
+      viene con ese descuento. */
+  adelantado_general_mxn?: number | null;
 }
 
 /** Renglón de los items del pre-cierre `socios_por_entregar` /
