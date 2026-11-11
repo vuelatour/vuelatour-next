@@ -19,6 +19,12 @@ import {
 import { AircraftImagesCard } from "@/components/admin/aircraft/aircraft-images-card";
 import { AircraftEngineering } from "@/components/admin/aircraft/aircraft-engineering";
 import { AircraftEditButton } from "@/components/admin/aircraft/aircraft-edit-button";
+import { ReservaVigenciasCard } from "@/components/admin/aircraft/reserva-vigencias-card";
+import {
+  puedeEditarReservaOverhaul,
+  textoReservaFicha,
+  vigenciasDeReserva,
+} from "@/lib/admin/reserva-overhaul";
 import { AircraftFlightsCard } from "@/components/admin/aircraft/aircraft-flights-card";
 import { AircraftOwnersCard } from "@/components/admin/aircraft/aircraft-owners-card";
 import {
@@ -136,6 +142,10 @@ export default async function AircraftDetailPage({ params }: PageProps) {
   ]);
   const hoyCancun = todayCancun();
   const puedePropietarios = puedeEditarPropietarios(me?.rol);
+  // RESERVA DE OVERHAUL CON VIGENCIA (10-nov-2026, API 0.0.135): las tarifas
+  // con su «a partir de». `null` (API previo o migración sin aplicar) ⇒ la
+  // ficha de siempre: sin card y sin fecha en el formulario.
+  const tarifasReserva = vigenciasDeReserva(aircraft.reserva_overhaul_vigencias);
 
   // Aeronaves activas: destinos posibles al trasladar un motor/hélice.
   // Best-effort: sin lista, el diálogo de traslado avisa que no hay destinos.
@@ -258,7 +268,10 @@ export default async function AircraftDetailPage({ params }: PageProps) {
                 label="Balance (Excel)"
               />
             )}
-            <AircraftEditButton aircraft={aircraft} />
+            <AircraftEditButton
+              aircraft={aircraft}
+              reservaVigencias={aircraft.reserva_overhaul_vigencias}
+            />
           </div>
         </div>
       </div>
@@ -333,7 +346,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
               <Field label="Tarifa broker" value={`${fmtUsd(aircraft.tarifa_hora_broker_usd)} / hr`} />
               <Field
                 label="Reserva overhaul"
-                value={`${fmtUsd(aircraft.reserva_overhaul_hr_usd)} / hr`}
+                value={textoReservaFicha(aircraft.reserva_overhaul_hr_usd, tarifasReserva)}
               />
               <Field
                 label="Aportación AFAC"
@@ -474,6 +487,18 @@ export default async function AircraftDetailPage({ params }: PageProps) {
             )}
           </CardContent>
         </Card>
+
+        {/* 12b. Tarifas de la reserva de overhaul con su «a partir de»
+            (10-nov-2026, API 0.0.135): solo cuando el API las maneja. */}
+        {tarifasReserva && (
+          <ReservaVigenciasCard
+            className="lg:col-span-2"
+            aeronaveId={aircraft.id}
+            matricula={aircraft.matricula}
+            vigencias={tarifasReserva}
+            puedeEditar={puedeEditarReservaOverhaul(me?.rol)}
+          />
+        )}
 
         {/* 13. Reservas overhaul (resumen) */}
         {aircraft.overhaul_reserves.length > 0 && (

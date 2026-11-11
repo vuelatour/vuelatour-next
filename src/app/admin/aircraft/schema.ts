@@ -87,6 +87,15 @@ export const AircraftFormSchema = z.object({
   tarifa_hora_pub_usd: optionalNonNegative,
   tarifa_hora_broker_usd: optionalNonNegative,
   reserva_overhaul_hr_usd: optionalNonNegative,
+  // «A PARTIR DE» de la reserva de overhaul (10-nov-2026, API 0.0.135): el día
+  // desde el que vale la tarifa. Solo viaja cuando la ficha maneja vigencias
+  // y se tocó la tarifa o la fecha (`reservaParaGuardar`); «» se omite — un
+  // API previo lo rechazaría por `forbidNonWhitelisted`.
+  reserva_overhaul_desde: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Captura una fecha válida.")
+    .optional()
+    .or(z.literal("")),
   // Aportación AFAC (USD/hr cobrada): provisión por matrícula extranjera.
   // Nullable: en edición, vaciar el campo manda null para borrar la config.
   permiso_afac_usd_hr: optionalNonNegativeNullable,

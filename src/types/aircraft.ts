@@ -339,6 +339,36 @@ export interface OverhaulReserve {
   horas_acumuladas: Decimal;
 }
 
+/**
+ * Una tarifa de la RESERVA DE OVERHAUL con su «a partir de» (10-nov-2026,
+ * API 0.0.135, invariante 130 del API). La reserva de cada vuelo se calcula
+ * con la tarifa que valía el día del vuelo. Lo arma el API (`vigente_hoy` /
+ * `futura` incluidos): el panel solo lo pinta.
+ */
+export interface ReservaOverhaulVigencia {
+  id: string;
+  /** `YYYY-MM-DD`: vale para los vuelos desde este día. */
+  vigente_desde: string;
+  /** USD por hora POR MOTOR (0 = sin reserva desde ese día). */
+  usd_hr_por_motor: number;
+  motores: number;
+  /** Σ de los motores: lo que multiplican el balance y el reparto. */
+  usd_por_hora: number;
+  notas: string | null;
+  updated_at: string | null;
+  /** Es la que vale HOY (día Cancún). */
+  vigente_hoy: boolean;
+  /** Todavía no empieza. */
+  futura: boolean;
+}
+
+/** `reserva_overhaul_vigencias` del snapshot. `disponible:false` = falta la
+    migración del API: la ficha no maneja fechas todavía. */
+export interface ReservaOverhaulVigencias {
+  disponible: boolean;
+  vigencias: ReservaOverhaulVigencia[];
+}
+
 export interface AeronaveImagen {
   id: string;
   aeronave_id: string;
@@ -399,6 +429,10 @@ export interface AircraftSnapshot extends Aircraft {
   propellers: Propeller[];
   owners: AircraftOwner[];
   overhaul_reserves: OverhaulReserve[];
+  /** ADITIVO (10-nov-2026, API 0.0.135): las tarifas de la reserva de
+      overhaul con su «a partir de». Ausente = API previo (la ficha de
+      siempre). Se lee SOLO con `vigenciasDeReserva` (`lib/admin/reserva-overhaul`). */
+  reserva_overhaul_vigencias?: ReservaOverhaulVigencias | null;
   imagenes: AeronaveImagen[];
   seguros: AeronaveSeguro[];
   discrepancias: AeronaveDiscrepancia[];

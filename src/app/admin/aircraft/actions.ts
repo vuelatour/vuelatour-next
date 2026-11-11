@@ -25,6 +25,7 @@ import type {
   ComponenteEvento,
   Motor,
   Propeller,
+  ReservaOverhaulVigencias,
   TacometroHistorial,
 } from "@/types/aircraft";
 
@@ -91,6 +92,29 @@ export async function updateAircraftAction(
     });
     revalidateAircraft(id);
     return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Elimina UNA tarifa de la reserva de overhaul (10-nov-2026, API 0.0.135,
+ * invariante 130 del API). La card de la ficha CONFIRMA antes (regla
+ * permanente). El API no deja eliminar la única tarifa del avión (409
+ * `RESERVA_UNICA_TARIFA`) y su mensaje ya viene en es-MX: se pinta tal cual.
+ * No se reintenta solo (es un DELETE).
+ */
+export async function eliminarReservaVigenciaAction(
+  aeronaveId: string,
+  vigenciaId: string,
+): Promise<ActionResult<ReservaOverhaulVigencias>> {
+  try {
+    const data = await apiServer<ReservaOverhaulVigencias>(
+      `/v1/aircraft/${aeronaveId}/reserva-overhaul/vigencias/${vigenciaId}`,
+      { method: "DELETE" },
+    );
+    revalidateAircraft(aeronaveId);
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

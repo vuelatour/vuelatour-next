@@ -6,7 +6,15 @@ import { Button } from "@/components/ui/button";
 import { AircraftFormDialog } from "./aircraft-form-dialog";
 import type { Aircraft } from "@/types/aircraft";
 
-export function AircraftEditButton({ aircraft }: { aircraft: Aircraft }) {
+export function AircraftEditButton({
+  aircraft,
+  reservaVigencias,
+}: {
+  aircraft: Aircraft;
+  /** `reserva_overhaul_vigencias` del snapshot (API 0.0.135): con él, el
+      formulario pide la fecha «A partir de» de la reserva de overhaul. */
+  reservaVigencias?: unknown;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -14,7 +22,12 @@ export function AircraftEditButton({ aircraft }: { aircraft: Aircraft }) {
         <PencilSquareIcon className="h-4 w-4" />
         Editar
       </Button>
-      <AircraftFormDialog open={open} onOpenChange={setOpen} initialAircraft={aircraft} />
+      <AircraftFormDialog
+        open={open}
+        onOpenChange={setOpen}
+        initialAircraft={aircraft}
+        reservaVigencias={reservaVigencias}
+      />
     </>
   );
 }

@@ -13684,3 +13684,57 @@ XB-ANU restaba del saldo contra el que se veía la entrega del N4142R
 - Pruebas: `lib/admin/__tests__/reparto-pagos-por-avion.test.ts` y
   `profit-sharing/__tests__/cuenta-por-avion.test.tsx` (+ fixtures con los
   números de la captura del cliente).
+
+## Reserva de overhaul con «A partir de» (10-nov-2026, API 0.0.135, invariante 130 del API)
+
+Pedido del cliente con la captura del campo «Reserva overhaul USD/hr (por
+motor)» del formulario del avión: «que pudiéramos ponerle desde cuándo entra
+en vigor esa reserva de overhaul, porque nomás aparece el monto… que dijera
+ahí "a partir de" y la fecha a partir de cuándo quiere que afecte». La tarifa
+era UNA y cambiarla movía los meses ya entregados a los socios.
+
+- **El API guarda cada tarifa con su fecha y calcula la reserva de cada vuelo
+  con la que valía ESE día; el panel solo captura y enseña.** Contrato
+  ADITIVO del snapshot (`types/aircraft.ts`): `reserva_overhaul_vigencias:
+  { disponible, vigencias: ReservaOverhaulVigencia[] }` (`vigente_desde`,
+  `usd_hr_por_motor`, `motores`, `usd_por_hora`, `notas`, `vigente_hoy`,
+  `futura`).
+- **Puerta ÚNICA `vigenciasDeReserva(raw)`** (`lib/admin/reserva-overhaul.ts`,
+  PURO): la lista (la más reciente primero) o `null` si la ficha NO maneja
+  fechas (API previo, `disponible:false` = falta la migración, o basura).
+  Con `null` el formulario y la ficha quedan EXACTAMENTE como antes.
+- **Formulario del avión** (`aircraft-form-dialog.tsx`, solo EDICIÓN; el botón
+  «Editar» le pasa `reservaVigencias` del snapshot): con vigencias, junto a
+  «Reserva overhaul USD/hr (por motor)» va **«A partir de»** (`type="date"`,
+  prellenado con la fecha de la tarifa que vale hoy). `reservaParaGuardar`
+  decide qué viaja: si no se tocó ni la tarifa ni la fecha, NO se manda
+  `reserva_overhaul_desde` (el guardado de siempre; el API no escribe nada);
+  si se tocó cualquiera, la fecha es OBLIGATORIA (sin ella el API corregiría
+  la tarifa de hoy hacia atrás sin que nadie lo decidiera). Con la MISMA
+  fecha se corrige esa tarifa; con otra se agrega una nueva; 0 = sin reserva
+  desde ese día. `vistaPreviaReserva` dice ANTES de guardar qué va a pasar
+  (tarifa nueva y qué conservan los vuelos anteriores · se corrige y cambia
+  todo desde esa fecha · «esa tarifa ya vale…: no cambia nada», en ámbar).
+  `reserva_overhaul_desde` solo viaja con vigencias: un API previo lo
+  rechazaría (`forbidNonWhitelisted`).
+- **Ficha** (`aircraft/[id]/page.tsx`): «Reserva overhaul» dice desde cuándo
+  vale (`textoReservaFicha`) y la card **«Tarifas de la reserva de overhaul»**
+  (`reserva-vigencias-card.tsx`, ancla `#reserva-overhaul`) lista TODAS las
+  tarifas con su estado (Vigente hoy · Anterior · Aún no empieza). «Eliminar»
+  (Dirección/Administración, `puedeEditarReservaOverhaul`; solo con dos o más
+  tarifas: el API rechaza la única con 409 `RESERVA_UNICA_TARIFA`) CONFIRMA
+  con `confirmacionEliminarVigencia`, que dice qué pasa con los vuelos de ese
+  periodo (pasan a la tarifa anterior o quedan sin reserva). Acción
+  `eliminarReservaVigenciaAction` (DELETE; el mensaje del API se pinta tal
+  cual).
+- **Uso típico** (lo que pidió el cliente): tarifa 55 + «A partir de»
+  01/11/2026 ⇒ noviembre en adelante a 55; lo anterior conserva lo que tenía.
+  Para que antes de esa fecha NO haya reserva, se elimina la tarifa anterior
+  en la card.
+- Los importes de la reserva SIEMPRE dicen su moneda («$55 USD por motor × 2
+  motores = $110 USD por hora de vuelo»). Ningún texto vive en los
+  componentes.
+- Pruebas: `lib/admin/__tests__/reserva-overhaul.test.ts` y
+  `aircraft/__tests__/reserva-vigencias.test.tsx`. **Orden de deploy:
+  pyservices ⇒ API 0.0.135 ⇒ panel**; sin la migración `20261110000001` del
+  API la ficha se ve como siempre (el API manda `disponible:false`).
