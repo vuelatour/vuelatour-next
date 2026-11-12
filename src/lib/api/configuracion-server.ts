@@ -2,6 +2,7 @@ import { apiServer } from "./server";
 import { isApiError } from "./errors";
 import { esErrorDeNext } from "./degradar";
 import type { EditoresCotizacionCobrada } from "@/lib/admin/cotizacion-cobrada";
+import type { AccesoNomina } from "@/lib/admin/acceso-nomina";
 import type { LecturaModeloIa, ModeloIa } from "@/types/ia-modelo";
 
 export interface ConfiguracionFlag {
@@ -31,6 +32,15 @@ export function getEditoresCotizacionCobrada() {
   return apiServer<EditoresCotizacionCobrada>("/v1/config/editores-cotizacion-cobrada", {
     cache: "no-store",
   });
+}
+
+/**
+ * ACCESO A NÓMINA POR PERSONA (12-nov-2026, API 0.0.137): a quién de
+ * Administración le dio Dirección la entrada al módulo de Nómina.
+ * Administración la lee; solo Dirección la cambia. 404 = API previo.
+ */
+export function getAccesoNomina() {
+  return apiServer<AccesoNomina>("/v1/config/acceso-nomina", { cache: "no-store" });
 }
 
 /**

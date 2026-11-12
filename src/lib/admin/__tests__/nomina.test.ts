@@ -138,6 +138,17 @@ describe("categoría, ruta y roles", () => {
     expect(puedeVerNomina(null)).toBe(false);
     expect(puedeVerNomina(undefined)).toBe(false);
   });
+
+  it("acceso POR PERSONA (12-nov-2026, API 0.0.137): Administración entra solo con `permisos.nomina` de /me", () => {
+    expect(puedeVerNomina("ADMIN")).toBe(false);
+    expect(puedeVerNomina("ADMIN", { nomina: true })).toBe(true);
+    for (const permisos of [{ nomina: false }, {}, null, undefined]) {
+      expect(puedeVerNomina("ADMIN", permisos)).toBe(false);
+    }
+    // Quien entra por su rol no lo necesita; sin rol nada lo abre.
+    for (const rol of ROLES_NOMINA) expect(puedeVerNomina(rol, { nomina: false }), rol).toBe(true);
+    for (const rol of [null, undefined, ""]) expect(puedeVerNomina(rol, { nomina: true })).toBe(false);
+  });
 });
 
 describe("mes de la URL (url-params: lo inválido se IGNORA)", () => {

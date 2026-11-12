@@ -2,6 +2,7 @@ import { fmtUsd } from "@/lib/format";
 import { pendienteCobro } from "@/lib/admin/cobros";
 import type { MeResponse } from "@/types/me";
 import { ROLES_EDITAN_COTIZACION } from "@/lib/admin/quote-sheet-interna";
+import { diffListaIds } from "@/lib/admin/lista-ids";
 
 /**
  * EDITAR UNA COTIZACIÓN QUE YA TIENE COBROS — permiso POR PERSONA
@@ -259,17 +260,12 @@ export function nombresParaRazon(
     .filter(Boolean);
 }
 
-/** Qué cambia entre lo guardado y lo elegido. */
+/** Qué cambia entre lo guardado y lo elegido (pieza común: `lista-ids.ts`). */
 export function diffEditores(
   guardados: readonly string[],
   elegidos: readonly string[],
 ): { agregados: string[]; quitados: string[] } {
-  const g = new Set(guardados);
-  const e = new Set(elegidos);
-  return {
-    agregados: [...e].filter((id) => !g.has(id)),
-    quitados: [...g].filter((id) => !e.has(id)),
-  };
+  return diffListaIds(guardados, elegidos);
 }
 
 /**

@@ -16,6 +16,11 @@ import type { Rol } from "@/types/me";
  *    rol usa `etiquetaRol`.
  *  - El candado real es el API; el panel esconde lo que responderá 403 y pinta
  *    `PantallaSoloDireccion` donde antes había un 404 o un error.
+ *  - NÓMINA POR PERSONA (12-nov-2026, API 0.0.137, invariante 132 del API):
+ *    Dirección puede abrirle el módulo de Nómina a alguien de Administración
+ *    en Configuración → «Acceso a Nómina». No es un rol: llega en
+ *    `/me.permisos.nomina` (`lib/admin/nomina.ts#puedeVerNomina`,
+ *    `lib/admin/acceso-nomina.ts`).
  *
  * PURO (sin React ni red): `__tests__/roles.test.ts`.
  */
@@ -45,7 +50,7 @@ export const DESCRIPCION_ROL: Record<Rol, string> = {
   DIRECCION:
     "Acceso total (Ale y Pablo): además, Estadísticas, Ingresos, Nómina, Gastos personales, Reparto y Pagos a socios.",
   ADMIN:
-    "La oficina: todo menos Estadísticas, Ingresos, Nómina, Gastos personales, Reparto y Pagos a socios.",
+    "La oficina: todo menos Estadísticas, Ingresos, Nómina (salvo que Dirección le dé acceso en Configuración), Gastos personales, Reparto y Pagos a socios.",
   COORDINADOR: "Solicitudes, cotizaciones y operación diaria.",
   ANALISTA: "Lectura amplia para análisis y reportes.",
   FACTURACION: "CFDI, conciliación, caja chica y cuentas bancarias.",
@@ -145,5 +150,7 @@ export const TEXTO_CAJA_SOLO_DIRECCION =
   "Esta caja chica es de Dirección: solo ellos la ven y la editan.";
 export const TEXTO_USUARIO_SOLO_DIRECCION =
   "Es un usuario de Dirección: solo Dirección lo edita, lo desactiva o le cambia la contraseña.";
+// 12-nov-2026 (API 0.0.137): Dirección puede darle el acceso a alguien de
+// Administración; a quien no lo tiene se le dice a quién pedírselo y dónde.
 export const TEXTO_NOMINA_SOLO_DIRECCION =
-  "La nómina la ve solo Dirección (Ale y Pablo); la coordinación y facturación la capturan.";
+  "La nómina la ve Dirección y a quien Dirección le dé acceso. Si te toca llevarla, pídele a Dirección que te lo dé en Configuración → «Acceso a Nómina».";

@@ -114,8 +114,10 @@ export default async function NominaPage({
   const me = await getMe().catch(() => null);
   if (!me) notFound();
   // SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): a Administración se le
-  // explica, no se le esconde con un 404.
-  if (!puedeVerNomina(me.rol)) {
+  // explica, no se le esconde con un 404. Desde el 12-nov-2026 (API 0.0.137)
+  // entra además quien tenga el acceso POR PERSONA que da Dirección en
+  // Configuración (`me.permisos.nomina`).
+  if (!puedeVerNomina(me.rol, me.permisos)) {
     return (
       <PantallaSoloDireccion
         seccion="Operación"
@@ -165,7 +167,8 @@ export default async function NominaPage({
   const huboCorte = lista.ok && gastos.length < lista.datos.count;
   // «Repartir entre aviones»: solo con la lista cargada y con pagos (con la
   // lista caída el diálogo no sabría qué pagos hay: jamás «sin pagos»).
-  const ofrecerReparto = lista.ok && gastos.length > 0 && puedeRepartirNomina(me?.rol ?? null);
+  const ofrecerReparto =
+    lista.ok && gastos.length > 0 && puedeRepartirNomina(me?.rol ?? null, me?.permisos);
 
   // Comprobantes en bucket privado: si la firma falla se DICE (aviso y «Sin
   // vista previa» en la fila), nunca celdas vacías que parecen «sin papel».

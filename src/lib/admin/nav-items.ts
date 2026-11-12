@@ -32,7 +32,7 @@ import {
   ClockIcon as GaugeIconAlias,
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
-import type { Rol } from "@/types/me";
+import type { PermisosMe, Rol } from "@/types/me";
 import { esDireccion } from "@/lib/admin/roles";
 import { ROLES_NOMINA, TITULO_NOMINA } from "@/lib/admin/nomina";
 import { ROLES_VEN_CORREOS_CLIENTE, TITULO_CORREOS_ENVIADOS } from "@/lib/admin/correo-cliente";
@@ -45,6 +45,12 @@ export interface NavItem {
   comingSoon?: boolean;
   /** Si está restringido a ciertos roles. Sin valor = visible para todos. */
   roles?: Rol[];
+  /**
+   * Permiso POR PERSONA de `/me.permisos` que TAMBIÉN abre el ítem a quien
+   * su rol no (12-nov-2026, API 0.0.137): «Nómina» para alguien de
+   * Administración a quien Dirección le dio el acceso en Configuración.
+   */
+  permiso?: keyof PermisosMe;
   /**
    * Contador a la derecha del ítem (24-sep-2026). `por_facturar` = vuelos
    * con «Necesito factura» sin factura registrada; lo pide el sidebar con
@@ -116,13 +122,14 @@ export const NAV_GROUPS: NavGroup[] = [
         // Nómina (15-oct-2026), pedido del cliente: «Necesitamos un nuevo
         // espacio debajo de Gastos y Otros Gastos que se llame Nomina para
         // tener en ese apartado todo lo de nomina». Los gastos de categoría
-        // NOMINA del mes. Mismos roles que «Gastos» y «Otros gastos» (ya
-        // enseñan esos gastos: no se abre exposición nueva), desde la fuente
-        // única `lib/admin/nomina.ts` (pura: sin React).
+        // NOMINA del mes. Roles desde la fuente única `lib/admin/nomina.ts`
+        // (pura: sin React); además entra quien tenga el acceso POR PERSONA
+        // que da Dirección en Configuración (`permisos.nomina`).
         label: TITULO_NOMINA,
         href: "/admin/nomina",
         icon: UserGroupIcon,
         roles: [...ROLES_NOMINA],
+        permiso: "nomina",
       },
       {
         // Gastos PERSONALES del dueño (PERSONAL_DUENO): dinero personal, no
@@ -346,13 +353,23 @@ export function itemNavActivo(
 /**
  * DIRECCIÓN ve TODO el menú (6-nov-2026, invariante 122 del API): es el
  * superconjunto de ADMIN y el API le deja pasar cualquier ruta, así que las
- * listas `roles` no necesitan nombrarla. Los demás roles, por su lista.
+ * listas `roles` no necesitan nombrarla. Los demás roles, por su lista — o,
+ * en los ítems con `permiso`, por el permiso POR PERSONA que trae `/me`
+ * (12-nov-2026: «Nómina» para quien Dirección le dio el acceso). Sin rol
+ * conocido ningún permiso abre nada.
  */
-export function filterNavGroupsForRole(rol: Rol | undefined): NavGroup[] {
+export function filterNavGroupsForRole(
+  rol: Rol | undefined,
+  permisos?: PermisosMe | null,
+): NavGroup[] {
   return NAV_GROUPS.map((g) => ({
     ...g,
     items: g.items.filter(
-      (it) => esDireccion(rol) || !it.roles || (rol && it.roles.includes(rol)),
+      (it) =>
+        esDireccion(rol) ||
+        !it.roles ||
+        (rol && it.roles.includes(rol)) ||
+        (rol != null && it.permiso != null && permisos?.[it.permiso] === true),
     ),
   })).filter((g) => g.items.length > 0);
 }

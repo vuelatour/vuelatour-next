@@ -7,6 +7,7 @@ import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
 import type { IaSaldoCheckpoint } from "@/lib/api/ia-uso-server";
 import type { ResponsablesFacturacion } from "@/types/facturas-emitidas";
 import type { EditoresCotizacionCobrada } from "@/lib/admin/cotizacion-cobrada";
+import { TOPE_ACCESO_NOMINA, type AccesoNomina } from "@/lib/admin/acceso-nomina";
 import type { ModeloIa } from "@/types/ia-modelo";
 import {
   TEXTO_ID_MODELO_INVALIDO,
@@ -121,6 +122,32 @@ export async function setEditoresCotizacionCobradaAction(
     revalidatePath("/admin/configuracion");
     // El permiso cambia la pantalla de la cotización (candado y razón).
     revalidatePath("/admin/quotes", "layout");
+    return { ok: true, data };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * ACCESO A NÓMINA POR PERSONA (12-nov-2026, API 0.0.137): reemplaza la lista
+ * de quién de Administración entra al módulo de Nómina (`[]` = nadie).
+ * `version` es el sello que trajo la pantalla: si otro de Dirección cambió la
+ * lista después, el API responde 409 `ACCESO_NOMINA_CAMBIO` en vez de pisar
+ * ese cambio. El API decide: 403 (solo Dirección), 400 `USUARIOS_INVALIDOS`
+ * (alguien ya no es de Administración activa). El acceso de cada quien llega
+ * en su `/me` al recargar.
+ */
+export async function setAccesoNominaAction(
+  usuarioIds: string[],
+  version: string | null,
+): Promise<ActionResult<AccesoNomina>> {
+  const ids = [...new Set(usuarioIds)].slice(0, TOPE_ACCESO_NOMINA);
+  try {
+    const data = await apiServer<AccesoNomina>("/v1/config/acceso-nomina", {
+      method: "PUT",
+      body: { usuario_ids: ids, version },
+    });
+    revalidatePath("/admin/configuracion");
     return { ok: true, data };
   } catch (err) {
     return fail(err);

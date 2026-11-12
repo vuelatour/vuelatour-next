@@ -22,6 +22,7 @@ import {
   montoNomina,
   quincenaDeFecha,
   totalesPorMoneda,
+  type PermisoNomina,
   type PorMoneda,
 } from "@/lib/admin/nomina";
 import type {
@@ -37,13 +38,24 @@ export const TOPE_AVIONES_REPARTO_IGUALES = 20;
 /** Ruta del API. */
 export const RUTA_REPARTO_IGUALES = "/v1/expenses/reparto-iguales";
 
-/** Roles que reparten (espejo del `@Roles` de la ruta). */
+/**
+ * Roles que reparten POR SU ROL. El `@Roles` de la ruta nombra además a
+ * Administración (API 0.0.137), pero de ella solo pasa quien tiene el acceso
+ * a Nómina por persona: aquí eso llega en `permisos.nomina`.
+ */
 export const ROLES_REPARTO_NOMINA = ["DIRECCION", "COORDINADOR", "FACTURACION"] as const;
 
-/** ¿Este rol ve el botón «Repartir entre aviones»? Sin rol ⇒ se ofrece (el API es el candado). */
-export function puedeRepartirNomina(rol: string | null | undefined): boolean {
+/**
+ * ¿Esta persona ve el botón «Repartir entre aviones»? Por su rol o por el
+ * acceso a Nómina que da Dirección (`/me.permisos.nomina`). Sin rol ⇒ se
+ * ofrece (el API es el candado).
+ */
+export function puedeRepartirNomina(
+  rol: string | null | undefined,
+  permisos?: PermisoNomina | null,
+): boolean {
   if (rol == null || rol === "") return true;
-  return (ROLES_REPARTO_NOMINA as readonly string[]).includes(rol);
+  return (ROLES_REPARTO_NOMINA as readonly string[]).includes(rol) || permisos?.nomina === true;
 }
 
 // ═══════════════════════════════ Validación ANTES de la red ═══════════════════════════════

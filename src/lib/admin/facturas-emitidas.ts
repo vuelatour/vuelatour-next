@@ -328,11 +328,16 @@ export function textoPedidaPor(s: SolicitudFactura): string {
   return `Pedida${quienYCuando(s)}`;
 }
 
-/** Une nombres en es-MX: «A», «A y B», «A, B y C». */
-export function unirNombres(nombres: string[]): string {
+/**
+ * Une nombres en es-MX: «A», «A y B», «A, B y C». Ante un nombre que empieza
+ * con el sonido «i» la conjunción es «e»: «Mary Cruz e Itzi» (12-nov-2026).
+ */
+export function unirNombres(nombres: readonly string[]): string {
   const n = nombres.map((x) => x.trim()).filter(Boolean);
   if (n.length <= 1) return n[0] ?? "";
-  return `${n.slice(0, -1).join(", ")} y ${n[n.length - 1]}`;
+  const ultimo = n[n.length - 1];
+  const conjuncion = /^(i|hi(?![aeo]))/i.test(ultimo) ? "e" : "y";
+  return `${n.slice(0, -1).join(", ")} ${conjuncion} ${ultimo}`;
 }
 
 // =============================================================================

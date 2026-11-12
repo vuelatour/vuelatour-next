@@ -64,6 +64,12 @@ describe("roles y ruta (espejo del API)", () => {
     for (const rol of ["SOCIO", "ANALISTA", "PILOTO", "MECANICO"]) expect(puedeRepartirNomina(rol), rol).toBe(false);
     expect(puedeRepartirNomina(null)).toBe(true);
     expect(puedeRepartirNomina(undefined)).toBe(true);
+    // Acceso POR PERSONA (12-nov-2026, API 0.0.137): Administración reparte
+    // solo con `permisos.nomina` de /me (lo da Dirección en Configuración).
+    expect(puedeRepartirNomina("ADMIN")).toBe(false);
+    expect(puedeRepartirNomina("ADMIN", { nomina: true })).toBe(true);
+    expect(puedeRepartirNomina("ADMIN", { nomina: false })).toBe(false);
+    expect(puedeRepartirNomina("ADMIN", null)).toBe(false);
     expect(RUTA_REPARTO_IGUALES).toBe("/v1/expenses/reparto-iguales");
     expect(TOPE_GASTOS_REPARTO_IGUALES).toBe(200);
     expect(TOPE_AVIONES_REPARTO_IGUALES).toBe(20);

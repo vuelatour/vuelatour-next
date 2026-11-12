@@ -69,7 +69,7 @@ export default async function AdminDashboardPage() {
     .sort((a, b) => a.dias - b.dias)
     .slice(0, 6);
 
-  const grupos = filterNavGroupsForRole(me.rol)
+  const grupos = filterNavGroupsForRole(me.rol, me.permisos)
     .map((g) => ({ ...g, items: g.items.filter((it) => it.href !== "/admin") }))
     .filter((g) => g.items.length > 0);
 

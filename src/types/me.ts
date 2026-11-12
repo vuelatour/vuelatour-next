@@ -85,4 +85,12 @@ export interface PermisosMe {
    * cerrado, servicio, grupo) siguen vigentes.
    */
   editar_cotizacion_cobrada?: boolean;
+  /**
+   * Entra al módulo de Nómina (12-nov-2026, API 0.0.137, invariante 132 del
+   * API): por su rol (Dirección, Coordinación, Facturación) o, siendo de
+   * Administración, porque Dirección le dio el acceso en Configuración →
+   * «Acceso a Nómina». Ausente = API previo ⇒ manda el rol, como antes. Se
+   * lee SOLO con `lib/admin/nomina.ts#puedeVerNomina`.
+   */
+  nomina?: boolean;
 }

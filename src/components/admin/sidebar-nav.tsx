@@ -5,10 +5,15 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { filterNavGroupsForRole, itemNavActivo } from "@/lib/admin/nav-items";
 import { useConteoPorFacturar } from "@/hooks/use-conteo-por-facturar";
-import type { Rol } from "@/types/me";
+import type { PermisosMe, Rol } from "@/types/me";
 
 interface SidebarNavProps {
   rol: Rol;
+  /**
+   * Permisos POR PERSONA de `/me` (12-nov-2026): abren ítems que el rol no
+   * (hoy «Nómina»). Objeto plano y serializable; ausente = API previo.
+   */
+  permisos?: PermisosMe | null;
   onNavigate?: () => void;
 }
 
@@ -17,9 +22,9 @@ interface SidebarNavProps {
  * solo pasa el rol como string. Esto evita serializar funciones React
  * (componentes de Heroicons) por la frontera Server→Client de Next 16/React 19.
  */
-export function SidebarNav({ rol, onNavigate }: SidebarNavProps) {
+export function SidebarNav({ rol, permisos, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
-  const groups = filterNavGroupsForRole(rol);
+  const groups = filterNavGroupsForRole(rol, permisos);
   // Badge «por facturar» (24-sep-2026): solo si el rol ve el ítem que lo
   // lleva. El conteo se comparte entre las dos instancias del menú.
   const conBadge = groups.some((g) => g.items.some((i) => i.badge === "por_facturar"));

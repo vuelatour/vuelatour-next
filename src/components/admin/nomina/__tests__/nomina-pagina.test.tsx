@@ -380,6 +380,13 @@ describe("menú: «Nómina» justo debajo de «Otros gastos»", () => {
     for (const rol of ["ADMIN", "SOCIO", "ANALISTA", "PILOTO", "MECANICO"] as const) {
       expect(filterNavGroupsForRole(rol).flatMap((g) => g.items).some((it) => it.href === "/admin/nomina"), rol).toBe(false);
     }
+    // Acceso POR PERSONA (12-nov-2026, API 0.0.137): a quien de Administración
+    // Dirección le dio el acceso (`/me.permisos.nomina`) sí le sale «Nómina».
+    expect(operacion[i].permiso).toBe("nomina");
+    const conAcceso = filterNavGroupsForRole("ADMIN", { nomina: true }).flatMap((g) => g.items);
+    expect(conAcceso.some((it) => it.href === "/admin/nomina")).toBe(true);
+    const sinAcceso = filterNavGroupsForRole("ADMIN", { nomina: false }).flatMap((g) => g.items);
+    expect(sinAcceso.some((it) => it.href === "/admin/nomina")).toBe(false);
   });
 
   it("activo en su ruta y titulado en la barra superior", () => {
@@ -391,7 +398,9 @@ describe("menú: «Nómina» justo debajo de «Otros gastos»", () => {
   it("cableado: roles y etiqueta desde la fuente única y el pedido citado con su fecha", () => {
     const nav = leer("../../../../lib/admin/nav-items.ts");
     expect(nav).toContain('import { ROLES_NOMINA, TITULO_NOMINA } from "@/lib/admin/nomina";');
-    expect(nav).toMatch(/label: TITULO_NOMINA,\s*href: "\/admin\/nomina",\s*icon: UserGroupIcon,\s*roles: \[\.\.\.ROLES_NOMINA\],/);
+    expect(nav).toMatch(
+      /label: TITULO_NOMINA,\s*href: "\/admin\/nomina",\s*icon: UserGroupIcon,\s*roles: \[\.\.\.ROLES_NOMINA\],\s*permiso: "nomina",/,
+    );
     expect(nav).toContain("15-oct-2026");
     expect(nav).toMatch(/Necesitamos un nuevo\s*\/\/\s*espacio debajo de Gastos y Otros Gastos/);
   });
@@ -402,7 +411,10 @@ describe("página /admin/nomina (cableado por regex)", () => {
 
   it("falla CERRADO: sin /me ⇒ notFound(); sin permiso ⇒ el candado de Dirección, antes de leer nada", () => {
     expect(page).toMatch(/const me = await getMe\(\)\.catch\(\(\) => null\);\s*if \(!me\) notFound\(\);/);
-    expect(page).toMatch(/if \(!puedeVerNomina\(me\.rol\)\) \{\s*return \(\s*<PantallaSoloDireccion/);
+    // Por rol O por el acceso por persona que da Dirección (`me.permisos`).
+    expect(page).toMatch(
+      /if \(!puedeVerNomina\(me\.rol, me\.permisos\)\) \{\s*return \(\s*<PantallaSoloDireccion/,
+    );
     expect(page.indexOf("<PantallaSoloDireccion")).toBeLessThan(page.indexOf("await searchParams"));
     expect(page.indexOf("notFound();")).toBeLessThan(page.indexOf("await searchParams"));
     expect(page).toContain('export const dynamic = "force-dynamic";');
@@ -451,8 +463,8 @@ describe("página /admin/nomina (cableado por regex)", () => {
   });
 
   it("«Repartir entre aviones»: botón primario solo con la lista cargada, pagos y permiso; maxDuration 120", () => {
-    expect(page).toContain(
-      "const ofrecerReparto = lista.ok && gastos.length > 0 && puedeRepartirNomina(me?.rol ?? null);",
+    expect(page).toMatch(
+      /const ofrecerReparto =\s*lista\.ok && gastos\.length > 0 && puedeRepartirNomina\(me\?\.rol \?\? null, me\?\.permisos\);/,
     );
     expect(page).toMatch(
       /\{ofrecerReparto && \(\s*<NominaRepartoBoton\s+pagos=\{gastos\.map\(pagoNominaDeGasto\)\}\s+etiquetaMes=\{etiquetaMesNomina\(mes\)\}\s*\/>\s*\)\}/,

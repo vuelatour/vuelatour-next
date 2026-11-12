@@ -38,21 +38,39 @@ export const CATEGORIA_NOMINA = "NOMINA";
 export const RUTA_NOMINA = "/admin/nomina";
 
 /**
- * Quién ve la pantalla: los MISMOS roles que «Gastos» y «Otros gastos», que ya
- * enseñan estos gastos (no se abre exposición nueva). El menú los toma de aquí.
+ * Quién ve la pantalla POR SU ROL. El menú los toma de aquí.
  */
 // SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): ADMIN (Administración)
-// salió; la coordinación y facturación la siguen capturando.
+// salió; la coordinación y facturación la siguen capturando. Desde el
+// 12-nov-2026 (API 0.0.137, invariante 132 del API) Dirección puede darle el
+// acceso a alguien de Administración, POR PERSONA: no entra en esta lista,
+// llega en `/me.permisos.nomina` (ver `puedeVerNomina`).
 export const ROLES_NOMINA = ["DIRECCION", "COORDINADOR", "FACTURACION"] as const;
 
 export type RolNomina = (typeof ROLES_NOMINA)[number];
 
 /**
- * ¿Este rol ve la pantalla «Nómina»? Sin rol (`/me` falló) ⇒ false: la página
- * falla CERRADO, como Gastos personales (los sueldos son dato sensible).
+ * Lo que este módulo lee de `/me.permisos` (`PermisosMe` de `types/me`):
+ * estructural a propósito, para no importar nada fuera de las libs puras.
  */
-export function puedeVerNomina(rol: string | null | undefined): boolean {
-  return typeof rol === "string" && (ROLES_NOMINA as readonly string[]).includes(rol);
+export interface PermisoNomina {
+  nomina?: boolean;
+}
+
+/**
+ * ¿Esta persona ve la pantalla «Nómina»? Por su ROL (`ROLES_NOMINA`) o porque
+ * Dirección le dio el acceso por persona en Configuración → «Acceso a Nómina»
+ * (`/me.permisos.nomina`, lo decide el API). Con un API previo (sin
+ * `permisos.nomina`) manda el rol, como antes. Sin rol (`/me` falló) ⇒ false:
+ * la página falla CERRADO, como Gastos personales (los sueldos son dato
+ * sensible).
+ */
+export function puedeVerNomina(
+  rol: string | null | undefined,
+  permisos?: PermisoNomina | null,
+): boolean {
+  if (typeof rol !== "string" || rol === "") return false;
+  return (ROLES_NOMINA as readonly string[]).includes(rol) || permisos?.nomina === true;
 }
 
 // ═══════════════════════════════ Mes «YYYY-MM» (día de pared Cancún) ═══════════════════════════════

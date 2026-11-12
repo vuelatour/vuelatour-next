@@ -40,7 +40,7 @@ export function AdminShell({ me, children }: AdminShellProps) {
             {/* Sidebar desktop fija */}
             <aside className="hidden lg:flex fixed inset-y-0 left-0 w-64 flex-col bg-navy-900 border-r border-navy-800 text-white">
               <SidebarBrand />
-              <SidebarNav rol={me.rol} />
+              <SidebarNav rol={me.rol} permisos={me.permisos} />
               <SidebarFooter />
             </aside>
 

@@ -26,15 +26,21 @@ import { fmtDateTime } from "@/lib/datetime";
 import { updateConfiguracionAction } from "@/app/admin/configuracion/actions";
 import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
 import { CLAVE_CONFIG_MODELO_IA } from "@/lib/admin/ia-modelo";
+import { CLAVE_CONFIG_ACCESO_NOMINA } from "@/lib/admin/acceso-nomina";
 
 /**
  * Claves de config con su propia sección (listas de usuarios, no switches):
- * responsables de facturación (24-sep-2026) y quién edita cotizaciones
- * cobradas (26-sep-2026).
+ * responsables de facturación (24-sep-2026), quién edita cotizaciones
+ * cobradas (26-sep-2026) y quién de Administración entra a Nómina
+ * (12-nov-2026).
  */
 const CLAVES_CON_SECCION_PROPIA: ReadonlySet<string> = new Set([
   "responsables_facturacion",
   "editores_cotizacion_cobrada",
+  // Acceso a Nómina por persona (12-nov-2026): lista en `valor_json`, con su
+  // tarjeta propia. El API 0.0.137 la excluye; esto cubre un API anterior
+  // que encontrara la fila ya creada (p. ej. tras un rollback).
+  CLAVE_CONFIG_ACCESO_NOMINA,
   // Modelo de IA (2-oct-2026): id en `valor_json`, tarjeta propia dentro de
   // «Créditos de IA». El API 0.0.51 la excluye; esto cubre un API anterior
   // que encontrara la fila ya creada (p. ej. tras un rollback).

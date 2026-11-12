@@ -362,6 +362,14 @@ describe("solicitud de factura: textos (hora Cancún)", () => {
 
   it("utilidades de texto", () => {
     expect(unirNombres(["A", "B"])).toBe("A y B");
+    expect(unirNombres(["A", " B ", "", "C"])).toBe("A, B y C");
+    expect(unirNombres(["Mary Cruz"])).toBe("Mary Cruz");
+    expect(unirNombres([])).toBe("");
+    // «e» ante el sonido «i» (12-nov-2026): Itzi es una persona real de la oficina.
+    expect(unirNombres(["Mary Cruz", "Itzi"])).toBe("Mary Cruz e Itzi");
+    expect(unirNombres(["Ale", "Pablo", "Hilda"])).toBe("Ale, Pablo e Hilda");
+    expect(unirNombres(["Itzi", "Mary Cruz"])).toBe("Itzi y Mary Cruz");
+    expect(unirNombres(["Ale", "Hiedra"])).toBe("Ale y Hiedra");
     expect(textoCanceladas(1)).toBe("1 cancelada");
     expect(textoCanceladas(2)).toBe("2 canceladas");
     expect(textoFaltanDatosFiscales(["RFC", "Régimen fiscal"])).toBe(

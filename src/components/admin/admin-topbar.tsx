@@ -36,7 +36,11 @@ export function AdminTopbar({ me }: { me: MeResponse }) {
             </SheetHeader>
             <div className="flex flex-col h-full">
               <SidebarBrand />
-              <SidebarNav rol={me.rol} onNavigate={() => setOpen(false)} />
+              <SidebarNav
+                rol={me.rol}
+                permisos={me.permisos}
+                onNavigate={() => setOpen(false)}
+              />
               <SidebarFooter />
             </div>
           </SheetContent>
