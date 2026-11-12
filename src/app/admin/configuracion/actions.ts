@@ -7,7 +7,13 @@ import type { ConfiguracionFlag } from "@/lib/api/configuracion-server";
 import type { IaSaldoCheckpoint } from "@/lib/api/ia-uso-server";
 import type { ResponsablesFacturacion } from "@/types/facturas-emitidas";
 import type { EditoresCotizacionCobrada } from "@/lib/admin/cotizacion-cobrada";
-import { TOPE_ACCESO_NOMINA, type AccesoNomina } from "@/lib/admin/acceso-nomina";
+import {
+  TEXTO_ACCESO_MODULO_DESCONOCIDO,
+  TOPE_ACCESO_POR_PERSONA,
+  moduloAccesoPorPersona,
+  type AccesoPorPersona,
+  type IdAccesoPorPersona,
+} from "@/lib/admin/acceso-por-persona";
 import type { ModeloIa } from "@/types/ia-modelo";
 import {
   TEXTO_ID_MODELO_INVALIDO,
@@ -129,21 +135,27 @@ export async function setEditoresCotizacionCobradaAction(
 }
 
 /**
- * ACCESO A NÓMINA POR PERSONA (12-nov-2026, API 0.0.137): reemplaza la lista
- * de quién de Administración entra al módulo de Nómina (`[]` = nadie).
- * `version` es el sello que trajo la pantalla: si otro de Dirección cambió la
- * lista después, el API responde 409 `ACCESO_NOMINA_CAMBIO` en vez de pisar
- * ese cambio. El API decide: 403 (solo Dirección), 400 `USUARIOS_INVALIDOS`
- * (alguien ya no es de Administración activa). El acceso de cada quien llega
- * en su `/me` al recargar.
+ * ACCESO POR PERSONA A UN MÓDULO DE DIRECCIÓN (12-nov-2026): reemplaza la
+ * lista de quién de Administración entra al módulo de Nómina (API 0.0.137) o
+ * al de Gastos personales (API 0.0.138); `[]` = nadie. `modulo` llega del
+ * navegador: la ruta sale SOLO de `MODULOS_ACCESO_POR_PERSONA` (un id que no
+ * es de los nuestros no sale a la red). `version` es el sello que trajo la
+ * pantalla: si otro de Dirección cambió la lista después, el API responde
+ * 409 (`ACCESO_NOMINA_CAMBIO` / `ACCESO_GASTOS_PERSONALES_CAMBIO`) en vez de
+ * pisar ese cambio. El API decide: 403 (solo Dirección), 400
+ * `USUARIOS_INVALIDOS` (alguien ya no es de Administración activa). El
+ * acceso de cada quien llega en su `/me` al recargar.
  */
-export async function setAccesoNominaAction(
+export async function setAccesoPorPersonaAction(
+  modulo: IdAccesoPorPersona,
   usuarioIds: string[],
   version: string | null,
-): Promise<ActionResult<AccesoNomina>> {
-  const ids = [...new Set(usuarioIds)].slice(0, TOPE_ACCESO_NOMINA);
+): Promise<ActionResult<AccesoPorPersona>> {
+  const def = moduloAccesoPorPersona(modulo);
+  if (!def) return { ok: false, error: TEXTO_ACCESO_MODULO_DESCONOCIDO };
+  const ids = [...new Set(usuarioIds)].slice(0, TOPE_ACCESO_POR_PERSONA);
   try {
-    const data = await apiServer<AccesoNomina>("/v1/config/acceso-nomina", {
+    const data = await apiServer<AccesoPorPersona>(def.ruta, {
       method: "PUT",
       body: { usuario_ids: ids, version },
     });

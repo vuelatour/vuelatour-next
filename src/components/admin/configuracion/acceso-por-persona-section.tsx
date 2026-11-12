@@ -1,9 +1,9 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useId, useState, useTransition, type ComponentType, type SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { LockClosedIcon, UserGroupIcon } from "@heroicons/react/24/outline";
+import { LockClosedIcon, UserGroupIcon, WalletIcon } from "@heroicons/react/24/outline";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,38 +24,48 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { setAccesoNominaAction } from "@/app/admin/configuracion/actions";
+import { setAccesoPorPersonaAction } from "@/app/admin/configuracion/actions";
 import { fmtDateTime } from "@/lib/datetime";
 import {
-  DESCRIPCION_ACCESO_NOMINA,
-  TEXTO_ACCESO_FALLO,
+  MODULOS_ACCESO_POR_PERSONA,
   TEXTO_ACCESO_NO_DISPONIBLE,
   TEXTO_ACCESO_SIN_CANDIDATOS,
   TEXTO_ACCESO_SOLO_DIRECCION,
-  TITULO_ACCESO_NOMINA,
-  TITULO_CONFIRMAR_ACCESO_NOMINA,
   conAccesoHoy,
-  diffAccesoNomina,
-  errorAccesoNominaPideRecargar,
+  diffAcceso,
+  errorAccesoPideRecargar,
   guardadosFueraDeLista,
   idsAGuardarAcceso,
-  mensajeErrorAccesoNomina,
+  mensajeErrorAcceso,
   nombreDeAcceso,
   textoAccesoActual,
-  textoConfirmarAccesoNomina,
+  textoAccesoFallo,
+  textoConfirmarAcceso,
   textoEntranPorRol,
   textoFueraDeLista,
-  textoGuardadoAccesoNomina,
+  textoGuardadoAcceso,
   textoUltimoCambioAcceso,
-  type AccesoNomina,
-} from "@/lib/admin/acceso-nomina";
+  tituloConfirmarAcceso,
+  type AccesoPorPersona,
+  type IdAccesoPorPersona,
+  type ModuloAccesoPorPersona,
+} from "@/lib/admin/acceso-por-persona";
 
-function Encabezado({ descripcion }: { descripcion: string }) {
+type Icono = ComponentType<SVGProps<SVGSVGElement>>;
+
+/** El ícono de cada tarjeta = el de su módulo en el menú. */
+const ICONO_DE_MODULO: Record<IdAccesoPorPersona, Icono> = {
+  nomina: UserGroupIcon,
+  gastos_personales: WalletIcon,
+};
+
+function Encabezado({ modulo, descripcion }: { modulo: ModuloAccesoPorPersona; descripcion: string }) {
+  const Icono = ICONO_DE_MODULO[modulo.id];
   return (
     <CardHeader>
       <CardTitle className="text-sm flex items-center gap-2">
-        <UserGroupIcon className="h-4 w-4 text-muted-foreground" />
-        {TITULO_ACCESO_NOMINA}
+        <Icono className="h-4 w-4 text-muted-foreground" />
+        {modulo.titulo}
       </CardTitle>
       <CardDescription className="text-xs">{descripcion}</CardDescription>
     </CardHeader>
@@ -63,33 +73,40 @@ function Encabezado({ descripcion }: { descripcion: string }) {
 }
 
 /**
- * «Acceso a Nómina» (12-nov-2026, API 0.0.137, invariante 132 del API).
- * Pedido de Dirección: «poder habilitar o deshabilitar a algunos usuarios el
- * módulo de nómina … mejor poder controlarlo desde configuración». Un switch
- * por persona de Administración; Dirección, Coordinación y Facturación ya
- * entran por su rol y no se apagan aquí.
+ * Tarjeta de ACCESO POR PERSONA a un módulo de Dirección (12-nov-2026):
+ * «Acceso a Nómina» (API 0.0.137, invariante 132 del API) y «Acceso a Gastos
+ * personales» (API 0.0.138, invariante 133). Pedidos de Dirección: «poder
+ * habilitar o deshabilitar a algunos usuarios el módulo de nómina … mejor
+ * poder controlarlo desde configuración» y «venga otro para gastos
+ * personales». Un switch por persona de Administración; quien entra por su
+ * rol no se apaga aquí. La MISMA tarjeta para los dos: `modulo` elige los
+ * textos, la ruta y los códigos (`MODULOS_ACCESO_POR_PERSONA`).
  *
  * - `puede_modificar` (lo decide el API: ser de Dirección) ⇒ switches +
- *   «Guardar» con confirmación (dar o quitar la entrada a los sueldos se
- *   confirma con nombre). La lista puede quedar vacía.
+ *   «Guardar» con confirmación (dar o quitar la entrada se confirma con
+ *   nombre). La lista puede quedar vacía.
  * - Sin `puede_modificar` (Administración) ⇒ solo lectura: quién entra y que
  *   solo Dirección lo cambia.
  * - `datos = null` ⇒ API previo o carga fallida (`fallo`): se dice en gris,
  *   sin controles que fallarían.
  *
- * Textos y reglas: `lib/admin/acceso-nomina.ts` (PURO). La página le pone
- * `key` = sello + lista guardada: si otro de Dirección la cambia, la sección
- * arranca de lo que hay hoy (y el API rechaza con 409 un guardado hecho desde
- * una pantalla vieja).
+ * Textos y reglas: `lib/admin/acceso-por-persona.ts` (PURO). La página le
+ * pone `key` = módulo + sello + lista guardada: si otro de Dirección la
+ * cambia, la sección arranca de lo que hay hoy (y el API rechaza con 409 un
+ * guardado hecho desde una pantalla vieja).
  */
-export function AccesoNominaSection({
+export function AccesoPorPersonaSection({
+  modulo: idModulo,
   datos,
   fallo = false,
 }: {
-  datos: AccesoNomina | null;
+  /** Qué módulo controla esta tarjeta (= la llave de `/me.permisos`). */
+  modulo: IdAccesoPorPersona;
+  datos: AccesoPorPersona | null;
   /** `datos = null` porque la carga FALLÓ (no porque el API sea previo). */
   fallo?: boolean;
 }) {
+  const modulo = MODULOS_ACCESO_POR_PERSONA[idModulo];
   const router = useRouter();
   const baseId = useId();
   const [elegidos, setElegidos] = useState<Set<string>>(
@@ -100,8 +117,11 @@ export function AccesoNominaSection({
 
   if (!datos) {
     return (
-      <Card>
-        <Encabezado descripcion={fallo ? TEXTO_ACCESO_FALLO : TEXTO_ACCESO_NO_DISPONIBLE} />
+      <Card data-acceso-por-persona={modulo.id}>
+        <Encabezado
+          modulo={modulo}
+          descripcion={fallo ? textoAccesoFallo(modulo) : TEXTO_ACCESO_NO_DISPONIBLE}
+        />
       </Card>
     );
   }
@@ -115,12 +135,14 @@ export function AccesoNominaSection({
 
   if (!datos.puede_modificar) {
     return (
-      <Card>
-        <Encabezado descripcion={DESCRIPCION_ACCESO_NOMINA} />
+      <Card data-acceso-por-persona={modulo.id}>
+        <Encabezado modulo={modulo} descripcion={modulo.descripcion} />
         <CardContent className="space-y-2">
           {porRol && <p className="text-xs text-muted-foreground">{porRol}</p>}
           <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{textoAccesoActual(actuales)}</span>
+            <span className="font-medium text-foreground">
+              {textoAccesoActual(modulo, actuales)}
+            </span>
           </p>
           <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
             <LockClosedIcon className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -132,7 +154,7 @@ export function AccesoNominaSection({
   }
 
   const aGuardar = idsAGuardarAcceso(elegidos, datos.candidatos);
-  const { agregados, quitados, cambio } = diffAccesoNomina(datos.usuario_ids, aGuardar);
+  const { agregados, quitados, cambio } = diffAcceso(datos.usuario_ids, aGuardar);
   const fueraDeLista = guardadosFueraDeLista(datos);
 
   const alternar = (id: string, on: boolean) => {
@@ -148,28 +170,28 @@ export function AccesoNominaSection({
     startTransition(async () => {
       // `version` = el sello que trajo esta pantalla: si otro de Dirección
       // cambió la lista después, el API responde 409 en vez de pisarla.
-      const res = await setAccesoNominaAction(aGuardar, datos.version ?? null);
+      const res = await setAccesoPorPersonaAction(modulo.id, aGuardar, datos.version ?? null);
       setConfirmando(false);
       if (res.ok && res.data) {
-        toast.success(textoGuardadoAccesoNomina(conAccesoHoy(res.data)));
+        toast.success(textoGuardadoAcceso(modulo, conAccesoHoy(res.data)));
         router.refresh();
         return;
       }
-      toast.error(mensajeErrorAccesoNomina(res));
+      toast.error(mensajeErrorAcceso(modulo, res));
       // Otro la cambió, alguien ya no es válido o ya no eres de Dirección:
       // la sección se repinta con lo que hay hoy en el API.
-      if (errorAccesoNominaPideRecargar(res)) router.refresh();
+      if (errorAccesoPideRecargar(modulo, res)) router.refresh();
     });
   };
 
-  const textoConfirmacion = textoConfirmarAccesoNomina({
+  const textoConfirmacion = textoConfirmarAcceso(modulo, {
     agregados: agregados.map((id) => nombreDeAcceso(datos, id)),
     quitados: quitados.map((id) => nombreDeAcceso(datos, id)),
   });
 
   return (
-    <Card>
-      <Encabezado descripcion={DESCRIPCION_ACCESO_NOMINA} />
+    <Card data-acceso-por-persona={modulo.id}>
+      <Encabezado modulo={modulo} descripcion={modulo.descripcion} />
       <CardContent className="space-y-3">
         {porRol && <p className="text-xs text-muted-foreground">{porRol}</p>}
 
@@ -209,7 +231,9 @@ export function AccesoNominaSection({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{textoAccesoActual(actuales)}</span>
+              <span className="font-medium text-foreground">
+                {textoAccesoActual(modulo, actuales)}
+              </span>
             </p>
             {ultimoCambio && (
               <p className="text-[11px] text-muted-foreground">{ultimoCambio}</p>
@@ -224,7 +248,7 @@ export function AccesoNominaSection({
       <AlertDialog open={confirmando} onOpenChange={(o) => !pendiente && setConfirmando(o)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{TITULO_CONFIRMAR_ACCESO_NOMINA}</AlertDialogTitle>
+            <AlertDialogTitle>{tituloConfirmarAcceso(modulo)}</AlertDialogTitle>
             <AlertDialogDescription>{textoConfirmacion}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

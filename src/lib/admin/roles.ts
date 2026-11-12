@@ -1,4 +1,4 @@
-import type { Rol } from "@/types/me";
+import type { PermisosMe, Rol } from "@/types/me";
 
 /**
  * ROLES «DIRECCIÓN» Y «ADMINISTRACIÓN» (6-nov-2026, API 0.0.126, invariante
@@ -16,11 +16,14 @@ import type { Rol } from "@/types/me";
  *    rol usa `etiquetaRol`.
  *  - El candado real es el API; el panel esconde lo que responderá 403 y pinta
  *    `PantallaSoloDireccion` donde antes había un 404 o un error.
- *  - NÓMINA POR PERSONA (12-nov-2026, API 0.0.137, invariante 132 del API):
- *    Dirección puede abrirle el módulo de Nómina a alguien de Administración
- *    en Configuración → «Acceso a Nómina». No es un rol: llega en
- *    `/me.permisos.nomina` (`lib/admin/nomina.ts#puedeVerNomina`,
- *    `lib/admin/acceso-nomina.ts`).
+ *  - NÓMINA Y GASTOS PERSONALES POR PERSONA (12-nov-2026, API 0.0.137 y
+ *    0.0.138, invariantes 132 y 133 del API): Dirección puede abrirle el
+ *    módulo de Nómina y/o el de Gastos personales a alguien de
+ *    Administración en Configuración → «Acceso a Nómina» / «Acceso a Gastos
+ *    personales» (dos listas independientes). No es un rol: llega en
+ *    `/me.permisos.nomina` y `/me.permisos.gastos_personales`
+ *    (`lib/admin/nomina.ts#puedeVerNomina`, `puedeVerGastosPersonales` de
+ *    este archivo, `lib/admin/acceso-por-persona.ts`).
  *
  * PURO (sin React ni red): `__tests__/roles.test.ts`.
  */
@@ -50,7 +53,7 @@ export const DESCRIPCION_ROL: Record<Rol, string> = {
   DIRECCION:
     "Acceso total (Ale y Pablo): además, Estadísticas, Ingresos, Nómina, Gastos personales, Reparto y Pagos a socios.",
   ADMIN:
-    "La oficina: todo menos Estadísticas, Ingresos, Nómina (salvo que Dirección le dé acceso en Configuración), Gastos personales, Reparto y Pagos a socios.",
+    "La oficina: todo menos Estadísticas, Ingresos, Nómina y Gastos personales (salvo que Dirección le dé acceso en Configuración), Reparto y Pagos a socios.",
   COORDINADOR: "Solicitudes, cotizaciones y operación diaria.",
   ANALISTA: "Lectura amplia para análisis y reportes.",
   FACTURACION: "CFDI, conciliación, caja chica y cuentas bancarias.",
@@ -128,9 +131,31 @@ export function puedeEditarUsuario(
   return rolActor == null || esDireccion(rolActor);
 }
 
-/** Gastos personales del dueño: Dirección y la coordinación que los captura. */
-export function puedeVerGastosPersonales(rol: string | null | undefined): boolean {
-  return rol === "DIRECCION" || rol === "COORDINADOR";
+/**
+ * Quién ve «Gastos personales» POR SU ROL: Dirección y la coordinación que
+ * los captura (Facturación nunca tuvo ese módulo). El menú los toma de aquí.
+ * Administración NO está: de ella entra solo quien Dirección encienda en
+ * Configuración → «Acceso a Gastos personales» (`/me.permisos`).
+ */
+export const ROLES_GASTOS_PERSONALES = ["DIRECCION", "COORDINADOR"] as const;
+
+/**
+ * ¿Esta persona ve la pantalla «Gastos personales»? Por su ROL
+ * (`ROLES_GASTOS_PERSONALES`) o porque Dirección le dio el acceso por
+ * persona (`/me.permisos.gastos_personales`, lo decide el API desde el
+ * 0.0.138). El acceso a Nómina NO cuenta: es otra lista. Con un API previo
+ * (sin ese permiso) manda el rol, como antes. Sin rol (`/me` falló) ⇒ false:
+ * la página falla CERRADO (es el dinero personal del dueño).
+ */
+export function puedeVerGastosPersonales(
+  rol: string | null | undefined,
+  permisos?: PermisosMe | null,
+): boolean {
+  if (typeof rol !== "string" || rol === "") return false;
+  return (
+    (ROLES_GASTOS_PERSONALES as readonly string[]).includes(rol) ||
+    permisos?.gastos_personales === true
+  );
 }
 
 /** Hrefs del menú que SOLO ve Dirección (de los roles de oficina). */
@@ -154,3 +179,6 @@ export const TEXTO_USUARIO_SOLO_DIRECCION =
 // Administración; a quien no lo tiene se le dice a quién pedírselo y dónde.
 export const TEXTO_NOMINA_SOLO_DIRECCION =
   "La nómina la ve Dirección y a quien Dirección le dé acceso. Si te toca llevarla, pídele a Dirección que te lo dé en Configuración → «Acceso a Nómina».";
+// 12-nov-2026 (API 0.0.138): lo mismo para los gastos personales.
+export const TEXTO_GASTOS_PERSONALES_SOLO_DIRECCION =
+  "Los gastos personales los ve Dirección y a quien Dirección le dé acceso. Si te toca llevarlos, pídele a Dirección que te lo dé en Configuración → «Acceso a Gastos personales».";

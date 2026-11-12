@@ -2,7 +2,11 @@ import { apiServer } from "./server";
 import { isApiError } from "./errors";
 import { esErrorDeNext } from "./degradar";
 import type { EditoresCotizacionCobrada } from "@/lib/admin/cotizacion-cobrada";
-import type { AccesoNomina } from "@/lib/admin/acceso-nomina";
+import {
+  MODULOS_ACCESO_POR_PERSONA,
+  type AccesoPorPersona,
+  type IdAccesoPorPersona,
+} from "@/lib/admin/acceso-por-persona";
 import type { LecturaModeloIa, ModeloIa } from "@/types/ia-modelo";
 
 export interface ConfiguracionFlag {
@@ -35,12 +39,15 @@ export function getEditoresCotizacionCobrada() {
 }
 
 /**
- * ACCESO A NÓMINA POR PERSONA (12-nov-2026, API 0.0.137): a quién de
- * Administración le dio Dirección la entrada al módulo de Nómina.
- * Administración la lee; solo Dirección la cambia. 404 = API previo.
+ * ACCESO POR PERSONA A UN MÓDULO DE DIRECCIÓN (12-nov-2026): a quién de
+ * Administración le dio Dirección la entrada al módulo de Nómina (API
+ * 0.0.137) o al de Gastos personales (API 0.0.138). Administración la lee;
+ * solo Dirección la cambia. 404 = API previo a ese módulo.
  */
-export function getAccesoNomina() {
-  return apiServer<AccesoNomina>("/v1/config/acceso-nomina", { cache: "no-store" });
+export function getAccesoPorPersona(modulo: IdAccesoPorPersona) {
+  return apiServer<AccesoPorPersona>(MODULOS_ACCESO_POR_PERSONA[modulo].ruta, {
+    cache: "no-store",
+  });
 }
 
 /**

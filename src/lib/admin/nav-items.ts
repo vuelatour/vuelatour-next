@@ -33,7 +33,7 @@ import {
 } from "@heroicons/react/24/outline";
 import type { ComponentType, SVGProps } from "react";
 import type { PermisosMe, Rol } from "@/types/me";
-import { esDireccion } from "@/lib/admin/roles";
+import { ROLES_GASTOS_PERSONALES, esDireccion } from "@/lib/admin/roles";
 import { ROLES_NOMINA, TITULO_NOMINA } from "@/lib/admin/nomina";
 import { ROLES_VEN_CORREOS_CLIENTE, TITULO_CORREOS_ENVIADOS } from "@/lib/admin/correo-cliente";
 
@@ -47,8 +47,9 @@ export interface NavItem {
   roles?: Rol[];
   /**
    * Permiso POR PERSONA de `/me.permisos` que TAMBIÉN abre el ítem a quien
-   * su rol no (12-nov-2026, API 0.0.137): «Nómina» para alguien de
-   * Administración a quien Dirección le dio el acceso en Configuración.
+   * su rol no (12-nov-2026, API 0.0.137 y 0.0.138): «Nómina» y «Gastos
+   * personales» para alguien de Administración a quien Dirección le dio ESE
+   * acceso en Configuración.
    */
   permiso?: keyof PermisosMe;
   /**
@@ -134,11 +135,15 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         // Gastos PERSONALES del dueño (PERSONAL_DUENO): dinero personal, no
         // de la empresa — fuera de balances/reparto/cierre. Sin FACTURACION.
+        // Solo Dirección (invariante 122 del API): ADMIN salió. Roles desde
+        // la fuente única `lib/admin/roles.ts`; además entra quien tenga el
+        // acceso POR PERSONA que da Dirección en Configuración
+        // (`permisos.gastos_personales`, 12-nov-2026, API 0.0.138).
         label: "Gastos personales",
         href: "/admin/gastos-personales",
         icon: WalletIcon,
-        // Solo Dirección (invariante 122): ADMIN salió.
-        roles: ["DIRECCION", "COORDINADOR"],
+        roles: [...ROLES_GASTOS_PERSONALES],
+        permiso: "gastos_personales",
       },
       {
         label: "Combustibles",
@@ -355,8 +360,9 @@ export function itemNavActivo(
  * superconjunto de ADMIN y el API le deja pasar cualquier ruta, así que las
  * listas `roles` no necesitan nombrarla. Los demás roles, por su lista — o,
  * en los ítems con `permiso`, por el permiso POR PERSONA que trae `/me`
- * (12-nov-2026: «Nómina» para quien Dirección le dio el acceso). Sin rol
- * conocido ningún permiso abre nada.
+ * (12-nov-2026: «Nómina» y «Gastos personales» para quien Dirección le dio
+ * ese acceso; cada ítem mira SOLO su permiso). Sin rol conocido ningún
+ * permiso abre nada.
  */
 export function filterNavGroupsForRole(
   rol: Rol | undefined,

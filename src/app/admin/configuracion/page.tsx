@@ -14,7 +14,7 @@ import {
   EditoresCotizacionCobradaSection,
   type CandidatoEditor,
 } from "@/components/admin/configuracion/editores-cotizacion-cobrada-section";
-import { AccesoNominaSection } from "@/components/admin/configuracion/acceso-nomina-section";
+import { AccesoPorPersonaSection } from "@/components/admin/configuracion/acceso-por-persona-section";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
 import { getResponsablesFacturacion } from "@/lib/api/facturas-emitidas-server";
 import { isApiError } from "@/lib/api/errors";
@@ -22,11 +22,17 @@ import { esErrorDeNext } from "@/lib/api/degradar";
 import { esNoDisponible } from "@/lib/admin/facturas-emitidas";
 import { EmptyState } from "@/components/admin/empty-state";
 import {
-  getAccesoNomina,
+  getAccesoPorPersona,
   getConfiguracion,
   getEditoresCotizacionCobrada,
   getModeloIa,
 } from "@/lib/api/configuracion-server";
+import {
+  IDS_ACCESO_POR_PERSONA,
+  MODULOS_ACCESO_POR_PERSONA,
+  etiquetaCargaAcceso,
+  type IdAccesoPorPersona,
+} from "@/lib/admin/acceso-por-persona";
 import { listUsers } from "@/lib/api/users-server";
 import { ROLES_EDITAN_COTIZACION } from "@/lib/admin/quote-sheet-interna";
 import { getIaUso, rangoDelMes } from "@/lib/api/ia-uso-server";
@@ -119,8 +125,24 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
   // 404 es un API previo (la sección lo dice en gris, sin avisar arriba);
   // otro fallo se AVISA. Los candidatos salen de `/v1/users` (oficina activa
   // que puede guardar cotizaciones) salvo que el API mande los suyos.
-  // ACCESO A NÓMINA POR PERSONA (12-nov-2026, API 0.0.137): ACCESORIO, igual
-  // que la lista de arriba. 404 = API previo (gris, sin aviso).
+  // ACCESO POR PERSONA A NÓMINA Y A GASTOS PERSONALES (12-nov-2026, API
+  // 0.0.137 y 0.0.138): ACCESORIOS, igual que la lista de arriba, uno por
+  // tarjeta. 404 = API previo a ese módulo (gris, sin aviso); otro fallo se
+  // AVISA arriba con el nombre de la lista y no tumba Configuración.
+  const cargarAcceso = (id: IdAccesoPorPersona) =>
+    getAccesoPorPersona(id).then(
+      (datos) => ({ id, datos, noDisponible: false }),
+      (e: unknown) => {
+        if (esErrorDeNext(e)) throw e;
+        const noDisponible = isApiError(e) && e.status === 404;
+        if (!noDisponible) {
+          const etiqueta = etiquetaCargaAcceso(MODULOS_ACCESO_POR_PERSONA[id]);
+          console.error(`[admin] no se pudo cargar ${etiqueta}`, e);
+          faltantes.push(etiqueta);
+        }
+        return { id, datos: null, noDisponible };
+      },
+    );
   const [
     flags,
     iaUso,
@@ -128,7 +150,7 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
     responsables,
     editoresCarga,
     usuariosActivos,
-    accesoNominaCarga,
+    accesosCarga,
   ] = await Promise.all([
     getConfiguracion(),
     getIaUso(rango.desde, rango.hasta),
@@ -158,20 +180,8 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
       console.error("[admin] no se pudo cargar los usuarios de oficina", e);
       return null;
     }),
-    getAccesoNomina().then(
-      (datos) => ({ datos, noDisponible: false }),
-      (e: unknown) => {
-        if (esErrorDeNext(e)) throw e;
-        const noDisponible = isApiError(e) && e.status === 404;
-        if (!noDisponible) {
-          console.error("[admin] no se pudo cargar quién entra a Nómina", e);
-          faltantes.push("quién entra a Nómina");
-        }
-        return { datos: null, noDisponible };
-      },
-    ),
+    Promise.all(IDS_ACCESO_POR_PERSONA.map(cargarAcceso)),
   ]);
-  const accesoNomina = accesoNominaCarga.datos;
 
   const consumo7dUsd = consumoEnRangoIa(
     (mesCubre7Dias ? iaUso : iaUso7Dias)?.por_dia,
@@ -237,15 +247,20 @@ export default async function ConfiguracionPage({ searchParams }: PageProps) {
         fallo={!editores && !editoresCarga.noDisponible}
       />
 
-      {/* ACCESO A NÓMINA (12-nov-2026): a quién de Administración le abre
-          Dirección el módulo de Nómina. Se remonta cuando la lista GUARDADA o
-          su sello cambian (otro de Dirección la cambió): los switches arrancan
-          de lo que hay hoy y el guardado lleva el sello vigente. */}
-      <AccesoNominaSection
-        key={`${accesoNomina?.version ?? ""}|${(accesoNomina?.usuario_ids ?? []).join(",")}`}
-        datos={accesoNomina}
-        fallo={!accesoNomina && !accesoNominaCarga.noDisponible}
-      />
+      {/* ACCESO POR PERSONA (12-nov-2026): a quién de Administración le abre
+          Dirección el módulo de Nómina y el de Gastos personales, una tarjeta
+          por módulo (listas independientes). Cada una se remonta cuando SU
+          lista GUARDADA o su sello cambian (otro de Dirección la cambió): los
+          switches arrancan de lo que hay hoy y el guardado lleva el sello
+          vigente. */}
+      {accesosCarga.map(({ id, datos, noDisponible }) => (
+        <AccesoPorPersonaSection
+          key={`${id}|${datos?.version ?? ""}|${(datos?.usuario_ids ?? []).join(",")}`}
+          modulo={id}
+          datos={datos}
+          fallo={!datos && !noDisponible}
+        />
+      ))}
 
       <IaCreditosSection
         resumen={iaUso}

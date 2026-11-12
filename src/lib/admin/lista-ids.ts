@@ -1,8 +1,9 @@
 /**
  * Listas de PERSONAS de Configuración (permisos por persona): la pieza común,
  * PURA (sin React ni red). La usan «Editan cotizaciones cobradas»
- * (`cotizacion-cobrada.ts#diffEditores`) y «Acceso a Nómina»
- * (`acceso-nomina.ts`).
+ * (`cotizacion-cobrada.ts#diffEditores`) y las tarjetas de acceso por
+ * persona, «Acceso a Nómina» y «Acceso a Gastos personales»
+ * (`acceso-por-persona.ts#diffAcceso`).
  */
 
 /** Qué cambia entre lo guardado y lo elegido (ids sin repetir, en su orden). */

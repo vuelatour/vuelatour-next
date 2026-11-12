@@ -13428,9 +13428,10 @@ y API lo conservan); cambian su ETIQUETA («Administración») y su alcance.
   `"DIRECCION"` explícito donde se consultan con `.includes` o `===`
   (`ROLES_*` de `lib/admin/*`). Al agregar una comprobación por rol nueva:
   Dirección SIEMPRE puede lo que puede Administración.
-- **Nómina por PERSONA (12-nov-2026)**: Dirección puede abrirle el módulo de
-  Nómina a alguien de Administración. No es un rol: ver «Acceso a Nómina por
-  persona» al final.
+- **Nómina y Gastos personales por PERSONA (12-nov-2026)**: Dirección puede
+  abrirle el módulo de Nómina y/o el de Gastos personales a alguien de
+  Administración (dos listas independientes). No es un rol: ver «Acceso por
+  persona a Nómina y a Gastos personales» al final.
 
 ## Las refacciones viven en Compras de la tienda (6-nov-2026, API 0.0.127, invariante 123 del API)
 
@@ -13742,72 +13743,109 @@ era UNA y cambiarla movía los meses ya entregados a los socios.
   pyservices ⇒ API 0.0.135 ⇒ panel**; sin la migración `20261110000001` del
   API la ficha se ve como siempre (el API manda `disponible:false`).
 
-## Acceso a Nómina por persona (12-nov-2026, API 0.0.137, invariante 132 del API)
+## Acceso por persona a Nómina y a Gastos personales (12-nov-2026, API 0.0.137 y 0.0.138, invariantes 132 y 133 del API)
 
-Pedido de Dirección (captura de Configuración): «aquí necesito otro
+Pedidos de Dirección, el mismo día y sobre Configuración: «aquí necesito otro
 componente para que los usuarios con rol de dirección puedan habilitar o
 deshabilitar a algunos usuarios el módulo de nómina, porque por ejemplo
 ahorita le acaban de autorizar el acceso a Mary, pero no sé si es para siempre
-o temporal, mejor poder controlarlo desde configuración». En prod toda la
-oficina es Administración (5) o Dirección (3): es POR PERSONA, como «Editan
-cotizaciones cobradas».
+o temporal, mejor poder controlarlo desde configuración» y, con esa tarjeta
+ya en uso (Mary encendida), «y venga otro para gastos personales». En prod
+toda la oficina es Administración (5) o Dirección (3): es POR PERSONA, como
+«Editan cotizaciones cobradas».
 
-- **Qué decide el API** (el panel solo lo pinta): por su rol entran Dirección,
-  Coordinación y Facturación; de Administración entra solo quien Dirección
-  encienda. El acceso abre el módulo de Nómina completo (ver, registrar,
-  editar, repartir, exportar) y NADA más: ni gastos personales ni los demás
-  módulos de Dirección. A cada persona le llega en `/me.permisos.nomina`
-  (ADITIVO; ausente = API previo ⇒ manda el rol, como antes).
-- **Compuertas** (las únicas): `puedeVerNomina(rol, permisos)`
-  (`lib/admin/nomina.ts`) para la pantalla y `puedeRepartirNomina(rol,
-  permisos)` (`lib/admin/nomina-reparto.ts`) para «Repartir entre aviones».
-  En el menú, el ítem lleva `permiso: "nomina"` y `filterNavGroupsForRole(rol,
-  permisos)` lo abre a quien lo tiene (`SidebarNav` recibe `me.permisos` de
-  `AdminShell` y `AdminTopbar`; Inicio también). `ROLES_NOMINA` NO cambió: el
-  acceso no es un rol. Sin rol conocido ningún permiso abre nada. `nomina.ts`
-  sigue PURA: el permiso se describe con el tipo estructural `PermisoNomina`
-  (su prueba congela la lista de imports).
+- **UNA pieza, DOS módulos.** La segunda tarjeta NO es una copia de la
+  primera: `lib/admin/acceso-por-persona.ts` (PURA) tiene la tabla
+  `MODULOS_ACCESO_POR_PERSONA` con lo ÚNICO que cambia de un módulo a otro
+  (`id`, `clave`, `ruta`, `nombre`, `titulo`, `descripcion`,
+  `codigoSoloDireccion`, `codigoCambio`) y todas las funciones reciben el
+  módulo. El `id` (`"nomina"` | `"gastos_personales"`) ES la llave del
+  permiso en `/me.permisos`. **Un tercer módulo es un renglón en esa tabla (+
+  su ícono en `ICONO_DE_MODULO`), nunca otro archivo.**
+- **Qué decide el API** (el panel solo lo pinta): a Nómina entran por su rol
+  Dirección, Coordinación y Facturación; a Gastos personales, Dirección y
+  Coordinación (Facturación nunca tuvo ese módulo). De Administración entra
+  solo quien Dirección encienda en la tarjeta de ESE módulo. **Las dos listas
+  son independientes: tener un acceso no da el otro.** Cada acceso abre su
+  módulo completo (Nómina: ver, registrar, editar, repartir, exportar; Gastos
+  personales: ver, registrar, corregir, exportar) y NADA más. A cada persona
+  le llega en `/me.permisos.nomina` y `/me.permisos.gastos_personales`
+  (ADITIVOS; ausente = API previo ⇒ manda el rol, como antes).
+- **Compuertas** (las únicas):
+  - Nómina: `puedeVerNomina(rol, permisos)` (`lib/admin/nomina.ts`) para la
+    pantalla y `puedeRepartirNomina(rol, permisos)`
+    (`lib/admin/nomina-reparto.ts`) para «Repartir entre aviones».
+    `nomina.ts` sigue PURA: el permiso se describe con el tipo estructural
+    `PermisoNomina` (su prueba congela la lista de imports).
+  - Gastos personales: `puedeVerGastosPersonales(rol, permisos)`
+    (`lib/admin/roles.ts`; `ROLES_GASTOS_PERSONALES` = Dirección y
+    Coordinación). Mira SOLO `permisos.gastos_personales`.
+  - Menú: cada ítem lleva su `permiso` (`"nomina"` / `"gastos_personales"`) y
+    `filterNavGroupsForRole(rol, permisos)` lo abre a quien lo tiene
+    (`SidebarNav` recibe `me.permisos` de `AdminShell` y `AdminTopbar`; Inicio
+    también). `ROLES_NOMINA` y `ROLES_GASTOS_PERSONALES` NO llevan a ADMIN:
+    el acceso no es un rol. Sin rol conocido ningún permiso abre nada.
 - **A quien no entra** se le dice a quién pedírselo y dónde
-  (`TEXTO_NOMINA_SOLO_DIRECCION`, en `PantallaSoloDireccion`).
-- **Configuración → «Acceso a Nómina»**
-  (`configuracion/acceso-nomina-section.tsx`, justo después de «Editan
-  cotizaciones cobradas»; lectura `getAccesoNomina`, action
-  `setAccesoNominaAction`):
+  (`TEXTO_NOMINA_SOLO_DIRECCION` / `TEXTO_GASTOS_PERSONALES_SOLO_DIRECCION`,
+  en `PantallaSoloDireccion`).
+- **Configuración → «Acceso a Nómina» y «Acceso a Gastos personales»**
+  (`configuracion/acceso-por-persona-section.tsx`, `<AccesoPorPersonaSection
+  modulo="…">`, las dos justo después de «Editan cotizaciones cobradas», en
+  el orden de `IDS_ACCESO_POR_PERSONA`; lectura `getAccesoPorPersona(id)`,
+  action `setAccesoPorPersonaAction(id, ids, version)`):
   - Dirección (`puede_modificar`): un switch por persona de Administración
     ACTIVA (`candidatos`), la línea «Por su rol entran siempre: …» (`por_rol`,
     informativa: no se apagan aquí), «Con acceso dado aquí: …», «Último
     cambio: fecha · quién» y «Guardar».
-  - **Todo cambio se CONFIRMA con nombre** («Podrán entrar a Nómina: … Dejarán
-    de entrar: …»): dar o quitar la entrada a los sueldos no se hace con un
-    clic suelto. La lista puede quedar vacía.
-  - Administración la ve de SOLO LECTURA («Solo Dirección puede cambiar quién
+  - **Todo cambio se CONFIRMA con nombre y con el módulo** («Podrán entrar a
+    Gastos personales: … Dejarán de entrar: …»): dar o quitar la entrada no se
+    hace con un clic suelto. La lista puede quedar vacía.
+  - Administración las ve de SOLO LECTURA («Solo Dirección puede cambiar quién
     entra.»).
   - `datos = null`: 404 ⇒ «Disponible cuando se actualice el API» (gris, sin
-    aviso arriba); otro fallo ⇒ se dice que falló y sale en `AvisoDegradado`.
-    Jamás «nadie entra» cuando no se pudo leer.
+    aviso arriba; con el API 0.0.137 así sale la de Gastos personales); otro
+    fallo ⇒ se dice que falló y sale en `AvisoDegradado` con el nombre de la
+    lista (`etiquetaCargaAcceso`). Jamás «nadie entra» cuando no se pudo leer.
   - **El guardado lleva el sello de la pantalla** (`version` del GET): si otro
-    de Dirección cambió la lista después, el API responde 409
-    `ACCESO_NOMINA_CAMBIO` y la sección se repinta. Sin eso, guardar desde una
-    pantalla vieja le devolvía el acceso a quien se lo acababan de quitar. La
-    página le pone `key` = sello + lista guardada (se remonta cuando cambian).
+    de Dirección cambió ESA lista después, el API responde 409
+    (`ACCESO_NOMINA_CAMBIO` / `ACCESO_GASTOS_PERSONALES_CAMBIO`) y la sección
+    se repinta. Sin eso, guardar desde una pantalla vieja le devolvía el
+    acceso a quien se lo acababan de quitar. La página le pone `key` = módulo
+    + sello + lista guardada (se remonta cuando cambian; una tarjeta nunca
+    hereda el estado de la otra).
   - Solo viajan candidatos (`idsAGuardarAcceso`): un guardado que se dio de
     baja o cambió de rol no tiene switch, se avisa en ámbar y «Guardar» lo
     quita.
-  - Errores por CÓDIGO (`mensajeErrorAccesoNomina`): el 403 del guard de roles
-    trae texto técnico en inglés y se cambia por «Solo Dirección puede cambiar
-    quién entra a Nómina.»; 404 ⇒ falta actualizar el API.
-- **Fuente única de textos y reglas**: `lib/admin/acceso-nomina.ts` (PURA).
-  Piezas comunes que NO se duplican: `lib/admin/lista-ids.ts#diffListaIds`
+  - Errores por CÓDIGO (`mensajeErrorAcceso(modulo, …)`): el 403 del guard de
+    roles trae texto técnico en inglés y se cambia por «Solo Dirección puede
+    cambiar quién entra a …»; 404 ⇒ falta actualizar el API. El código de la
+    OTRA lista no cuenta como propio.
+  - **La ruta sale SOLO de la tabla**: a la server action el `modulo` le llega
+    del navegador, así que se resuelve con `moduloAccesoPorPersona` (un id que
+    no es de los nuestros no sale a la red). Ninguna ruta
+    `/v1/config/acceso-…` se escribe a mano fuera de
+    `MODULOS_ACCESO_POR_PERSONA` (lo vigila la prueba de cableado).
+- **Piezas comunes que NO se duplican**: `lib/admin/lista-ids.ts#diffListaIds`
   (la usa también `diffEditores`) y `unirNombres` de `facturas-emitidas.ts`,
-  que desde hoy pone «e» ante el sonido «i» («Mary Cruz e Itzi»).
+  que pone «e» ante el sonido «i» («Mary Cruz e Itzi»).
 - **Cuándo lo ve la persona**: el API aplica al instante; su menú cambia al
   recargar la página o al volver a la pestaña (`RefreshOnFocus`).
-- `ConfiguracionClient` filtra la clave `acceso_nomina` (no sale como un
-  switch más entre las banderas).
-- Pruebas: `lib/admin/__tests__/acceso-nomina.test.ts`,
-  `configuracion/__tests__/acceso-nomina-section.test.tsx` (marcado de cada
-  estado con la oficina real y el cableado), `nomina.test.ts`,
-  `nomina-reparto.test.ts`, `nomina/__tests__/nomina-pagina.test.tsx`.
-- **Orden de deploy: API 0.0.137 ⇒ panel.** Sin migración. Con el panel nuevo
-  y un API previo nada cambia (la tarjeta dice «Disponible cuando se actualice
-  el API»).
+- `ConfiguracionClient` filtra las claves de las dos listas
+  (`CLAVES_CONFIG_ACCESO_POR_PERSONA`: no salen como un switch más entre las
+  banderas).
+- **Costura conocida (del 6-nov, NO cambió)**: la lista general de Gastos
+  (`/admin/expenses`, sin filtro de categoría) sigue trayendo los gastos de
+  categoría PERSONAL_DUENO para todos los roles de oficina, tenga o no el
+  acceso: el API veda la categoría cuando se pide por ella (el módulo y el
+  filtro), no por fila. La nómina sí queda fuera de esa lista
+  (`excluir_categoria=NOMINA`). Cerrarla es decisión del dueño (Conciliación
+  necesita ver esos gastos para ligar sus cargos).
+- Pruebas: `lib/admin/__tests__/acceso-por-persona.test.ts` (textos exactos
+  de cada módulo, menú y pantalla, y que un acceso no dé el otro),
+  `configuracion/__tests__/acceso-por-persona-section.test.tsx` (los MISMOS
+  casos de marcado contra las dos tarjetas con la oficina real, y el
+  cableado), `nomina.test.ts`, `nomina-reparto.test.ts`,
+  `nomina/__tests__/nomina-pagina.test.tsx`, `roles.test.ts`.
+- **Orden de deploy: API (0.0.137 Nómina, 0.0.138 Gastos personales) ⇒
+  panel.** Sin migración. Con el panel nuevo y un API previo a un módulo, su
+  tarjeta dice «Disponible cuando se actualice el API» y nada más cambia.

@@ -29,7 +29,10 @@ import { todayCancun } from "@/lib/datetime";
 import { lineaCaptura } from "@/lib/admin/gastos-captura";
 import { getMe } from "@/lib/api/me";
 import { PantallaSoloDireccion } from "@/components/admin/solo-direccion";
-import { puedeVerGastosPersonales } from "@/lib/admin/roles";
+import {
+  TEXTO_GASTOS_PERSONALES_SOLO_DIRECCION,
+  puedeVerGastosPersonales,
+} from "@/lib/admin/roles";
 import { notFound } from "next/navigation";
 import { Degradaciones } from "@/lib/api/degradar";
 import { AvisoDegradado } from "@/components/admin/aviso-degradado";
@@ -41,8 +44,9 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: TITULOS_SECCION.gastosPersonales };
 
-// Dinero PERSONAL del dueño: solo ADMIN y COORDINADOR (el nav ya esconde el
-// link, pero la URL directa también debe cerrarse — fail-closed si /me falla).
+// Dinero PERSONAL del dueño: Dirección, la coordinación y quien de
+// Administración tenga el acceso por persona (el nav ya esconde el link, pero
+// la URL directa también debe cerrarse — fail-closed si /me falla).
 
 /** Rango completo del mes YYYY-MM (fecha_gasto es DATE: sin zonas horarias). */
 function rangoDeMes(mes: string): { desde: string; hasta: string } {
@@ -78,8 +82,17 @@ export default async function GastosPersonalesPage({ searchParams }: PageProps) 
   if (!me) notFound();
   // SOLO DIRECCIÓN (6-nov-2026, invariante 122 del API): Administración ya no
   // ve los gastos personales del dueño; la coordinación los sigue capturando.
-  if (!puedeVerGastosPersonales(me.rol)) {
-    return <PantallaSoloDireccion seccion="Operación" titulo="Gastos personales" />;
+  // ACCESO POR PERSONA (12-nov-2026, API 0.0.138, invariante 133 del API):
+  // también entra quien de Administración tenga el acceso que da Dirección
+  // en Configuración (`me.permisos.gastos_personales`).
+  if (!puedeVerGastosPersonales(me.rol, me.permisos)) {
+    return (
+      <PantallaSoloDireccion
+        seccion="Operación"
+        titulo="Gastos personales"
+        descripcion={TEXTO_GASTOS_PERSONALES_SOLO_DIRECCION}
+      />
+    );
   }
 
   const sp = await searchParams;

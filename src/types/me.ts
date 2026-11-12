@@ -93,4 +93,13 @@ export interface PermisosMe {
    * lee SOLO con `lib/admin/nomina.ts#puedeVerNomina`.
    */
   nomina?: boolean;
+  /**
+   * Entra al módulo de Gastos personales (12-nov-2026, API 0.0.138,
+   * invariante 133 del API): por su rol (Dirección, Coordinación) o, siendo
+   * de Administración, porque Dirección le dio el acceso en Configuración →
+   * «Acceso a Gastos personales». Es OTRA lista: el acceso a Nómina no lo
+   * enciende. Ausente = API previo ⇒ manda el rol, como antes. Se lee SOLO
+   * con `lib/admin/roles.ts#puedeVerGastosPersonales`.
+   */
+  gastos_personales?: boolean;
 }
