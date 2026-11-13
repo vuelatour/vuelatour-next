@@ -14,6 +14,7 @@ import {
   type OpcionResponsable,
 } from "./eventos";
 import { textOnColor } from "@/lib/color-contrast";
+import { tooltipEvento } from "@/lib/admin/evento-flota";
 
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
@@ -191,7 +192,7 @@ function EventChip({ ev }: { ev: CalendarEvent }) {
     const sinApp = Boolean(ev.piloto_id) && ev.responsable_push_dispositivos === 0;
     const tip = sinApp
       ? `${ev.title} · ⚠ ${ev.piloto_nombre ?? "responsable"} sin la app registrada: avísale por otro medio`
-      : ev.title;
+      : tooltipEvento(ev.title, ev);
     return (
       <span
         title={tip}
@@ -273,6 +274,7 @@ function DayEvent({ ev, ctx }: { ev: CalendarEvent; ctx: EventosCtx }) {
           <AvisoResponsable
             responsableNombre={ev.piloto_nombre}
             pushDispositivos={ev.piloto_id ? ev.responsable_push_dispositivos : null}
+            paraTodos={ev.para_todos}
           />
         </div>
         <div className="flex items-center justify-end gap-3 pt-0.5">
@@ -284,7 +286,12 @@ function DayEvent({ ev, ctx }: { ev: CalendarEvent; ctx: EventosCtx }) {
             />
           )}
           {ev.evento_id && (
-            <RemoveEventoButton eventoId={ev.evento_id} label={ev.titulo ?? ev.title} />
+            <RemoveEventoButton
+              eventoId={ev.evento_id}
+              label={ev.titulo ?? ev.title}
+              conResponsable={Boolean(ev.piloto_id)}
+              paraTodos={ev.para_todos}
+            />
           )}
         </div>
       </div>

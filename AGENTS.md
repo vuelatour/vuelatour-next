@@ -13849,3 +13849,60 @@ toda la oficina es Administración (5) o Dirección (3): es POR PERSONA, como
 - **Orden de deploy: API (0.0.137 Nómina, 0.0.138 Gastos personales) ⇒
   panel.** Sin migración. Con el panel nuevo y un API previo a un módulo, su
   tarjeta dice «Disponible cuando se actualice el API» y nada más cambia.
+
+## Calendario: evento sin responsable = para todos (12-nov-2026, API 0.0.139, invariante 134 del API)
+
+Pedido de Dirección con la captura de «Agendar evento (no vuelo)» de la app
+(«Jorge Cortes Avionico IJP», mar 17/11 08:00, Sin responsable): «estaba
+pensando que al momento de subir eventos que no son vuelos, se le pueda poner
+como responsable "Todos", o que al momento de poner "sin responsable" le
+apareciera a todos en su calendario más bien, en la app y en web». Hasta el
+API 0.0.138 un evento sin responsable lo veía solo la oficina (calendario de
+flota): pilotos y mecánico no se enteraban.
+
+- **La regla la decide el API** (el panel solo la pinta): CON responsable el
+  evento es de esa persona (lo ve en su app y recibe aviso y recordatorios);
+  SIN responsable es de TODOS: le aparece a cada quien en su calendario
+  (`GET /me/eventos`: inicio y Mis vuelos de la app) y **no se manda aviso al
+  teléfono de nadie**. La oficina lo sigue viendo en el calendario de flota.
+  Se eligió la segunda opción del pedido («más bien»): no hay opción nueva en
+  el selector ni dato nuevo; se le cambió el nombre a la que ya existía.
+- **`para_todos`** (ADITIVO) viaja en cada evento de `GET /v1/calendar`
+  (`CalendarEvent`), en la respuesta de POST/PATCH `calendar/eventos`
+  (`EventoFlotaResponse`) y en `EventoMe`. Se lee SOLO con
+  `esEventoParaTodos` (`=== true`). **Ausente = API previo**: ahí un evento
+  sin responsable lo veía solo la oficina, así que se conservan los textos de
+  antes («Sin responsable · nadie recibe aviso»): nunca se promete «les
+  aparece a todos» a un API que no lo hace.
+- **Fuente única de textos y regla**: `lib/admin/evento-flota.ts` (PURA).
+  Ningún componente del calendario redacta estas frases (lo vigila
+  `calendar/__tests__/eventos-para-todos.test.tsx`).
+- **Dónde se ve** (`components/admin/calendar/`):
+  - Selector «Responsable» del alta y la edición (`eventos.tsx`): la opción
+    vacía es **«Todos (sin responsable)»** (`ETIQUETA_TODOS`); el renglón de
+    ayuda cambia con lo elegido (`hintResponsable`: quién lo verá y si
+    alguien recibe aviso). El valor que viaja NO cambió (vacío ⇒ sin
+    `responsable_id` en el alta, `null` en la edición).
+  - Toast tras guardar (`toastAvisoEvento`, con el `para_todos` que DEVOLVIÓ
+    el API): «Evento agendado · para todos: les aparece en su calendario (sin
+    aviso al teléfono)».
+  - Detalle del día (`AvisoResponsable`, prop `paraTodos`): «Para todos · les
+    aparece en su calendario (sin aviso al teléfono)», en gris (no es una
+    alerta). El chip del mes no cambia (sin nombre = de todos); su tooltip
+    agrega «· Para todos».
+  - «Quitar» (`RemoveEventoButton`): la confirmación dice a quién afecta
+    (`textoConfirmarQuitarEvento`): con responsable se le avisa; uno de todos
+    «se elimina del calendario de todos (sin aviso al teléfono)».
+  - Leyenda del calendario: `NOTA_LEYENDA_EVENTOS`.
+- **Lo que NO cambió**: el expediente del piloto («Eventos y citas próximos»)
+  sigue siendo SOLO lo que tiene asignado (el API no le manda los de todos:
+  es su carga de trabajo). Google Calendar tampoco cambia.
+- **Lo que se pierde a propósito**: ya no hay evento «solo de la oficina» sin
+  responsable. Para algo que no es de todos se le pone responsable.
+- Pruebas: `lib/admin/__tests__/evento-flota.test.ts` (textos exactos y
+  tolerancia al API previo) y
+  `calendar/__tests__/eventos-para-todos.test.tsx` (marcado del detalle y
+  cableado).
+- **Orden de deploy: API 0.0.139 ⇒ panel.** Sin migración. Con el panel nuevo
+  y un API previo solo cambia el nombre de la opción del selector; lo demás
+  se pinta como antes.

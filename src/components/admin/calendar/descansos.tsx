@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Field } from "@/components/admin/form-field";
+import { textoConfirmarQuitarEvento } from "@/lib/admin/evento-flota";
 import {
   createDescansoAction,
   deleteDescansoAction,
@@ -191,13 +192,23 @@ export function RemoveDescansoButton({
   );
 }
 
-/** Quitar un evento NO-vuelo (lavado, trámite) — mismo patrón que descansos. */
+/**
+ * Quitar un evento NO-vuelo (lavado, trámite) — mismo patrón que descansos.
+ * La confirmación dice a quién afecta (`textoConfirmarQuitarEvento`): con
+ * responsable se le avisa; uno de todos (API 0.0.139) deja de aparecerles.
+ */
 export function RemoveEventoButton({
   eventoId,
   label,
+  conResponsable = true,
+  paraTodos,
 }: {
   eventoId: string;
   label: string;
+  /** ¿El evento tiene responsable? (default true: el texto de siempre). */
+  conResponsable?: boolean;
+  /** `para_todos` del evento (ausente = API previo). */
+  paraTodos?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -232,8 +243,10 @@ export function RemoveEventoButton({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Quitar este evento?</AlertDialogTitle>
             <AlertDialogDescription>
-              {label}. Se elimina del calendario y se le avisa al responsable.
-              No toca ningún vuelo.
+              {textoConfirmarQuitarEvento(label, {
+                conResponsable,
+                para_todos: paraTodos,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

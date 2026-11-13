@@ -29,12 +29,26 @@ import {
   updateEventoFlotaAction,
 } from "@/app/admin/calendar/actions";
 import type { EventoAviso, EventoFlotaPatch } from "@/types/calendar";
+import {
+  DESCRIPCION_EDITAR_EVENTO,
+  DESCRIPCION_NUEVO_EVENTO,
+  DESCRIPCION_OPCION_TODOS,
+  ETIQUETA_TODOS,
+  hintResponsable,
+  textoEventoSinResponsable,
+  textoGuardadoSinResponsable,
+} from "@/lib/admin/evento-flota";
 
 /**
  * Eventos NO-vuelo del calendario de flota (citas, lavados, trámites) —
  * 3-sep-2026, incidente "Llenar Bitácora": el responsable nunca se enteró
  * porque no tenía la app con avisos y oficina no tenía forma de saberlo.
  * Aquí: alta y edición desde el panel + el resultado del aviso a la vista.
+ *
+ * SIN RESPONSABLE = PARA TODOS (12-nov-2026, API 0.0.139): la opción vacía
+ * del selector es «Todos (sin responsable)» y el evento le aparece a cada
+ * quien en su calendario, sin aviso. Textos y regla:
+ * `lib/admin/evento-flota.ts` (PURA).
  */
 
 export interface OpcionResponsable {
@@ -103,12 +117,19 @@ const ROL_LABEL: Record<string, string> = {
  * Toast según el resultado de entrega del aviso (contrato 3-sep-2026):
  * - aviso con push → verde "avisado a X";
  * - aviso sin dispositivos → ámbar persistente: hay que hablarle;
- * - null → sin responsable o el responsable es quien agenda (no se auto-avisa);
+ * - null → sin responsable (es PARA TODOS: les aparece en su calendario, sin
+ *   aviso) o el responsable es quien agenda (no se auto-avisa);
  * - ausente → API viejo: solo confirma el guardado.
+ * `paraTodos` = el `para_todos` que devolvió el API (ausente = API previo:
+ * se conserva el texto de antes).
  */
 export function toastAvisoEvento(
   aviso: EventoAviso | null | undefined,
-  opts: { verbo: "agendado" | "actualizado"; responsableElegido: boolean },
+  opts: {
+    verbo: "agendado" | "actualizado";
+    responsableElegido: boolean;
+    paraTodos?: boolean;
+  },
 ) {
   const base = `Evento ${opts.verbo}`;
   if (aviso === undefined) {
@@ -119,7 +140,7 @@ export function toastAvisoEvento(
     toast.success(
       opts.responsableElegido
         ? `${base} · el responsable eres tú (sin aviso)`
-        : `${base} (sin responsable: nadie recibirá aviso)`,
+        : textoGuardadoSinResponsable(opts.verbo, { para_todos: opts.paraTodos }),
     );
     return;
   }
@@ -163,9 +184,10 @@ function opcionesAeronave(aircraft: OpcionAeronave[]) {
 function opcionesResponsable(responsables: OpcionResponsable[]) {
   return [
     {
+      // Sin responsable = PARA TODOS (API 0.0.139, invariante 134 del API).
       value: "",
-      label: "Sin responsable",
-      description: "Nadie recibirá aviso",
+      label: ETIQUETA_TODOS,
+      description: DESCRIPCION_OPCION_TODOS,
     },
     ...responsables.map((r) => {
       const sinApp = r.push_dispositivos === 0;
@@ -237,15 +259,12 @@ function EventoFormFields({
           placeholder="Sin avión"
         />
       </Field>
-      <Field
-        label="Responsable"
-        hint="Recibirá aviso en la app. Si no tiene la app con notificaciones, avísale por otro medio."
-      >
+      <Field label="Responsable" hint={hintResponsable(Boolean(values.responsable_id))}>
         <SearchableSelect
           options={opcionesResponsable(responsables)}
           value={values.responsable_id}
           onChange={(v) => onChange({ responsable_id: v })}
-          placeholder="Sin responsable"
+          placeholder={ETIQUETA_TODOS}
         />
       </Field>
       <Field label="Notas (opcional)">
@@ -295,6 +314,7 @@ export function CreateEventoButton({
         toastAvisoEvento(res.data?.aviso, {
           verbo: "agendado",
           responsableElegido: Boolean(values.responsable_id),
+          paraTodos: res.data?.para_todos,
         });
         setOpen(false);
         setValues(VACIO);
@@ -315,11 +335,7 @@ export function CreateEventoButton({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Nuevo evento (no vuelo)</DialogTitle>
-            <DialogDescription>
-              Cita, lavado, trámite… Sale en el calendario de flota; el
-              responsable lo verá en su app (inicio y Mis vuelos) y recibirá
-              aviso.
-            </DialogDescription>
+            <DialogDescription>{DESCRIPCION_NUEVO_EVENTO}</DialogDescription>
           </DialogHeader>
           <EventoFormFields
             values={values}
@@ -416,6 +432,7 @@ export function EditEventoButton({
         toastAvisoEvento(res.data?.aviso, {
           verbo: "actualizado",
           responsableElegido: Boolean(values.responsable_id),
+          paraTodos: res.data?.para_todos,
         });
         setOpen(false);
         router.refresh();
@@ -440,11 +457,7 @@ export function EditEventoButton({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Editar evento</DialogTitle>
-            <DialogDescription>
-              Si cambias fecha, avión, título o notas se le avisa al
-              responsable; si cambias de responsable, el anterior recibe
-              &ldquo;ya no te toca&rdquo; y el nuevo su aviso.
-            </DialogDescription>
+            <DialogDescription>{DESCRIPCION_EDITAR_EVENTO}</DialogDescription>
           </DialogHeader>
           <EventoFormFields
             values={values}
@@ -472,20 +485,24 @@ export function EditEventoButton({
 
 /**
  * Renglón de entrega del aviso en el detalle del día: oficina ve de un
- * vistazo si al responsable le llegó (o le puede llegar) el aviso.
+ * vistazo si al responsable le llegó (o le puede llegar) el aviso. Sin
+ * responsable el evento es PARA TODOS (API 0.0.139): se dice eso.
  */
 export function AvisoResponsable({
   responsableNombre,
   pushDispositivos,
+  paraTodos,
 }: {
   responsableNombre: string | null;
   /** undefined = API viejo (no se sabe); null = sin responsable. */
   pushDispositivos: number | null | undefined;
+  /** `para_todos` del evento (ausente = API previo). */
+  paraTodos?: boolean;
 }) {
   if (!responsableNombre) {
     return (
-      <p className="text-xs text-muted-foreground">
-        Sin responsable · nadie recibe aviso
+      <p className="text-xs text-muted-foreground" data-evento-sin-responsable>
+        {textoEventoSinResponsable({ para_todos: paraTodos })}
       </p>
     );
   }

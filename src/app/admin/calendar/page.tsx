@@ -17,6 +17,7 @@ import { LeyendaSemaforo } from "@/components/admin/calendar/leyenda-semaforo";
 import { ResyncGoogleButton } from "@/components/admin/calendar/resync-google-button";
 import { GoogleSyncChip } from "@/components/admin/calendar/google-sync-chip";
 import { syncEsAutomatica } from "@/lib/admin/calendar-sync";
+import { NOTA_LEYENDA_EVENTOS } from "@/lib/admin/evento-flota";
 import {
   CalendarGrid,
   type CalendarDay,
@@ -297,15 +298,13 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
 /**
  * Leyenda del calendario = el semáforo de 6 colores (24-sep-2026). Los
  * renglones y la nota viven en `lib/admin/calendario-semaforo.ts`; aquí solo
- * se agrega el aviso de push, que no habla de colores.
+ * se agrega la nota de los eventos (aviso de push y «sin responsable = para
+ * todos», `lib/admin/evento-flota.ts`), que no habla de colores.
  */
 function Legend() {
   return (
     <LeyendaSemaforo>
-      <span className="text-muted-foreground/70">
-        Al agendar un evento se avisa por push al responsable; ⚠ = no tiene la app registrada
-        (avísale por otro medio).
-      </span>
+      <span className="text-muted-foreground/70">{NOTA_LEYENDA_EVENTOS}</span>
     </LeyendaSemaforo>
   );
 }

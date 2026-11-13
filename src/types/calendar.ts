@@ -67,6 +67,14 @@ export interface CalendarEvent {
    * por otro medio); null = sin responsable; ausente = API viejo.
    */
   responsable_push_dispositivos?: number | null;
+  /**
+   * Solo tipo_evento "evento" (12-nov-2026, API 0.0.139, invariante 134 del
+   * API, ADITIVO): `true` = evento SIN responsable = PARA TODOS (le aparece a
+   * cada quien en su calendario, sin aviso al teléfono). Ausente = API previo
+   * (ahí un evento sin responsable lo veía solo la oficina). Se lee SOLO con
+   * `lib/admin/evento-flota.ts#esEventoParaTodos`.
+   */
+  para_todos?: boolean;
 }
 
 export interface CalendarResponse {
@@ -101,6 +109,8 @@ export interface EventoFlotaResponse {
   responsable_id?: string | null;
   notas?: string | null;
   aviso?: EventoAviso | null;
+  /** API 0.0.139+: sin responsable = para todos (ausente = API previo). */
+  para_todos?: boolean;
 }
 
 /** Payload de alta (POST). En PATCH todos los campos son opcionales y
@@ -118,9 +128,9 @@ export interface EventoFlotaInput {
 export type EventoFlotaPatch = Partial<EventoFlotaInput>;
 
 /**
- * Evento NO-vuelo visto desde su responsable (GET /v1/me/eventos y
- * `eventos_proximos` del expediente del piloto): UNA fila por evento, sin
- * expandir por día.
+ * Evento NO-vuelo visto desde el calendario de una persona (GET
+ * /v1/me/eventos: lo suyo + lo de todos) y `eventos_proximos` del expediente
+ * del piloto (solo lo asignado): UNA fila por evento, sin expandir por día.
  */
 export interface EventoMe {
   id: string;
@@ -132,7 +142,10 @@ export interface EventoMe {
   aeronave_matricula: string | null;
   aeronave_color: string | null;
   notas: string | null;
-  responsable_id: string;
+  /** `null` = sin responsable = para todos (API 0.0.139). */
+  responsable_id: string | null;
+  /** API 0.0.139+ (ausente = API previo). */
+  para_todos?: boolean;
   creado_por_nombre: string | null;
   created_at: string;
   updated_at: string;
