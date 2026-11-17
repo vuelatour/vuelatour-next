@@ -14,12 +14,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Marco,
+  MarcoContenido,
+  MarcoDescripcion,
+  MarcoEncabezado,
+  MarcoTitulo,
+} from "@/components/admin/aircraft/marco-seccion";
+import { TITULOS_SECCION } from "@/lib/admin/mantenimiento-unificado";
 import {
   Dialog,
   DialogContent,
@@ -71,9 +72,12 @@ const fmtDate = fmtDateOnly;
 export function AircraftSquawksCard({
   aircraftId,
   discrepancias,
+  embebido = false,
 }: {
   aircraftId: string;
   discrepancias: AeronaveDiscrepancia[];
+  /** Dentro de la card «Mantenimiento» (17-nov-2026): sin marco propio. */
+  embebido?: boolean;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AeronaveDiscrepancia | undefined>(undefined);
@@ -97,14 +101,17 @@ export function AircraftSquawksCard({
   };
 
   return (
-    <Card className="lg:col-span-2">
-      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+    <Marco embebido={embebido} className="lg:col-span-2">
+      <MarcoEncabezado
+        embebido={embebido}
+        className="flex flex-row items-start justify-between gap-2 space-y-0"
+      >
         <div className="space-y-1">
-          <CardTitle className="text-base flex items-center gap-2">
+          <MarcoTitulo embebido={embebido} className="text-base flex items-center gap-2">
             <ClipboardDocumentListIcon className="h-4 w-4 text-muted-foreground" />
-            Bitácora de discrepancias
-          </CardTitle>
-          <CardDescription>
+            {embebido ? TITULOS_SECCION.discrepancias.titulo : "Bitácora de discrepancias"}
+          </MarcoTitulo>
+          <MarcoDescripcion embebido={embebido}>
             {discrepancias.length} registradas
             {abiertas > 0 && (
               <span className="text-destructive"> · {abiertas} sin resolver</span>
@@ -112,7 +119,7 @@ export function AircraftSquawksCard({
             <span className="block mt-0.5">
               Una discrepancia ALTA sin resolver bloquea asignar el avión a vuelos.
             </span>
-          </CardDescription>
+          </MarcoDescripcion>
         </div>
         <Button
           size="sm"
@@ -126,8 +133,8 @@ export function AircraftSquawksCard({
           <PlusIcon className="h-3.5 w-3.5" />
           Reportar
         </Button>
-      </CardHeader>
-      <CardContent>
+      </MarcoEncabezado>
+      <MarcoContenido embebido={embebido}>
         {discrepancias.length === 0 ? (
           <p className="text-sm text-muted-foreground">Sin discrepancias registradas.</p>
         ) : (
@@ -184,7 +191,7 @@ export function AircraftSquawksCard({
             ))}
           </div>
         )}
-      </CardContent>
+      </MarcoContenido>
 
       {dialogOpen && (
         <SquawkDialog
@@ -220,7 +227,7 @@ export function AircraftSquawksCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </Marco>
   );
 }
 

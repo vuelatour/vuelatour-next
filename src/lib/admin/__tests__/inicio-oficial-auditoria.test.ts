@@ -6,7 +6,9 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizarSaldoInicialTaco,
-  rotuloHorasMesAnio,
+  hintVuelosYTotal,
+  rotuloHorasAcumuladas,
+  textoVuelos,
   rotuloRegistradas,
   rotuloTotalHonorarios,
   saltosDeCadena,
@@ -95,9 +97,16 @@ describe("rótulos de lo que el API 0.0.85 ya recorta", () => {
     expect(textoSinFilasDesde(undefined, "Sin movimientos todavía.")).toBe("Sin movimientos todavía.");
   });
 
-  it("ficha del avión: «Horas mes / año» ⇒ «Horas mes / desde el 01/09/2026» con `anio_desde`", () => {
-    expect(rotuloHorasMesAnio(INICIO)).toBe("Horas mes / desde el 01/09/2026");
-    for (const sin of [undefined, null, "", "basura"]) expect(rotuloHorasMesAnio(sin)).toBe("Horas mes / año");
+  it("ficha del avión: «Horas este año» ⇒ «Horas desde el 01/09/2026» con `anio_desde`", () => {
+    expect(rotuloHorasAcumuladas(INICIO)).toBe("Horas desde el 01/09/2026");
+    for (const sin of [undefined, null, "", "basura"]) expect(rotuloHorasAcumuladas(sin)).toBe("Horas este año");
+  });
+
+  it("ficha del avión: los hints de utilización («1 vuelo», «22 vuelos · total registrado 80.8 h»)", () => {
+    expect(textoVuelos(1)).toBe("1 vuelo");
+    expect(textoVuelos(0)).toBe("0 vuelos");
+    expect(textoVuelos(22)).toBe("22 vuelos");
+    expect(hintVuelosYTotal(22, "80.8 h")).toBe("22 vuelos · total registrado 80.8 h");
   });
 
   it("honorarios del externo: «Histórico» ⇒ «Desde el 01/09/2026» con `honorarios.desde`", () => {

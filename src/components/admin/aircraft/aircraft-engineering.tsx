@@ -9,7 +9,6 @@ import {
   PlusIcon,
   PencilSquareIcon,
   TrashIcon,
-  WrenchScrewdriverIcon,
   DocumentCheckIcon,
   DocumentTextIcon,
   ClockIcon,
@@ -55,6 +54,25 @@ import {
   MAX_BYTES_IA,
 } from "@/lib/storage/documentos-flota";
 import { aircraftTacometrosAction } from "@/app/admin/aircraft/actions";
+import {
+  AdjuntosDestino,
+  AdjuntosIngenieriaProvider,
+  AvisoAdjuntos,
+} from "@/components/admin/aircraft/adjuntos-ingenieria";
+import {
+  AircraftComponentes,
+  useComponentesAeronave,
+} from "@/components/admin/aircraft/aircraft-componentes";
+import {
+  MantenimientoCard,
+  MantenimientoResumen,
+  SeccionMantenimiento,
+} from "@/components/admin/aircraft/aircraft-mantenimiento-card";
+import {
+  TEXTO_ORDENES_NO_CARGARON,
+  TITULOS_SECCION,
+  textoConteoOrdenes,
+} from "@/lib/admin/mantenimiento-unificado";
 import type {
   DocumentType,
   EstadoMantenimiento,
@@ -63,6 +81,7 @@ import type {
   VencimientoEliminado,
 } from "@/types/engineering";
 import type {
+  AeronaveDiscrepancia,
   ServicioEtapa,
   TacoComponente,
   TacometroHistorial,
@@ -109,7 +128,41 @@ function componenteLabel(
   return pos ? `${tipo} ${pos}` : tipo;
 }
 
-export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
+/**
+ * Piezas que la PÁGINA arma (varias en el servidor) y que viven dentro de la
+ * card «Mantenimiento». Entran como slots para no reescribir su lógica.
+ */
+export interface SlotsMantenimiento {
+  /** «Horas y programa de servicio»: la card de tacómetros, embebida. */
+  horas?: React.ReactNode;
+  /** Bloque de Motores (fichas con su vida de TBO y sus documentos). */
+  motores?: React.ReactNode;
+  /** Bloque de Hélices. */
+  helices?: React.ReactNode;
+  /** Bitácora de discrepancias, embebida. */
+  discrepancias?: React.ReactNode;
+}
+
+/**
+ * Ingeniería del expediente del avión. Desde el 17-nov-2026 pinta UNA sola
+ * card «Mantenimiento» (resumen · horas y programa · órdenes con evidencias ·
+ * componentes · discrepancias) y, debajo, «Permisos y licencias» y «Servicios
+ * próximos» como siempre. El marco vive en `aircraft-mantenimiento-card.tsx`,
+ * las evidencias en `adjuntos-ingenieria.tsx` y los componentes con vida
+ * límite en `aircraft-componentes.tsx`.
+ */
+export function AircraftEngineering({
+  aircraftId,
+  discrepancias = [],
+  slots = {},
+}: {
+  aircraftId: string;
+  /** Para el mosaico «Discrepancias abiertas» del resumen. */
+  discrepancias?: AeronaveDiscrepancia[];
+  slots?: SlotsMantenimiento;
+}) {
+  // Componentes con vida límite: los comparten la lista y el resumen.
+  const componentes = useComponentesAeronave(aircraftId);
   const [mant, setMant] = useState<Mantenimiento[]>([]);
   const [venc, setVenc] = useState<Vencimiento[]>([]);
   const [vencEliminados, setVencEliminados] = useState<VencimientoEliminado[]>([]);
@@ -197,124 +250,185 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
     .filter((x) => x.dias <= 120)
     .sort((a, b) => a.dias - b.dias);
 
-  if (error) {
-    return (
-      <div className="lg:col-span-2">
-        <ErrorState
-          title="No se pudo cargar ingeniería"
-          description={
-            <span className="flex flex-col items-center gap-3">
-              <span>
-                Falló la consulta de mantenimientos y permisos: NO están vacíos, solo no se
-                pudieron leer.
-              </span>
-              <Button size="sm" variant="outline" onClick={() => void retry()} disabled={retrying}>
-                {retrying ? "Reintentando…" : "Reintentar"}
-              </Button>
-            </span>
-          }
-        />
-      </div>
-    );
-  }
+  // La caída de ingeniería NO esconde el resto de la card: horas, componentes
+  // y discrepancias cargan aparte. Aquí solo se dice lo que no se pudo leer.
+  const botonReintentar = (
+    <Button size="sm" variant="outline" onClick={() => void retry()} disabled={retrying}>
+      {retrying ? "Reintentando…" : "Reintentar"}
+    </Button>
+  );
 
   return (
     <>
-      {/* Mantenimientos — `id` ancla: el KPI «Próximo servicio» enlaza aquí
-          («Confirmar fecha» de una orden creada sola por el sistema). */}
-      <Card id="mantenimientos" className="scroll-mt-24 lg:col-span-2">
-        <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-          <div className="space-y-1">
-            <CardTitle className="text-base flex items-center gap-2">
-              <WrenchScrewdriverIcon className="h-4 w-4 text-muted-foreground" />
-              Mantenimientos
-            </CardTitle>
-            <CardDescription>{mant.length} registrados (programados y realizados).</CardDescription>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5 shrink-0"
-            onClick={() => {
-              setEditingMant(undefined);
-              setMantOpen(true);
-            }}
-          >
-            <PlusIcon className="h-3.5 w-3.5" />
-            Agregar
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {mant.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin mantenimientos registrados.</p>
-          ) : (
-            <div className="space-y-2">
-              {mant.map((m) => {
-                const compLabel = componenteLabel(m, taco?.componentes ?? []);
-                const tareas = m.tareas_realizadas ?? [];
-                return (
-                <div key={m.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 p-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{m.descripcion}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {m.estado === "COMPLETADO"
-                        ? `Completado ${fmtDate(m.fecha_realizada)}`
-                        : `Programado ${fmtDate(m.fecha_programada)}`}
-                      {m.pais ? ` · ${m.pais}` : ""}
-                      {m.horas_aeronave
-                        ? ` · entró a ${m.horas_aeronave} h${m.horas_programadas ? ` (debía ${m.horas_programadas} h)` : ""}`
-                        : ""}
-                      {m.proveedor ? ` · ${m.proveedor}` : ""}
-                    </p>
-                    {(m.etapa_intervalo_hr != null || compLabel || tareas.length > 0) && (
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        {m.etapa_intervalo_hr != null && (
-                          <Badge variant="outline" className="text-[10px] font-mono">
-                            {Number(m.etapa_intervalo_hr)} hrs
-                          </Badge>
-                        )}
-                        {compLabel && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {compLabel}
-                          </Badge>
-                        )}
-                        {tareas.length > 0 && (
-                          <span
-                            className="cursor-help text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2"
-                            title={tareas.join("\n")}
-                          >
-                            {tareas.length} {tareas.length === 1 ? "tarea" : "tareas"} ✓
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Badge variant="outline" className={ESTADO_MANT[m.estado].cls}>
-                      {ESTADO_MANT[m.estado].label}
-                    </Badge>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7"
-                      onClick={() => {
-                        setEditingMant(m);
-                        setMantOpen(true);
-                      }}
-                      title="Editar / cambiar estado"
-                      aria-label="Editar mantenimiento"
-                    >
-                      <PencilSquareIcon className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                );
-              })}
-            </div>
+      <AdjuntosIngenieriaProvider aircraftId={aircraftId}>
+        <MantenimientoCard
+          resumen={
+            <MantenimientoResumen
+              mant={error ? null : mant}
+              componentes={componentes}
+              discrepancias={discrepancias}
+            />
+          }
+        >
+          {slots.horas && (
+            <SeccionMantenimiento id="horas-programa">{slots.horas}</SeccionMantenimiento>
           )}
-        </CardContent>
-      </Card>
 
+          {/* Órdenes — `id="mantenimientos"` es el ancla histórica: la sección
+              «Horas y programa de servicio» (tacómetros) enlaza aquí («Poner
+              fecha» de una orden creada sola por el sistema). */}
+          <SeccionMantenimiento
+            id="mantenimientos"
+            titulo={TITULOS_SECCION.mantenimientos.titulo}
+            descripcion={TITULOS_SECCION.mantenimientos.descripcion}
+            accion={
+              !error && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 shrink-0"
+                  onClick={() => {
+                    setEditingMant(undefined);
+                    setMantOpen(true);
+                  }}
+                >
+                  <PlusIcon className="h-3.5 w-3.5" />
+                  Agregar
+                </Button>
+              )
+            }
+          >
+            {error ? (
+              // NUNCA disfrazar la caída de «sin registros».
+              <p
+                role="alert"
+                className="flex flex-wrap items-center gap-2 text-sm text-destructive"
+              >
+                {TEXTO_ORDENES_NO_CARGARON}
+                {botonReintentar}
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  {textoConteoOrdenes(mant.length)}
+                </p>
+                <AvisoAdjuntos destino="MANTENIMIENTO" />
+                {mant.length > 0 && (
+                  <div className="space-y-2">
+                    {mant.map((m) => {
+                      const compLabel = componenteLabel(m, taco?.componentes ?? []);
+                      const tareas = m.tareas_realizadas ?? [];
+                      return (
+                        <div
+                          key={m.id}
+                          className="space-y-2 rounded-lg border border-border bg-muted/20 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{m.descripcion}</p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {m.estado === "COMPLETADO"
+                                  ? `Completado ${fmtDate(m.fecha_realizada)}`
+                                  : `Programado ${fmtDate(m.fecha_programada)}`}
+                                {m.pais ? ` · ${m.pais}` : ""}
+                                {m.horas_aeronave
+                                  ? ` · entró a ${m.horas_aeronave} h${m.horas_programadas ? ` (debía ${m.horas_programadas} h)` : ""}`
+                                  : ""}
+                                {m.proveedor ? ` · ${m.proveedor}` : ""}
+                              </p>
+                              {(m.etapa_intervalo_hr != null || compLabel || tareas.length > 0) && (
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                  {m.etapa_intervalo_hr != null && (
+                                    <Badge variant="outline" className="text-[10px] font-mono">
+                                      {Number(m.etapa_intervalo_hr)} hrs
+                                    </Badge>
+                                  )}
+                                  {compLabel && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {compLabel}
+                                    </Badge>
+                                  )}
+                                  {tareas.length > 0 && (
+                                    <span
+                                      className="cursor-help text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2"
+                                      title={tareas.join("\n")}
+                                    >
+                                      {tareas.length} {tareas.length === 1 ? "tarea" : "tareas"} ✓
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Badge variant="outline" className={ESTADO_MANT[m.estado].cls}>
+                                {ESTADO_MANT[m.estado].label}
+                              </Badge>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                onClick={() => {
+                                  setEditingMant(m);
+                                  setMantOpen(true);
+                                }}
+                                title="Editar / cambiar estado"
+                                aria-label="Editar mantenimiento"
+                              >
+                                <PencilSquareIcon className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          {/* Evidencias de la orden: el sticker del taller (foto o
+                              PDF) y lo que haga falta. Una orden COMPLETADA sin
+                              evidencia invita a subirla. */}
+                          <AdjuntosDestino
+                            destino="MANTENIMIENTO"
+                            destinoId={m.id}
+                            invitar={m.estado === "COMPLETADO"}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </SeccionMantenimiento>
+
+          <SeccionMantenimiento
+            id="componentes"
+            titulo={TITULOS_SECCION.componentes.titulo}
+            descripcion={TITULOS_SECCION.componentes.descripcion}
+          >
+            <AvisoAdjuntos destino="COMPONENTE" />
+            {slots.motores}
+            {slots.helices}
+            <AircraftComponentes aircraftId={aircraftId} {...componentes} />
+          </SeccionMantenimiento>
+
+          {slots.discrepancias && (
+            <SeccionMantenimiento id="discrepancias">{slots.discrepancias}</SeccionMantenimiento>
+          )}
+        </MantenimientoCard>
+      </AdjuntosIngenieriaProvider>
+
+      {error ? (
+        <div className="lg:col-span-2">
+          <ErrorState
+            title="No se pudieron cargar los permisos y servicios próximos"
+            description={
+              <span className="flex flex-col items-center gap-3">
+                <span>
+                  Falló la consulta de mantenimientos y permisos: NO están vacíos, solo no se
+                  pudieron leer.
+                </span>
+                {botonReintentar}
+              </span>
+            }
+          />
+        </div>
+      ) : (
+        <>
       {/* Permisos y licencias (vencimientos) */}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
@@ -525,6 +639,8 @@ export function AircraftEngineering({ aircraftId }: { aircraftId: string }) {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
 
       {mantOpen && (
         <MantenimientoDialog

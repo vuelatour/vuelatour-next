@@ -378,12 +378,29 @@ export function textoSinFilasDesde(
 }
 
 /**
- * KPI de la ficha del avión: «Horas mes / año» o, con `metrics.anio_desde`
- * (0.0.85, el año cuenta desde el inicio), «Horas mes / desde el 1-sep-2026».
+ * Franja de KPI de la ficha del avión desde el 17-nov-2026: SOLO utilización
+ * (lo único que no se repite en una card de abajo), en dos tarjetas. Antes
+ * era una sola, «Horas mes / año» (`rotuloHorasMesAnio`, retirado).
  */
-export function rotuloHorasMesAnio(anioDesde: unknown): string {
+export const ROTULO_HORAS_MES = "Horas este mes";
+
+/**
+ * Segunda tarjeta: «Horas desde el 01/09/2026» con `metrics.anio_desde`
+ * (0.0.85, el «año» cuenta desde el inicio oficial) o «Horas este año».
+ */
+export function rotuloHorasAcumuladas(anioDesde: unknown): string {
   const desde = normalizarInicioOficial(anioDesde);
-  return desde ? `Horas mes / ${textoDesdeInicio(desde)}` : "Horas mes / año";
+  return desde ? `Horas ${textoDesdeInicio(desde)}` : "Horas este año";
+}
+
+/** «1 vuelo» / «22 vuelos». */
+export function textoVuelos(n: number): string {
+  return n === 1 ? "1 vuelo" : `${n} vuelos`;
+}
+
+/** Hint de la tarjeta acumulada: «22 vuelos · total registrado 80.8 h». */
+export function hintVuelosYTotal(vuelos: number, horasTotalTexto: string): string {
+  return `${textoVuelos(vuelos)} · total registrado ${horasTotalTexto}`;
 }
 
 /**

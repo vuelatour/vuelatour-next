@@ -53,7 +53,7 @@ describe("a. Ficha del piloto: mes de las estadísticas", () => {
   });
 });
 
-describe("b. Ficha del avión: «Horas mes / año»", () => {
+describe("b. Ficha del avión: «Horas este mes» y «Horas este año / desde el…»", () => {
   const metrics = (extra: Partial<AircraftMetricsDetalle> = {}) =>
     ({
       utilizacion: {
@@ -69,16 +69,20 @@ describe("b. Ficha del avión: «Horas mes / año»", () => {
       ...extra,
     }) as unknown as AircraftMetricsDetalle;
 
-  it("con `anio_desde` ⇒ «Horas mes / desde el 01/09/2026»; números del API tal cual", () => {
+  // 17-nov-2026: la franja pasó de una tarjeta «Horas mes / año» a dos
+  // («Horas este mes» + la acumulada); la regla del inicio oficial es la misma.
+  it("con `anio_desde` ⇒ «Horas desde el 01/09/2026»; números del API tal cual", () => {
     const html = renderToStaticMarkup(<AircraftKpiStrip metrics={metrics({ anio_desde: INICIO })} />);
-    expect(html).toContain("Horas mes / desde el 01/09/2026");
-    expect(html).toContain("12.3 / 80.4 h");
-    expect(html).not.toContain("Horas mes / año");
+    expect(html).toContain("Horas este mes");
+    expect(html).toContain("12.3 h");
+    expect(html).toContain("Horas desde el 01/09/2026");
+    expect(html).toContain("80.4 h");
+    expect(html).not.toContain("Horas este año");
   });
 
-  it("sin la llave o null ⇒ marcado idéntico al de hoy", () => {
+  it("sin la llave o null ⇒ «Horas este año», marcado idéntico entre sí", () => {
     const hoy = renderToStaticMarkup(<AircraftKpiStrip metrics={metrics()} />);
-    expect(hoy).toContain("Horas mes / año");
+    expect(hoy).toContain("Horas este año");
     expect(renderToStaticMarkup(<AircraftKpiStrip metrics={metrics({ anio_desde: null })} />)).toBe(hoy);
   });
 });

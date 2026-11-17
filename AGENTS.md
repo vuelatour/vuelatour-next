@@ -2030,15 +2030,17 @@ a «Abraham Zamora» «Zamora», a «Pablo Canales» «Pab».
   mapearlo a mano en cada card es donde se cuela un número equivocado).
 - Pruebas: `lib/admin/__tests__/proximo-servicio.test.ts` (los textos y la
   tolerancia al API viejo) y
-  `components/admin/aircraft/__tests__/aircraft-kpi-strip.test.tsx` (el
-  CABLEADO: que la línea y el enlace lleguen al marcado y que sin el aditivo la
-  tarjeta quede idéntica a antes).
-- Dónde se ve: `aircraft/aircraft-kpi-strip.tsx` (KPI «Próximo servicio»,
-  segunda línea bajo el hint) y `aircraft/aircraft-tacometros-card.tsx`
-  (métrica «Faltan»), con el MISMO helper para que las dos digan lo mismo. El
-  enlace es el ancla **`#mantenimientos`** = la card «Mantenimientos» de
-  `aircraft-engineering.tsx` (`id` + `scroll-mt-24`), que es donde se confirma
-  la fecha. Tipos aditivos: `OrdenServicioProgramada` en `types/aircraft.ts`
+  `components/admin/aircraft/__tests__/aircraft-mantenimiento-card.test.tsx`
+  (el CABLEADO de la card única; el resumen NO pinta el próximo servicio).
+  Hasta el 17-nov-2026 lo vigilaba
+  `aircraft-kpi-strip.test.tsx`, que hoy solo cuida la utilización.
+- Dónde se ve (desde el 17-nov-2026, ver «Mantenimiento unificado» al final):
+  SOLO en `aircraft/aircraft-tacometros-card.tsx` (métrica «Faltan»), que va
+  embebida como sección «Horas y programa de servicio» de la card
+  Mantenimiento. El KPI de arriba se retiró por repetirla. El enlace es el ancla
+  **`#mantenimientos`** = la sección «Órdenes de mantenimiento» de esa card
+  (`SeccionMantenimiento id="mantenimientos"`, con `scroll-mt-24`), que es
+  donde se confirma la fecha. Tipos aditivos: `OrdenServicioProgramada` en `types/aircraft.ts`
   (`TacometroHistorial.proximo_servicio.orden`) y
   `AircraftMetricsDetalle.proximo_servicio.orden` en `lib/api/aircraft.ts`.
 - La fecha se pinta con `fmtDateOnly` («25 sep 2026»), no en dd/mm/aaaa: es el
@@ -12681,10 +12683,11 @@ y NO se manda al API.
   vencido; «0.0» = toca hoy, ámbar). La lista (`servicio-flota.ts
   textoRestante`/`tonoRestante`) delega en ellas; sus textos y tonos no
   cambiaron. Nunca se pinta «faltan −14.2 h».
-- Dónde se ve: KPI «Próximo servicio» del expediente (`aircraft-kpi-strip`:
-  hint «Servicio 500 hrs · vencido por 14.2 h», valor en `text-destructive`,
-  debajo la línea de la orden) y card de tacómetros (`aircraft-tacometros-card`:
-  la métrica pasa de «Faltan · −14.2 h» a **«Vencido por · 14.2 h»** en rojo).
+- Dónde se ve: card de tacómetros (`aircraft-tacometros-card`, hoy la
+  sección «Horas y programa de servicio» de la card Mantenimiento: la métrica
+  pasa de «Faltan · −14.2 h» a **«Vencido por · 14.2 h»** en rojo). Hasta el
+  17-nov-2026 lo decía además un KPI de `aircraft-kpi-strip`, retirado por
+  repetir este dato.
   `estadoOrdenServicio` añade al `detalle` (tooltip) de la orden, solo con el
   hito vencido: «El hito ya se alcanzó: el programa no pasa al siguiente
   servicio hasta que esta orden quede COMPLETADA.» — la línea y el enlace
@@ -12692,8 +12695,8 @@ y NO se manda al API.
 - Con el API viejo (0.0.106) nada cambia: el número nunca llega negativo por
   una orden abierta y los helpers se comportan como antes.
 - Pruebas: `lib/admin/__tests__/proximo-servicio.test.ts` (texto, vencido,
-  redondeo, detalle) y `aircraft/__tests__/aircraft-kpi-strip.test.tsx`
-  (cableado del caso real).
+  redondeo, detalle) y `aircraft/__tests__/aircraft-mantenimiento-card.test.tsx`
+  (cableado del caso real; antes en `aircraft-kpi-strip.test.tsx`).
 
 ## Conciliación → Gastos: «Ver el gasto con el que se concilió» abre ESE gasto (27-oct-2026)
 
@@ -13906,3 +13909,162 @@ flota): pilotos y mecánico no se enteraban.
 - **Orden de deploy: API 0.0.139 ⇒ panel.** Sin migración. Con el panel nuevo
   y un API previo solo cambia el nombre de la opción del selector; lo demás
   se pinta como antes.
+
+## Mantenimiento unificado: una sola card, evidencias y componentes (17-nov-2026, API 0.0.140, invariante 135 del API)
+
+Pedido del cliente (capturas del expediente del N990GG): «los datos de los
+cards que están hasta arriba como "Horas actuales (Hobbs)" no sean
+redundantes, es decir que si el dato ya aparece en otro componente más abajo
+vamos a omitirlo arriba»; «debemos crear un solo componente donde venga todo
+lo de mantenimiento, no importa que sea un componente grande… para tenerlo
+mejor ubicado»; «en mantenimientos la opción para subir una foto o pdf…
+porque cada que se le da un mantenimiento el taller te entrega un sticker…
+porque a veces las piden, entonces poder descargarlas»; «que se incluya en
+ese apartado de mantenimiento también la lista de componentes del avión y su
+seguimiento… saber cuánto tiempo le queda a un foco, a una llanta»; «poder
+subir uno o varios documentos por componente para comprobar el cambio de
+componente, a lo mejor una factura de la compra».
+
+### La franja de arriba: solo lo que NO se repite abajo
+
+- `aircraft-kpi-strip.tsx` pinta DOS tarjetas de utilización: «Horas este
+  mes» (hint «N vuelos») y «Horas desde el 01/09/2026» / «Horas este año»
+  según `metrics.anio_desde` (hint «N vuelos · total registrado X h»). Sin
+  `metrics.utilizacion` no pinta nada.
+- Se fueron de arriba: **Horas actuales (Hobbs)** (vive en Mantenimiento →
+  «Horas y programa de servicio»), **Próximo servicio** (mosaico del resumen
+  de Mantenimiento) y **Utilidad / Gastos** (vive en «Resumen operativo»).
+- Rótulos en `lib/admin/inicio-oficial.ts`: `ROTULO_HORAS_MES`,
+  `rotuloHorasAcumuladas`, `textoVuelos`, `hintVuelosYTotal`.
+  `rotuloHorasMesAnio` se retiró.
+
+### UNA card «Mantenimiento»
+
+- `AircraftEngineering` (`aircraft-engineering.tsx`) pinta la card única
+  `id="mantenimiento"` y, DEBAJO, «Permisos y licencias» y «Servicios
+  próximos» como cards aparte (son documentos, no mantenimiento). El marco
+  (card + navegación por anclas + secciones + resumen) vive en
+  `aircraft-mantenimiento-card.tsx` (`MantenimientoCard`,
+  `SeccionMantenimiento`, `MantenimientoResumen`).
+- Secciones, en orden (`SECCIONES_MANTENIMIENTO` de
+  `lib/admin/mantenimiento-unificado.ts`, fuente única de ids y textos):
+  1. `mantenimiento-resumen`: TRES mosaicos — Órdenes abiertas, Componentes
+     y Discrepancias abiertas. Cada uno enlaza a su sección. Lo que no se
+     pudo leer es «—» con su porqué, nunca «Ninguna» ni «Sin componentes».
+     **NO lleva «Próximo servicio»**: Hobbs, «Próximo servicio» y «Faltan»
+     (con el estado de su orden) se pintan UNA vez, en la sección de abajo.
+     La primera versión lo repetía en un cuarto mosaico y se retiró al verla
+     en el navegador: era el mismo defecto que motivó quitar el KPI.
+  2. `horas-programa`: `AircraftTacometrosCard` **embebida**.
+  3. **`mantenimientos`** (ancla HISTÓRICA: `ANCLA_MANTENIMIENTOS`; no se
+     renombra): las órdenes, cada una con sus evidencias.
+  4. `componentes`: Motores, Hélices (con sus documentos) y «Componentes con
+     vida límite» + historial de retirados.
+  5. `discrepancias`: `AircraftSquawksCard` **embebida**.
+- **Slots**: lo que la página arma (tacómetros, discrepancias y los bloques
+  de Motores/Hélices con `MotorCard`/`PropellerCard`, JSX de servidor) entra
+  por `slots={{ horas, motores, helices, discrepancias }}` (patrón de
+  `node_modules/next/dist/docs/01-app/01-getting-started/05-server-and-client-components.md`,
+  «Interleaving»). Las cards sueltas de Tacómetros, Discrepancias, Motores y
+  Hélices ya NO existen en `app/admin/aircraft/[id]/page.tsx`.
+- **`embebido`**: `AircraftTacometrosCard` y `AircraftSquawksCard` aceptan la
+  prop y su marco pasa por `aircraft/marco-seccion.tsx` (`Marco`,
+  `MarcoEncabezado`, `MarcoTitulo`, `MarcoDescripcion`, `MarcoContenido`):
+  embebido = sin `Card` ni relleno propio y con el título de la sección; sin
+  la prop el marcado es el `Card` de siempre. Una card nueva que deba vivir
+  dentro de Mantenimiento se embebe así, no se reescribe.
+- **Si ingeniería no carga, la card NO desaparece** (antes un `ErrorState`
+  sustituía todo): horas, componentes y discrepancias cargan aparte; la
+  sección de órdenes dice que no se pudieron leer (con «Reintentar») y un
+  `ErrorState` ocupa el lugar de permisos y servicios próximos.
+- Orden de la página: cabecera → KPI → Resumen operativo → Combustible →
+  **Mantenimiento** (+ Permisos / Servicios próximos) → Viajes →
+  Especificaciones → Imágenes → Propietarios/Seguros → Tarifas de reserva →
+  Reservas overhaul.
+
+### Evidencias y documentos (`adjuntos-ingenieria`)
+
+- Contrato (ADITIVO): `GET /v1/engineering/aircraft/:id/adjuntos` →
+  `{disponible, adjuntos[]}`; `POST /v1/engineering/adjuntos`;
+  `GET /v1/engineering/adjuntos/:id/url?descargar=`;
+  `DELETE /v1/engineering/adjuntos/:id` (borrado suave). Destinos:
+  `MANTENIMIENTO | COMPONENTE | MOTOR | HELICE`. Tipos en
+  `types/engineering.ts`, cliente en `lib/api/engineering.ts`.
+- `components/admin/aircraft/adjuntos-ingenieria.tsx`:
+  `AdjuntosIngenieriaProvider` carga UNA vez los archivos del avión y los
+  reparte por destino (lo consumen también las fichas de motor/hélice que
+  entran como slots); `AdjuntosDestino` pinta los de un destino (Ver /
+  Descargar / Quitar + «Subir evidencia|documento»); `AvisoAdjuntos` dice UNA
+  vez por sección si no están disponibles o si no se pudieron leer.
+- **Subida**: el navegador sube al bucket privado `documentos-flota` con
+  `uploadDocumentoFlota` (JPG/PNG/WebP/PDF, 10 MB) y luego registra con
+  `POST /adjuntos`. **Si el registro falla, el objeto recién subido se borra**
+  (`deleteDocumentoFlota`): sin huérfanos. Varios archivos van uno por uno y
+  el resultado dice cuántos subieron y cuáles no. La orquestación es PURA y
+  está probada: `subirAdjuntos` de `lib/admin/adjuntos-ingenieria.ts`.
+- **Ver / descargar** = URL firmada del API en una pestaña nueva (URL real,
+  nunca un objeto en memoria). La ruta del bucket jamás se pinta.
+- Tipos de documento (`ETIQUETAS_ADJUNTO`): Sticker / etiqueta de servicio
+  (por defecto en un mantenimiento), Factura (por defecto en una pieza),
+  Certificado, Orden de trabajo, Bitácora, Otro. En un mantenimiento se habla
+  de «evidencias»; en una pieza, de «documentos».
+- Una orden COMPLETADA sin evidencia lleva `TEXTO_INVITA_STICKER` (ámbar
+  suave): invita, no bloquea.
+- «Quitar» confirma en `AlertDialog` (regla permanente).
+
+### Componentes con vida límite (`aircraft-componentes`)
+
+- Contrato (ADITIVO): `GET /v1/engineering/aircraft/:id/components` →
+  `{disponible, horas_aeronave, hoy, componentes[], retirados[]}`; `POST` en
+  la misma ruta; `PATCH /v1/engineering/components/:id`; `POST …/reemplazar`;
+  `POST …/retirar`; `DELETE` (borrado suave).
+- **Lo que le queda lo calcula el API** (`vida`: horas y días en servicio y
+  restantes, `vence_el`, `estado`, `por`, `faltantes`) con el Hobbs del avión
+  y hoy en Cancún. **El panel NO lo recalcula**: `lib/admin/
+  componentes-aeronave.ts` (PURO) solo redacta («faltan 120.5 h», «vencido
+  por 3.2 h», «vence el 12/03/2027 · en 115 días», «venció el 13/11/2026 ·
+  hace 4 días», «vence hoy», «lleva 210.0 h · 8 meses instalado», «falta
+  capturar el Hobbs al instalar», «cada 500 h o 12 meses», «a condición (sin
+  límite)») y decide el pintado (tono por estado, barra de vida usada con los
+  derivados del API). El orden de la lista es el del API (lo urgente primero).
+- Estados: Vencido (rojo), Por vencer y Falta un dato (ámbar), Vigente
+  (verde), A condición (gris; sin límite: solo se lleva cuánto lleva puesta).
+- Alta / edición: solo el nombre es obligatorio; el alta arranca con la fecha
+  de hoy y el Hobbs actual. En EDICIÓN un campo vaciado viaja como `null`
+  explícito (limpia el dato); en ALTA lo vacío se omite.
+- **Reemplazar** (cambio de componente) = DOS pasos: datos del cambio y de la
+  pieza nueva → confirmación → API. Los límites de la pieza nueva viajan como
+  se ven en el formulario (prellenados con los de la que sale). Al terminar
+  se ofrece subir la factura o el certificado de la nueva. **Retirar** (sin
+  sustituto): el diálogo dice qué pasa y lo pide en rojo. **Eliminar**
+  (captura por error): `AlertDialog`.
+- «Historial de componentes retirados (N)» es un `<details>` nativo: no
+  desmonta su contenido.
+
+### Tolerancias (lo nuevo nunca rompe lo de siempre)
+
+- Fuente única: `lib/admin/ingenieria-errores.ts`. **Ruta 404** (API previo)
+  o **`disponible: false`** (migración sin aplicar) ⇒ lo nuevo se ESCONDE y
+  se dice en gris («Disponible cuando se actualice el sistema.»), sin botón
+  de subir ni de agregar. Una **falla de carga** se DICE con «Reintentar»:
+  jamás «sin archivos» / «sin componentes» cuando no se pudo leer.
+- En una ESCRITURA, un 404 «Cannot POST …» (ruta sin desplegar) o un 503
+  `MIGRACION_PENDIENTE` se dicen «falta actualizar el sistema»; un 404 con
+  mensaje del API es «ese registro ya no existe».
+- Con el API previo el expediente queda como antes salvo por la card única y
+  la franja de utilización.
+
+### Pruebas y deploy
+
+- `lib/admin/__tests__/adjuntos-ingenieria.test.ts` (catálogo, textos y la
+  subida paso a paso, incluido el registro fallido que limpia el bucket),
+  `componentes-aeronave.test.ts`, `mantenimiento-unificado.test.ts`,
+  `inicio-oficial-auditoria.test.ts` (rótulos de utilización);
+  `components/admin/aircraft/__tests__/aircraft-kpi-strip.test.tsx` (solo
+  utilización; NO pinta Hobbs, Próximo servicio ni Utilidad),
+  `aircraft-mantenimiento-card.test.tsx` (card única, anclas, resumen,
+  `embebido` y el cableado de `AircraftEngineering` y de la página),
+  `adjuntos-ingenieria.test.tsx` y `aircraft-componentes.test.tsx`.
+- **Orden de deploy: migración `20261117000001_ingenieria_componentes_adjuntos`
+  → API 0.0.140 → panel.** Con el panel nuevo y el API previo no se rompe
+  nada (lo nuevo se esconde).

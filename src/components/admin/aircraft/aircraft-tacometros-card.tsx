@@ -11,7 +11,14 @@ import {
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Marco,
+  MarcoContenido,
+  MarcoDescripcion,
+  MarcoEncabezado,
+  MarcoTitulo,
+} from "@/components/admin/aircraft/marco-seccion";
+import { TITULOS_SECCION } from "@/lib/admin/mantenimiento-unificado";
 import {
   Dialog,
   DialogContent,
@@ -77,9 +84,12 @@ function nuevaFila(e?: ServicioEtapa | { intervalo_hr: number }): EtapaDraft {
 export function AircraftTacometrosCard({
   aircraftId,
   matricula,
+  embebido = false,
 }: {
   aircraftId: string;
   matricula: string;
+  /** Dentro de la card «Mantenimiento» (17-nov-2026): sin marco propio. */
+  embebido?: boolean;
 }) {
   const [data, setData] = useState<TacometroHistorial | null>(null);
   const [loading, setLoading] = useState(true);
@@ -245,20 +255,26 @@ export function AircraftTacometrosCard({
   const mostrarPlaneador = (data?.planeador_horas_base ?? 0) > 0;
 
   return (
-    <Card className="lg:col-span-2">
-      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+    <Marco embebido={embebido} className="lg:col-span-2">
+      <MarcoEncabezado
+        embebido={embebido}
+        className="flex flex-row items-start justify-between gap-2 space-y-0"
+      >
         <div className="space-y-1.5">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ClockIcon className="h-4 w-4 text-muted-foreground" /> Tacómetros y servicio por horas
-          </CardTitle>
-          <CardDescription>
+          <MarcoTitulo embebido={embebido} className="flex items-center gap-2 text-base">
+            <ClockIcon className="h-4 w-4 text-muted-foreground" />{" "}
+            {embebido
+              ? TITULOS_SECCION["horas-programa"].titulo
+              : "Tacómetros y servicio por horas"}
+          </MarcoTitulo>
+          <MarcoDescripcion embebido={embebido}>
             Conteo de horas del avión (último Hobbs) y cada cuándo le toca servicio.
-          </CardDescription>
+          </MarcoDescripcion>
         </div>
         {/* Bitácoras imprimibles (planeador, motor, hélice) para los libros físicos. */}
         <BitacoraPdfButton aircraftId={aircraftId} matricula={matricula} />
-      </CardHeader>
-      <CardContent className="space-y-5">
+      </MarcoEncabezado>
+      <MarcoContenido embebido={embebido} className="space-y-5">
         {/* Estatus */}
         <div
           className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
@@ -838,8 +854,8 @@ export function AircraftTacometrosCard({
             })()
           )}
         </div>
-      </CardContent>
-    </Card>
+      </MarcoContenido>
+    </Marco>
   );
 }
 

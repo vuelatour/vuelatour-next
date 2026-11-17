@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/card";
 import { AircraftImagesCard } from "@/components/admin/aircraft/aircraft-images-card";
 import { AircraftEngineering } from "@/components/admin/aircraft/aircraft-engineering";
+import { AdjuntosDestino } from "@/components/admin/aircraft/adjuntos-ingenieria";
 import { AircraftEditButton } from "@/components/admin/aircraft/aircraft-edit-button";
 import { ReservaVigenciasCard } from "@/components/admin/aircraft/reserva-vigencias-card";
 import {
@@ -192,6 +193,71 @@ export default async function AircraftDetailPage({ params }: PageProps) {
     : (aircraft.airworthiness ?? null);
   const razones = aptitud?.razones ?? [];
 
+  // Motores y Hélices (17-nov-2026): ya no son cards sueltas; viven en la
+  // sección «Componentes» de la card Mantenimiento y entran como slots.
+  const bloqueMotores = (
+    <div className="space-y-3" data-bloque="motores">
+      <div className="flex flex-row items-start justify-between gap-2">
+        <div className="space-y-0.5">
+          <h4 className="flex items-center gap-2 text-sm font-medium">
+            <CpuChipIcon className="h-4 w-4 text-muted-foreground" />
+            Motores
+          </h4>
+          <p className="text-xs text-muted-foreground">{motorsSorted.length} unidades</p>
+        </div>
+        <AircraftEngineButton aircraftId={aircraft.id} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {motorsSorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sin motores registrados.</p>
+        ) : (
+          motorsSorted.map((m) => (
+            <MotorCard
+              key={m.id}
+              motor={m}
+              reserve={reservesByMotor.get(m.id)}
+              aircraftId={aircraft.id}
+              matricula={aircraft.matricula}
+              modelo={aircraft.modelo}
+              aviones={avionesDestino}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const bloqueHelices = (
+    <div className="space-y-3" data-bloque="helices">
+      <div className="flex flex-row items-start justify-between gap-2">
+        <div className="space-y-0.5">
+          <h4 className="flex items-center gap-2 text-sm font-medium">
+            <CogIcon className="h-4 w-4 text-muted-foreground" />
+            Hélices
+          </h4>
+          <p className="text-xs text-muted-foreground">{propsSorted.length} unidades</p>
+        </div>
+        <AircraftPropellerButton aircraftId={aircraft.id} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {propsSorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Sin hélices registradas.</p>
+        ) : (
+          propsSorted.map((p) => (
+            <PropellerCard
+              key={p.id}
+              propeller={p}
+              aircraftId={aircraft.id}
+              matricula={aircraft.matricula}
+              modelo={aircraft.modelo}
+              aviones={avionesDestino}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <TituloPestana titulo={tituloAvion(aircraft.matricula)} />
@@ -276,12 +342,13 @@ export default async function AircraftDetailPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* KPI strip: horas actuales, mes/año, próximo servicio, utilidad. */}
+      {/* KPI strip (17-nov-2026): SOLO utilización. Hobbs y próximo servicio
+          viven en la card Mantenimiento; la utilidad, en Resumen operativo. */}
       {metrics && <AircraftKpiStrip metrics={metrics} />}
 
       {/* Expediente en columna única, ordenado por prioridad del operador:
-          lo operativo (semáforo, tacos, discrepancias, viajes) arriba; la
-          ficha técnica y lo administrativo después. */}
+          lo operativo (semáforo, combustible, mantenimiento, viajes) arriba;
+          la ficha técnica y lo administrativo después. */}
       <div className="space-y-6">
         {/* 1. Resumen operativo (semáforo apto-para-volar + finanzas) */}
         {metricsError ? (
@@ -306,19 +373,38 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           )
         )}
 
-        {/* 3. Tacómetros: histórico por aeronave + programa de servicio por etapas */}
-        <AircraftTacometrosCard aircraftId={aircraft.id} matricula={aircraft.matricula} />
+        {/* 3. MANTENIMIENTO (17-nov-2026): UNA sola card con todo —resumen,
+            horas y programa de servicio (tacómetros), órdenes con sus
+            evidencias, componentes (motores, hélices y piezas con vida
+            límite) y discrepancias— y, debajo, «Permisos y licencias» y
+            «Servicios próximos». Lo que se arma aquí entra como slots. */}
+        <AircraftEngineering
+          aircraftId={aircraft.id}
+          discrepancias={aircraft.discrepancias}
+          slots={{
+            horas: (
+              <AircraftTacometrosCard
+                aircraftId={aircraft.id}
+                matricula={aircraft.matricula}
+                embebido
+              />
+            ),
+            motores: bloqueMotores,
+            helices: bloqueHelices,
+            discrepancias: (
+              <AircraftSquawksCard
+                aircraftId={aircraft.id}
+                discrepancias={aircraft.discrepancias}
+                embebido
+              />
+            ),
+          }}
+        />
 
-        {/* 4. Bitácora de discrepancias (squawks) */}
-        <AircraftSquawksCard aircraftId={aircraft.id} discrepancias={aircraft.discrepancias} />
-
-        {/* 5. Viajes: historial de vuelos de esta aeronave */}
+        {/* 4. Viajes: historial de vuelos de esta aeronave */}
         <AircraftFlightsCard aircraftId={aircraft.id} />
 
-        {/* 6. Ingeniería aeronáutica: mantenimientos, permisos, servicios próximos */}
-        <AircraftEngineering aircraftId={aircraft.id} />
-
-        {/* 7. Especificaciones */}
+        {/* 5. Especificaciones */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -406,14 +492,14 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* 8. Imágenes */}
+        {/* 6. Imágenes */}
         <AircraftImagesCard
           aircraftId={aircraft.id}
           matricula={aircraft.matricula}
           imagenes={aircraft.imagenes}
         />
 
-        {/* 9-10. Propietarios y Seguros: cards angostas, emparejadas en desktop */}
+        {/* 7-8. Propietarios y Seguros: cards angostas, emparejadas en desktop */}
         <div className="grid gap-6 lg:grid-cols-2 [&>*]:!col-span-1">
           <AircraftOwnersCard
             aircraftId={aircraft.id}
@@ -427,68 +513,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           <AircraftInsuranceCard aircraftId={aircraft.id} seguros={aircraft.seguros} />
         </div>
 
-        {/* 11. Motores */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-            <div className="space-y-1">
-              <CardTitle className="text-base flex items-center gap-2">
-                <CpuChipIcon className="h-4 w-4 text-muted-foreground" />
-                Motores
-              </CardTitle>
-              <CardDescription>{motorsSorted.length} unidades</CardDescription>
-            </div>
-            <AircraftEngineButton aircraftId={aircraft.id} />
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            {motorsSorted.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sin motores registrados.</p>
-            ) : (
-              motorsSorted.map((m) => (
-                <MotorCard
-                  key={m.id}
-                  motor={m}
-                  reserve={reservesByMotor.get(m.id)}
-                  aircraftId={aircraft.id}
-                  matricula={aircraft.matricula}
-                  modelo={aircraft.modelo}
-                  aviones={avionesDestino}
-                />
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 12. Hélices */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-            <div className="space-y-1">
-              <CardTitle className="text-base flex items-center gap-2">
-                <CogIcon className="h-4 w-4 text-muted-foreground" />
-                Hélices
-              </CardTitle>
-              <CardDescription>{propsSorted.length} unidades</CardDescription>
-            </div>
-            <AircraftPropellerButton aircraftId={aircraft.id} />
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            {propsSorted.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sin hélices registradas.</p>
-            ) : (
-              propsSorted.map((p) => (
-                <PropellerCard
-                  key={p.id}
-                  propeller={p}
-                  aircraftId={aircraft.id}
-                  matricula={aircraft.matricula}
-                  modelo={aircraft.modelo}
-                  aviones={avionesDestino}
-                />
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 12b. Tarifas de la reserva de overhaul con su «a partir de»
+        {/* 9. Tarifas de la reserva de overhaul con su «a partir de»
             (10-nov-2026, API 0.0.135): solo cuando el API las maneja. */}
         {tarifasReserva && (
           <ReservaVigenciasCard
@@ -500,7 +525,7 @@ export default async function AircraftDetailPage({ params }: PageProps) {
           />
         )}
 
-        {/* 13. Reservas overhaul (resumen) */}
+        {/* 10. Reservas overhaul (resumen) */}
         {aircraft.overhaul_reserves.length > 0 && (
           <Card className="lg:col-span-2">
             <CardHeader>
@@ -710,6 +735,12 @@ function MotorCard({
           horas_actuales: motor.horas_actuales ?? null,
         }}
       />
+      {/* Documentos del motor: certificados, facturas del overhaul… */}
+      <AdjuntosDestino
+        destino="MOTOR"
+        destinoId={motor.id}
+        className="pt-2 border-t border-border"
+      />
       <ComponenteFooter
         horasBase={Number(motor.horas_totales)}
         ref_={motor.aeronave_horas_ref != null ? Number(motor.aeronave_horas_ref) : null}
@@ -817,6 +848,12 @@ function PropellerCard({
           numero_serie: propeller.numero_serie,
           horas_actuales: propeller.horas_actuales ?? null,
         }}
+      />
+      {/* Documentos de la hélice. */}
+      <AdjuntosDestino
+        destino="HELICE"
+        destinoId={propeller.id}
+        className="pt-2 border-t border-border"
       />
       <ComponenteFooter
         horasBase={Number(propeller.horas_totales)}
