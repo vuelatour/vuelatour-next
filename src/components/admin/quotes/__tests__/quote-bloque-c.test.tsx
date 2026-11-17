@@ -9,6 +9,14 @@ vi.mock("@/app/admin/distancias/actions", () => ({
 vi.mock("@/app/admin/airports/actions", () => ({
   createAirportAction: async () => ({ ok: false, error: "mock" }),
 }));
+// «Pasar estos tramos al vuelo» (17-nov-2026): el botón de la banda llama a
+// una server action de cotizaciones (importa Supabase) y refresca la página.
+vi.mock("@/app/admin/quotes/actions", () => ({
+  pasarTramosAlVueloAction: async () => ({ ok: false, error: "mock" }),
+}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }),
+}));
 
 import {
   QuoteSheetInterna,
@@ -25,6 +33,12 @@ import {
 import type { QuoteFormValues } from "@/components/admin/quotes/quote-form-types";
 import type { PersistedEscala, PersistedQuote } from "@/types/quotes-persisted";
 import type { EscalaInput } from "@/types/quote";
+import {
+  ETIQUETA_PASAR_TRAMOS,
+  MOTIVO_GUARDA_PRIMERO,
+  TITULO_BOTON_PASAR_TRAMOS,
+  type EstadoPasarTramos,
+} from "@/lib/admin/tramos-al-vuelo";
 
 /**
  * FASE 2.3 · BLOQUE C (22-sep-2026): lo último que quedaba en el panel lateral
@@ -318,5 +332,130 @@ describe("«Pase de abordar» de una cotización bloqueada", () => {
       <QuoteSheetInterna {...p} lectura valores={{ ...p.valores, pase_abordar: false }} />,
     );
     expect(html).not.toContain("Pase de abordar");
+  });
+});
+
+// ---------- «Pasar estos tramos al vuelo» (17-nov-2026, caso #478) ----------
+
+/**
+ * El vuelo nació como RESERVA con su propio tramo y la cotización no escribía
+ * sus tramos: la banda solo ofrecía «Cotizar con estos tramos» (del vuelo a la
+ * cotización). Este es el botón del sentido contrario. Cuándo se ofrece y qué
+ * dice lo decide `lib/admin/tramos-al-vuelo.ts` (con su propio test); aquí se
+ * custodia que el botón LLEGUE al marcado, en los dos modos y las dos pieles.
+ */
+describe("banda de ruta operativa · «Pasar estos tramos al vuelo»", () => {
+  const ENCENDIDO: EstadoPasarTramos = {
+    visible: true,
+    habilitado: true,
+    motivo: null,
+    rutaCotizada: "CUN → CTM → MHL → CTM → CUN",
+    rutaVuelo: "CUN → MHL",
+  };
+  const operativa = {
+    opsComoEscalas: () => legs,
+    onAplicar: () => undefined,
+    legsSignature: () => "x",
+  };
+  const quote478 = () =>
+    quoteOperativa([escala({ orden: 1, origen_iata: "CUN", destino_iata: "MHL" })]);
+
+  /** El `<button>` de la acción, con sus atributos. */
+  const boton = (html: string): string | null =>
+    html.match(/<button[^>]*data-accion="pasar-tramos-al-vuelo"[^>]*>/)?.[0] ?? null;
+
+  it("en EDICIÓN va junto a «Cotizar con estos tramos», encendido y con su explicación", () => {
+    const html = renderToString(
+      <QuoteRutaOperativaBanda
+        lectura={false}
+        initialQuote={quote478()}
+        escalasCotizadas={legs}
+        operativa={operativa}
+        pasarAlVuelo={ENCENDIDO}
+      />,
+    );
+    expect(html).toContain("Cotizar con estos tramos");
+    expect(html).toContain(ETIQUETA_PASAR_TRAMOS);
+    const b = boton(html);
+    expect(b).not.toBeNull();
+    expect(b).not.toMatch(/\sdisabled/);
+    expect(b).toContain(`title="${TITULO_BOTON_PASAR_TRAMOS}"`);
+    // No edita la cotización y trae su propia confirmación: va exento del
+    // candado de «primer cambio» (que es para EDICIONES del documento).
+    expect(b).toContain("data-guard-exempt");
+    // Sigue siendo croma: el documento de pyservices no lo imprime.
+    expect(html).toMatch(UI);
+  });
+
+  it("con cambios sin guardar se VE apagado y el título dice por qué", () => {
+    const html = renderToString(
+      <QuoteRutaOperativaBanda
+        lectura={false}
+        initialQuote={quote478()}
+        escalasCotizadas={legs}
+        operativa={operativa}
+        pasarAlVuelo={{ ...ENCENDIDO, habilitado: false, motivo: MOTIVO_GUARDA_PRIMERO }}
+      />,
+    );
+    const b = boton(html);
+    expect(b).toMatch(/\sdisabled/);
+    expect(b).toContain(`title="${MOTIVO_GUARDA_PRIMERO}"`);
+  });
+
+  it("en LECTURA (cotización con candado) también se ofrece: no edita la cotización", () => {
+    const html = renderToString(
+      <QuoteRutaOperativaBanda
+        lectura
+        initialQuote={quote478()}
+        escalasCotizadas={legs}
+        pasarAlVuelo={ENCENDIDO}
+      />,
+    );
+    expect(html).not.toContain("Cotizar con estos tramos");
+    expect(boton(html)).not.toBeNull();
+  });
+
+  it("sin la prop, o con `visible:false`, NO se pinta (como hasta hoy)", () => {
+    for (const pasar of [undefined, { visible: false } as EstadoPasarTramos]) {
+      const html = renderToString(
+        <QuoteRutaOperativaBanda
+          lectura={false}
+          initialQuote={quote478()}
+          escalasCotizadas={legs}
+          operativa={operativa}
+          pasarAlVuelo={pasar}
+        />,
+      );
+      expect(html).toContain("Cotizar con estos tramos");
+      expect(html).not.toContain(ETIQUETA_PASAR_TRAMOS);
+    }
+  });
+
+  it("fuera del papel (rol sin hoja interna) sale igual, con la otra piel", () => {
+    const html = renderToString(
+      <QuoteRutaOperativaBanda
+        suelta
+        lectura={false}
+        initialQuote={quote478()}
+        escalasCotizadas={legs}
+        operativa={operativa}
+        pasarAlVuelo={ENCENDIDO}
+      />,
+    );
+    expect(boton(html)).not.toBeNull();
+    expect(html).not.toMatch(UI);
+  });
+
+  it("el diálogo de confirmación no se pinta hasta pulsar (nada destructivo a la vista)", () => {
+    const html = renderToString(
+      <QuoteRutaOperativaBanda
+        lectura={false}
+        initialQuote={quote478()}
+        escalasCotizadas={legs}
+        operativa={operativa}
+        pasarAlVuelo={ENCENDIDO}
+      />,
+    );
+    expect(html).not.toContain("Sí, pasarlos al vuelo");
   });
 });

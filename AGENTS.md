@@ -14068,3 +14068,50 @@ componente, a lo mejor una factura de la compra».
 - **Orden de deploy: migración `20261117000001_ingenieria_componentes_adjuntos`
   → API 0.0.140 → panel.** Con el panel nuevo y el API previo no se rompe
   nada (lo nuevo se esconde).
+
+## Cotización: «Pasar estos tramos al vuelo» (17-nov-2026, API 0.0.141)
+
+Reporte de la oficina con las capturas de la cotización y del vuelo #478: «no
+salen los demás tramos y no se actualiza a lo que acabo de poner en la
+cotización». El vuelo nació como RESERVA con su propio tramo (CUN → MHL): un
+vuelo así es de «ruta operativa» (`itinerario_operativo = true`) y la
+cotización solo calcula su precio, NO escribe sus tramos. La banda azul
+(`quote-ruta-operativa.tsx`) solo ofrecía un sentido: «Cotizar con estos
+tramos» (del vuelo a la cotización).
+
+- **El botón del sentido contrario**: «Pasar estos tramos al vuelo», en la
+  MISMA banda, junto al otro (en edición) o bajo la nota (en lectura: una
+  cotización con candado también lo ofrece, porque NO edita la cotización).
+  Sale en las dos pieles (papel y `suelta`). Llama a
+  `pasarTramosAlVueloAction` → `POST /v1/quotes/:id/tramos-al-vuelo` y al
+  volver hace `router.refresh()`: el vuelo deja de ser «ruta operativa», la
+  banda desaparece y la cotización pasa a comportarse como cualquier otra.
+- **FUENTE ÚNICA `lib/admin/tramos-al-vuelo.ts`** (PURA, con test):
+  `estadoPasarTramosAlVuelo({quote, rol, hayCambios})` decide si se ESCONDE
+  (el vuelo ya sigue la cotización, no hay tramos guardados, ya voló, está
+  cancelado, es combinado o de grupo, o el rol no guarda cotizaciones) o si
+  se APAGA a la vista (cambios sin guardar: al vuelo se pasan los tramos
+  GUARDADOS, no lo que hay en pantalla; el `title` lo dice), y redacta la
+  confirmación, el toast y los errores. Mismos candados que el API; si
+  divergen, manda el 409 del API y se pinta SU mensaje tal cual.
+- **SIEMPRE confirma** (reemplaza los tramos del vuelo y avisa a la
+  tripulación): el diálogo dice qué ruta sale, cuál entra y que el precio NO
+  cambia. El botón y su diálogo llevan `data-guard-exempt`: el candado de
+  «primer cambio» del cotizador confirma EDICIONES del documento y esto no
+  edita nada del formulario (no contienen inputs: la regla 4 de
+  `quote-pantalla-completa.test.tsx` se sigue cumpliendo).
+- **NUNCA es automático**: la regla del cliente es que la cotización no toca
+  la operación, y hay vuelos donde las dos rutas son distintas a propósito.
+- **Lo que NO era un error**: los horarios por tramo que la oficina captura
+  en la cotización de un vuelo operativo sí se guardan y se rehidratan; la
+  columna FECHA de «Tramos cotizados» es la fecha del PDF del cliente
+  (`pdf_fecha`), no la hora de salida.
+- **API previo** (la ruta no existe): el toast dice «falta actualizar el
+  sistema» (`mensajeErrorPasarTramos`). **Orden de deploy: API antes que
+  panel.**
+- Pruebas: `lib/admin/__tests__/tramos-al-vuelo.test.ts` (caso #478, cuándo
+  no se ofrece, textos) y el bloque «Pasar estos tramos al vuelo» de
+  `quotes/__tests__/quote-bloque-c.test.tsx` (el botón llega al marcado en
+  los dos modos y las dos pieles, apagado con su motivo, exento del candado).
+  Probado además en Chrome contra un API simulado: botón, confirmación,
+  llamada y toasts.

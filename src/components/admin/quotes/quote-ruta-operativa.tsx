@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import type { UseFormSetValue } from "react-hook-form";
 import {
   AlertDialog,
@@ -27,6 +29,18 @@ import {
   AYUDA_TRAMO_OPERATIVO,
   ETIQUETA_TRAMO_OPERATIVO,
 } from "@/lib/admin/tramo-operativo";
+import {
+  BOTON_CONFIRMAR_PASAR_TRAMOS,
+  ETIQUETA_PASAR_TRAMOS,
+  TITULO_BOTON_PASAR_TRAMOS,
+  TITULO_CONFIRMAR_PASAR_TRAMOS,
+  mensajeErrorPasarTramos,
+  textoConfirmarPasarTramos,
+  textoTramosPasados,
+  type EstadoPasarTramos,
+} from "@/lib/admin/tramos-al-vuelo";
+import { toastAvisos } from "@/lib/admin/avisos";
+import { pasarTramosAlVueloAction } from "@/app/admin/quotes/actions";
 import type { AirportOption, OpsLegForm, QuoteFormValues } from "./quote-form-types";
 
 /** La croma de la hoja NO se imprime: el comparador con pyservices la descarta. */
@@ -90,6 +104,7 @@ export function QuoteRutaOperativaBanda({
   escalasCotizadas,
   operativa,
   suelta = false,
+  pasarAlVuelo,
 }: {
   lectura: boolean;
   initialQuote?: PersistedQuote;
@@ -103,6 +118,13 @@ export function QuoteRutaOperativaBanda({
   };
   /** Fuera del papel (rol sin hoja interna): misma banda, piel de utilidades. */
   suelta?: boolean;
+  /**
+   * «Pasar estos tramos al vuelo» (17-nov-2026, caso #478): el sentido
+   * CONTRARIO de «Cotizar con estos tramos». Lo decide
+   * `estadoPasarTramosAlVuelo` (`lib/admin/tramos-al-vuelo.ts`); ausente o
+   * `visible:false` ⇒ no se pinta.
+   */
+  pasarAlVuelo?: EstadoPasarTramos;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const escalas = initialQuote?.escalas ?? [];
@@ -150,6 +172,15 @@ export function QuoteRutaOperativaBanda({
           La hoja lleva la ruta COMERCIAL (lo que paga el cliente, abre y cierra en CUN). Los
           tramos operativos se editan en el detalle del vuelo.
         </div>
+        {initialQuote && pasarAlVuelo?.visible && (
+          <div className="mt-1.5">
+            <BotonPasarAlVuelo
+              quoteId={initialQuote.id}
+              estado={pasarAlVuelo}
+              clase={c.btn}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -179,25 +210,36 @@ export function QuoteRutaOperativaBanda({
         <span className={c.ttl}>
           Ruta operativa (la vuela el piloto — aquí no se cotiza)
         </span>
-        <button
-          type="button"
-          className={c.btn}
-          disabled={ops.opsComoEscalas().length === 0}
-          title="Copia origen→destino de los tramos operativos como punto de partida de la cotización. Los pax se capturan en la hoja, no se copian."
-          onClick={() => {
-            const nuevos = ops.opsComoEscalas();
-            if (
-              escalasCotizadas.length > 0 &&
-              ops.legsSignature(escalasCotizadas) !== ops.legsSignature(nuevos)
-            ) {
-              setConfirmOpen(true);
-            } else {
-              ops.onAplicar(nuevos);
-            }
-          }}
-        >
-          Cotizar con estos tramos
-        </button>
+        {/* Los dos sentidos, juntos a la derecha: del vuelo a la cotización
+            («Cotizar con estos tramos») y de la cotización al vuelo. */}
+        <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+          <button
+            type="button"
+            className={c.btn}
+            disabled={ops.opsComoEscalas().length === 0}
+            title="Copia origen→destino de los tramos operativos como punto de partida de la cotización. Los pax se capturan en la hoja, no se copian."
+            onClick={() => {
+              const nuevos = ops.opsComoEscalas();
+              if (
+                escalasCotizadas.length > 0 &&
+                ops.legsSignature(escalasCotizadas) !== ops.legsSignature(nuevos)
+              ) {
+                setConfirmOpen(true);
+              } else {
+                ops.onAplicar(nuevos);
+              }
+            }}
+          >
+            Cotizar con estos tramos
+          </button>
+          {initialQuote && pasarAlVuelo?.visible && (
+            <BotonPasarAlVuelo
+              quoteId={initialQuote.id}
+              estado={pasarAlVuelo}
+              clase={c.btn}
+            />
+          )}
+        </span>
       </div>
       <div className={c.ruta}>{ruta}</div>
       <div className={c.nota}>
@@ -227,6 +269,85 @@ export function QuoteRutaOperativaBanda({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/**
+ * «PASAR ESTOS TRAMOS AL VUELO» (17-nov-2026, API 0.0.141, caso #478): el
+ * botón del sentido contrario. El vuelo nació con su propia ruta (reserva) y
+ * la oficina decide que la de la cotización sea la del vuelo.
+ *
+ * SIEMPRE confirma: reemplaza los tramos del vuelo y avisa a la tripulación.
+ * NO edita la cotización (el precio no cambia), por eso el botón y su diálogo
+ * van exentos del candado de «primer cambio» del cotizador: ese candado
+ * confirma EDICIONES del documento, y esto tiene su propia confirmación, que
+ * ya dice lo de la tripulación. Los candados reales son del API; aquí se
+ * pinta su mensaje tal cual.
+ */
+function BotonPasarAlVuelo({
+  quoteId,
+  estado,
+  clase,
+}: {
+  quoteId: string;
+  estado: Extract<EstadoPasarTramos, { visible: true }>;
+  clase: string;
+}) {
+  const router = useRouter();
+  const [abierto, setAbierto] = useState(false);
+  const [pendiente, iniciar] = useTransition();
+
+  const pasar = () => {
+    iniciar(async () => {
+      const res = await pasarTramosAlVueloAction(quoteId);
+      setAbierto(false);
+      if (!res.ok || !res.data) {
+        toast.error(mensajeErrorPasarTramos(res));
+        return;
+      }
+      toast.success(textoTramosPasados(res.data));
+      toastAvisos(res.data.avisos);
+      router.refresh();
+    });
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className={clase}
+        data-accion="pasar-tramos-al-vuelo"
+        data-guard-exempt
+        disabled={!estado.habilitado || pendiente}
+        title={estado.motivo ?? TITULO_BOTON_PASAR_TRAMOS}
+        onClick={() => setAbierto(true)}
+      >
+        {ETIQUETA_PASAR_TRAMOS}
+      </button>
+      <AlertDialog open={abierto} onOpenChange={(v) => !pendiente && setAbierto(v)}>
+        <AlertDialogContent data-guard-exempt>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{TITULO_CONFIRMAR_PASAR_TRAMOS}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {textoConfirmarPasarTramos(estado)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pendiente}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pendiente}
+              onClick={(e) => {
+                // El diálogo se cierra cuando el API contesta, no al pulsar.
+                e.preventDefault();
+                pasar();
+              }}
+            >
+              {pendiente ? "Pasando…" : BOTON_CONFIRMAR_PASAR_TRAMOS}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

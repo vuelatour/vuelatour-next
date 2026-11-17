@@ -11,6 +11,7 @@ import type {
 } from "@/types/correos-cliente";
 import type { PersistedQuote } from "@/types/quotes-persisted";
 import type { CalculateQuoteRequest } from "@/types/quote";
+import type { TramosAlVueloRespuesta } from "@/lib/admin/tramos-al-vuelo";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -292,6 +293,35 @@ export async function reviseQuoteAction(
       revalidatePath("/admin/calendar");
     }
     return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * «Pasar estos tramos al vuelo» (17-nov-2026, API 0.0.141, caso #478): el
+ * vuelo nació con ruta operativa propia (reserva) y la oficina decide que la
+ * ruta de la cotización sea la del vuelo. NO es una revisión: el precio, el
+ * snapshot y la versión no cambian. Los candados y los mensajes son del API;
+ * los textos del panel viven en `lib/admin/tramos-al-vuelo.ts`.
+ *
+ * Revalida la cotización Y el vuelo (mismo id), la lista de vuelos y el
+ * calendario: los tramos cambian en todas esas pantallas.
+ */
+export async function pasarTramosAlVueloAction(
+  id: string,
+): Promise<ActionResult<TramosAlVueloRespuesta>> {
+  try {
+    const data = await apiServer<TramosAlVueloRespuesta>(
+      `/v1/quotes/${id}/tramos-al-vuelo`,
+      { method: "POST" },
+    );
+    revalidatePath("/admin/quotes");
+    revalidatePath(`/admin/quotes/${id}`);
+    revalidatePath("/admin/flights");
+    revalidatePath(`/admin/flights/${id}`);
+    revalidatePath("/admin/calendar");
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

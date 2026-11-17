@@ -56,6 +56,11 @@ vi.mock("@/app/admin/distancias/actions", () => ({
 vi.mock("@/app/admin/airports/actions", () => ({
   createAirportAction: async () => ({ ok: false, error: "mock" }),
 }));
+// La banda de ruta operativa importa la acción de «Pasar estos tramos al
+// vuelo» (17-nov-2026), que es una server action de cotizaciones (Supabase).
+vi.mock("@/app/admin/quotes/actions", () => ({
+  pasarTramosAlVueloAction: async () => ({ ok: false, error: "mock" }),
+}));
 vi.mock("../escala-assign-sheet", () => ({ EscalaAssignSheet: () => null }));
 vi.mock("../escala-form-sheet", () => ({ EscalaFormSheet: () => null }));
 // El Sheet real va por portal (no se pinta en el servidor): aquí se pinta su

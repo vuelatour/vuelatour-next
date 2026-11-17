@@ -56,6 +56,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toastAvisos } from "@/lib/admin/avisos";
+import { estadoPasarTramosAlVuelo } from "@/lib/admin/tramos-al-vuelo";
 import {
   chipAeronaveEnTaller,
   descripcionAeronave,
@@ -1268,6 +1269,13 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
     [isRevise, base.defaults, valuesJson, aircraft],
   );
   const sucio = isRevise && !lectura && cambios.length > 0;
+  // «Pasar estos tramos al vuelo» (17-nov-2026, caso #478): solo en revisión
+  // y con el vuelo en ruta operativa; con cambios sin guardar se ve apagado
+  // (al vuelo se pasan los tramos GUARDADOS). Reglas y textos:
+  // `lib/admin/tramos-al-vuelo.ts`.
+  const pasarAlVuelo = isRevise
+    ? estadoPasarTramosAlVuelo({ quote: initialQuote, rol, hayCambios: sucio })
+    : undefined;
   // D5 (F2): solo notas del cliente / toggles del PDF → sin versión.
   const soloPresentacion =
     sucio && cambios.every((c) => CLAVES_PRESENTACION.has(c.clave));
@@ -3513,6 +3521,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
               ? { opsComoEscalas, onAplicar: aplicarOpsComoEscalas, legsSignature }
               : undefined
           }
+          pasarAlVuelo={pasarAlVuelo}
         />
       )}
 
@@ -3574,6 +3583,7 @@ export function QuoteCalculator(props: QuoteCalculatorProps) {
                         ? { opsComoEscalas, onAplicar: aplicarOpsComoEscalas, legsSignature }
                         : undefined
                     }
+                    pasarAlVuelo={pasarAlVuelo}
                   />
                 }
                 // ECO del operador externo en la tarjeta «Avión cotizado»: se
