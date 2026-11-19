@@ -35,22 +35,18 @@ import {
   NOTA_SALDO_LIBRO_COMPLETO,
   TEXTO_LIMPIAR_PERIODO,
   TEXTO_SIN_MOVIMIENTOS_PERIODO,
+  TITULO_LIMPIAR_PERIODO,
   cajasParaReponer,
   filtrarHistorialPorRango,
   hayRangoHistorial,
   hrefCajaChica,
   rangoHistorialCaja,
   resumenMadreDeFondo,
-  saldoInicialAlInicio,
-  tituloLimpiarPeriodo,
   repuestoADeEntrada,
   textoPeriodoHistorial,
 } from "@/lib/admin/caja-chica-madre";
 import { ResumenMadreCard } from "@/components/admin/caja-chica/resumen-madre-card";
 import { HistorialPeriodoFiltro } from "@/components/admin/caja-chica/historial-periodo-filtro";
-import { getInicioOficial } from "@/lib/api/inicio-oficial";
-import { textoSaldoInicial } from "@/lib/admin/inicio-oficial";
-import { AvisoPeriodoAjustado } from "@/components/admin/aviso-inicio-oficial";
 import { porPagarDeFondo } from "@/lib/admin/gasto-por-pagar";
 import { PorPagarCaja } from "@/components/admin/caja-chica/por-pagar-caja";
 
@@ -79,10 +75,10 @@ export default async function CajaFondoPage({
   const { id } = await params;
   // Filtro Desde/Hasta del historial (15-oct-2026): días válidos o nada.
   const sp = await searchParams;
-  // Inicio oficial (16-oct-2026, API 0.0.84): sin `?desde` se ve desde el
-  // inicio (el libro sigue completo: saldo por fila y tarjetas no cambian).
-  const inicio = await getInicioOficial();
-  const rango = rangoHistorialCaja(sp.desde, sp.hasta, inicio);
+  // Sin `?desde` se ve el LIBRO ENTERO (19-nov-2026): el inicio oficial ya no
+  // recorta la caja. Una reposición sin los gastos que repone no cuadra a la
+  // vista (caso real: taxis de agosto repuestos en septiembre).
+  const rango = rangoHistorialCaja(sp.desde, sp.hasta);
   // Id que no es uuid (enlace viejo, marcador): 404 SIN llamar al API — su
   // 400 de «uuid inválido» tumbaba la pantalla al error boundary (21-sep-2026).
   if (!esUuid(id)) notFound();
@@ -157,15 +153,8 @@ export default async function CajaFondoPage({
   // reponer de cada fila siguen siendo los que manda el API (y las tarjetas
   // de arriba leen `fondo`, no esto).
   const entradas = filtrarHistorialPorRango(fondo.historial, rango);
-  // «Sin movimientos en el periodo» aplica a CUALQUIER rango (también el de
-  // siempre desde el inicio); «Limpiar» solo si el rango no es el de siempre.
+  // «Sin movimientos en el periodo» y «Limpiar» solo con un rango de fechas.
   const conRango = hayRangoHistorial(rango);
-  const limpiable = hayRangoHistorial(rango, inicio);
-  // «Saldo inicial al 1-sep-2026»: la cifra que el API ya calculó con todo lo
-  // anterior (última fila antes del inicio). Solo cuando la vista arranca en
-  // el inicio; un rango que empieza después no la pinta.
-  const saldoInicial =
-    inicio && rango.desde === inicio ? saldoInicialAlInicio(fondo.historial, inicio) : null;
   const periodoVisto = textoPeriodoHistorial(rango, entradas.length, fondo.historial.length);
   // Caja MADRE: a quién puede reponer desde «Registrar movimiento».
   const cajasFondeadas = cajasParaReponer(fondo);
@@ -401,7 +390,6 @@ export default async function CajaFondoPage({
               {periodoVisto}. {NOTA_SALDO_LIBRO_COMPLETO}
             </p>
           )}
-          <AvisoPeriodoAjustado inicio={inicio} ajustado={!!rango.ajustado} />
         </CardHeader>
         <CardContent className="p-0">
           {fondo.historial.length === 0 ? (
@@ -411,22 +399,16 @@ export default async function CajaFondoPage({
           ) : conRango && historial.length === 0 ? (
             <div className="px-6 py-8 text-center text-sm text-muted-foreground">
               <p>{TEXTO_SIN_MOVIMIENTOS_PERIODO}</p>
-              {limpiable && (
-                <Link
-                  href={hrefCajaChica(fondo.id)}
-                  scroll={false}
-                  title={tituloLimpiarPeriodo(inicio)}
-                  className="mt-2 inline-flex cursor-pointer items-center rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {TEXTO_LIMPIAR_PERIODO}
-                </Link>
-              )}
-              {inicio && saldoInicial && (
-                <FilaSaldoInicial inicio={inicio} saldo={saldoInicial} money={money} />
-              )}
+              <Link
+                href={hrefCajaChica(fondo.id)}
+                scroll={false}
+                title={TITULO_LIMPIAR_PERIODO}
+                className="mt-2 inline-flex cursor-pointer items-center rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {TEXTO_LIMPIAR_PERIODO}
+              </Link>
             </div>
           ) : (
-            <>
             <FondoHistorialTable
               movimientos={historial}
               aircraft={aircraft}
@@ -437,52 +419,9 @@ export default async function CajaFondoPage({
               usuarios={usuarios}
               puedeDescargarExcel={puedeExcel}
             />
-            {/* El libro va del más reciente al más viejo: el saldo con el
-                que ARRANCA la vista va al pie, bajo la fila más vieja. */}
-            {inicio && saldoInicial && (
-              <FilaSaldoInicial inicio={inicio} saldo={saldoInicial} money={money} />
-            )}
-            </>
           )}
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-/**
- * «Saldo inicial al 1-sep-2026» (16-oct-2026, inicio oficial): renglón
- * sintético con el saldo y lo por reponer de la última fila anterior al
- * inicio — las cifras que el API ya calculó con el libro completo. No es un
- * movimiento: no se edita ni entra a la búsqueda de la tabla.
- */
-function FilaSaldoInicial({
-  inicio,
-  saldo,
-  money,
-}: {
-  inicio: string;
-  saldo: { saldo: number; por_reponer: number | null };
-  money: (n: number) => string;
-}) {
-  return (
-    <div
-      data-saldo-inicial
-      className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-4 py-2.5 text-sm"
-    >
-      <span className="font-medium">{textoSaldoInicial(inicio)}</span>
-      <span className="flex flex-wrap items-center gap-x-4 gap-y-1 tabular-nums">
-        <span>
-          <span className="text-xs text-muted-foreground">Saldo </span>
-          {money(saldo.saldo)}
-        </span>
-        {saldo.por_reponer != null && (
-          <span>
-            <span className="text-xs text-muted-foreground">Por reponer </span>
-            {money(saldo.por_reponer)}
-          </span>
-        )}
-      </span>
     </div>
   );
 }

@@ -22,11 +22,6 @@
 
 import { fmtDateOnly } from "@/lib/datetime";
 import { esDiaValido, esUuid } from "@/lib/admin/url-params";
-import {
-  ajustarRangoAlInicio,
-  textoDesdeInicio,
-  type InicioOficial,
-} from "@/lib/admin/inicio-oficial";
 import type {
   CajaFondeada,
   CajaMovimiento,
@@ -239,12 +234,18 @@ export const BOTON_VOLVER = "Volver";
 // (3) Filtro Desde/Hasta del HISTORIAL
 // =============================================================================
 
+// EL HISTORIAL DE LA CAJA VA COMPLETO (19-nov-2026, API 0.0.146). Del 16-oct
+// al 19-nov la vista arrancaba en el inicio oficial (1-sep-2026) con un
+// renglón «Saldo inicial». Reporte de la oficina: «había registrado unos
+// gastos de taxi y ahorita ya no están; ahora me marca que tengo más dinero».
+// Los gastos (de agosto) seguían en el libro y el saldo era el correcto, pero
+// la lista enseñaba la reposición de septiembre SIN los gastos que reponía:
+// no cuadraba a la vista. La caja es un libro corrido: se ve entero. El
+// filtro Desde/Hasta acepta cualquier fecha; el inicio oficial ya no entra
+// aquí (sigue igual en Gastos, Reportes y lo demás).
 export interface RangoHistorialCaja {
   desde?: string;
   hasta?: string;
-  /** Inicio oficial (16-oct-2026): el rango de la URL caía antes del inicio
-   *  y se movió (la página pinta el aviso). Solo existe si es `true`. */
-  ajustado?: true;
 }
 
 /** Primer valor de un parámetro de la URL (Next puede dar un arreglo). */
@@ -259,63 +260,21 @@ function primero(v: string | string[] | null | undefined): string | undefined {
 export function rangoHistorialCaja(
   desde: string | string[] | null | undefined,
   hasta: string | string[] | null | undefined,
-  inicio: InicioOficial = null,
 ): RangoHistorialCaja {
   const d0 = primero(desde);
   const h0 = primero(hasta);
   let d = esDiaValido(d0) ? d0 : undefined;
   let h = esDiaValido(h0) ? h0 : undefined;
   if (d && h && d > h) [d, h] = [h, d];
-  // Inicio oficial (16-oct-2026, API 0.0.84): sin `?desde` el historial se
-  // ve DESDE EL INICIO (el libro sigue completo en el API: el saldo de cada
-  // fila no cambia); un extremo anterior se sube con aviso. Sin él, intacto.
-  const aj = ajustarRangoAlInicio({ desde: d, hasta: h }, inicio, "");
   const out: RangoHistorialCaja = {};
-  const desdeFinal = aj.desde ?? (inicio ?? undefined);
-  if (desdeFinal) out.desde = desdeFinal;
-  if (aj.hasta) out.hasta = aj.hasta;
-  if (aj.ajustado) out.ajustado = true;
+  if (d) out.desde = d;
+  if (h) out.hasta = h;
   return out;
 }
 
-/**
- * ¿El historial está filtrado por algo DISTINTO de lo de siempre? Con inicio
- * oficial, «desde el inicio y sin hasta» es el default (no es filtro: no
- * pinta «Limpiar»).
- */
-export function hayRangoHistorial(r: RangoHistorialCaja, inicio: InicioOficial = null): boolean {
-  if (inicio) return !!(r.hasta || (r.desde && r.desde !== inicio));
+/** ¿El historial está filtrado por fechas? (sin filtro se ve el libro entero). */
+export function hayRangoHistorial(r: RangoHistorialCaja): boolean {
   return !!(r.desde || r.hasta);
-}
-
-/** `title` de «Limpiar»: con inicio oficial vuelve a «desde el 1-sep-2026», no al libro completo. */
-export function tituloLimpiarPeriodo(inicio: InicioOficial): string {
-  return inicio
-    ? `Quitar el filtro de fechas y ver ${textoDesdeInicio(inicio)}`
-    : TITULO_LIMPIAR_PERIODO;
-}
-
-/**
- * «Saldo inicial al 1-sep-2026» (16-oct-2026, inicio oficial): el `saldo` y
- * el `por_reponer` de la ÚLTIMA fila anterior al inicio, tal como los calculó
- * el API con el libro completo — no se recalcula ni se reordena nada. El API
- * manda `historial` del más reciente al más viejo (`getFondoDetail` hace
- * `.reverse()` del libro ascendente); si llegara ascendente, la última
- * anterior es la de más abajo. Sin filas anteriores (o sin inicio) ⇒ null.
- * El día se compara como en `filtrarHistorialPorRango` (los 10 primeros
- * caracteres de `fecha`), así que la fila sintética cubre exactamente lo que
- * el filtro esconde.
- */
-export function saldoInicialAlInicio<
-  T extends { fecha: string; saldo: number; por_reponer?: number | null },
->(historial: readonly T[], inicio: InicioOficial): { saldo: number; por_reponer: number | null } | null {
-  if (!inicio || historial.length === 0) return null;
-  const dia = (f: T) => (f.fecha ?? "").slice(0, 10);
-  const descendente = dia(historial[0]) >= dia(historial[historial.length - 1]);
-  const anteriores = historial.filter((f) => dia(f) < inicio);
-  if (anteriores.length === 0) return null;
-  const ultima = descendente ? anteriores[0] : anteriores[anteriores.length - 1];
-  return { saldo: ultima.saldo, por_reponer: ultima.por_reponer ?? null };
 }
 
 /**

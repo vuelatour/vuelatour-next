@@ -3,6 +3,8 @@
  * regla con inicio y con `null` (null ⇒ salida IDÉNTICA a la de siempre, que
  * es la promesa del skew: API previo sin la llave ⇒ como hoy).
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { atajosPeriodoReportes } from "../reportes-ui";
 import { parametrosVistaBalance, periodoDefaultVista } from "../balance-vista";
@@ -27,8 +29,6 @@ import {
   filtrarHistorialPorRango,
   hayRangoHistorial,
   rangoHistorialCaja,
-  saldoInicialAlInicio,
-  tituloLimpiarPeriodo,
 } from "../caja-chica-madre";
 import { lineaGastoLote } from "../conciliacion-lote";
 import { fmtDateOnly } from "@/lib/datetime";
@@ -200,54 +200,55 @@ describe("Facturas emitidas: filtros de la URL", () => {
   });
 });
 
-describe("Caja chica: historial desde el inicio y «Saldo inicial al 01/09/2026»", () => {
-  // Libro como lo manda el API: del más reciente al más viejo (`.reverse()`).
+describe("Caja chica: el historial NO se recorta por el inicio oficial (19-nov-2026)", () => {
+  // Caso real (caja de la oficina): gastos de AGOSTO repuestos en septiembre.
+  // Con el piso, la vista enseñaba la reposición sin los gastos que reponía.
+  // Libro como lo manda el API: del más reciente al más viejo.
   const historial = [
-    { id: "c", fecha: "2026-09-10", saldo: 700, por_reponer: 300 },
-    { id: "b", fecha: "2026-08-20", saldo: 1500, por_reponer: 500 },
-    { id: "a", fecha: "2026-06-30", saldo: 2000, por_reponer: 0 },
+    { id: "propina", fecha: "2026-11-18", saldo: 725 },
+    { id: "internet", fecha: "2026-09-29", saldo: 925 },
+    { id: "reposicion", fecha: "2026-09-21", saldo: 1000 },
+    { id: "uber", fecha: "2026-08-24", saldo: -70 },
+    { id: "taxi", fecha: "2026-08-06", saldo: 300 },
+    { id: "fondo", fecha: "2026-08-04", saldo: 1000 },
   ];
 
-  it("sin `?desde`: por defecto {desde: inicio} (no cuenta como filtro: sin «Limpiar»)", () => {
-    const r = rangoHistorialCaja(null, null, INICIO);
-    expect(r).toEqual({ desde: INICIO });
-    expect(hayRangoHistorial(r, INICIO)).toBe(false);
-    expect(hayRangoHistorial({ desde: INICIO, hasta: "2026-09-30" }, INICIO)).toBe(true);
-    expect(hayRangoHistorial({ desde: "2026-09-15" }, INICIO)).toBe(true);
+  it("sin `?desde`: sin rango ⇒ se ven TODAS las filas, también las de antes del inicio", () => {
+    const r = rangoHistorialCaja(null, null);
+    expect(r).toEqual({});
+    expect(hayRangoHistorial(r)).toBe(false);
+    const vis = filtrarHistorialPorRango(historial, r);
+    expect(vis.map((f) => f.id)).toEqual(historial.map((f) => f.id));
+    expect(vis.some((f) => f.fecha < INICIO)).toBe(true);
   });
 
-  it("`?desde` anterior sube con aviso; null ⇒ libro completo como siempre", () => {
-    expect(rangoHistorialCaja("2026-07-01", null, INICIO)).toEqual({ desde: INICIO, ajustado: true });
-    expect(rangoHistorialCaja(null, null, null)).toEqual({});
-    expect(rangoHistorialCaja(null, null)).toEqual({});
-    expect(hayRangoHistorial({}, null)).toBe(false);
+  it("un `?desde` anterior al inicio se RESPETA (ya no sube ni avisa)", () => {
+    const r = rangoHistorialCaja("2026-08-01", "2026-08-31");
+    expect(r).toEqual({ desde: "2026-08-01", hasta: "2026-08-31" });
+    expect(r).not.toHaveProperty("ajustado");
+    expect(filtrarHistorialPorRango(historial, r).map((f) => f.id)).toEqual(["uber", "taxi", "fondo"]);
   });
 
   it("filtra FILAS: el saldo de cada fila visible no cambia", () => {
-    const vis = filtrarHistorialPorRango(historial, rangoHistorialCaja(null, null, INICIO));
-    expect(vis).toEqual([historial[0]]);
-    expect(vis[0].saldo).toBe(700);
+    const vis = filtrarHistorialPorRango(historial, rangoHistorialCaja("2026-09-01", null));
+    expect(vis.map((f) => f.id)).toEqual(["propina", "internet", "reposicion"]);
+    expect(vis[2].saldo).toBe(1000);
   });
 
-  it("saldo inicial = la última fila anterior en el orden del API (la de agosto, no la de junio)", () => {
-    expect(saldoInicialAlInicio(historial, INICIO)).toEqual({ saldo: 1500, por_reponer: 500 });
-    // Si llegara ascendente, la última anterior es la de más abajo.
-    expect(saldoInicialAlInicio([...historial].reverse(), INICIO)).toEqual({ saldo: 1500, por_reponer: 500 });
+  it("«Limpiar» vuelve al libro completo", () => {
+    expect(TITULO_LIMPIAR_PERIODO).toBe("Quitar el filtro de fechas y ver todo el historial");
   });
 
-  it("sin filas anteriores, sin libro o sin inicio ⇒ null; sin `por_reponer` (API previo) ⇒ null en ese campo", () => {
-    expect(saldoInicialAlInicio([historial[0]], INICIO)).toBeNull();
-    expect(saldoInicialAlInicio([], INICIO)).toBeNull();
-    expect(saldoInicialAlInicio(historial, null)).toBeNull();
-    expect(saldoInicialAlInicio([{ fecha: "2026-08-01", saldo: -250 }], INICIO)).toEqual({
-      saldo: -250,
-      por_reponer: null,
-    });
-  });
-
-  it("«Limpiar» vuelve a desde el inicio, no al libro completo", () => {
-    expect(tituloLimpiarPeriodo(INICIO)).toBe("Quitar el filtro de fechas y ver desde el 01/09/2026");
-    expect(tituloLimpiarPeriodo(null)).toBe(TITULO_LIMPIAR_PERIODO);
+  it("cableado: ni la página ni el filtro leen el inicio oficial", () => {
+    const leer = (rel: string) => readFileSync(join(__dirname, rel), "utf8");
+    const pagina = leer("../../../app/admin/caja-chica/[id]/page.tsx");
+    const filtro = leer("../../../components/admin/caja-chica/historial-periodo-filtro.tsx");
+    for (const src of [pagina, filtro]) {
+      expect(src).not.toMatch(/getInicioOficial|useInicioOficial|minFechaFiltro|AvisoPeriodoAjustado/);
+      expect(src).not.toMatch(/from "@\/lib\/admin\/inicio-oficial"/);
+    }
+    expect(pagina).not.toContain("FilaSaldoInicial");
+    expect(pagina).toContain("const rango = rangoHistorialCaja(sp.desde, sp.hasta);");
   });
 });
 

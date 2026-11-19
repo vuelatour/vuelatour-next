@@ -11279,7 +11279,17 @@ pinta el chip/franja de lo anterior.
   verificación de gasto, cobro, reembolso, cobro de grupo, ingreso,
   movimiento de caja chica y corregir la fecha desde Conciliación. El API
   acepta la fecha (la cola offline de la app tiene capturas fechadas).
-- **Caja chica**: el API sigue mandando el libro COMPLETO (saldo por fila y
+- **Caja chica — RETIRADO el 19-nov-2026 (API 0.0.146)**: la caja ya NO
+  arranca en el inicio oficial ni pinta «Saldo inicial»; sin `?desde` se ve
+  el libro ENTERO y el filtro Desde/Hasta acepta cualquier fecha
+  (`rangoHistorialCaja(desde, hasta)` y `hayRangoHistorial(r)` ya no reciben
+  `inicio`; `saldoInicialAlInicio` y `tituloLimpiarPeriodo` se eliminaron).
+  Motivo: la oficina veía una reposición de septiembre sin los gastos de
+  agosto que reponía («ya no están mis taxis… me marca que tengo más
+  dinero») aunque el saldo era el correcto. Un gasto anterior al inicio se
+  VE en el historial pero sin botón de editar ni foto (la lista de Gastos
+  del API sí conserva el piso) y sin «Ver en balance». Lo que sigue en este
+  punto es la regla VIEJA, solo como historia: el API sigue mandando el libro COMPLETO (saldo por fila y
   tarjetas intactos, `NOTA_SALDO_LIBRO_COMPLETO`). Sin `?desde` la vista va
   `{desde: inicio}` (no cuenta como filtro: sin «Limpiar»); «Limpiar» vuelve
   ahí, no al libro completo. **«Saldo inicial al 1-sep-2026»**

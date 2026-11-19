@@ -170,12 +170,21 @@ describe("Cableado de páginas", () => {
       "../../../app/admin/conciliacion/page.tsx",
       "../../../app/admin/facturas/page.tsx",
       "../../../app/admin/facturas-emitidas/page.tsx",
-      "../../../app/admin/caja-chica/[id]/page.tsx",
     ]) {
       const src = leer(rel);
       expect(src, rel).toContain("await getInicioOficial()");
       expect(src, rel).toContain("<AvisoPeriodoAjustado");
     }
+  });
+
+  it("la CAJA CHICA es la excepción (19-nov-2026, API 0.0.146): libro corrido, se ve entero", () => {
+    // Reporte de la oficina: la vista arrancaba en el inicio y enseñaba una
+    // reposición de septiembre sin los gastos de agosto que reponía.
+    const src = leer("../../../app/admin/caja-chica/[id]/page.tsx");
+    expect(src).not.toContain("getInicioOficial");
+    expect(src).not.toContain("AvisoPeriodoAjustado");
+    expect(src).not.toContain("FilaSaldoInicial");
+    expect(src).toContain("const rango = rangoHistorialCaja(sp.desde, sp.hasta);");
   });
 
   it("la ficha del piloto ya NO es excepción (auditoría 16-oct-2026, API 0.0.85): lee el inicio", () => {

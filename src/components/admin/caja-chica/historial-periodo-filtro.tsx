@@ -16,13 +16,11 @@ import {
   ETIQUETA_PERIODO_HISTORIAL,
   TEXTO_LIMPIAR_PERIODO,
   TITULO_FECHA_HISTORIAL,
+  TITULO_LIMPIAR_PERIODO,
   hayRangoHistorial,
   rangoHistorialCaja,
-  tituloLimpiarPeriodo,
 } from "@/lib/admin/caja-chica-madre";
 import { CLASE_FILTRO_ACTIVO, TEXTO_ACTUALIZANDO } from "@/lib/admin/gastos-vista";
-import { useInicioOficial } from "@/components/admin/inicio-oficial-provider";
-import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
 
 /**
  * Filtro Desde/Hasta del HISTORIAL de una caja (15-oct-2026, pedido del
@@ -31,15 +29,14 @@ import { minFechaFiltro } from "@/lib/admin/inicio-oficial";
  * con el MISMO borrador de fechas de Cotizaciones/Gastos
  * (`useRangoBorrador`: nada navega a media tecla). La página filtra las
  * FILAS sobre el libro completo: el saldo de cada fila y las tarjetas no
- * cambian.
+ * cambian. Las fechas son LIBRES (19-nov-2026): el inicio oficial ya no
+ * recorta la caja — es un libro corrido y se ve entero.
  */
 export function HistorialPeriodoFiltro() {
   const router = useRouter();
-  // Inicio oficial (16-oct-2026): las fechas no bajan del inicio. Sin él, libres.
-  const inicio = useInicioOficial();
   const pathname = usePathname();
   const sp = useSearchParams();
-  const rango = rangoHistorialCaja(sp.get("desde"), sp.get("hasta"), inicio);
+  const rango = rangoHistorialCaja(sp.get("desde"), sp.get("hasta"));
   const [actualizando, startTransition] = useTransition();
   // La última consulta PEDIDA (patrón de Gastos): caduca cuando la URL se mueve.
   const pendiente = useRef<ConsultaPendiente | null>(null);
@@ -81,7 +78,7 @@ export function HistorialPeriodoFiltro() {
     navegar,
     rangoParaNavegar: () => {
       const p = paramsParaNavegar();
-      const base = rangoHistorialCaja(p.get("desde"), p.get("hasta"), inicio);
+      const base = rangoHistorialCaja(p.get("desde"), p.get("hasta"));
       return { desde: base.desde ?? "", hasta: base.hasta ?? "" };
     },
   });
@@ -95,7 +92,6 @@ export function HistorialPeriodoFiltro() {
     <Input
       id={`caja-historial-${c}`}
       type="date"
-      min={minFechaFiltro(inicio)}
       value={periodo.visible[c]}
       aria-label={`${ETIQUETA_PERIODO_HISTORIAL}: ${etiqueta}`}
       title={TITULO_FECHA_HISTORIAL}
@@ -125,11 +121,11 @@ export function HistorialPeriodoFiltro() {
         </span>
         {campo("hasta", "hasta")}
       </div>
-      {hayRangoHistorial(rango, inicio) && (
+      {hayRangoHistorial(rango) && (
         <button
           type="button"
           onClick={limpiar}
-          title={tituloLimpiarPeriodo(inicio)}
+          title={TITULO_LIMPIAR_PERIODO}
           className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg border border-border px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <XMarkIcon className="h-3.5 w-3.5" aria-hidden="true" />
