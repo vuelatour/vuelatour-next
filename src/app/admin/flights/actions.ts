@@ -5,12 +5,24 @@ import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import { esUuid } from "@/lib/admin/url-params";
 import type {
+  CobroUtilidadesPayload,
   EscalaQuitadaResult,
   FacturaClienteBloque,
   FlightCobro,
   FlightEscala,
   FlightListItem,
+  ResultadoCobroUtilidades,
 } from "@/types/flights";
+import { getSociosCuenta } from "@/lib/api/profit-sharing-server";
+import { RUTA_PAGOS_SOCIOS } from "@/lib/admin/reparto-pagos";
+import { RUTA_REPARTO_AVIONES } from "@/lib/admin/reparto-avion";
+import {
+  TEXTO_FALLO_RED_COBRO_UTILIDADES,
+  mensajeCargaSocios,
+  mensajeErrorCobroUtilidades,
+  sociosParaCobro,
+  type SocioParaCobro,
+} from "@/lib/admin/cobro-utilidades";
 import type { MetodoPago } from "@/types/quote";
 import type { EstadoVuelo } from "@/types/quotes-persisted";
 import { errorIniciadoSinCompletar } from "@/lib/admin/taco-omitido";
@@ -362,6 +374,107 @@ export async function registerCobroAction(
   }
 }
 
+// =============================================================================
+// COBRO CON UTILIDADES DEL SOCIO (23-nov-2026, API 0.0.148)
+// =============================================================================
+//
+// El socio paga su vuelo «descontándolo de sus utilidades»: UNA llamada crea
+// el cobro del vuelo y, ligada, la entrega al socio en «Pagos a socios».
+// Reglas, textos y cuerpo: `lib/admin/cobro-utilidades.ts`.
+
+/** Las pantallas que pintan la entrega ligada al cobro (Pagos a socios). */
+function revalidarPagosSocios() {
+  revalidatePath("/admin/profit-sharing");
+  revalidatePath(RUTA_PAGOS_SOCIOS);
+  revalidatePath(`${RUTA_PAGOS_SOCIOS}/[id]`, "page");
+  revalidatePath(`${RUTA_REPARTO_AVIONES}/[id]`, "page");
+  revalidatePath(`${RUTA_REPARTO_AVIONES}/[id]/historico`, "page");
+}
+
+/**
+ * Los socios que pueden pagar un vuelo con sus utilidades, con sus aviones y
+ * lo por entregar de meses cerrados (`GET /v1/profit-sharing/socios`, el
+ * MISMO que usa «Pagos a socios»). La ficha «Registrar cobro» lo pide SOLO al
+ * elegir «Utilidades del socio». Nunca lanza: si no se pudo leer, dice por
+ * qué (jamás una lista vacía que parezca «no hay socios»).
+ */
+export async function sociosParaCobroUtilidadesAction(): Promise<ActionResult<SocioParaCobro[]>> {
+  const carga = await getSociosCuenta();
+  if (carga.estado !== "ok") {
+    return { ok: false, error: mensajeCargaSocios(carga.estado), code: carga.estado };
+  }
+  return { ok: true, data: sociosParaCobro(carga.datos.socios) };
+}
+
+/**
+ * Registra el cobro del vuelo CON UTILIDADES DEL SOCIO
+ * (`POST /v1/profit-sharing/vuelos/:vueloId/cobro-utilidades`, solo DIRECCION
+ * y FACTURACION). Nunca lanza. El error conserva `code`/`details`/`status`:
+ * el 409 `PAGO_EXCEDE_SALDO` NO es un error para la ficha — se vuelve la
+ * confirmación del ADELANTO, que reenvía con `aceptar_exceso` y la MISMA
+ * `client_request_id` —. El cuerpo se arma campo por campo: jamás viaja un
+ * método de cobro (la opción es solo de la pantalla) ni una llave de más.
+ */
+export async function registrarCobroUtilidadesAction(
+  flightId: string,
+  payload: CobroUtilidadesPayload,
+): Promise<ActionResult<ResultadoCobroUtilidades>> {
+  if (!esUuid(flightId)) {
+    return { ok: false, error: "No se reconoce el vuelo. Recarga la página." };
+  }
+  if (!esUuid(payload.socio_id)) {
+    return { ok: false, error: "Elige el socio que paga el vuelo." };
+  }
+  if (!esUuid(payload.aeronave_id)) {
+    return { ok: false, error: "Elige de las utilidades de qué avión se descuenta." };
+  }
+  if (!(payload.monto > 0)) {
+    return { ok: false, error: "El monto debe ser mayor a 0" };
+  }
+  if (!(payload.tc_usd_mxn > 0)) {
+    return { ok: false, error: "Captura el tipo de cambio: la cuenta del socio es en pesos." };
+  }
+  if (!esUuid(payload.client_request_id)) {
+    return {
+      ok: false,
+      error: "No se pudo preparar el registro. Cierra el formulario y vuelve a abrirlo.",
+    };
+  }
+  const cuerpo: CobroUtilidadesPayload = {
+    socio_id: payload.socio_id,
+    aeronave_id: payload.aeronave_id,
+    monto: payload.monto,
+    moneda: payload.moneda,
+    tc_usd_mxn: payload.tc_usd_mxn,
+    ...(payload.fecha_cobro ? { fecha_cobro: payload.fecha_cobro } : {}),
+    ...(payload.notas?.trim() ? { notas: payload.notas.trim() } : {}),
+    ...(payload.aceptar_exceso === true ? { aceptar_exceso: true } : {}),
+    client_request_id: payload.client_request_id,
+  };
+  try {
+    const data = await apiServer<ResultadoCobroUtilidades>(
+      `/v1/profit-sharing/vuelos/${flightId}/cobro-utilidades`,
+      { method: "POST", body: cuerpo },
+    );
+    revalidateFlight(flightId);
+    revalidatePath("/admin/quotes");
+    revalidatePath(`/admin/quotes/${flightId}`);
+    revalidarPagosSocios();
+    return { ok: true, data };
+  } catch (err) {
+    if (isApiError(err)) {
+      return {
+        ok: false,
+        error: mensajeErrorCobroUtilidades({ code: err.code, error: err.message, status: err.status }),
+        code: err.code,
+        details: err.details,
+        status: err.status,
+      };
+    }
+    return { ok: false, error: TEXTO_FALLO_RED_COBRO_UTILIDADES, code: "SIN_CONEXION" };
+  }
+}
+
 /**
  * Reembolso al cliente (oficina): se manda POSITIVO y el API lo guarda como
  * cobro NEGATIVO del vuelo — RESTA del cobrado (fuente única cobrosEnUsd) y
@@ -406,14 +519,23 @@ export async function registerReembolsoAction(
   }
 }
 
-/** Elimina un cobro capturado por error (oficina). El backend recalcula la bandera cobrado. */
+/**
+ * Elimina un cobro capturado por error (oficina). El backend recalcula la bandera cobrado.
+ *
+ * `conUtilidades` (23-nov-2026, API 0.0.148): el cobro se pagó con utilidades
+ * del socio — el API da de baja TAMBIÉN su entrega en «Pagos a socios» (solo
+ * DIRECCION/FACTURACION; otro rol ⇒ 403 `COBRO_CON_UTILIDADES_SOLO_DIRECCION`)
+ * —, así que además se revalidan esas pantallas.
+ */
 export async function deleteCobroAction(
   flightId: string,
   cobroId: string,
+  opciones: { conUtilidades?: boolean } = {},
 ): Promise<ActionResult> {
   try {
     await apiServer(`/v1/flights/cobros/${cobroId}`, { method: "DELETE" });
     revalidateFlight(flightId);
+    if (opciones.conUtilidades) revalidarPagosSocios();
     return { ok: true };
   } catch (err) {
     return fail(err);

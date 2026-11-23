@@ -65,6 +65,7 @@ import type {
   SocioRef,
   TotalesCuentasSocios,
   UltimoPagoSocio,
+  VueloDeEntrega,
 } from "@/types/reparto-pagos";
 
 // =============================================================================
@@ -547,6 +548,59 @@ export function etiquetaMetodoPagoSocio(m: string | null | undefined): string {
   return METODOS_PAGO_SOCIO.find((x) => x.value === m)?.etiqueta ?? (m || "—");
 }
 
+// -----------------------------------------------------------------------------
+// ENTREGA QUE NACIÓ DE UN VUELO PAGADO CON UTILIDADES (23-nov-2026, API 0.0.148)
+// -----------------------------------------------------------------------------
+//
+// Pedido del dueño: los socios a veces pagan un vuelo propio «descontándolo
+// de sus utilidades». El API registra el COBRO del vuelo y, ligada a él, una
+// ENTREGA al socio (`pago.vuelo`, ADITIVO; su `metodo` llega como "OTRO"). No
+// se le entregó dinero: se le descontó. Aquí solo se decide cómo se LLAMA esa
+// entrega y a dónde lleva; su dinero se corrige o se quita DESDE EL VUELO (el
+// API responde 409 `ENTREGA_DE_VUELO` a editarla o borrarla aquí).
+
+/** Una entrega (o la «última entrega» del resumen) que puede traer su vuelo. */
+type ConVueloDeEntrega = { vuelo?: VueloDeEntrega | null };
+
+/** El vuelo que originó la entrega, o null (una entrega de siempre / API previo). */
+export function vueloDeEntrega(pago: ConVueloDeEntrega | null | undefined): VueloDeEntrega | null {
+  const v = pago?.vuelo;
+  return v && typeof v.id === "string" && v.id.trim() !== "" ? v : null;
+}
+
+/** ¿La entrega nació de un vuelo pagado con utilidades? */
+export function esEntregaDeVuelo(pago: ConVueloDeEntrega | null | undefined): boolean {
+  return vueloDeEntrega(pago) !== null;
+}
+
+/**
+ * CÓMO se entregó, en una frase — helper ÚNICO de toda pantalla que pinta el
+ * método de una entrega: «Transferencia», «Efectivo»… o, si nació de un vuelo,
+ * «Vuelo #482 · pagado con utilidades» (nunca «Otro», que no dice nada).
+ */
+export function etiquetaEntrega(
+  pago: (Pick<PagoSocio, "metodo"> & ConVueloDeEntrega) | null | undefined,
+): string {
+  const v = vueloDeEntrega(pago);
+  if (!v) return etiquetaMetodoPagoSocio(pago?.metodo);
+  const folio = Number(v.folio);
+  return Number.isFinite(folio) && folio > 0
+    ? `Vuelo #${folio} · pagado con utilidades`
+    : "Vuelo · pagado con utilidades";
+}
+
+/** A dónde lleva esa frase: la card «Cobro» del vuelo (null sin vuelo o con un id ilegible). */
+export function hrefVueloDeEntrega(pago: ConVueloDeEntrega | null | undefined): string | null {
+  const v = vueloDeEntrega(pago);
+  return v && esUuid(v.id) ? `/admin/flights/${v.id}#cobros` : null;
+}
+
+/** En vez de «Editar» / «Eliminar» en una entrega que nació de un vuelo. */
+export const TEXTO_ENTREGA_SE_CORRIGE_EN_EL_VUELO = "Se corrige o se quita desde el vuelo";
+/** `title` de la liga al vuelo. */
+export const TITULO_VER_VUELO_DE_ENTREGA =
+  "El socio pagó este vuelo con sus utilidades. Abre el vuelo para ver el cobro o quitarlo.";
+
 /**
  * Monto de una entrega tal como se entregó. En pesos: «$70,000 MXN · T.C.
  * 18.5 · ≈ $3,783.78 USD» (el dólar informativo lo calculó el API:
@@ -633,7 +687,8 @@ export function piezasPago(pago: PagoSocio): {
   return {
     fecha: fmtDateOnly(pago.fecha_pago),
     monto: textoMontoPago(pago),
-    metodo: etiquetaMetodoPagoSocio(pago.metodo),
+    // «Vuelo #482 · pagado con utilidades» si nació de un vuelo (API 0.0.148).
+    metodo: etiquetaEntrega(pago),
     entrego: `Entregó: ${nombre(pago.entregado_por_nombre)}`,
     recibio: recibio ? `Recibió: ${recibio}` : null,
     factura: factura ? `Factura ${factura}` : null,
@@ -654,7 +709,7 @@ export function textoUltimoPago(u: UltimoPagoSocio | null | undefined): string {
     u.moneda !== "MXN" && Number.isFinite(mxn) && mxn > 0
       ? `${fmtMonto(u.monto, u.moneda)} = ${fmtMxn(mxn)}`
       : fmtMonto(u.monto, u.moneda);
-  return [fmtDateOnly(u.fecha_pago), monto, etiquetaMetodoPagoSocio(u.metodo)].join(" · ");
+  return [fmtDateOnly(u.fecha_pago), monto, etiquetaEntrega(u)].join(" · ");
 }
 
 /** Nombre accesible del botón del comprobante de UNA entrega. */
@@ -766,18 +821,25 @@ export const BOTON_REVISAR_MONTO = "Revisar el monto";
  * API). Si además ya había adelantos «a cuenta general», el API los descontó
  * de ese «por entregar» y se dice cuánto (`adelantado_general_mxn`). Sin
  * avión (o API previo), el texto de siempre.
+ *
+ * `que` (23-nov-2026, API 0.0.148): el MISMO 409 lo responde el cobro de un
+ * vuelo que el socio paga con sus utilidades (`lib/admin/cobro-utilidades`);
+ * ahí la frase habla de «este cobro». Por defecto, la entrega de siempre
+ * (texto byte a byte igual).
  */
 export function confirmacionAdelanto(
   details: unknown,
   tipo: "alta" | "edicion" = "alta",
+  que: "entrega" | "cobro" = "entrega",
 ): { titulo: string; descripcion: string } {
   const d = detalleExcesoSaldo(details);
-  const titulo = "Esta entrega es un ADELANTO";
+  const esta = que === "cobro" ? "Este cobro" : "Esta entrega";
+  const titulo = `${esta} es un ADELANTO`;
   const verbo = tipo === "alta" ? "¿Registrar?" : "¿Guardar?";
   if (!d) {
     return {
       titulo,
-      descripcion: `Esta entrega supera lo que hay por entregar al socio. Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour. ${verbo}`,
+      descripcion: `${esta} supera lo que hay por entregar al socio. Se registrará como ADELANTO y el saldo quedará a favor de VuelaTour. ${verbo}`,
     };
   }
   const porEntregar = Math.max(0, d.por_entregar_mxn);
@@ -793,7 +855,7 @@ export function confirmacionAdelanto(
       : "";
   return {
     titulo,
-    descripcion: `Esta entrega de ${fmtMxn(d.monto_mxn)} supera lo que hay por entregar${deAvion} (${fmtMxn(
+    descripcion: `${esta} de ${fmtMxn(d.monto_mxn)} supera lo que hay por entregar${deAvion} (${fmtMxn(
       porEntregar,
     )}${general}${curso}). Se registrará como ADELANTO y el saldo${deAvion} quedará a favor de VuelaTour por ${fmtMxn(
       d.exceso_mxn,
@@ -850,6 +912,9 @@ export const CODIGO_PAGO_CAMBIO_CONCURRENTE = "PAGO_CAMBIO_CONCURRENTE";
 export const CODIGO_COMPROBANTE_CAMBIO = "COMPROBANTE_CAMBIO";
 /** Rango de meses que el API rechaza (desde > hasta o > 120 meses). */
 export const CODIGO_RANGO_INVALIDO = "RANGO_INVALIDO";
+/** PATCH/DELETE de una entrega que nació de un vuelo pagado con utilidades
+    (409, API 0.0.148; `details {vuelo_id, folio, cobro_id}`). */
+export const CODIGO_ENTREGA_DE_VUELO = "ENTREGA_DE_VUELO";
 
 /** ¿El error dice que lo que hay en pantalla ya está viejo (hay que refrescar)? */
 export function errorPideRefrescar(code: string | null | undefined): boolean {
@@ -908,6 +973,10 @@ const MENSAJES_RESPALDO: Record<string, string> = {
   // 2026 (inicio oficial).»); este respaldo solo si llega vacío o técnico.
   CUENTA_ANTES_DEL_INICIO:
     "La cuenta no puede arrancar antes del inicio oficial del sistema. Elige un mes posterior.",
+  // API 0.0.148: la entrega nació de un vuelo que el socio pagó con sus
+  // utilidades; su dinero, fecha, método, avión y mes no se tocan aquí.
+  [CODIGO_ENTREGA_DE_VUELO]:
+    "Esta entrega viene de un vuelo que el socio pagó con sus utilidades: se corrige o se quita desde el vuelo (card «Cobro»), no desde Pagos a socios.",
 };
 
 const TECNICO =
@@ -1045,6 +1114,25 @@ function socioRef(v: unknown): SocioRef | null {
     nombre: typeof s.nombre === "string" && s.nombre.trim() ? s.nombre : "Socio",
     rol: texto(s.rol),
     estado: texto(s.estado),
+    // ADITIVO: la propia empresa como socio. Solo si llegó como booleano
+    // (sin la llave, el socio queda EXACTAMENTE como antes).
+    ...(typeof s.es_empresa === "boolean" ? { es_empresa: s.es_empresa } : {}),
+  };
+}
+
+/**
+ * `pago.vuelo` (API 0.0.148) con tipos sanos: `{id, folio, cobro_id}` o null.
+ * Un valor ilegible ⇒ null (se pinta como una entrega de siempre; si de
+ * verdad era de un vuelo, el API responde 409 `ENTREGA_DE_VUELO` con su texto).
+ */
+function vueloDeEntregaRef(v: unknown): VueloDeEntrega | null {
+  const o = obj(v);
+  if (!o || typeof o.id !== "string" || o.id.trim() === "") return null;
+  const folio = numONull(o.folio);
+  return {
+    id: o.id,
+    folio: folio ?? 0,
+    cobro_id: typeof o.cobro_id === "string" ? o.cobro_id : "",
   };
 }
 
@@ -1092,6 +1180,8 @@ export function normalizarPago(raw: unknown): PagoSocio | null {
     created_at: typeof p.created_at === "string" ? p.created_at : "",
     fecha_pago: typeof p.fecha_pago === "string" ? p.fecha_pago.slice(0, 10) : "",
     aeronave: aeronaveRef(p.aeronave),
+    // ADITIVO (API 0.0.148): la llave solo existe si el API la mandó.
+    ...("vuelo" in p ? { vuelo: vueloDeEntregaRef(p.vuelo) } : {}),
   };
 }
 
@@ -1122,6 +1212,8 @@ function normalizarUltimoPago(raw: unknown): UltimoPagoSocio | null {
     monto_mxn: montoMxnDeFila(u),
     monto_usd: num(u.monto_usd),
     metodo: typeof u.metodo === "string" ? u.metodo : "",
+    // ADITIVO (API 0.0.148): solo si el API lo manda también en el resumen.
+    ...("vuelo" in u ? { vuelo: vueloDeEntregaRef(u.vuelo) } : {}),
   };
 }
 

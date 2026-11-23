@@ -52,6 +52,9 @@ export interface SocioRef {
   rol?: string | null;
   /** ACTIVO / INACTIVO… (informativo). */
   estado?: string | null;
+  /** ADITIVO: la propia empresa registrada como socio (el API la marca). La
+      llave solo existe si el API la mandó como booleano. */
+  es_empresa?: boolean;
 }
 
 /**
@@ -109,6 +112,21 @@ export interface PagoSocio {
   updated_at?: string | null;
   /** Avión «corresponde a» resuelto (o null). */
   aeronave: AeronaveRef | null;
+  /**
+   * ADITIVO (23-nov-2026, API 0.0.148): la entrega nació de un VUELO que el
+   * socio pagó con sus utilidades (no se le entregó dinero: se le descontó).
+   * Su `metodo` llega como "OTRO". Ausente/null = una entrega de siempre.
+   * Su dinero, fecha, método, avión y mes NO se corrigen ni se borran desde
+   * «Pagos a socios» (409 `ENTREGA_DE_VUELO`): se quita desde el vuelo.
+   */
+  vuelo?: VueloDeEntrega | null;
+}
+
+/** El vuelo (y su cobro) que originó una entrega pagada con utilidades. */
+export interface VueloDeEntrega {
+  id: string;
+  folio: number;
+  cobro_id: string;
 }
 
 /** Cómo arranca la cuenta del socio (`reparto_cuenta_socio`). */
@@ -136,6 +154,9 @@ export interface UltimoPagoSocio {
   /** Dólares informativos. */
   monto_usd: number;
   metodo: MetodoPagoSocio | (string & {});
+  /** ADITIVO (API 0.0.148): solo si el API lo manda también aquí (ver
+      `PagoSocio.vuelo`). Sin la llave, «Última entrega» dice el método. */
+  vuelo?: VueloDeEntrega | null;
 }
 
 /** Avión en el que la persona es (o fue) socia. */

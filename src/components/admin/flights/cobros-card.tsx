@@ -54,6 +54,17 @@ import {
   type EstadoCobroSemaforo,
 } from "@/lib/admin/cobros";
 import { hayCobrosEditables, TEXTO_SOBRE_NO_SE_EDITA } from "@/lib/admin/cobro-edicion";
+import {
+  TEXTO_COBRO_UTILIDADES_ELIMINADO,
+  TITULO_DETALLE_UTILIDADES,
+  confirmacionEliminarCobroUtilidades,
+  detalleUtilidadesDeCobro,
+  esCobroConUtilidades,
+  etiquetaMetodoCobroFinal,
+  etiquetaMetodoDeCobro,
+  mensajeErrorCobroUtilidades,
+  puedeEliminarCobro,
+} from "@/lib/admin/cobro-utilidades";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { FacturaClienteBloque } from "@/components/admin/flights/factura-cliente-bloque";
 import {
@@ -168,6 +179,14 @@ interface CobrosCardProps {
   cobradoDeMas?: CobradoDeMasVuelo | null;
   /** Cotización ABIERTA (`snapshot.cotizacion_abierta`): la vista previa del formulario nunca dice «cobrado de más». */
   cotizacionAbierta?: boolean;
+  /**
+   * COBRO CON UTILIDADES DEL SOCIO (23-nov-2026, API 0.0.148): SOLO la página
+   * del vuelo lo pasa. Con él, «Registrar cobro» ofrece la opción
+   * «Utilidades del socio» (el socio paga su vuelo con sus utilidades) a
+   * DIRECCION/FACTURACION. `aeronaveId` = el avión que voló (propone de las
+   * utilidades de qué avión se descuenta). Sin la prop, la ficha de siempre.
+   */
+  utilidadesSocio?: { aeronaveId: string | null } | null;
 }
 
 export function CobrosCard({
@@ -203,6 +222,7 @@ export function CobrosCard({
   puedeReembolsar = false,
   cobradoDeMas = null,
   cotizacionAbierta = false,
+  utilidadesSocio = null,
 }: CobrosCardProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -428,7 +448,9 @@ export function CobrosCard({
               className="text-[11px] text-muted-foreground"
               title="Método del cobro que dejó el vuelo liquidado (lo deriva el sistema de los cobros registrados). El IVA cotizado no cambia por esto."
             >
-              Liquidado con: {metodoPagoLabel(metodoCobroFinal)}
+              {/* Si lo liquidó un cobro con utilidades del socio (método
+                  interno OTRO), se dice así y no «Otro». */}
+              Liquidado con: {etiquetaMetodoCobroFinal(metodoCobroFinal, cobros)}
               {metodoPrevisto && metodoCobroFinal !== metodoPrevisto && (
                 <span className="ml-1 text-amber-600 dark:text-amber-400">
                   (distinto al previsto)
@@ -499,11 +521,23 @@ export function CobrosCard({
                         </span>
                       )}
                     </p>
+                    {/* Pagado con utilidades del socio (API 0.0.148): se
+                        dice quién y, debajo, de qué avión y mes se descontó
+                        (nunca «Otro», que es solo el método interno). */}
                     <p className="text-[11px] text-muted-foreground truncate">
-                      {metodoPagoLabel(c.metodo_cobro)}
+                      {etiquetaMetodoDeCobro(c)}
                       {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""}
                       {c.referencia ? ` · ${c.referencia}` : ""}
                     </p>
+                    {detalleUtilidadesDeCobro(c) && (
+                      <p
+                        className="text-[10px] text-muted-foreground truncate"
+                        title={TITULO_DETALLE_UTILIDADES}
+                        data-cobro-utilidades
+                      >
+                        {detalleUtilidadesDeCobro(c)}
+                      </p>
+                    )}
                     {/* Qué factura AMPARA este cobro (16-oct-2026, API 0.0.82):
                         chip verde con el número (⇒ PDF) o «Sin factura
                         asignada» + «Asignar factura». Sin la llave, nada. */}
@@ -623,15 +657,23 @@ export function CobrosCard({
                         </Button>
                       )
                     ) : (
-                      !esParteDeSobre(c) && (
+                      // Con utilidades del socio (API 0.0.148): al quitarlo se
+                      // va también la entrega en Pagos a socios ⇒ solo
+                      // DIRECCION/FACTURACION ven el botón (`puedeEliminarCobro`).
+                      !esParteDeSobre(c) &&
+                      puedeEliminarCobro(c, rol) && (
                         <Button
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          aria-label={esReembolso ? "Eliminar reembolso" : "Eliminar cobro"}
+                          data-accion="eliminar-cobro"
                           title={
                             esReembolso
                               ? "Eliminar reembolso (capturado por error)"
-                              : "Eliminar cobro (capturado por error)"
+                              : esCobroConUtilidades(c)
+                                ? "Eliminar cobro (también se quita la entrega al socio en Pagos a socios)"
+                                : "Eliminar cobro (capturado por error)"
                           }
                           onClick={() => setToDelete(c)}
                         >
@@ -656,11 +698,14 @@ export function CobrosCard({
             </DialogTitle>
             <DialogDescription>
               {toDelete
-                ? `${fmtMonto(toDelete.monto, toDelete.moneda)} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
+                ? `${fmtMonto(toDelete.monto, toDelete.moneda)} · ${etiquetaMetodoDeCobro(toDelete)}. `
                 : ""}
+              {/* Con utilidades del socio: se va TAMBIÉN la entrega en
+                  Pagos a socios — se dice antes de confirmar. */}
               {toDelete?.anticipo
                 ? `El monto regresa al saldo del anticipo ${toDelete.anticipo.etiqueta} y el saldo del vuelo se recalcula. Después puedes volver a aplicarlo.`
-                : "Úsalo solo para capturas erróneas: el saldo del vuelo se recalcula al instante y esta acción no se puede deshacer."}
+                : (confirmacionEliminarCobroUtilidades(toDelete) ??
+                  "Úsalo solo para capturas erróneas: el saldo del vuelo se recalcula al instante y esta acción no se puede deshacer.")}
               {/* Amparado por una factura (API 0.0.82): la liga vive en el
                   cobro y se va con él — se dice antes de confirmar. */}
               {textoEliminarCobroConFactura(toDelete) && (
@@ -681,15 +726,20 @@ export function CobrosCard({
                 if (!toDelete) return;
                 setDeleting(true);
                 const anticipo = toDelete.anticipo ?? null;
+                // Con utilidades del socio el API da de baja también su
+                // entrega: la action revalida además Pagos a socios.
+                const conUtilidades = esCobroConUtilidades(toDelete);
                 const res = anticipo
                   ? await desaplicarAnticipoAction(anticipo.ingreso_id, toDelete.id, flightId)
-                  : await deleteCobroAction(flightId, toDelete.id);
+                  : await deleteCobroAction(flightId, toDelete.id, { conUtilidades });
                 setDeleting(false);
                 if (res.ok) {
                   toast.success(
                     anticipo
                       ? `Desaplicado: el monto regresó al saldo del anticipo ${anticipo.etiqueta}.`
-                      : "Cobro eliminado; saldo recalculado.",
+                      : conUtilidades
+                        ? TEXTO_COBRO_UTILIDADES_ELIMINADO
+                        : "Cobro eliminado; saldo recalculado.",
                   );
                   setToDelete(null);
                   if (anticipo) router.refresh();
@@ -709,6 +759,10 @@ export function CobrosCard({
                 } else if (toastMesCerradoSiAplica(res)) {
                   // 409 `MES_CERRADO` (API 0.0.88): aviso con «Ir a Reportes».
                   setToDelete(null);
+                } else if (conUtilidades) {
+                  // 403 `COBRO_CON_UTILIDADES_SOLO_DIRECCION` y demás: el
+                  // texto del API o el de la fuente única.
+                  toast.error(mensajeErrorCobroUtilidades(res));
                 } else {
                   toast.error(res.error);
                 }
@@ -746,6 +800,13 @@ export function CobrosCard({
         facturasVigentes={facturaServicio?.facturas ?? null}
         asignacionFactura={asignacionDisponible(facturaServicio)}
         rol={rol}
+        // «Utilidades del socio» (API 0.0.148): solo si la página del vuelo
+        // pasó el contexto; la ficha decide por rol y estado del vuelo.
+        utilidadesSocio={
+          utilidadesSocio
+            ? { aeronaveId: utilidadesSocio.aeronaveId, clienteNombre, fechaVuelo }
+            : null
+        }
       />
 
       {/* El MISMO formulario, en modo «Corregir cobro». */}

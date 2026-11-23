@@ -8,17 +8,19 @@ import {
 } from "@/components/ui/table";
 import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn } from "@/lib/format";
-import { etiquetaMetodoPagoSocio, piezasPago, textoMontoPago } from "@/lib/admin/reparto-pagos";
+import { piezasPago, textoMontoPago } from "@/lib/admin/reparto-pagos";
 import { nombreSocioDeEntrega, textoMesEntrega } from "@/lib/admin/reparto-avion";
 import type { PagoSocio } from "@/types/reparto-pagos";
 import { ComprobanteEntrega } from "./comprobante-entrega";
+import { EtiquetaEntrega } from "./etiqueta-entrega";
 
 /**
  * Entregas que «corresponden a» este avión (pantalla del avión y su
  * histórico, 20-oct-2026, API 0.0.101): fecha, socio, monto EN PESOS (una
  * entrega en dólares dice «$1,000 USD = $18,500.00 MXN»), método,
  * «corresponde a» mes, quién entregó y el comprobante (la oficina puede
- * adjuntarlo desde aquí). Editar y eliminar siguen en la cuenta del socio.
+ * adjuntarlo desde aquí). Editar y eliminar siguen en la cuenta del socio
+ * (una entrega que nació de un vuelo pagado con utilidades, desde el vuelo).
  */
 export function EntregasAvionTable({
   entregas,
@@ -63,7 +65,11 @@ export function EntregasAvionTable({
                   </span>
                 )}
               </TableCell>
-              <TableCell className="whitespace-nowrap align-top text-xs">{etiquetaMetodoPagoSocio(p.metodo)}</TableCell>
+              {/* «Vuelo #482 · pagado con utilidades» (con liga) si nació de
+                  un vuelo (API 0.0.148); si no, el método de siempre. */}
+              <TableCell className="whitespace-nowrap align-top text-xs">
+                <EtiquetaEntrega pago={p} />
+              </TableCell>
               <TableCell className="whitespace-nowrap align-top text-xs">{textoMesEntrega(p)}</TableCell>
               <TableCell className="min-w-[10rem] whitespace-normal align-top text-xs">
                 {piezas.entrego}

@@ -11,6 +11,7 @@ import type {
   ParticipacionFuente,
 } from "./quotes-persisted";
 import type { SeguimientoContadores } from "./seguimiento";
+import type { PagoSocio } from "./reparto-pagos";
 
 /**
  * Bloque ADITIVO `factura_cliente` del snapshot y de la lista de vuelos
@@ -369,6 +370,59 @@ export interface FlightCobro {
    * `null` = sin factura. La llave se OMITE para roles de campo.
    */
   factura_emitida?: { id: string; etiqueta: string } | null;
+  /**
+   * COBRO CON UTILIDADES DEL SOCIO (23-nov-2026, API 0.0.148, ADITIVO): el
+   * socio pagó su vuelo «descontándolo de sus utilidades». No entró dinero:
+   * el API guardó el cobro (método interno OTRO) LIGADO a una entrega en
+   * «Pagos a socios». Ausente/`undefined` = API previo; `null` = cobro
+   * normal. Qué se pinta y qué se bloquea: `lib/admin/cobro-utilidades.ts`.
+   */
+  utilidades?: CobroUtilidadesSocio | null;
+}
+
+/** La entrega al socio que respalda un cobro con utilidades (lo arma el API). */
+export interface CobroUtilidadesSocio {
+  /** La entrega de «Pagos a socios» que se creó junto con el cobro. */
+  entrega_id: string;
+  socio_id: string;
+  socio_nombre: string;
+  /** El avión DE CUYAS UTILIDADES se descontó (puede no ser el que voló). */
+  aeronave_id: string | null;
+  matricula: string | null;
+  /** Mes del que se descontó (`YYYY-MM`). */
+  mes: string | null;
+}
+
+/**
+ * `POST /v1/profit-sharing/vuelos/:vueloId/cobro-utilidades` (API 0.0.148,
+ * solo DIRECCION y FACTURACION): UNA llamada crea el cobro del vuelo y la
+ * entrega al socio. NO lleva método: «Utilidades del socio» es una opción de
+ * la pantalla, no un método de cobro.
+ */
+export interface CobroUtilidadesPayload {
+  socio_id: string;
+  /** El avión de cuyas utilidades se descuenta (el socio debe serlo ahí). */
+  aeronave_id: string;
+  monto: number;
+  moneda: "MXN" | "USD";
+  /** Obligatorio en las DOS monedas (banda 15–25). */
+  tc_usd_mxn: number;
+  /** ISO. Su MES (día de Cancún) es el mes del que se descuenta. */
+  fecha_cobro?: string;
+  notas?: string;
+  /** Registrar aunque supere lo que hay por entregar (ADELANTO confirmado). */
+  aceptar_exceso?: boolean;
+  /** Idempotencia: la MISMA llave en el reintento ⇒ el API no duplica. */
+  client_request_id: string;
+}
+
+/** Respuesta 201 (200 con `idempotente` si es el replay de la misma llave). */
+export interface ResultadoCobroUtilidades {
+  /** El cobro del vuelo (en el replay el API manda solo sus campos básicos). */
+  cobro: Partial<FlightCobro> & { id: string };
+  /** La entrega al socio que se creó junto con el cobro. */
+  pago: PagoSocio;
+  idempotente?: boolean;
 }
 
 /** Resumen del sobre de grupo que viaja en cada parte (aditivo del API). */

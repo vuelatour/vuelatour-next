@@ -30,7 +30,16 @@ import {
 import { fmtDate } from "@/lib/datetime";
 import { fmtMonto, fmtUsd } from "@/lib/format";
 import { deleteCobroAction } from "@/app/admin/flights/actions";
-import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
+import {
+  TEXTO_COBRO_UTILIDADES_ELIMINADO,
+  TITULO_DETALLE_UTILIDADES,
+  confirmacionEliminarCobroUtilidades,
+  detalleUtilidadesDeCobro,
+  esCobroConUtilidades,
+  etiquetaMetodoDeCobro,
+  mensajeErrorCobroUtilidades,
+  puedeEliminarCobro,
+} from "@/lib/admin/cobro-utilidades";
 import { rutaReciboDeCobro } from "@/lib/admin/pdf-urls";
 import { ReembolsoButton } from "@/components/admin/flights/reembolso-dialog";
 import { CobroFormSheet } from "@/components/admin/flights/cobro-form-sheet";
@@ -328,8 +337,10 @@ export function QuoteCobrosCard({
                   }
                 />
               </p>
+              {/* Pagado con utilidades del socio (API 0.0.148): mismo texto
+                  que la card del vuelo (nunca «Otro»). */}
               <p className="text-xs text-muted-foreground">
-                {metodoPagoLabel(c.metodo_cobro)}
+                {etiquetaMetodoDeCobro(c)}
                 {c.cuenta_destino ? ` · → ${c.cuenta_destino}` : ""} ·{" "}
                 {fmtDate(c.fecha_cobro)}
                 {c.comision_banco_monto != null &&
@@ -337,6 +348,15 @@ export function QuoteCobrosCard({
                     <> · comisión banco {fmtMonto(c.comision_banco_monto, c.moneda)}</>
                   )}
               </p>
+              {detalleUtilidadesDeCobro(c) && (
+                <p
+                  className="text-[11px] text-muted-foreground"
+                  title={TITULO_DETALLE_UTILIDADES}
+                  data-cobro-utilidades
+                >
+                  {detalleUtilidadesDeCobro(c)}
+                </p>
+              )}
               {/* Qué factura AMPARA este cobro (16-oct-2026, API 0.0.82):
                   mismo chip que la card del vuelo. Sin la llave, nada. */}
               <CobroFacturaChip
@@ -421,13 +441,22 @@ export function QuoteCobrosCard({
                   </Button>
                 )
               ) : (
-                !esParteDeSobre(c) && (
+                // Con utilidades del socio (API 0.0.148): solo
+                // DIRECCION/FACTURACION (se va también la entrega al socio).
+                !esParteDeSobre(c) &&
+                puedeEliminarCobro(c, rol) && (
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => setToDelete(c)}
                     className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                    title="Eliminar cobro (para poder revisar la cotización)"
+                    aria-label="Eliminar cobro"
+                    data-accion="eliminar-cobro"
+                    title={
+                      esCobroConUtilidades(c)
+                        ? "Eliminar cobro (también se quita la entrega al socio en Pagos a socios)"
+                        : "Eliminar cobro (para poder revisar la cotización)"
+                    }
                   >
                     <TrashIcon className="h-4 w-4" />
                   </Button>
@@ -457,11 +486,14 @@ export function QuoteCobrosCard({
             </DialogTitle>
             <DialogDescription>
               {toDelete
-                ? `${fmtMonto(toDelete.monto, toDelete.moneda)} · ${metodoPagoLabel(toDelete.metodo_cobro)}. `
+                ? `${fmtMonto(toDelete.monto, toDelete.moneda)} · ${etiquetaMetodoDeCobro(toDelete)}. `
                 : ""}
+              {/* Con utilidades del socio: se va TAMBIÉN la entrega en
+                  Pagos a socios — se dice antes de confirmar. */}
               {toDelete?.anticipo
                 ? `El monto regresa al saldo del anticipo ${toDelete.anticipo.etiqueta}; el vuelo vuelve a quedar pendiente de cobro. Después puedes volver a aplicarlo.`
-                : "El vuelo volverá a quedar pendiente de cobro y la cotización se podrá editar. Esta acción no se puede deshacer."}
+                : (confirmacionEliminarCobroUtilidades(toDelete) ??
+                  "El vuelo volverá a quedar pendiente de cobro y la cotización se podrá editar. Esta acción no se puede deshacer.")}
               {/* Amparado por una factura (API 0.0.82): la liga se va con el cobro. */}
               {textoEliminarCobroConFactura(toDelete) && (
                 <span className="mt-2 block font-medium text-amber-700 dark:text-amber-300">
@@ -485,14 +517,19 @@ export function QuoteCobrosCard({
                 if (!toDelete) return;
                 startDelete(async () => {
                   const anticipo = toDelete.anticipo ?? null;
+                  // Con utilidades del socio el API da de baja también su
+                  // entrega: la action revalida además Pagos a socios.
+                  const conUtilidades = esCobroConUtilidades(toDelete);
                   const res = anticipo
                     ? await desaplicarAnticipoAction(anticipo.ingreso_id, toDelete.id, quoteId)
-                    : await deleteCobroAction(quoteId, toDelete.id);
+                    : await deleteCobroAction(quoteId, toDelete.id, { conUtilidades });
                   if (res.ok) {
                     toast.success(
                       anticipo
                         ? `Desaplicado: el monto regresó al saldo del anticipo ${anticipo.etiqueta}.`
-                        : "Cobro eliminado; la cotización ya puede editarse.",
+                        : conUtilidades
+                          ? TEXTO_COBRO_UTILIDADES_ELIMINADO
+                          : "Cobro eliminado; la cotización ya puede editarse.",
                     );
                     setToDelete(null);
                     router.refresh();
@@ -516,6 +553,10 @@ export function QuoteCobrosCard({
                   } else if (toastMesCerradoSiAplica(res)) {
                     // 409 `MES_CERRADO` (API 0.0.88): aviso con «Ir a Reportes».
                     setToDelete(null);
+                  } else if (conUtilidades) {
+                    // 403 `COBRO_CON_UTILIDADES_SOLO_DIRECCION` y demás: el
+                    // texto del API o el de la fuente única.
+                    toast.error(mensajeErrorCobroUtilidades(res));
                   } else {
                     toast.error(res.error ?? "No se pudo eliminar el cobro");
                   }

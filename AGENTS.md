@@ -14125,3 +14125,80 @@ tramos» (del vuelo a la cotización).
   los dos modos y las dos pieles, apagado con su motivo, exento del candado).
   Probado además en Chrome contra un API simulado: botón, confirmación,
   llamada y toasts.
+
+## Cobro «con utilidades del socio» (23-nov-2026, API 0.0.148)
+
+Pedido del dueño: los socios (dueños de los aviones) a veces pagan un vuelo
+propio «descontándolo de sus utilidades». No entra dinero: el API registra con
+UNA llamada el COBRO del vuelo (método interno OTRO) y, ligada, una ENTREGA al
+socio en «Pagos a socios»; al quitar el cobro da de baja también la entrega.
+
+- **Contrato** (tipos en `types/flights.ts` y `types/reparto-pagos.ts`):
+  - `POST /v1/profit-sharing/vuelos/:vueloId/cobro-utilidades` (solo
+    DIRECCION y FACTURACION): `{ socio_id, aeronave_id, monto, moneda,
+    tc_usd_mxn, fecha_cobro?, notas?, aceptar_exceso?, client_request_id }`
+    ⇒ `{ cobro, pago, idempotente? }`. `aeronave_id` = el avión DE CUYAS
+    UTILIDADES se descuenta (puede no ser el que voló); el MES es el de
+    `fecha_cobro` (día de Cancún, no futura); el T.C. va en las DOS monedas
+    (banda 15–25). **El cuerpo NO lleva método.**
+  - ADITIVOS: `cobro.utilidades { entrega_id, socio_id, socio_nombre,
+    aeronave_id, matricula, mes } | null` y `pago.vuelo { id, folio,
+    cobro_id } | null` (su `metodo` llega "OTRO"). Sin las llaves (API
+    previo) todo queda como antes.
+  - Candados del API: PATCH del dinero/fecha/método de ese cobro ⇒ 409
+    `COBRO_CON_UTILIDADES`; quitarlo sin ser DIRECCION/FACTURACION ⇒ 403
+    `COBRO_CON_UTILIDADES_SOLO_DIRECCION`; editar o borrar su entrega ⇒ 409
+    `ENTREGA_DE_VUELO`; servidor sin la función lista ⇒ 503
+    `COBRO_UTILIDADES_NO_DISPONIBLE`. Textos de respaldo por código en
+    `mensajeErrorCobroUtilidades` / `mensajeErrorCuentaSocio` (gana el
+    `message` del API en español).
+- **«Utilidades del socio» es una OPCIÓN DE LA PANTALLA, NO un método.** Su
+  valor (`METODO_UTILIDADES_SOCIO`) es un centinela que jamás se escribe en
+  `metodo_cobro` ni viaja al API, y **no se agrega a `METODOS_PAGO`** (esa
+  lista es espejo de las etiquetas del API y del recibo; la congela
+  `metodos-pago.test.ts`). Va AL FINAL del selector (`opcionesMetodoCobro`).
+- **Solo en la página del vuelo, solo en el ALTA.** `CobroFormSheet` la ofrece
+  únicamente si recibe `utilidadesSocio` (la pasa `flights/[id]/page.tsx` →
+  `CobrosCard` → la ficha del alta), el rol es DIRECCION/FACTURACION y el
+  vuelo no está cancelado (`ofreceCobroConUtilidades`). La cotización y la
+  auditoría de Paywise montan la misma ficha SIN la prop: ahí no existe.
+- **Al elegirla** se esconden comisión, cuenta, referencia y factura, y salen
+  «Socio que paga» (sin la empresa; se preselecciona si el cliente del vuelo
+  se llama igual, sin acentos ni mayúsculas) y «¿De las utilidades de qué
+  avión?» (el del vuelo si es socio ahí; si no, su único avión; con varios,
+  obliga a elegir), con el renglón gris del saldo de MESES CERRADOS
+  (`por_entregar_cerrado_mxn`; sin el dato, sin números). Los socios se piden
+  AL ELEGIR la opción (`sociosParaCobroUtilidadesAction` → `getSociosCuenta`),
+  con cargando / error legible / «Reintentar». Moneda MXN si el vuelo tiene
+  total en pesos (si no, USD), T.C. obligatorio en las dos, fecha = la del
+  vuelo (futura ⇒ hoy) con la ayuda «Se descuenta de las utilidades de {mes}».
+- **El adelanto reutiliza la confirmación de «Registrar entrega».** El 409
+  `PAGO_EXCEDE_SALDO` NO es un error: `confirmacionAdelantoCobro` arma el
+  texto con `confirmacionAdelanto(details, "alta", "cobro")` (mismos números
+  del API) y «Registrar como adelanto» reenvía EL MISMO cuerpo con
+  `aceptar_exceso: true` y la MISMA `client_request_id` (una por apertura de
+  la ficha). «Cancelar» regresa a la ficha sin registrar.
+- **Lista de cobros** (vuelo y cotización, mismo cobro): «Utilidades del socio
+  · {socio}» + «Descontado de {matrícula} · {mes}» (`etiquetaMetodoDeCobro`,
+  `detalleUtilidadesDeCobro`), sin «Editar» (`edicionDeCobro().ofrecer`),
+  «Eliminar» solo DIRECCION/FACTURACION (`puedeEliminarCobro`) con la
+  confirmación que avisa que se quita también la entrega. El recibo no cambia.
+  «Liquidado con:» dice «Utilidades del socio» cuando el `metodo_cobro_final`
+  es OTRO y todo cobro OTRO del vuelo es con utilidades
+  (`etiquetaMetodoCobroFinal`; con un «Otro» de verdad no se adivina).
+- **Pagos a socios**: una entrega con `vuelo` se lee «Vuelo #482 · pagado con
+  utilidades» con liga al vuelo (`etiquetaEntrega` / `EtiquetaEntrega`,
+  helper ÚNICO del método de una entrega) y, en vez de «Editar»/«Eliminar»,
+  «Se corrige o se quita desde el vuelo».
+- **Fuente única** `lib/admin/cobro-utilidades.ts` (PURA: opción, roles,
+  socios, defaults, saldo, validación, cuerpo, pasos tras guardar, errores,
+  textos de la lista); campos en `flights/cobro-utilidades-campos.tsx`;
+  actions en `app/admin/flights/actions.ts`. Pruebas:
+  `lib/admin/__tests__/cobro-utilidades.test.ts`,
+  `app/admin/flights/__tests__/cobro-utilidades-actions.test.ts`,
+  `flights/__tests__/cobros-card-utilidades.test.tsx` y
+  `profit-sharing/__tests__/entrega-de-vuelo.test.tsx`. Probado además en
+  Chrome contra un API simulado (opción, preselección, adelanto, reintento con
+  la misma llave, baja); falta verlo contra el API real. **Orden de deploy:
+  API 0.0.148 antes que el panel** (con el API previo la opción aparece y al
+  guardar dice «falta actualizar el servidor»; nada se registra).

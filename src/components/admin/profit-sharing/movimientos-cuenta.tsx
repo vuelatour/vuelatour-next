@@ -19,8 +19,10 @@ import { fmtDateOnly } from "@/lib/datetime";
 import { fmtMxn } from "@/lib/format";
 import {
   AYUDA_COLUMNAS_CUENTA,
+  TEXTO_ENTREGA_SE_CORRIGE_EN_EL_VUELO,
   claseTextoSaldoCorrido,
   conceptoEntregaCuenta,
+  esEntregaDeVuelo,
   esRenglonDeSaldo,
   etiquetaTipoMovimiento,
   importesMovimiento,
@@ -32,6 +34,7 @@ import type { MovimientoCuenta, PagoSocio } from "@/types/reparto-pagos";
 import { EntregaSocioDialog, type DialogoEntrega } from "./entrega-socio-dialog";
 import { EliminarEntregaDialog } from "./eliminar-entrega-dialog";
 import { ComprobanteEntrega } from "./comprobante-entrega";
+import { EtiquetaEntrega } from "./etiqueta-entrega";
 
 /**
  * Movimientos del estado de cuenta de UN socio con el SALDO CORRIDO (todo
@@ -39,6 +42,11 @@ import { ComprobanteEntrega } from "./comprobante-entrega";
  * utilidad por mes y avión (el mes en curso marcado) y cada entrega con
  * método · entregó · recibió/factura · referencia · comprobante, «Editar» y
  * «Eliminar» (ADMIN/FACTURACION).
+ *
+ * ENTREGA DE UN VUELO (23-nov-2026, API 0.0.148): si el socio pagó un vuelo
+ * con sus utilidades, la entrega trae `vuelo` y se lee «Vuelo #482 · pagado
+ * con utilidades» (con liga al vuelo) en vez de «Otro», SIN «Editar» ni
+ * «Eliminar»: se corrige o se quita desde el vuelo.
  *
  * El concepto de una ENTREGA lo redacta `conceptoEntregaCuenta` («Entrega ·
  * corresponde a Septiembre 2026» / «Entrega a cuenta (sin mes)»): el del API
@@ -163,7 +171,10 @@ export function MovimientosCuenta({
                           <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                             <span className="font-mono">{p.monto}</span>
                             <span aria-hidden className="text-muted-foreground">·</span>
-                            <span>{p.metodo}</span>
+                            {/* Nació de un vuelo pagado con utilidades (API
+                                0.0.148): «Vuelo #482 · pagado con utilidades»
+                                con liga al vuelo, en vez de «Otro». */}
+                            <EtiquetaEntrega pago={pago} />
                             <span aria-hidden className="text-muted-foreground">·</span>
                             <span>{p.entrego}</span>
                           </p>
@@ -179,7 +190,18 @@ export function MovimientosCuenta({
                         </div>
                         <div className="flex shrink-0 flex-wrap items-center gap-1">
                           <ComprobanteEntrega pago={pago} puedeAdjuntar={puedeRegistrar} />
-                          {puedeRegistrar && (
+                          {/* Entrega de un VUELO: su dinero no se edita ni
+                              se borra aquí (409 `ENTREGA_DE_VUELO`); se dice
+                              dónde sí, en vez de dos botones que rebotan. */}
+                          {puedeRegistrar && esEntregaDeVuelo(pago) && (
+                            <span
+                              className="px-1 text-[11px] text-muted-foreground"
+                              data-entrega-de-vuelo
+                            >
+                              {TEXTO_ENTREGA_SE_CORRIGE_EN_EL_VUELO}
+                            </span>
+                          )}
+                          {puedeRegistrar && !esEntregaDeVuelo(pago) && (
                             <>
                               <Button
                                 type="button"

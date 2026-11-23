@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { toastMesCerradoSiAplica } from "@/components/admin/aviso-mes-cerrado";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -31,7 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { LockClosedIcon } from "@heroicons/react/24/outline";
-import { cancunInputToIso, fmtDateOnly } from "@/lib/datetime";
+import { cancunInputToIso, fmtDateOnly, todayCancun } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import {
@@ -75,18 +75,52 @@ import {
   textoCobroRegistradoConFactura,
 } from "@/lib/admin/cobro-factura";
 import { puedeRegistrarFactura } from "@/lib/admin/facturas-emitidas";
-import { registerCobroAction, updateCobroAction } from "@/app/admin/flights/actions";
+import {
+  registerCobroAction,
+  registrarCobroUtilidadesAction,
+  sociosParaCobroUtilidadesAction,
+  updateCobroAction,
+} from "@/app/admin/flights/actions";
 import {
   cuentaSugeridaPorMetodo,
   METODOS_CON_CUENTA,
   METODOS_PAGO,
   PAYWISE_COMISION_PCT_DEFAULT,
 } from "@/lib/admin/metodos-pago";
+import {
+  CARGA_SOCIOS_SIN_CARGAR,
+  METODO_UTILIDADES_SOCIO,
+  NOTA_COBRO_CON_UTILIDADES,
+  TEXTO_COBRO_UTILIDADES_YA_REGISTRADO,
+  TEXTO_FALLO_RED_COBRO_UTILIDADES,
+  TEXTO_FALLO_RED_SOCIOS,
+  avionPorDefecto,
+  ayudaFechaUtilidades,
+  ayudaTcUtilidades,
+  cargaSociosDeRespuesta,
+  confirmacionAdelantoCobro,
+  esCobroConUtilidades,
+  fechaPorDefectoUtilidades,
+  monedaPorDefectoUtilidades,
+  ofreceCobroConUtilidades,
+  opcionesMetodoCobro,
+  pasoTrasCobroUtilidades,
+  payloadCobroUtilidades,
+  socioDe,
+  socioPreseleccionado,
+  textoCobroUtilidadesRegistrado,
+  textoSaldoUtilidades,
+  validarCobroUtilidades,
+  type CargaSociosCobro,
+  type ContextoCobroUtilidades,
+  type ErroresCobroUtilidades,
+} from "@/lib/admin/cobro-utilidades";
 import type { MetodoPago } from "@/types/quote";
-import type { FlightCobro } from "@/types/flights";
+import type { CobroUtilidadesPayload, FlightCobro } from "@/types/flights";
 import type { FacturaEmitidaMini } from "@/types/facturas-emitidas";
 import { Field } from "@/components/admin/form-field";
 import { AvisoCapturaAntesDelInicio } from "@/components/admin/aviso-captura-inicio";
+import { CamposUtilidadesSocio } from "./cobro-utilidades-campos";
 
 type Moneda = "USD" | "MXN";
 
@@ -247,9 +281,32 @@ interface CobroFormSheetProps {
   rol?: string | null;
   /** «Asignar factura» desde el chip del cobro: abre con el foco en el selector. */
   enfocarFactura?: boolean;
+  /**
+   * COBRO CON UTILIDADES DEL SOCIO (23-nov-2026, API 0.0.148): SOLO la página
+   * del vuelo lo pasa. Con él (en el alta, para DIRECCION/FACTURACION y en un
+   * vuelo no cancelado) el selector de método gana la opción «Utilidades del
+   * socio»: el socio paga su vuelo con sus utilidades — no entra dinero —.
+   * Es una opción de la PANTALLA, no un método: el cobro se registra con
+   * `registrarCobroUtilidadesAction`, que crea también la entrega al socio.
+   * Sin la prop (cotización, auditoría de Paywise) la ficha es la de siempre.
+   * Reglas y textos: `lib/admin/cobro-utilidades.ts`.
+   */
+  utilidadesSocio?: ContextoCobroUtilidades | null;
 }
 
 type TcSugerido = { valor: number; fuente: "cotizacion" | "oficial" };
+
+/** uuid v4 de la llave de idempotencia (respaldo si el navegador no expone randomUUID). */
+function nuevoIdSolicitud(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  const b = new Uint8Array(16);
+  c?.getRandomValues?.(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
 
 function todayLocal(): string {
   const d = new Date();
@@ -363,6 +420,7 @@ export function CobroFormSheet({
   asignacionFactura = false,
   rol = null,
   enfocarFactura = false,
+  utilidadesSocio = null,
 }: CobroFormSheetProps) {
   const diaTcOficial = tcOficialFecha ? fmtDateOnly(tcOficialFecha) : null;
   const router = useRouter();
@@ -370,6 +428,40 @@ export function CobroFormSheet({
   const idSelectorFactura = useId();
   // ---- Modo EDICIÓN («Corregir cobro», 26-sep-2026) ----
   const enEdicion = cobroEditar != null;
+  // ---- COBRO CON UTILIDADES DEL SOCIO (23-nov-2026, API 0.0.148) ----
+  // La opción solo existe en el ALTA, en la página del vuelo (quien pasa
+  // `utilidadesSocio`), para DIRECCION/FACTURACION y en un vuelo no cancelado.
+  const ofrecerUtilidades = ofreceCobroConUtilidades({
+    contexto: utilidadesSocio,
+    rol,
+    enEdicion,
+    cancelado,
+  });
+  // ¿Está elegida «Utilidades del socio» en el selector? (valor de PANTALLA:
+  // el método del formulario sigue siendo uno real y jamás viaja en este modo).
+  const [conUtilidades, setConUtilidades] = useState(false);
+  const modoUtilidades = ofrecerUtilidades && conUtilidades;
+  // Los socios se piden al ELEGIR la opción (no al abrir la ficha).
+  const [cargaSocios, setCargaSocios] = useState<CargaSociosCobro>(CARGA_SOCIOS_SIN_CARGAR);
+  const turnoCargaSocios = useRef(0);
+  const [socioId, setSocioId] = useState("");
+  const [avionId, setAvionId] = useState("");
+  const [erroresUtilidades, setErroresUtilidades] = useState<ErroresCobroUtilidades>({});
+  // 409 PAGO_EXCEDE_SALDO ⇒ confirmación del ADELANTO. Se guarda el cuerpo
+  // que rebotó: «Registrar como adelanto» reenvía ESE mismo cuerpo con
+  // `aceptar_exceso` y la MISMA llave.
+  const [adelanto, setAdelanto] = useState<{
+    details: unknown;
+    payload: CobroUtilidadesPayload;
+    fecha: string;
+    socioNombre: string;
+  } | null>(null);
+  // Idempotencia: UNA llave por apertura de la ficha (se renueva al abrir).
+  const [solicitudId, setSolicitudId] = useState("");
+  // La fecha con la que abrió la ficha (hoy) y la que sugirió este modo (la
+  // del vuelo): la sugerencia nunca pisa una fecha tecleada a mano.
+  const [fechaBase, setFechaBase] = useState("");
+  const [fechaSugerida, setFechaSugerida] = useState<string | null>(null);
   // ---- FACTURAS POR COBRO (16-oct-2026, API 0.0.82) ----
   // El selector «Factura» SOLO cuando el API puede asignar, el vuelo tiene
   // vigentes, el cobro no es reembolso y quien mira puede registrar facturas
@@ -449,6 +541,21 @@ export function CobroFormSheet({
       setMontoSugerido(
         prefill?.monto != null && prefill.monto > 0 ? null : (base.monto as number),
       );
+      // «Utilidades del socio»: cada apertura empieza de cero — la opción sin
+      // elegir, los socios sin cargar (sus saldos cambian con cada cobro) y
+      // una llave de idempotencia NUEVA. Una respuesta tardía de la carga
+      // anterior se descarta (turno).
+      turnoCargaSocios.current += 1;
+      setConUtilidades(false);
+      setCargaSocios(CARGA_SOCIOS_SIN_CARGAR);
+      setSocioId("");
+      setAvionId("");
+      setErroresUtilidades({});
+      setAdelanto(null);
+      setErrorGuardado(null);
+      setSolicitudId(nuevoIdSolicitud());
+      setFechaBase(String(base.fecha_cobro ?? ""));
+      setFechaSugerida(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- la preselección de la factura se fija al abrir
   }, [open, montoPrefill, prefill, reset, inicial]);
@@ -486,6 +593,7 @@ export function CobroFormSheet({
   const comisionMontoDirecto = watch("comision_banco_monto");
   const cuentaDestino = watch("cuenta_destino");
   const facturaElegida = watch("factura_emitida_id") ?? "";
+  const fechaCobro = watch("fecha_cobro");
 
   // TC sugerido al cobrar en MXN: el de la cotización manda (es el que el
   // cliente vio); si la cotización no lo fijó, el oficial de referencia del día.
@@ -515,6 +623,20 @@ export function CobroFormSheet({
     setMontoSugerido(n);
   };
 
+  /**
+   * Prellena el T.C. con el sugerido (cotización u oficial) SOLO si está
+   * vacío — nunca pisa uno tecleado — y devuelve el que queda vigente.
+   */
+  const prellenarTcSiFalta = (): number => {
+    const actual = getValues("tc_usd_mxn");
+    const yaTecleado = actual !== undefined && actual !== "" && Number(actual) > 0;
+    if (!yaTecleado && tcSugerido) {
+      setValue("tc_usd_mxn", tcSugerido.valor, { shouldValidate: true });
+      setTcPrefill(tcSugerido);
+    }
+    return yaTecleado ? Number(actual) : (tcSugerido?.valor ?? 0);
+  };
+
   // ÚNICO camino para cambiar la moneda: al pasar a MXN con el TC vacío,
   // se prellena con el sugerido (editable). Nunca pisa un TC ya tecleado.
   // Al salir de MXN el input del TC se desmonta pero RHF CONSERVA el valor:
@@ -525,28 +647,30 @@ export function CobroFormSheet({
   // El MONTO viaja con la moneda por el mismo camino y con la misma regla:
   // al pasar a MXN se sugiere en pesos y al volver a USD se restaura el
   // pendiente, siempre que el operador no lo haya tecleado.
-  const handleMonedaChange = (v: Moneda) => {
+  //
+  // `utilidades` («Utilidades del socio», API 0.0.148): ahí el T.C. es
+  // OBLIGATORIO EN LAS DOS MONEDAS (la cuenta del socio es en pesos), así que
+  // al pasar a dólares NO se limpia y, si falta, se prellena igual. Se pasa
+  // explícito cuando el modo cambia en el mismo clic (el estado aún no llega).
+  const handleMonedaChange = (v: Moneda, utilidades: boolean = modoUtilidades) => {
     setValue("moneda", v);
     if (v !== "MXN") {
-      const actual = getValues("tc_usd_mxn");
-      if (tcPrefill && Number(actual) === tcPrefill.valor) {
-        setValue("tc_usd_mxn", "");
+      if (utilidades) {
+        prellenarTcSiFalta();
+      } else {
+        const actual = getValues("tc_usd_mxn");
+        if (tcPrefill && Number(actual) === tcPrefill.valor) {
+          setValue("tc_usd_mxn", "");
+        }
+        setTcPrefill(null);
       }
-      setTcPrefill(null);
       // De vuelta a dólares: el importe vuelve a ser el pendiente en USD.
       if (!cancelado && pendingUsd > 0) {
         aplicarSugerenciaMonto(Number(pendingUsd.toFixed(2)));
       }
       return;
     }
-    const actual = getValues("tc_usd_mxn");
-    const yaTecleado = actual !== undefined && actual !== "" && Number(actual) > 0;
-    if (!yaTecleado && tcSugerido) {
-      setValue("tc_usd_mxn", tcSugerido.valor, { shouldValidate: true });
-      setTcPrefill(tcSugerido);
-    }
-    const tcEfectivo = yaTecleado ? Number(actual) : (tcSugerido?.valor ?? 0);
-    aplicarSugerenciaMonto(montoMxnSugerido(tcEfectivo));
+    aplicarSugerenciaMonto(montoMxnSugerido(prellenarTcSiFalta()));
   };
 
   // Si cambia el método, auto-sugiere moneda compatible (DOLARES→USD,
@@ -577,9 +701,103 @@ export function CobroFormSheet({
       }
       setComisionSugerida(null);
     }
-    if (m === "DOLARES") handleMonedaChange("USD");
-    else if (m === "EFECTIVO" || m === "PAYWISE") handleMonedaChange("MXN");
+    // Un método REAL nunca es el modo «Utilidades del socio»: se dice
+    // explícito (al salir de ese modo el estado todavía no se actualiza).
+    if (m === "DOLARES") handleMonedaChange("USD", false);
+    else if (m === "EFECTIVO" || m === "PAYWISE") handleMonedaChange("MXN", false);
   };
+
+  // ════════════ «Utilidades del socio» (23-nov-2026, API 0.0.148) ════════════
+
+  /** Pide los socios (con sus aviones y saldos) y propone socio y avión. */
+  const cargarSocios = () => {
+    const turno = ++turnoCargaSocios.current;
+    setCargaSocios({ estado: "cargando" });
+    void sociosParaCobroUtilidadesAction()
+      .catch(() => ({ ok: false as const, error: TEXTO_FALLO_RED_SOCIOS }))
+      .then((res) => {
+        // La ficha se cerró o se volvió a pedir: esta respuesta ya no cuenta.
+        if (turno !== turnoCargaSocios.current) return;
+        const carga = cargaSociosDeRespuesta(res);
+        setCargaSocios(carga);
+        if (carga.estado !== "ok") return;
+        // Si el cliente del vuelo ES un socio, se preselecciona (y su avión).
+        const propuesto = socioPreseleccionado(carga.socios, utilidadesSocio?.clienteNombre);
+        setSocioId(propuesto);
+        setAvionId(avionPorDefecto(socioDe(carga.socios, propuesto), utilidadesSocio?.aeronaveId));
+      });
+  };
+
+  /** Se eligió «Utilidades del socio» en el selector de método. */
+  const elegirUtilidades = () => {
+    // El formulario queda como un cobro sin banco (sin cuenta ni comisión
+    // sugerida de otro método). OTRO es el método interno con el que el API
+    // guarda este cobro; aquí NO viaja: el cuerpo ni siquiera lleva método.
+    handleMetodoChange("OTRO");
+    setConUtilidades(true);
+    setErroresUtilidades({});
+    setErrorGuardado(null);
+    // Moneda: pesos si el vuelo tiene total en pesos (la cuenta del socio es
+    // en pesos); si no, dólares. El monto y el T.C. los pone la regla de
+    // siempre (lo pendiente; T.C. de la cotización o el oficial).
+    handleMonedaChange(monedaPorDefectoUtilidades(montoTotalMxn), true);
+    // Fecha: la del VUELO (de su mes se descuentan las utilidades), salvo que
+    // el operador ya haya tecleado otra.
+    const actual = String(getValues("fecha_cobro") ?? "");
+    if (actual === "" || actual === fechaBase) {
+      const sugerida = fechaPorDefectoUtilidades(utilidadesSocio?.fechaVuelo, todayCancun());
+      setValue("fecha_cobro", sugerida, { shouldValidate: true });
+      setFechaSugerida(sugerida);
+    }
+    if (cargaSocios.estado !== "ok" && cargaSocios.estado !== "cargando") cargarSocios();
+  };
+
+  /** Se eligió un método REAL estando en «Utilidades del socio». */
+  const salirDeUtilidades = () => {
+    setConUtilidades(false);
+    setErroresUtilidades({});
+    setErrorGuardado(null);
+    // La fecha vuelve a la de siempre si seguía siendo la sugerida (la del vuelo).
+    if (fechaSugerida != null && getValues("fecha_cobro") === fechaSugerida) {
+      setValue("fecha_cobro", fechaBase, { shouldValidate: true });
+    }
+    setFechaSugerida(null);
+  };
+
+  /**
+   * `onChange` del selector «Método de cobro». «Utilidades del socio» es un
+   * valor CENTINELA de la pantalla: nunca se escribe en `metodo_cobro` ni se
+   * manda al API.
+   */
+  const handleMetodoSelector = (v: string) => {
+    if (v === METODO_UTILIDADES_SOCIO) {
+      if (ofrecerUtilidades && !modoUtilidades) elegirUtilidades();
+      return;
+    }
+    if (modoUtilidades) salirDeUtilidades();
+    handleMetodoChange(v);
+  };
+
+  const cambiarSocio = (id: string) => {
+    setSocioId(id);
+    const socios = cargaSocios.estado === "ok" ? cargaSocios.socios : [];
+    setAvionId(avionPorDefecto(socioDe(socios, id), utilidadesSocio?.aeronaveId));
+    setErroresUtilidades((e) => ({ ...e, socio: undefined, avion: undefined }));
+  };
+
+  const cambiarAvion = (id: string) => {
+    setAvionId(id);
+    setErroresUtilidades((e) => ({ ...e, avion: undefined }));
+  };
+
+  const opcionesMetodo = opcionesMetodoCobro(ofrecerUtilidades);
+  const socioElegido =
+    modoUtilidades && cargaSocios.estado === "ok" ? socioDe(cargaSocios.socios, socioId) : null;
+  // Renglón gris bajo el avión: lo por entregar de meses cerrados y cómo
+  // queda después de este cobro (null = el dato no llegó: sin números).
+  const saldoUtilidades = modoUtilidades
+    ? textoSaldoUtilidades({ socio: socioElegido, avionId, monto, moneda, tc })
+    : null;
 
   const comisionPctHint =
     metodo === "PAYWISE"
@@ -588,13 +806,22 @@ export function CobroFormSheet({
         : "Comisión de Paywise sobre este cobro; se sustituye por la real al conciliar el estado de cuenta."
       : "Si conoces el porcentaje.";
 
-  const tcHint =
+  const tcHintPrellenado =
     tcPrefill && Number(tc) === tcPrefill.valor
       ? tcPrefill.fuente === "cotizacion"
         ? "Prellenado con el TC de la cotización — puedes editarlo."
         : `Prellenado con el TC oficial de referencia del día de la cotización${diaTcOficial ? ` (${diaTcOficial})` : ""} — puedes editarlo.`
-      : inicial
-        ? hintTcEdicion(inicial, tc)
+      : null;
+  // Con «Utilidades del socio» el T.C. se pide también en dólares: se dice
+  // por qué (la cuenta del socio es en pesos).
+  const tcHint = tcHintPrellenado
+    ? modoUtilidades && moneda === "USD"
+      ? `${tcHintPrellenado} ${ayudaTcUtilidades("USD")}`
+      : tcHintPrellenado
+    : inicial
+      ? hintTcEdicion(inicial, tc)
+      : modoUtilidades
+        ? ayudaTcUtilidades(moneda)
         : "Necesario para saber cuánto cubre del total en USD";
 
   // Cuentas del catálogo: primero las de la moneda del cobro (sugerencia
@@ -649,6 +876,77 @@ export function CobroFormSheet({
         ? (Number(monto) || 0) / Number(tc)
         : null;
 
+  // ¿Ya se puede registrar con utilidades? (socios cargados y al menos uno).
+  const utilidadesListas = cargaSocios.estado === "ok" && cargaSocios.socios.length > 0;
+
+  /**
+   * Manda el cobro con utilidades — o lo REENVÍA como adelanto confirmado, con
+   * el mismo cuerpo y la misma llave —. El 409 `PAGO_EXCEDE_SALDO` no es un
+   * error: abre la confirmación del adelanto (`pasoTrasCobroUtilidades`).
+   */
+  const enviarCobroUtilidades = (
+    payload: CobroUtilidadesPayload,
+    ctx: { fecha: string; socioNombre: string },
+  ) => {
+    startTransition(async () => {
+      // La action nunca lanza, pero la LLAMADA sí puede (red caída, 502).
+      const res = await registrarCobroUtilidadesAction(flightId, payload).catch(() => ({
+        ok: false as const,
+        error: TEXTO_FALLO_RED_COBRO_UTILIDADES,
+        code: "SIN_CONEXION",
+      }));
+      const paso = pasoTrasCobroUtilidades(res);
+      switch (paso.paso) {
+        case "adelanto":
+          setAdelanto({ details: paso.details, payload, ...ctx });
+          return;
+        case "error":
+          setAdelanto(null);
+          setErrorGuardado(paso.mensaje);
+          // 409 `MES_CERRADO` (API 0.0.88): toast con «Ir a Reportes».
+          if (!toastMesCerradoSiAplica(res)) toast.error(paso.mensaje);
+          return;
+        case "listo":
+          setAdelanto(null);
+          if (paso.idempotente) toast.info(TEXTO_COBRO_UTILIDADES_YA_REGISTRADO);
+          else toast.success(textoCobroUtilidadesRegistrado(ctx.socioNombre));
+          onOpenChange(false);
+          router.refresh();
+          onRegistrado?.();
+          return;
+      }
+    });
+  };
+
+  /** Valida lo propio de «Utilidades del socio» y manda el cobro a SU endpoint. */
+  const registrarConUtilidades = (values: CobroFormValues) => {
+    if (cargaSocios.estado !== "ok") {
+      toast.error("Todavía no se cargan los socios. Espera un momento o pulsa «Reintentar».");
+      return;
+    }
+    const form = {
+      socioId,
+      avionId,
+      monto: values.monto,
+      moneda: values.moneda as Moneda,
+      tc: values.tc_usd_mxn,
+      fecha: String(values.fecha_cobro ?? "").slice(0, 10),
+      notas: values.notas ?? "",
+    };
+    const errores = validarCobroUtilidades(form, { socios: cargaSocios.socios, hoy: todayCancun() });
+    setErroresUtilidades(errores);
+    if (errores.monto) setError("monto", { type: "manual", message: errores.monto });
+    if (errores.tc) setError("tc_usd_mxn", { type: "manual", message: errores.tc });
+    if (errores.fecha) setError("fecha_cobro", { type: "manual", message: errores.fecha });
+    if (errores.notas) setError("notas", { type: "manual", message: errores.notas });
+    if (Object.keys(errores).length > 0) return;
+    setErrorGuardado(null);
+    enviarCobroUtilidades(payloadCobroUtilidades(form, { clientRequestId: solicitudId }), {
+      fecha: form.fecha,
+      socioNombre: socioDe(cargaSocios.socios, socioId)?.nombre ?? "",
+    });
+  };
+
   const onSubmit = handleSubmit((values) => {
     // EDICIÓN: validar lo propio del tipo de cobro, calcular el diff y
     // CONFIRMAR el antes → después (es dinero). Nada viaja todavía.
@@ -668,6 +966,13 @@ export function CobroFormSheet({
       }
       setErrorGuardado(null);
       setConfirmacion(cambios);
+      return;
+    }
+    // «UTILIDADES DEL SOCIO» (API 0.0.148): no es un cobro con método. Va a
+    // SU endpoint, que crea el cobro y la entrega al socio en una sola
+    // llamada; el alta de siempre (abajo) no se toca.
+    if (modoUtilidades) {
+      registrarConUtilidades(values);
       return;
     }
     startTransition(async () => {
@@ -764,8 +1069,16 @@ export function CobroFormSheet({
   const registroCobro = cobroEditar ? textoRegistroCobro(cobroEditar) : null;
   const soloLectura = cobroEditar && edicion ? datosSoloLecturaCobro(cobroEditar, edicion) : [];
   // El T.C. se captura: en el alta, siempre que sea en pesos; al corregir,
-  // además solo si el tipo de cobro lo permite (reembolso/conciliado no).
-  const mostrarTc = moneda === "MXN" && !tcBloqueado;
+  // además solo si el tipo de cobro lo permite (reembolso/conciliado no). Con
+  // «Utilidades del socio» se captura en las DOS monedas (API 0.0.148).
+  const mostrarTc = (moneda === "MXN" || modoUtilidades) && !tcBloqueado;
+  // Confirmación del ADELANTO (409 PAGO_EXCEDE_SALDO): textos de la fuente única.
+  const confirmarAdelanto = adelanto
+    ? confirmacionAdelantoCobro(adelanto.details, adelanto.fecha)
+    : null;
+  // La ficha de corrección de un cobro con utilidades (solo se abre por
+  // «Asignar factura»): su fecha tampoco se corrige.
+  const fechaSoloLectura = cobroEditar != null && esCobroConUtilidades(cobroEditar);
   // «Equivale a … USD» solo cuando algo editable lo puede mover (con el
   // dinero bloqueado, solo el T.C. de un cobro en pesos).
   const mostrarEquivalencia =
@@ -927,18 +1240,36 @@ export function CobroFormSheet({
 
           {!dineroBloqueado && (
             <>
-              <Field label="Método de cobro" required>
+              {/* «Utilidades del socio» (API 0.0.148) es una opción más AL
+                  FINAL del selector, solo donde se ofrece: un valor de la
+                  pantalla que nunca se manda como método. */}
+              <Field
+                label="Método de cobro"
+                required
+                hint={modoUtilidades ? NOTA_COBRO_CON_UTILIDADES : undefined}
+              >
                 <SearchableSelect
-                  options={METODOS_PAGO.map((m) => ({
-                    value: m.value,
-                    label: m.label,
-                    description: m.hint,
-                  }))}
-                  value={metodo}
-                  onChange={handleMetodoChange}
+                  options={opcionesMetodo}
+                  value={modoUtilidades ? METODO_UTILIDADES_SOCIO : metodo}
+                  onChange={handleMetodoSelector}
                   placeholder="Selecciona método"
                 />
               </Field>
+
+              {/* Quién paga y de las utilidades de qué avión (con su saldo). */}
+              {modoUtilidades && (
+                <CamposUtilidadesSocio
+                  carga={cargaSocios}
+                  socioId={socioId}
+                  avionId={avionId}
+                  aeronaveVueloId={utilidadesSocio?.aeronaveId ?? null}
+                  errores={erroresUtilidades}
+                  saldo={saldoUtilidades}
+                  onSocio={cambiarSocio}
+                  onAvion={cambiarAvion}
+                  onReintentar={cargarSocios}
+                />
+              )}
 
               <div className="grid grid-cols-[1fr_120px] gap-3">
                 <Field label="Monto" required hint={montoHint} error={errors.monto?.message}>
@@ -1004,7 +1335,8 @@ export function CobroFormSheet({
             </div>
           )}
 
-          {!dineroBloqueado && (
+          {/* Con «Utilidades del socio» no hay banco: ni comisión ni cuenta. */}
+          {!dineroBloqueado && !modoUtilidades && (
             <>
               <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
                 <Field
@@ -1111,6 +1443,10 @@ export function CobroFormSheet({
             </>
           )}
 
+          {/* Con «Utilidades del socio» no hay folio del banco ni factura que
+              elegir aquí: los dos campos se esconden (y no viajan). */}
+          {!modoUtilidades && (
+            <>
           <Field
             label="Referencia"
             hint={
@@ -1142,11 +1478,23 @@ export function CobroFormSheet({
               />
             </Field>
           )}
+            </>
+          )}
 
-          <Field label="Fecha del cobro" error={errors.fecha_cobro?.message}>
-            <Input type="date" {...register("fecha_cobro")} />
-            <AvisoCapturaAntesDelInicio fecha={watch("fecha_cobro")} />
-          </Field>
+          {/* Con «Utilidades del socio» la fecha decide de QUÉ MES se
+              descuenta: es obligatoria y se dice el mes. En la corrección de
+              un cobro con utilidades no se pinta (no se corrige). */}
+          {!fechaSoloLectura && (
+            <Field
+              label="Fecha del cobro"
+              required={modoUtilidades}
+              hint={modoUtilidades ? ayudaFechaUtilidades(fechaCobro) : undefined}
+              error={errors.fecha_cobro?.message}
+            >
+              <Input type="date" {...register("fecha_cobro")} />
+              <AvisoCapturaAntesDelInicio fecha={fechaCobro} />
+            </Field>
+          )}
 
           <Field label="Notas" error={errors.notas?.message}>
             <Textarea
@@ -1156,9 +1504,10 @@ export function CobroFormSheet({
             />
           </Field>
 
-          {/* Rechazo del API al corregir: se queda a la vista (el toast se
-              va solo) con el mensaje en es-MX. */}
-          {enEdicion && errorGuardado && (
+          {/* Rechazo del API al corregir (o al registrar con utilidades del
+              socio): se queda a la vista (el toast se va solo) con el
+              mensaje en es-MX. */}
+          {(enEdicion || modoUtilidades) && errorGuardado && (
             <p
               role="alert"
               className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
@@ -1177,7 +1526,12 @@ export function CobroFormSheet({
           >
             Cancelar
           </Button>
-          <Button type="button" onClick={onSubmit} disabled={pending}>
+          {/* Con «Utilidades del socio» no se registra hasta tener los socios. */}
+          <Button
+            type="button"
+            onClick={onSubmit}
+            disabled={pending || (modoUtilidades && !utilidadesListas)}
+          >
             {enEdicion
               ? pending
                 ? "Guardando…"
@@ -1235,6 +1589,44 @@ export function CobroFormSheet({
             }}
           >
             {pending ? "Guardando…" : "Guardar corrección"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* «Utilidades del socio»: el 409 PAGO_EXCEDE_SALDO NO es un error. Las
+        utilidades de ese mes todavía no alcanzan o no han cerrado: se
+        CONFIRMA el adelanto (los mismos números y la misma redacción que en
+        «Registrar entrega») y se reenvía con `aceptar_exceso` y la MISMA
+        llave. «Cancelar» regresa a la ficha sin registrar nada. */}
+    <AlertDialog
+      open={adelanto !== null}
+      onOpenChange={(o) => {
+        if (!o && !pending) setAdelanto(null);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{confirmarAdelanto?.titulo ?? ""}</AlertDialogTitle>
+          <AlertDialogDescription>{confirmarAdelanto?.descripcion ?? ""}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>
+            {confirmarAdelanto?.cancelar ?? "Cancelar"}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={pending}
+            data-accion="confirmar-adelanto-cobro"
+            onClick={(e) => {
+              e.preventDefault();
+              if (!adelanto) return;
+              enviarCobroUtilidades(
+                { ...adelanto.payload, aceptar_exceso: true },
+                { fecha: adelanto.fecha, socioNombre: adelanto.socioNombre },
+              );
+            }}
+          >
+            {pending ? "Registrando…" : (confirmarAdelanto?.confirmar ?? "")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

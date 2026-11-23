@@ -44,6 +44,13 @@ import type { FlightCobro } from "@/types/flights";
 import type { MetodoPago } from "@/types/quote";
 import { CUENTAS_COBRO, type CuentaCobro } from "@/lib/admin/cobros";
 import { esCodigoCobroFactura, mensajeErrorCobroFactura } from "@/lib/admin/cobro-factura";
+import {
+  CODIGO_COBRO_CON_UTILIDADES,
+  TEXTO_COBRO_UTILIDADES_NO_SE_EDITA,
+  esCobroConUtilidades,
+  etiquetaMetodoDeCobro,
+  mensajeErrorCobroUtilidades,
+} from "@/lib/admin/cobro-utilidades";
 import { metodoPagoLabel } from "@/lib/admin/metodos-pago";
 import { fmtMonto, fmtTc } from "@/lib/format";
 import { cancunInputToIso, fmtDateOnly, isoToCancunInput } from "@/lib/datetime";
@@ -147,6 +154,22 @@ function explicacionCobroLigado(c: FlightCobro): string {
 }
 
 export function edicionDeCobro(c: FlightCobro): EdicionCobro {
+  // COBRO CON UTILIDADES DEL SOCIO (23-nov-2026, API 0.0.148): está ligado a
+  // una entrega en «Pagos a socios». El API responde 409
+  // `COBRO_CON_UTILIDADES` a cambiar monto, moneda, T.C., fecha o método
+  // («quítalo y regístralo de nuevo») ⇒ sin «Editar». La ficha de corrección
+  // solo llega a abrirse por «Asignar factura», con todo su dinero (y la
+  // fecha) de solo lectura.
+  if (esCobroConUtilidades(c)) {
+    return {
+      ofrecer: false,
+      razonSinEditar: TEXTO_COBRO_UTILIDADES_NO_SE_EDITA,
+      dineroBloqueado: true,
+      tcBloqueado: true,
+      motivo: null,
+      explicacion: TEXTO_COBRO_UTILIDADES_NO_SE_EDITA,
+    };
+  }
   if (esParteDeSobre(c)) {
     return {
       ofrecer: false,
@@ -260,8 +283,19 @@ export function datosSoloLecturaCobro(
   if (!e.dineroBloqueado) return [];
   const filas: { etiqueta: string; valor: string }[] = [
     { etiqueta: "Monto", valor: fmtMonto(c.monto, c.moneda) },
-    { etiqueta: "Método", valor: metodoPagoLabel(c.metodo_cobro) },
+    // «Utilidades del socio · Mauricio Roque» si se pagó con utilidades.
+    { etiqueta: "Método", valor: etiquetaMetodoDeCobro(c) },
   ];
+  // Con utilidades: la fecha tampoco se corrige (de su mes se descontó) y no
+  // hay cuenta ni comisión que enseñar (no entró dinero).
+  if (esCobroConUtilidades(c)) {
+    const dia = isoToCancunInput(c.fecha_cobro).slice(0, 10);
+    filas.push({ etiqueta: "Fecha", valor: dia ? fmtDateOnly(dia) : "—" });
+    if (c.moneda === "MXN") {
+      filas.push({ etiqueta: "Tipo de cambio", valor: fmtTc(c.tc_usd_mxn) || "sin T.C." });
+    }
+    return filas;
+  }
   const cuenta = (c.cuenta_destino ?? "").trim();
   if (cuenta) filas.push({ etiqueta: "Cuenta", valor: cuenta });
   const cm = numeroDe(c.comision_banco_monto);
@@ -857,6 +891,10 @@ export function mensajeErrorEdicionCobro(res: {
         msg ||
         "Este cobro salió de un anticipo: para cambiar el monto, desaplícalo y vuelve a aplicarlo desde Ingresos → Anticipos."
       );
+    // Pagado con utilidades del socio (API 0.0.148): el texto del API
+    // («quítalo y regístralo de nuevo») o el respaldo de la fuente única.
+    case CODIGO_COBRO_CON_UTILIDADES:
+      return mensajeErrorCobroUtilidades(res);
     case "NOT_FOUND":
       return "Este cobro ya no existe (alguien lo eliminó). Recarga la página.";
     case "FORBIDDEN":

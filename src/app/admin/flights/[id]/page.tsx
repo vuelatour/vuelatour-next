@@ -910,6 +910,11 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             clienteId={snapshot.cliente_id}
             clienteNombre={client?.nombre ?? null}
             fechaVuelo={snapshot.fecha_vuelo}
+            // COBRO CON UTILIDADES DEL SOCIO (23-nov-2026, API 0.0.148): solo
+            // ESTA página lo pasa — aquí «Registrar cobro» ofrece «Utilidades
+            // del socio» a Dirección y Facturación. El avión del vuelo propone
+            // de las utilidades de qué avión se descuenta.
+            utilidadesSocio={{ aeronaveId: snapshot.aeronave_id ?? null }}
             grupo={
               snapshotConGrupo.grupo_id
                 ? {
