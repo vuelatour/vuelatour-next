@@ -695,6 +695,14 @@ export function QuoteWorkspace({
         facturasVigentes={facturaServicio?.facturas ?? null}
         asignacionFactura={asignacionDisponible(facturaServicio)}
         rol={rol}
+        // «Utilidades del socio» también desde la cotización (24-nov-2026):
+        // la oficina registra casi todos los cobros aquí, y sin esto la opción
+        // solo salía en la página del vuelo. La ficha decide por rol y estado.
+        utilidadesSocio={{
+          aeronaveId: quote.aeronave_id ?? null,
+          clienteNombre: clientName ?? null,
+          fechaVuelo: quote.fecha_vuelo ?? null,
+        }}
       />
 
       {/* «Se actualizó la fecha de la cotización» (5-oct-2026): modal FUERA

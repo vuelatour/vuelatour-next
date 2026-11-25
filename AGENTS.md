@@ -14157,11 +14157,15 @@ socio en «Pagos a socios»; al quitar el cobro da de baja también la entrega.
   `metodo_cobro` ni viaja al API, y **no se agrega a `METODOS_PAGO`** (esa
   lista es espejo de las etiquetas del API y del recibo; la congela
   `metodos-pago.test.ts`). Va AL FINAL del selector (`opcionesMetodoCobro`).
-- **Solo en la página del vuelo, solo en el ALTA.** `CobroFormSheet` la ofrece
-  únicamente si recibe `utilidadesSocio` (la pasa `flights/[id]/page.tsx` →
-  `CobrosCard` → la ficha del alta), el rol es DIRECCION/FACTURACION y el
-  vuelo no está cancelado (`ofreceCobroConUtilidades`). La cotización y la
-  auditoría de Paywise montan la misma ficha SIN la prop: ahí no existe.
+- **En la página del vuelo y en la de la cotización, solo en el ALTA.**
+  `CobroFormSheet` la ofrece únicamente si recibe `utilidadesSocio`: la pasan
+  `flights/[id]/page.tsx` → `CobrosCard` → la ficha del alta y, desde el
+  24-nov-2026, `quotes/quote-workspace.tsx` (la oficina registra casi todos
+  los cobros desde la cotización; sin eso el dueño «no veía» la opción). Además
+  el rol debe ser DIRECCION/FACTURACION y el vuelo no estar cancelado
+  (`ofreceCobroConUtilidades`). NO la pasan `conciliacion/paywise-auditoria.tsx`
+  (ahí el cobro nace de un abono del banco) ni la ficha de CORRECCIÓN de
+  `quote-cobros-card.tsx`.
 - **Al elegirla** se esconden comisión, cuenta, referencia y factura, y salen
   «Socio que paga» (sin la empresa; se preselecciona si el cliente del vuelo
   se llama igual, sin acentos ni mayúsculas) y «¿De las utilidades de qué

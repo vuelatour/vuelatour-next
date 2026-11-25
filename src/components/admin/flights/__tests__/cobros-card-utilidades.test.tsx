@@ -239,7 +239,7 @@ describe("«Liquidado con» en la card del vuelo", () => {
   });
 });
 
-describe("la opción solo se activa desde la página del vuelo", () => {
+describe("la opción se activa desde la página del vuelo y desde la cotización", () => {
   const fichas = (html: string) =>
     [...html.matchAll(/<i data-ficha-cobro="(alta|edicion)" data-utilidades="([^"]*)">/g)].map((m) => ({
       modo: m[1],
@@ -263,13 +263,24 @@ describe("la opción solo se activa desde la página del vuelo", () => {
     for (const f of fichas(cotizacion([TRANSFERENCIA], "DIRECCION"))) expect(f.utilidades).toBe("no");
   });
 
-  it("en el código: la pasa la página del vuelo y NADIE más", () => {
+  it("en el código: la pasan la página del vuelo y el ALTA de la cotización; la corrección y Paywise no", () => {
     const leer = (...p: string[]) => readFileSync(path.resolve(__dirname, "..", "..", "..", "..", ...p), "utf8");
     const pagina = leer("app", "admin", "flights", "[id]", "page.tsx");
     const card = pagina.slice(pagina.indexOf("<CobrosCard"), pagina.indexOf("/>", pagina.indexOf("<CobrosCard")));
     expect(card).toContain("utilidadesSocio={{ aeronaveId: snapshot.aeronave_id ?? null }}");
+    // Desde el 24-nov-2026 también el «Registrar cobro» de la cotización (la
+    // oficina registra ahí casi todos los cobros): avión operativo, cliente y
+    // fecha del vuelo, una sola vez.
+    const cotizacionSrc = leer("components", "admin", "quotes", "quote-workspace.tsx");
+    expect(cotizacionSrc.match(/utilidadesSocio=\{/g)).toHaveLength(1);
+    const ficha = cotizacionSrc.slice(
+      cotizacionSrc.indexOf("<CobroFormSheet"),
+      cotizacionSrc.indexOf("/>", cotizacionSrc.indexOf("<CobroFormSheet")),
+    );
+    expect(ficha).toContain("aeronaveId: quote.aeronave_id ?? null");
+    expect(ficha).toContain("clienteNombre: clientName ?? null");
+    expect(ficha).toContain("fechaVuelo: quote.fecha_vuelo ?? null");
     for (const archivo of [
-      ["components", "admin", "quotes", "quote-workspace.tsx"],
       ["components", "admin", "quotes", "quote-cobros-card.tsx"],
       ["components", "admin", "conciliacion", "paywise-auditoria.tsx"],
     ]) {
