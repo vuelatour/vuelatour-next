@@ -43,6 +43,24 @@ describe("cableado: qué viaja y dónde se pinta (lectura del fuente)", () => {
     expect(src.match(/setPagoOperador\(false\);/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("alta DESDE LA FICHA DEL VUELO (27-nov-2026, #552): el vuelo prefijado dice si es externo — la ficha lo pasa y el alta lo usa al pintar Y al enviar", () => {
+    const src = leer("components/admin/expenses/expense-create-dialog.tsx");
+    // El vuelo prefijado no está en la lista (ahí no se carga): llega por props.
+    expect(src).toMatch(
+      /const vueloPrefijado = defaultVueloId\s*\? \{ es_externo: defaultVueloExterno, operador_externo: defaultOperadorExterno \}\s*: null;/,
+    );
+    // La MISMA decisión al pintar la casilla y al armar el cuerpo del alta.
+    expect(src.match(/vueloDelAltaParaPagoOperador\(\{\s*prefijado: vueloPrefijado,\s*lista: vuelos,/g)?.length).toBe(2);
+    // Ya nadie decide solo con la lista (era el hueco).
+    expect(src).not.toContain("vueloExternoDe(vuelos.find(");
+    const card = leer("components/admin/flights/flight-gastos-card.tsx");
+    expect(card).toContain("defaultVueloExterno={vueloExterno}");
+    expect(card).toContain("defaultOperadorExterno={operadorExterno}");
+    const ficha = leer("app/admin/flights/[id]/page.tsx");
+    expect(ficha).toContain("vueloExterno={snapshot.es_externo === true}");
+    expect(ficha).toContain("operadorExterno={snapshot.operador_externo ?? null}");
+  });
+
   it("verificar: la llave viaja SOLO visible y si cambió contra la BASE; vuelo de la lista o del embed del API; aviso «se quita»; se reinicia por apertura", () => {
     const src = leer("components/admin/expenses/expense-verify-dialog.tsx");
     expect(src).toContain("usePuedeMarcarPagoOperador() && apiConPagoOperador(gasto)");

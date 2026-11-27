@@ -14318,3 +14318,35 @@ ancla a propósito); el cambio va por su propia puerta.
   Chrome contra un API simulado (cambio con avisos, rechazo por factura,
   hijo de grupo); falta verlo contra el API real. **Orden de deploy: API
   0.0.152 antes que el panel.**
+
+## Pago al operador externo: también al registrar el gasto DESDE la ficha del vuelo (27-nov-2026)
+
+Reporte de la oficina con la captura del Balance: «está sumando el costo
+estimado del operador externo otra vez al pago del servicio» (vuelo #552,
+Simon Herrera: OPERACIONES $34,155.66 = el pago $18,533.09 + el costo
+cotizado $15,622.57).
+
+- **Causa**: el alta de gasto con vuelo PREFIJADO («Gastos del vuelo» →
+  «Registrar gasto», `FlightGastosCard`) no carga la lista de vuelos
+  cercanos, y la casilla «Es el pago al operador externo» decidía SOLO con
+  esa lista: desde la ficha del vuelo nunca aparecía ni se marcaba, así que
+  la llave no viajaba. Desde Gastos («Nuevo gasto» eligiendo el vuelo) sí
+  funcionaba; por eso #509 quedó marcado y #552 no.
+- **Regla única** `vueloDelAltaParaPagoOperador` (`lib/admin/
+  pago-operador-externo.ts`): con vuelo prefijado manda lo que la ficha sabe
+  de él (`defaultVueloExterno` / `defaultOperadorExterno` de
+  `ExpenseCreateDialog`, que `FlightGastosCard` recibe como `vueloExterno` /
+  `operadorExterno` desde `snapshot.es_externo` / `snapshot.operador_externo`);
+  sin vuelo prefijado, el elegido en el selector, como siempre. La usa el
+  alta al PINTAR la casilla y al ARMAR el cuerpo (los dos sitios, la misma
+  llamada). Nadie vuelve a decidir con `vuelos.find(...)` a secas.
+- Resultado: en un vuelo cubierto por externo, «Registrar gasto» abre con
+  Operaciones y la casilla marcada con el nombre del operador; el gasto nace
+  como el costo real y el cotizado deja de sumarse.
+- **Hueco que sigue abierto (decisión del cliente)**: la app no manda la
+  llave. Un pago al operador capturado desde la app queda sin marca y hay que
+  marcarlo en «Verificar / editar».
+- Pruebas: `lib/admin/__tests__/pago-operador-externo.test.ts` (describe
+  «vueloDelAltaParaPagoOperador») y `expenses/__tests__/pago-operador-ui.test.tsx`
+  (cableado ficha → card → alta). Probado en Chrome contra un API simulado: la
+  casilla sale marcada y el POST lleva `es_pago_operador_externo: true`.

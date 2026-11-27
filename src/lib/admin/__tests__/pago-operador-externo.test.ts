@@ -25,6 +25,7 @@ import {
   pagoOperadorSeQuita,
   pagosAlOperadorPorMoneda,
   puedeMarcarPagoOperador,
+  vueloDelAltaParaPagoOperador,
   vueloExternoDe,
 } from "../pago-operador-externo";
 
@@ -66,6 +67,63 @@ describe("esPagoOperadorExterno / apiConPagoOperador / puedeMarcarPagoOperador",
     });
     expect(vueloExternoDe(null)).toEqual({ externo: false, operador: null });
     expect(vueloExternoDe({})).toEqual({ externo: false, operador: null });
+  });
+});
+
+/**
+ * 27-nov-2026 · caso #552 (Simon Herrera, CUN-CZM-CUN): Ale registró el pago
+ * al operador ($18,533.09) desde la FICHA DEL VUELO («Gastos del vuelo» →
+ * «Registrar gasto»). Ahí el alta no carga la lista de vuelos, la casilla
+ * nunca apareció, el gasto se guardó sin la marca y el balance sumó el pago
+ * ADEMÁS del costo cotizado ($15,622.57): $34,155.66 en OPERACIONES.
+ */
+describe("vueloDelAltaParaPagoOperador (alta desde la ficha del vuelo o desde Gastos)", () => {
+  const lista = [
+    { id: "v-552", es_externo: true, operador_externo: "Simon Herrera" },
+    { id: "v-propio", es_externo: false, operador_externo: null },
+  ];
+
+  it("vuelo PREFIJADO (ficha del vuelo, lista VACÍA): manda lo que la ficha sabe del vuelo", () => {
+    expect(
+      vueloDelAltaParaPagoOperador({
+        prefijado: { es_externo: true, operador_externo: "Simon Herrera" },
+        lista: [],
+        vueloId: "v-552",
+      }),
+    ).toEqual({ externo: true, operador: "Simon Herrera" });
+  });
+
+  it("con eso la casilla SE VE y nace marcada en Operaciones: el pago viaja marcado", () => {
+    const v = vueloDelAltaParaPagoOperador({
+      prefijado: { es_externo: true, operador_externo: "Simon Herrera" },
+      lista: [],
+      vueloId: "v-552",
+    });
+    const visible = casillaPagoOperadorVisible({ vueloExterno: v.externo, categoria: "OPERACIONES", puedeMarcar: true });
+    expect(visible).toBe(true);
+    const marcado = pagoOperadorPorDefecto({ vueloExterno: v.externo, categoria: "OPERACIONES" });
+    expect(marcado).toBe(true);
+    expect(pagoOperadorParaAlta({ visible, marcado })).toBe(true);
+  });
+
+  it("vuelo prefijado PROPIO: sin casilla aunque la lista traiga un externo", () => {
+    expect(
+      vueloDelAltaParaPagoOperador({
+        prefijado: { es_externo: false, operador_externo: null },
+        lista,
+        vueloId: "v-552",
+      }),
+    ).toEqual({ externo: false, operador: null });
+  });
+
+  it("sin vuelo prefijado (alta desde Gastos): el elegido en el selector, como siempre", () => {
+    expect(vueloDelAltaParaPagoOperador({ prefijado: null, lista, vueloId: "v-552" })).toEqual({
+      externo: true,
+      operador: "Simon Herrera",
+    });
+    expect(vueloDelAltaParaPagoOperador({ prefijado: null, lista, vueloId: "v-propio" }).externo).toBe(false);
+    expect(vueloDelAltaParaPagoOperador({ prefijado: null, lista, vueloId: "" }).externo).toBe(false);
+    expect(vueloDelAltaParaPagoOperador({ prefijado: null, lista: [], vueloId: "v-552" }).externo).toBe(false);
   });
 });
 

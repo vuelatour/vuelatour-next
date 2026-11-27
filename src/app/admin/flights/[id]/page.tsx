@@ -1036,6 +1036,10 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
             vueloId={snapshot.id}
             vueloFolio={snapshot.folio}
             vueloCancelado={snapshot.estado === "CANCELADO"}
+            // Vuelo cubierto por externo: «Registrar gasto» ofrece (y marca
+            // sola en Operaciones) «Es el pago al operador externo».
+            vueloExterno={snapshot.es_externo === true}
+            operadorExterno={snapshot.operador_externo ?? null}
             aeronaveId={snapshot.aeronave_id}
             pilotoNombre={piloto?.nombre ?? null}
             // «Marcar pagado» y el menú ⋯ según el rol (P19 del lote «por

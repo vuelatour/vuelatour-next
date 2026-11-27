@@ -27,6 +27,8 @@ export function FlightGastosCard({
   vueloId,
   vueloFolio,
   vueloCancelado = false,
+  vueloExterno = false,
+  operadorExterno = null,
   aeronaveId,
   pilotoNombre,
   rol,
@@ -41,6 +43,11 @@ export function FlightGastosCard({
   /** Vuelo CANCELADO: los gastos se capturan igual (se voló a recoger,
       cancelaron, regresó ferry…) y cuentan en el balance — regla 28-ago. */
   vueloCancelado?: boolean;
+  /** Vuelo cubierto por un operador EXTERNO y quién: el alta de aquí ofrece
+      «Es el pago al operador externo» (marcada sola en Operaciones) para que
+      ese gasto sea el costo real y no se sume además del cotizado. */
+  vueloExterno?: boolean;
+  operadorExterno?: string | null;
   aeronaveId?: string | null;
   /** Piloto del vuelo (para "simular como piloto"). null = sin piloto. */
   pilotoNombre?: string | null;
@@ -82,6 +89,8 @@ export function FlightGastosCard({
                 defaultVueloId={vueloId}
                 defaultVueloFolio={vueloFolio}
                 defaultVueloCancelado={vueloCancelado}
+                defaultVueloExterno={vueloExterno}
+                defaultOperadorExterno={operadorExterno}
                 defaultAeronaveId={aeronaveId ?? undefined}
                 defaultPilotoNombre={pilotoNombre ?? null}
               />

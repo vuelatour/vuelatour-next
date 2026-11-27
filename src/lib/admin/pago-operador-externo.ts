@@ -103,6 +103,23 @@ export function vueloExternoDe(
   return { externo: v?.es_externo === true, operador: v?.operador_externo?.trim() || null };
 }
 
+/**
+ * Vuelo con el que el ALTA decide la casilla (27-nov-2026, caso #552). Con
+ * vuelo PREFIJADO —el alta desde la ficha del vuelo, «Gastos del vuelo» →
+ * «Registrar gasto», donde NO se carga la lista de vuelos— manda lo que la
+ * ficha sabe de ese vuelo; si no, el elegido en el selector. Antes solo se
+ * miraba la lista: desde la ficha la casilla nunca aparecía, la llave nunca
+ * viajaba y el pago al operador de #552 ($18,533.09) se sumó ADEMÁS del
+ * costo cotizado ($15,622.57) en OPERACIONES.
+ */
+export function vueloDelAltaParaPagoOperador(p: {
+  prefijado: { es_externo?: boolean | null; operador_externo?: string | null } | null;
+  lista: ReadonlyArray<{ id: string; es_externo?: boolean | null; operador_externo?: string | null }>;
+  vueloId: string | null | undefined;
+}): { externo: boolean; operador: string | null } {
+  return vueloExternoDe(p.prefijado ?? p.lista.find((v) => v.id === p.vueloId));
+}
+
 /** ¿Se enseña la casilla? Vuelo externo + categoría del vuelo + quien puede marcar. */
 export function casillaPagoOperadorVisible(p: {
   vueloExterno: boolean;

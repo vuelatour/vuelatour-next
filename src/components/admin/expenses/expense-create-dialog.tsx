@@ -15,7 +15,7 @@ import {
   casillaPagoOperadorVisible,
   pagoOperadorParaAlta,
   pagoOperadorPorDefecto,
-  vueloExternoDe,
+  vueloDelAltaParaPagoOperador,
 } from "@/lib/admin/pago-operador-externo";
 import { useForm } from "react-hook-form";
 import {
@@ -237,6 +237,8 @@ export function ExpenseCreateDialog({
   defaultVueloId,
   defaultVueloFolio,
   defaultVueloCancelado = false,
+  defaultVueloExterno = false,
+  defaultOperadorExterno = null,
   defaultAeronaveId,
   defaultCategoria,
   defaultPilotoNombre,
@@ -277,6 +279,12 @@ export function ExpenseCreateDialog({
   /** El vuelo prefijado está CANCELADO: el gasto se acepta igual (regla
       28-ago) y solo se avisa que cuenta en el balance. */
   defaultVueloCancelado?: boolean;
+  /** El vuelo prefijado está cubierto por un operador EXTERNO (y quién):
+      con él el alta ofrece «Es el pago al operador externo», marcada sola en
+      Operaciones. Desde la ficha del vuelo no hay lista de vuelos de dónde
+      saberlo (27-nov-2026, caso #552). */
+  defaultVueloExterno?: boolean;
+  defaultOperadorExterno?: string | null;
   defaultAeronaveId?: string;
   defaultCategoria?: string;
   /** Piloto del vuelo prefijado (para "simular como piloto"). null = sin piloto. */
@@ -445,7 +453,16 @@ export function ExpenseCreateDialog({
   // externo»; nace marcada (o se desmarca) al cambiar vuelo o categoría: el
   // default es la regla y lo que el operador cambie a mano vale hasta el
   // siguiente cambio de vuelo/categoría.
-  const vueloExt = vueloExternoDe(vuelos.find((v) => v.id === watch("vuelo_id")));
+  // El vuelo PREFIJADO (alta desde la ficha del vuelo) no está en `vuelos`
+  // —ahí no se carga la lista—: lo que la ficha sabe de él llega por props.
+  const vueloPrefijado = defaultVueloId
+    ? { es_externo: defaultVueloExterno, operador_externo: defaultOperadorExterno }
+    : null;
+  const vueloExt = vueloDelAltaParaPagoOperador({
+    prefijado: vueloPrefijado,
+    lista: vuelos,
+    vueloId: watch("vuelo_id"),
+  });
   const pagoOperadorVisible = casillaPagoOperadorVisible({
     vueloExterno: vueloExt.externo,
     categoria: categoriaSel,
@@ -940,7 +957,11 @@ export function ExpenseCreateDialog({
           // la casilla visible (un API previo rechazaría la llave).
           ...(pagoOperadorParaAlta({
             visible: casillaPagoOperadorVisible({
-              vueloExterno: vueloExternoDe(vuelos.find((v) => v.id === values.vuelo_id)).externo,
+              vueloExterno: vueloDelAltaParaPagoOperador({
+                prefijado: vueloPrefijado,
+                lista: vuelos,
+                vueloId: values.vuelo_id,
+              }).externo,
               categoria: values.categoria,
               puedeMarcar: puedeMarcarPagoOperador,
             }),
