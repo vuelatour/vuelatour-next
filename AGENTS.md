@@ -14206,3 +14206,115 @@ socio en «Pagos a socios»; al quitar el cobro da de baja también la entrega.
   la misma llave, baja); falta verlo contra el API real. **Orden de deploy:
   API 0.0.148 antes que el panel** (con el API previo la opción aparece y al
   guardar dice «falta actualizar el servidor»; nada se registra).
+
+## Inventario: algunas matrículas, «Corregir cantidad» y el ajuste que dice lo que hace (27-nov-2026, API 0.0.152, invariante 146 del API)
+
+Pedidos de la oficina por WhatsApp (Jimmy): «necesito me den la opción de
+marcar algunas matrículas ya que necesito poner solo 4 matrículas y no
+todas» y «me podrían habilitar poder editar movimientos en el inventario …
+por error de dedo puse 13, pero ingresaron 12». Y un tercero que salió al
+revisar: para quitar esa pieza capturó un «Ajuste» de 1, y el ajuste SUMA.
+
+- **FUENTE ÚNICA** `lib/admin/inventario-cantidad.ts` (PURA, prueba
+  `__tests__/inventario-cantidad.test.ts`): textos, `estadoCantidad`,
+  `toastCantidadCorregida`, `mensajeErrorCantidad`, `puedeCorregirCantidad`,
+  `destinoDeReparto`, `resumenReparto`, `etiquetaReparto`,
+  `ETIQUETA_TIPO_AJUSTE`, `NOTA_AJUSTE_SUMA`. **El panel no reparte dinero ni
+  recalcula existencias**: manda la lista y pinta lo que responde el API.
+- **«Repartir entre varias matrículas»** (`inventory/movimiento-dialog.tsx`):
+  la casilla (antes «Para todas las matrículas») abre la lista de matrículas
+  con casillas, TODAS marcadas al encenderla, «Marcar todas» / «Quitar todas»
+  y el resumen «4 de 7 marcadas · cada una paga 1/4». Lo marcado decide qué
+  viaja (`destinoDeReparto`): UNA ⇒ salida normal a ese avión; TODAS ⇒
+  `para_flota: true` SIN lista (toda la flota, como siempre); ALGUNAS ⇒
+  `para_flota: true` + `aeronave_ids`; ninguna ⇒ no se registra y se dice.
+  **Solo se ofrecen las matrículas ACTIVAS**: el catálogo de aviones de las
+  páginas de inventario ahora lleva `activa` (`{ id, matricula, activa? }`) y
+  el diálogo filtra `activa !== false` (el API rechaza repartir a un avión
+  dado de baja con 400 `MATRICULAS_INVALIDAS`; el selector de UN avión sigue
+  mostrando todas, como antes). El toast dice a quiénes («repartido entre 4
+  matrículas: N4142R, N58BT, …»).
+- **Cardex** (`inventory/cardex-table.tsx`): la columna «Avión / Proveedor»
+  de una salida repartida dice las matrículas ELEGIDAS (`matriculas_flota`,
+  aditivo del API) o «FLOTA» cuando fue toda (`etiquetaReparto`); el buscador
+  de la tabla también las encuentra.
+- **«Corregir cantidad»** en las filas ENTRADA del cardex (SOLO
+  ADMIN/DIRECCION, como la baja: `puedeCorregirCantidad` en la página del
+  producto) → `inventory/corregir-cantidad-dialog.tsx`: enseña la cantidad
+  registrada, pide la correcta (+ motivo opcional) y guarda con
+  `corregirCantidadMovimientoAction` (`PATCH …/movimientos/:movId/cantidad`).
+  El botón espera a que `estadoCantidad` dé un número válido (vacío, igual,
+  ≤ 0, más de 2 decimales ⇒ dice por qué). **El rechazo del API se queda
+  DENTRO del diálogo** (ámbar) con su mensaje tal cual — nace de una compra,
+  «lo menos que puede quedar es 8», la bodega quedaría negativa… —: un toast
+  que se va solo dejaba al operador sin la respuesta. La action NO revalida
+  (el diálogo sigue montado): al terminar hace `router.refresh()`. Tras
+  guardar, el toast dice de cuánto a cuánto y la existencia que quedó, con
+  los números del API. Se monta con `key` por movimiento. Una SALIDA no se
+  corrige aquí (ya generó su cargo): se elimina con justificación y se
+  vuelve a capturar; el API lo dice si alguien lo intenta.
+- **El ajuste dice lo que hace**: la opción del tipo es «Ajuste (suma piezas
+  a la existencia)» (decía «Ajuste / merma (corrección o desecho)») y al
+  elegirla sale la nota ámbar `NOTA_AJUSTE_SUMA`. Desde el API 0.0.152 un
+  AJUSTE **sí se puede eliminar** con el bote de basura (misma vista previa
+  y justificación; el texto de `inventario-eliminar.ts` ya decía «el
+  AJUSTE»).
+- **Selector con buscador: el pie dice cuántas opciones hay**
+  (`ui/searchable-select.tsx`, `textoMasOpciones` / `OPCIONES_A_LA_VISTA`).
+  Mismo día, otra pregunta de Jimmy: «¿por qué no tengo la categoría de
+  Gastos indirectos?». SÍ estaba («Gastos indirectos de avión», lugar 14 de
+  21 del alta de un gasto), pero la lista del popup no enseña barra de
+  desplazamiento y caben ~6: parecía terminar en «Comisariato». Con más de 6
+  opciones TODO `SearchableSelect` pinta al pie «21 opciones · desliza la
+  lista o escribe para buscar» (se oculta cuando la búsqueda no encuentra
+  nada). Sigue sin ofrecerse al registrar un gasto DESDE un vuelo (un gasto
+  del vuelo no es indirecto): eso no cambió.
+- Pruebas: `lib/admin/__tests__/inventario-cantidad.test.ts`,
+  `inventory/__tests__/cantidad-y-reparto.test.tsx` (render estático +
+  cableado) y `ui/__tests__/searchable-select-pie.test.ts`.
+- **Orden de deploy: migración `20261127000001` ⇒ API 0.0.152 ⇒ panel.** Con
+  el panel nuevo y el API previo: «algunas matrículas» responde 400 (campo
+  desconocido) y «Corregir cantidad» dice «falta actualizar el API»; nada se
+  guarda a medias.
+
+## Cambiar el cliente de un vuelo / cotización que ya existe (27-nov-2026, API 0.0.152, invariante 147 del API)
+
+Pedido de la oficina por WhatsApp (Itzel y Jimmy): «Nos podrían habilitar
+cambiar de cliente cuando un vuelo o cotización ya existe? porque no nos
+deja». El cotizador sigue SIN dejar cambiar el cliente al revisar (el API lo
+ancla a propósito); el cambio va por su propia puerta.
+
+- Enlace **«Cambiar cliente»** JUNTO al nombre del cliente en la cabecera del
+  detalle del vuelo y de la cotización (`CambiarClienteBoton`,
+  `components/admin/flights/cambiar-cliente-dialog.tsx`). No vive en el papel
+  ni en la barra de acciones: no toca los fixtures de la hoja y funciona
+  también con la cotización bloqueada por cobro. Solo
+  `puedeCambiarCliente(rol)` (= `ROLES_EDITAN_COTIZACION`: Dirección,
+  Administración y Coordinación; sin rol conocido no se pinta).
+- En la cotización se pinta DESHABILITADO, con
+  `TITULO_CAMBIAR_CLIENTE_CON_CAMBIOS`, mientras hay cambios sin guardar o un
+  guardado en vuelo: primero se guardan o descartan (el cotizador se
+  rehidrata con el cliente nuevo solo con el formulario limpio).
+- **El diálogo ES la confirmación**: «De A → a B», «El precio NO cambia» y el
+  botón solo se habilita con un cliente elegido. El catálogo de clientes
+  ACTIVOS se pide AL ABRIR (`clientesParaCambioAction`, no en cada carga de la
+  página); si falla, «Reintentar». Hijo de grupo: se explica y no se ofrece
+  confirmar. El rechazo del API (facturado, mes cerrado, cliente dado de
+  baja…) queda A LA VISTA dentro del diálogo (`role="alert"`) con su texto.
+- Tras guardar: toast (`toastCambioCliente`), los `avisos[]` del API en ámbar
+  con `toastAvisos` (14 s: tarifa preferencial del cliente nuevo, cliente
+  interno, broker, recibos de los cobros, «Necesito factura») y
+  `router.refresh()`. La action revalida vuelos, cotizaciones y calendario.
+- **El panel no decide nada del precio**: el API no lo recalcula y lo dice en
+  los avisos; la siguiente versión que se guarde ya se cotiza con el cliente
+  nuevo (ahí sí puede cambiar la tarifa, y el diálogo de guardar lo avisa
+  como cualquier deriva del motor).
+- Fuente única de textos y reglas: `lib/admin/cambio-cliente.ts` (PURA +
+  test). Un 404 «Cannot PATCH» es API sin desplegar
+  (`TEXTO_CAMBIAR_CLIENTE_API_VIEJO`). `CambiarClienteContenido` es
+  presentación pura (todo por props) para probar cada estado sin DOM.
+- Pruebas: `lib/admin/__tests__/cambio-cliente.test.ts` y
+  `flights/__tests__/cambiar-cliente-dialog.test.tsx`. Probado además en
+  Chrome contra un API simulado (cambio con avisos, rechazo por factura,
+  hijo de grupo); falta verlo contra el API real. **Orden de deploy: API
+  0.0.152 antes que el panel.**

@@ -1,12 +1,17 @@
 "use client";
 
-import { PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { HashtagIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/admin/data-table";
 import { fmtDateOnly, fmtDateTimeShort } from "@/lib/datetime";
 import { fmtMxn, fmtTc, fmtUsd } from "@/lib/format";
 import { numeroONulo, textoMonto } from "@/lib/admin/inventario-utilidad";
+import {
+  ETIQUETA_CORREGIR_CANTIDAD,
+  etiquetaReparto,
+  puedeCorregirCantidad,
+} from "@/lib/admin/inventario-cantidad";
 import {
   ETIQUETA_CARDEX_TRASPASO,
   esTraspaso,
@@ -91,14 +96,12 @@ const columnasBase: Array<DataTableColumn<InventarioMovimiento>> = [
     key: "origen",
     header: "Avión / Proveedor",
     cellClassName: "text-muted-foreground",
-    // Salida prorrateada a toda la flota: no lleva avión, dice FLOTA. Un
-    // traspaso dice de qué bodega a cuál.
+    // Salida repartida: no lleva avión; dice las matrículas ELEGIDAS o
+    // «FLOTA» (toda la flota). Un traspaso dice de qué bodega a cuál.
     cell: (m) =>
       esTraspaso(m)
         ? etiquetaTraspasoMovimiento(m)
-        : m.para_flota
-          ? "FLOTA"
-          : (m.aeronave?.matricula ?? m.proveedor?.nombre ?? "—"),
+        : (etiquetaReparto(m) ?? m.aeronave?.matricula ?? m.proveedor?.nombre ?? "—"),
   },
   {
     key: "referencia",
@@ -216,6 +219,7 @@ const columnaPresentacion: DataTableColumn<InventarioMovimiento> = {
 function columnaAcciones(
   onEditarCosto?: (m: InventarioMovimiento) => void,
   onEliminar?: (m: InventarioMovimiento) => void,
+  onCorregirCantidad?: (m: InventarioMovimiento) => void,
 ): DataTableColumn<InventarioMovimiento> {
   return {
     key: "acciones",
@@ -234,6 +238,20 @@ function columnaAcciones(
           >
             <PencilSquareIcon className="h-4 w-4" />
             Editar costo
+          </Button>
+        ) : null}
+        {/* 27-nov-2026: «puse 13, pero ingresaron 12». Solo ENTRADAS; el API
+            dice si no se puede (nace de una compra, ya salieron piezas…). */}
+        {onCorregirCantidad && puedeCorregirCantidad(m) ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={() => onCorregirCantidad(m)}
+          >
+            <HashtagIcon className="h-4 w-4" />
+            {ETIQUETA_CORREGIR_CANTIDAD}
           </Button>
         ) : null}
         {onEliminar ? (
@@ -258,12 +276,15 @@ export function CardexTable({
   movimientos,
   onEditarCosto,
   onEliminar,
+  onCorregirCantidad,
 }: {
   movimientos: InventarioMovimiento[];
   /** Si viene, aparece la acción "Editar costo" en las filas ENTRADA. */
   onEditarCosto?: (m: InventarioMovimiento) => void;
   /** Si viene (SOLO ADMIN), aparece el bote de "Eliminar movimiento". */
   onEliminar?: (m: InventarioMovimiento) => void;
+  /** Si viene (SOLO ADMIN), aparece «Corregir cantidad» en las filas ENTRADA. */
+  onCorregirCantidad?: (m: InventarioMovimiento) => void;
 }) {
   // La columna solo aparece si algún movimiento se capturó por empaque
   // (caja): a los ítems sin cajas no les estorba.
@@ -282,8 +303,8 @@ export function CardexTable({
     const idx = columns.findIndex((c) => c.key === "costo") + 1;
     columns = [...columns.slice(0, idx), columnaVenta, columnaGanancia, ...columns.slice(idx)];
   }
-  if (onEditarCosto || onEliminar) {
-    columns = [...columns, columnaAcciones(onEditarCosto, onEliminar)];
+  if (onEditarCosto || onEliminar || onCorregirCantidad) {
+    columns = [...columns, columnaAcciones(onEditarCosto, onEliminar, onCorregirCantidad)];
   }
   return (
     <DataTable
@@ -293,7 +314,7 @@ export function CardexTable({
       searchText={(m) =>
         [
           TIPO_STYLE[m.tipo].label,
-          m.para_flota ? "FLOTA" : undefined,
+          etiquetaReparto(m) ?? undefined,
           m.aeronave?.matricula,
           m.proveedor?.nombre,
           m.referencia,

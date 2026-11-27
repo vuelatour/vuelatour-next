@@ -46,6 +46,12 @@ import {
   MSG_REAGENDAR_VUELO_INVALIDO,
   type AlineacionFechaTramos,
 } from "@/lib/admin/quote-fecha-operativa";
+import {
+  mensajeErrorCambioCliente,
+  type ClienteParaCambio,
+  type ResultadoCambioCliente,
+} from "@/lib/admin/cambio-cliente";
+import { listClients } from "@/lib/api/clients-server";
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -1505,6 +1511,79 @@ export async function alinearFechaTramosAction(
       return {
         ok: false,
         error: err.message,
+        code: err.code,
+        status: err.status,
+        details: err.details,
+      };
+    }
+    return fail(err);
+  }
+}
+
+// ═══════════ CAMBIAR EL CLIENTE DE UN VUELO / COTIZACIÓN (27-nov-2026) ═══════════
+//
+// Pedido de la oficina: «Nos podrían habilitar cambiar de cliente cuando un
+// vuelo o cotización ya existe? porque no nos deja». El API
+// (`PATCH /v1/flights/:id/cliente`) cambia SOLO el cliente, deja el sello en
+// las notas internas y devuelve los avisos; el precio no se toca.
+
+/** Tope de páginas del catálogo de clientes (200 por página). */
+const PAGINAS_CLIENTES_MAX = 10;
+
+/**
+ * Catálogo de clientes ACTIVOS para el diálogo «Cambiar cliente». Se pide al
+ * ABRIR el diálogo (no en cada carga de la página). Nunca lanza.
+ */
+export async function clientesParaCambioAction(): Promise<ActionResult<ClienteParaCambio[]>> {
+  try {
+    const clientes: ClienteParaCambio[] = [];
+    for (let pagina = 0; pagina < PAGINAS_CLIENTES_MAX; pagina += 1) {
+      const res = await listClients({ limit: 200, offset: pagina * 200, activo: true });
+      for (const c of res.data) {
+        clientes.push({
+          id: c.id,
+          nombre: c.nombre,
+          es_broker: c.es_broker === true,
+          es_interno: c.es_interno === true,
+        });
+      }
+      if (res.data.length < 200) break;
+    }
+    return { ok: true, data: clientes };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Cambia el cliente del vuelo. Nunca lanza; el texto del rechazo ya viene en es-MX. */
+export async function cambiarClienteVueloAction(
+  vueloId: string,
+  clienteId: string,
+): Promise<ActionResult<ResultadoCambioCliente>> {
+  if (!esUuid(vueloId) || !esUuid(clienteId)) {
+    return { ok: false, error: "Elige el cliente nuevo y vuelve a intentar." };
+  }
+  try {
+    const data = await apiServer<ResultadoCambioCliente>(`/v1/flights/${vueloId}/cliente`, {
+      method: "PATCH",
+      body: { cliente_id: clienteId },
+    });
+    // El cliente sale en las listas, el detalle del vuelo, la cotización y el
+    // calendario. El diálogo se cierra al terminar: repintar no le estorba.
+    revalidateFlight(vueloId);
+    revalidatePath("/admin/quotes");
+    revalidatePath(`/admin/quotes/${vueloId}`);
+    revalidatePath("/admin/calendar");
+    return { ok: true, data };
+  } catch (err) {
+    if (isApiError(err)) {
+      return {
+        ok: false,
+        error: mensajeErrorCambioCliente({
+          code: err.code,
+          error: err.message,
+          status: err.status,
+        }),
         code: err.code,
         status: err.status,
         details: err.details,

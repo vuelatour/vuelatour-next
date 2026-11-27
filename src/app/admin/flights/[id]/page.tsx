@@ -55,6 +55,7 @@ import {
 import { listProviders } from "@/lib/api/providers-server";
 import { FlightGastosCard } from "@/components/admin/flights/flight-gastos-card";
 import { getClient } from "@/lib/api/clients-server";
+import { CambiarClienteBoton } from "@/components/admin/flights/cambiar-cliente-dialog";
 import { getQuote, getQuoteCorreos } from "@/lib/api/quotes-server";
 import { CorreoClienteCard } from "@/components/admin/quotes/correo-cliente-card";
 import { puedeVerCorreosCliente } from "@/lib/admin/correo-cliente";
@@ -586,8 +587,19 @@ export default async function FlightDetailPage({ params }: FlightDetailPageProps
               )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              {client?.nombre ?? snapshot.cliente_id} ·{" "}
-              <span className="font-mono">{rutaOperativa}</span> ·{" "}
+              {client?.nombre ?? snapshot.cliente_id}{" "}
+              {/* Cambiar el cliente de un vuelo que ya existe (27-nov-2026):
+                  solo quien guarda cotizaciones; el precio no se mueve. */}
+              <CambiarClienteBoton
+                rol={me?.rol ?? null}
+                vueloId={snapshot.id}
+                folio={snapshot.folio}
+                clienteId={snapshot.cliente_id ?? null}
+                clienteNombre={client?.nombre ?? null}
+                esDeGrupo={!!grupoHijo}
+                grupoFolio={grupoHijo?.folio ?? null}
+              />{" "}
+              · <span className="font-mono">{rutaOperativa}</span> ·{" "}
               {snapshot.pasajeros}{" "}
               {snapshot.pasajeros === 1 ? "pasajero" : "pasajeros"}
             </p>

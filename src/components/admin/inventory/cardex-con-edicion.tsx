@@ -10,6 +10,10 @@ import {
   EliminarMovimientoDialog,
   type MovimientoEliminable,
 } from "./eliminar-movimiento-dialog";
+import {
+  CorregirCantidadDialog,
+  type MovimientoCantidadEditable,
+} from "./corregir-cantidad-dialog";
 import type { InventarioMovimiento } from "@/types/inventory";
 
 interface CardexConEdicionProps {
@@ -24,6 +28,11 @@ interface CardexConEdicionProps {
    * conoce la baja: habilita el bote de "Eliminar movimiento".
    */
   puedeEliminar?: boolean;
+  /**
+   * SOLO ADMIN (mismo rol del PATCH …/cantidad del API, 27-nov-2026):
+   * habilita «Corregir cantidad» en las ENTRADAS.
+   */
+  puedeCorregirCantidad?: boolean;
 }
 
 /**
@@ -42,9 +51,11 @@ export function CardexConEdicion({
   movimientos,
   puedeEditarCosto,
   puedeEliminar = false,
+  puedeCorregirCantidad = false,
 }: CardexConEdicionProps) {
   const [editando, setEditando] = useState<MovimientoCostoEditable | null>(null);
   const [eliminando, setEliminando] = useState<MovimientoEliminable | null>(null);
+  const [corrigiendo, setCorrigiendo] = useState<MovimientoCantidadEditable | null>(null);
 
   return (
     <>
@@ -78,6 +89,19 @@ export function CardexConEdicion({
             ? (m) => setEliminando({ id: m.id, itemId, itemNombre, unidad })
             : undefined
         }
+        onCorregirCantidad={
+          puedeCorregirCantidad
+            ? (m) =>
+                setCorrigiendo({
+                  id: m.id,
+                  itemId,
+                  itemNombre,
+                  fecha_movimiento: m.fecha_movimiento,
+                  cantidad: Number(m.cantidad),
+                  unidad,
+                })
+            : undefined
+        }
       />
       <EditarCostoDialog
         open={editando != null}
@@ -96,6 +120,17 @@ export function CardexConEdicion({
             if (!o) setEliminando(null);
           }}
           movimiento={eliminando}
+        />
+      )}
+      {/* `key` por movimiento: cada corrección arranca con el campo en blanco. */}
+      {corrigiendo && (
+        <CorregirCantidadDialog
+          key={corrigiendo.id}
+          open
+          onOpenChange={(o) => {
+            if (!o) setCorrigiendo(null);
+          }}
+          movimiento={corrigiendo}
         />
       )}
     </>

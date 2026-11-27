@@ -128,6 +128,9 @@ export const MovimientoFormSchema = z
     venta_moneda: z.enum(["MXN", "USD"]).optional(),
     aeronave_id: z.string().uuid().optional().or(z.literal("")),
     para_flota: z.boolean().optional(),
+    // SALIDA repartida entre ALGUNAS matrículas (27-nov-2026, API 0.0.152):
+    // de 2 en adelante y solo con `para_flota`. Ausente = toda la flota.
+    aeronave_ids: z.array(z.string().uuid()).min(2).max(50).optional(),
     proveedor_id: z.string().uuid().optional().or(z.literal("")),
     // Bodega del movimiento (27-oct-2026, API 0.0.111): "" = la principal
     // del producto. `ubicacion_destino_id` solo en TRASPASO (la que recibe).
@@ -145,10 +148,14 @@ export const MovimientoFormSchema = z
       d.para_flota === true ||
       (!!d.aeronave_id && d.aeronave_id !== ""),
     {
-      message: "Registra el avión o marca 'Para todas las matrículas'",
+      message: "Elige el avión o marca «Repartir entre varias matrículas»",
       path: ["aeronave_id"],
     },
   )
+  .refine((d) => d.aeronave_ids == null || (d.tipo === "SALIDA" && d.para_flota === true), {
+    message: "La lista de matrículas solo aplica a una salida repartida",
+    path: ["aeronave_ids"],
+  })
   // Un TRASPASO no lleva costo (el API lo guarda en 0) pero sí destino.
   .refine(
     (d) =>
@@ -219,6 +226,19 @@ export const EditarCostoSchema = z
  * `@MaxLength(500)`, trim) y que el `check` de la BD: se valida aquí para no
  * gastar un viaje al API con un motivo que ya se sabe corto.
  */
+/**
+ * Corrección de la CANTIDAD de una ENTRADA (27-nov-2026, API 0.0.152): la
+ * cantidad correcta (> 0, 2 decimales) y un motivo opcional. Mismos límites
+ * que el DTO del API.
+ */
+export const CorregirCantidadSchema = z.object({
+  cantidad: z
+    .number()
+    .positive("La cantidad debe ser mayor a 0")
+    .refine((n) => Math.round(n * 100) / 100 === n, "Máximo 2 decimales"),
+  motivo: z.string().trim().max(200, "Máximo 200 caracteres").optional(),
+});
+
 export const MotivoEliminacionSchema = z.object({
   motivo: z
     .string()

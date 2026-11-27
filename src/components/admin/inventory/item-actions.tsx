@@ -32,7 +32,7 @@ import type { InventarioItem, InventarioUbicacion } from "@/types/inventory";
 
 interface ItemActionsProps {
   item: InventarioItem;
-  aircraft: { id: string; matricula: string }[];
+  aircraft: { id: string; matricula: string; activa?: boolean }[];
   providers: { id: string; nombre: string }[];
   categorias?: string[];
   /** Catálogo de ubicaciones (formulario); null/ausente = input de texto. */

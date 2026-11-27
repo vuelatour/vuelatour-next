@@ -38,6 +38,17 @@ function filtrarOpcion(item: SearchableSelectOption, query: string): boolean {
   return coincideBusqueda(textoDeOpcion(item), query);
 }
 
+/**
+ * Opciones que caben a la vista sin desplazar (con descripción son ~6). Por
+ * encima de este número el popup avisa cuántas hay y cómo llegar a ellas.
+ */
+export const OPCIONES_A_LA_VISTA = 6;
+
+/** «21 opciones · desliza la lista o escribe para buscar». */
+export function textoMasOpciones(total: number): string {
+  return `${total} opciones · desliza la lista o escribe para buscar`;
+}
+
 interface SearchableSelectProps {
   options: SearchableSelectOption[];
   value: string | null | undefined;
@@ -126,7 +137,11 @@ export function SearchableSelect({
           />
         </div>
         <ComboboxEmpty>{emptyText}</ComboboxEmpty>
-        <ComboboxList>
+        {/* La lista NO enseña barra de desplazamiento: con más opciones de las
+            que caben se ve «cortada» y nada avisa que hay más abajo (27-nov-
+            2026: «¿por qué no tengo la categoría Gastos indirectos?» — estaba
+            en el lugar 14 de 21). El pie lo dice. */}
+        <ComboboxList className={options.length > OPCIONES_A_LA_VISTA ? "pb-0" : undefined}>
           {(item: SearchableSelectOption) => (
             <ComboboxItem value={item} key={item.value} disabled={item.disabled}>
               {/* min-w-0 + truncate: si la opción excede el tope del popup,
@@ -147,6 +162,14 @@ export function SearchableSelect({
             </ComboboxItem>
           )}
         </ComboboxList>
+        {options.length > OPCIONES_A_LA_VISTA && (
+          <p
+            data-slot="searchable-select-pie"
+            className="border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground group-data-empty/combobox-content:hidden"
+          >
+            {textoMasOpciones(options.length)}
+          </p>
+        )}
       </ComboboxContent>
     </Combobox>
   );

@@ -176,7 +176,7 @@ export default async function InventoryPage({
     tc_usd_mxn: m.tc_usd_mxn != null ? Number(m.tc_usd_mxn) : null,
   }));
   const providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
-  const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
+  const aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula, activa: a.activa }));
   const bajos = items.filter((i) => i.bajo_stock).length;
   // Categorías existentes (únicas) para el selector del formulario: elegir
   // una evita fragmentar el catálogo ("Aceite" vs "Aceites").

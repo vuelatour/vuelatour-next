@@ -205,6 +205,7 @@ export function textoSalidaRegistrada(
     | "venta_moneda"
     | "moneda"
     | "costo_unitario_mxn"
+    | "matriculas_flota"
   >,
   matricula?: string | null,
 ): string {
@@ -222,7 +223,10 @@ export function textoSalidaRegistrada(
       : mov.moneda === "MXN" && mov.costo_unitario_mxn != null
         ? "MXN"
         : "USD";
-    return `Salida registrada: se cargó ${montoTxt(Number(g.monto_total), moneda)} repartido entre ${g.aviones} aviones (${origen}).`;
+    // Con matrículas ELEGIDAS (27-nov-2026) se dicen; toda la flota, el número.
+    const elegidas = (mov.matriculas_flota ?? []).filter((x) => typeof x === "string" && x.trim() !== "");
+    const entre = elegidas.length > 0 ? `${elegidas.length} matrículas: ${elegidas.join(", ")}` : `${g.aviones} aviones`;
+    return `Salida registrada: se cargó ${montoTxt(Number(g.monto_total), moneda)} repartido entre ${entre} (${origen}).`;
   }
   const uno = g as { monto: number; moneda: string };
   const destino = matricula?.trim() ? `a ${matricula.trim()}` : "al avión";

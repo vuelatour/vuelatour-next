@@ -93,10 +93,11 @@ export default async function InventoryItemPage({
 
   let item: InventarioItemDetail;
   let resumen: InventarioItemResumen | null;
-  let aircraft: { id: string; matricula: string }[];
+  let aircraft: { id: string; matricula: string; activa?: boolean }[];
   let providers: { id: string; nombre: string }[];
   let puedeEditarCosto = false;
   let puedeEliminar = false;
+  let puedeCorregirCantidad = false;
   let eliminados: MovimientosEliminadosResultado = {
     disponible: false,
     filas: [],
@@ -122,7 +123,7 @@ export default async function InventoryItemPage({
       ]);
     item = itemRes;
     resumen = resumenRes;
-    aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula }));
+    aircraft = aircraftRes.data.map((a) => ({ id: a.id, matricula: a.matricula, activa: a.activa }));
     providers = providersRes.data.map((p) => ({ id: p.id, nombre: p.nombre }));
     eliminados = eliminadosRes;
     ubicacionesRes = ubicRes;
@@ -134,6 +135,10 @@ export default async function InventoryItemPage({
     // desplegado: con un backend viejo el bote daría un 404 sin explicación.
     puedeEliminar =
       !!me && (me.rol === "DIRECCION" || me.rol === "ADMIN") && eliminados.disponible;
+    // «Corregir cantidad» de una ENTRADA (27-nov-2026): SOLO ADMIN, como el
+    // PATCH …/cantidad del API. Si el API todavía no la conoce, el diálogo lo
+    // dice («falta actualizar el API») en vez de fallar mudo.
+    puedeCorregirCantidad = !!me && (me.rol === "DIRECCION" || me.rol === "ADMIN");
   } catch (err) {
     if (isApiError(err) && err.status === 404) notFound();
     throw err;
@@ -354,6 +359,7 @@ export default async function InventoryItemPage({
               movimientos={movimientos}
               puedeEditarCosto={puedeEditarCosto}
               puedeEliminar={puedeEliminar}
+              puedeCorregirCantidad={puedeCorregirCantidad}
             />
           </div>
         )}

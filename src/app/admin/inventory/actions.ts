@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { apiServer } from "@/lib/api/server";
 import { isApiError } from "@/lib/api/errors";
 import {
+  CorregirCantidadSchema,
   EditarCostoSchema,
   EmpaqueFormSchema,
   EmpaqueUpdateSchema,
@@ -269,6 +270,43 @@ export async function updateMovimientoCostoAction(
     revalidatePath("/admin/inventory");
     revalidatePath(`/admin/inventory/${itemId}`);
     return { ok: true, data: updated };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Corrige la CANTIDAD de una ENTRADA de cardex (27-nov-2026, API 0.0.152;
+ * SOLO ADMIN). El API valida los candados (nace de una compra, la existencia
+ * quedaría negativa en algún punto o en una bodega, alguien la cambió antes)
+ * y responde 409/400 con `code` estable y un mensaje que dice qué hacer: el
+ * diálogo lo pinta tal cual. NO revalida la página (el diálogo sigue montado
+ * y decide cuándo cerrar): quien llama hace `router.refresh()`.
+ */
+export async function corregirCantidadMovimientoAction(
+  itemId: string,
+  movId: string,
+  raw: unknown,
+): Promise<
+  ActionResult<InventarioMovimiento & { cantidad_antes?: number; cantidad_despues?: number }>
+> {
+  if (!esUuid(itemId) || !esUuid(movId)) {
+    return { ok: false, error: "Movimiento inválido: recarga la pantalla." };
+  }
+  const parsed = CorregirCantidadSchema.safeParse(raw);
+  if (!parsed.success) {
+    const errores = parsed.error.flatten().fieldErrors;
+    return { ok: false, error: Object.values(errores).flat()[0] ?? "Cantidad inválida", fieldErrors: errores };
+  }
+  try {
+    const motivo = parsed.data.motivo?.trim();
+    const data = await apiServer<
+      InventarioMovimiento & { cantidad_antes?: number; cantidad_despues?: number }
+    >(`/v1/inventory/items/${itemId}/movimientos/${movId}/cantidad`, {
+      method: "PATCH",
+      body: { cantidad: parsed.data.cantidad, ...(motivo ? { motivo } : {}) },
+    });
+    return { ok: true, data };
   } catch (err) {
     return fail(err);
   }

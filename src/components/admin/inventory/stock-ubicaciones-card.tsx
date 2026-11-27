@@ -47,7 +47,7 @@ export function StockUbicacionesCard(props: {
   /** Lo que necesita el diálogo del movimiento para «Traspasar». */
   traspaso: {
     empaques: InventarioEmpaque[];
-    aircraft: { id: string; matricula: string }[];
+    aircraft: { id: string; matricula: string; activa?: boolean }[];
     providers: { id: string; nombre: string }[];
     margenVentaPct?: number | null;
     tieneCostoVigente?: boolean;

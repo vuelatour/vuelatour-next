@@ -59,7 +59,7 @@ const num = (n: number) => n.toLocaleString("es-MX", { maximumFractionDigits: 3 
 
 interface ItemsTableProps {
   items: InventarioItemWithStock[];
-  aircraft: { id: string; matricula: string }[];
+  aircraft: { id: string; matricula: string; activa?: boolean }[];
   providers: { id: string; nombre: string }[];
   categorias: string[];
   /**

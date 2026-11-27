@@ -38,7 +38,6 @@ import { montoTxt } from "@/lib/admin/inventario-eliminar";
 import {
   ETIQUETA_A_COSTO,
   HINT_A_COSTO,
-  HINT_PARA_FLOTA,
   NOTA_VENTA_EN_PESOS,
   PLACEHOLDER_A_COSTO,
   hintAvionSalida,
@@ -76,6 +75,17 @@ import {
   opcionesBodega,
   textoTraspasoRegistrado,
 } from "@/lib/admin/inventario-ubicaciones-stock";
+import {
+  BOTON_MARCAR_TODAS,
+  BOTON_QUITAR_TODAS,
+  ETIQUETA_LISTA_MATRICULAS,
+  ETIQUETA_REPARTIR,
+  ETIQUETA_TIPO_AJUSTE,
+  HINT_REPARTIR,
+  NOTA_AJUSTE_SUMA,
+  destinoDeReparto,
+  resumenReparto,
+} from "@/lib/admin/inventario-cantidad";
 import type { MovimientoFormValues } from "@/app/admin/inventory/schema";
 import { Field } from "@/components/admin/form-field";
 import type { GastoCandidatoCompra } from "@/types/compras";
@@ -85,7 +95,9 @@ const TIPOS = [
   { value: "ENTRADA", label: "Entrada (compra / alta de stock)" },
   { value: "SALIDA", label: "Salida (consumo, se carga a un avión)" },
   { value: "DEVOLUCION", label: "Devolución (regresa a bodega)" },
-  { value: "AJUSTE", label: "Ajuste / merma (corrección o desecho)" },
+  // 27-nov-2026: decía «Ajuste / merma (corrección o desecho)» y el ajuste
+  // SUMA; los tres capturados en producción querían quitar una pieza.
+  { value: "AJUSTE", label: ETIQUETA_TIPO_AJUSTE },
 ];
 
 /** Valor del selector "Capturar por" cuando se captura en unidades. */
@@ -106,7 +118,7 @@ interface MovimientoDialogProps {
   precioVentaMoneda?: "MXN" | "USD" | null;
   /** Empaques (cajas) del ítem: habilitan "Capturar por caja". */
   empaques?: InventarioEmpaque[];
-  aircraft: { id: string; matricula: string }[];
+  aircraft: { id: string; matricula: string; activa?: boolean }[];
   providers: { id: string; nombre: string }[];
   /** Tipo preseleccionado al abrir (ej. SALIDA desde el listado). */
   initialTipo?: MovimientoFormValues["tipo"];
@@ -198,6 +210,10 @@ export function MovimientoDialog({
   // clic no registra dos veces).
   const [sinCosto, setSinCosto] = useState<EntradaSinCostoPendiente | null>(null);
   const [sinCostoAbierto, setSinCostoAbierto] = useState(false);
+  // SALIDA repartida (27-nov-2026): matrículas marcadas. Solo se ofrecen las
+  // ACTIVAS (el API rechaza repartir a un avión dado de baja).
+  const [marcadas, setMarcadas] = useState<string[]>([]);
+  const flota = useMemo(() => aircraft.filter((a) => a.activa !== false), [aircraft]);
   const irAlCostoRef = useRef(false);
   const costoInputRef = useRef<HTMLInputElement | null>(null);
   // Solo empaques activos se pueden usar para capturar; si el preseleccionado
@@ -235,6 +251,7 @@ export function MovimientoDialog({
     setSinCostoAbierto(false);
     setVincularGasto(false);
     setGasto(null);
+    setMarcadas([]);
   }, [open, reset, initialTipo, preseleccionado, precioVenta, precioVentaMoneda, tcHoy]);
 
   const tipo = watch("tipo");
@@ -283,7 +300,29 @@ export function MovimientoDialog({
         moneda: values.venta_moneda,
       }),
     };
-    const matricula = aircraft.find((a) => a.id === values.aeronave_id)?.matricula ?? null;
+    let matricula = aircraft.find((a) => a.id === values.aeronave_id)?.matricula ?? null;
+
+    // SALIDA REPARTIDA (27-nov-2026): según lo marcado viaja como salida a UN
+    // avión, a TODA la flota (sin lista, como siempre) o a ALGUNAS matrículas
+    // (`aeronave_ids`). El reparto del dinero lo hace el API.
+    let paraFlota = false;
+    if (values.tipo === "SALIDA" && values.para_flota === true) {
+      const destino = destinoDeReparto(flota, marcadas);
+      if (destino.tipo === "ERROR") {
+        toast.error(destino.mensaje);
+        return;
+      }
+      if (destino.tipo === "UNA") {
+        cuerpo.para_flota = false;
+        cuerpo.aeronave_id = destino.aeronave_id;
+        matricula = flota.find((a) => a.id === destino.aeronave_id)?.matricula ?? null;
+      } else {
+        paraFlota = true;
+        cuerpo.para_flota = true;
+        cuerpo.aeronave_id = "";
+        if (destino.tipo === "ALGUNAS") cuerpo.aeronave_ids = destino.aeronave_ids;
+      }
+    }
 
     // TRASPASO (27-oct-2026): destino obligatorio y distinto al origen
     // efectivo (el elegido o la principal). Sin costo, avión ni venta.
@@ -369,7 +408,7 @@ export function MovimientoDialog({
         return;
       }
     }
-    registrar(cuerpo, { matricula, paraFlota: values.para_flota === true });
+    registrar(cuerpo, { matricula, paraFlota });
   });
 
   const registrarDesdeGasto = (input: Parameters<typeof entradaDesdeGastoAction>[0]) => {
@@ -734,15 +773,63 @@ export function MovimientoDialog({
                   checked={watch("para_flota") ?? false}
                   onChange={(e) => {
                     setValue("para_flota", e.target.checked);
-                    if (e.target.checked) setValue("aeronave_id", "");
+                    if (e.target.checked) {
+                      setValue("aeronave_id", "");
+                      // Arranca con TODAS marcadas (= «para todas las
+                      // matrículas» de siempre); se desmarcan las que no van.
+                      setMarcadas(flota.map((a) => a.id));
+                    }
                   }}
                   className="h-4 w-4 cursor-pointer accent-brand-600"
                 />
                 <span>
-                  Para todas las matrículas{" "}
-                  <span className="text-xs text-muted-foreground">{HINT_PARA_FLOTA}</span>
+                  {ETIQUETA_REPARTIR}{" "}
+                  <span className="text-xs text-muted-foreground">{HINT_REPARTIR}</span>
                 </span>
               </label>
+              {watch("para_flota") && (
+                <fieldset className="space-y-2 rounded-lg border border-border p-3" data-reparto-matriculas>
+                  <legend className="px-1 text-sm font-medium">{ETIQUETA_LISTA_MATRICULAS}</legend>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
+                    {flota.map((a) => (
+                      <label key={a.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={marcadas.includes(a.id)}
+                          onChange={(e) =>
+                            setMarcadas((prev) =>
+                              e.target.checked ? [...prev, a.id] : prev.filter((id) => id !== a.id),
+                            )
+                          }
+                          className="h-4 w-4 cursor-pointer accent-brand-600"
+                        />
+                        <span className="tabular-nums">{a.matricula}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <p className="text-xs text-muted-foreground" data-resumen-reparto>
+                      {resumenReparto(flota.length, flota.filter((a) => marcadas.includes(a.id)).length)}
+                    </p>
+                    <div className="flex gap-3 text-xs">
+                      <button
+                        type="button"
+                        className="cursor-pointer underline underline-offset-2 hover:text-foreground"
+                        onClick={() => setMarcadas(flota.map((a) => a.id))}
+                      >
+                        {BOTON_MARCAR_TODAS}
+                      </button>
+                      <button
+                        type="button"
+                        className="cursor-pointer underline underline-offset-2 hover:text-foreground"
+                        onClick={() => setMarcadas([])}
+                      >
+                        {BOTON_QUITAR_TODAS}
+                      </button>
+                    </div>
+                  </div>
+                </fieldset>
+              )}
               {!watch("para_flota") && (
                 <Field
                   label="Avión (se le carga la pieza)"
@@ -759,6 +846,15 @@ export function MovimientoDialog({
                 </Field>
               )}
             </>
+          )}
+
+          {tipo === "AJUSTE" && (
+            <p
+              className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+              data-nota-ajuste
+            >
+              {NOTA_AJUSTE_SUMA}
+            </p>
           )}
 
           {tipo === "DEVOLUCION" && (

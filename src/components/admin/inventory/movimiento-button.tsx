@@ -15,7 +15,7 @@ interface MovimientoButtonProps {
   precioVenta?: number | null;
   precioVentaMoneda?: "MXN" | "USD" | null;
   empaques?: InventarioEmpaque[];
-  aircraft: { id: string; matricula: string }[];
+  aircraft: { id: string; matricula: string; activa?: boolean }[];
   providers: { id: string; nombre: string }[];
   /** Empaque preseleccionado (llegó escaneando el código de la caja). */
   initialEmpaqueId?: string;

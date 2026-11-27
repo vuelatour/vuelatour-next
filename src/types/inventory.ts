@@ -286,8 +286,14 @@ export interface InventarioMovimiento {
    * costo en dólares (sin T.C.). Nunca viene junto con `ganancia_mxn`.
    */
   ganancia_usd?: number | null;
-  /** SALIDA prorrateada a TODA la flota (sin avión específico). */
+  /** SALIDA repartida (sin avión específico): toda la flota o las elegidas. */
   para_flota?: boolean | null;
+  /**
+   * ADITIVO (27-nov-2026, API 0.0.152): matrículas ELEGIDAS de una salida
+   * repartida, en el orden del reparto. null/ausente = toda la flota (o no
+   * es repartida, o API previo).
+   */
+  matriculas_flota?: string[] | null;
   /**
    * Costo unitario en PESOS con el criterio único del API (costoUnitarioMxnDe):
    * el panel lo pinta tal cual y no convierte monedas. Opcional por skew.
@@ -394,7 +400,14 @@ export type OrigenVenta = "PRECIO_CAPTURADO" | "PRECIO_PRODUCTO" | "MARGEN" | "A
 
 export type GastoGeneradoSalida =
   | { id: string; monto: number; moneda: "MXN" | "USD" | string; categoria?: string }
-  | { prorrateado: true; aviones: number; monto_total: number; gastos: number };
+  | {
+      prorrateado: true;
+      aviones: number;
+      monto_total: number;
+      gastos: number;
+      /** ADITIVO (27-nov-2026): a quiénes se cargó, en el orden del reparto. */
+      matriculas?: string[];
+    };
 
 export interface InventarioListResponse {
   data: InventarioItemWithStock[];

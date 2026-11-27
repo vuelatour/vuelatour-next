@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/card";
 import { GrupoBadge } from "@/components/admin/grupos/grupo-badge";
 import { QuoteActionsBar } from "@/components/admin/quotes/quote-actions-bar";
+import { CambiarClienteBoton } from "@/components/admin/flights/cambiar-cliente-dialog";
+import { TITULO_CAMBIAR_CLIENTE_CON_CAMBIOS } from "@/lib/admin/cambio-cliente";
 import {
   QuoteCalculator,
   type AircraftOption,
@@ -519,7 +521,26 @@ export function QuoteWorkspace({
             </div>
             {/* Ruta comercial COMPLETA; en rutas largas el texto envuelve. */}
             <p className="text-sm text-muted-foreground mt-1">
-              {clientName ?? quote.cliente_id} · {rutaComercial.join(" → ")} ·{" "}
+              {clientName ?? quote.cliente_id}{" "}
+              {/* Cambiar el cliente de una cotización que ya existe
+                  (27-nov-2026). Con cambios sin guardar primero se guardan o
+                  descartan: el cotizador se rehidrata con el cliente nuevo. */}
+              <CambiarClienteBoton
+                rol={rol}
+                vueloId={quote.id}
+                folio={quote.folio}
+                clienteId={quote.cliente_id ?? null}
+                clienteNombre={clientName}
+                esCotizacion
+                esDeGrupo={!!grupoHijo}
+                grupoFolio={grupoHijo?.folio ?? null}
+                deshabilitadoPor={
+                  sucio || edicion?.saving === true
+                    ? TITULO_CAMBIAR_CLIENTE_CON_CAMBIOS
+                    : null
+                }
+              />{" "}
+              · {rutaComercial.join(" → ")} ·{" "}
               {quote.pasajeros} {quote.pasajeros === 1 ? "pasajero" : "pasajeros"}
             </p>
           </div>
